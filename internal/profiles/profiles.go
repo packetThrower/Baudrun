@@ -15,32 +15,40 @@ import (
 )
 
 type Profile struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	PortName    string    `json:"portName"`
-	BaudRate    int       `json:"baudRate"`
-	DataBits    int       `json:"dataBits"`
-	Parity      string    `json:"parity"`
-	StopBits    string    `json:"stopBits"`
-	FlowControl string    `json:"flowControl"`
-	LineEnding  string    `json:"lineEnding"`
-	LocalEcho   bool      `json:"localEcho"`
-	Highlight   bool      `json:"highlight"`
-	ThemeID     string    `json:"themeId"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	PortName         string    `json:"portName"`
+	BaudRate         int       `json:"baudRate"`
+	DataBits         int       `json:"dataBits"`
+	Parity           string    `json:"parity"`
+	StopBits         string    `json:"stopBits"`
+	FlowControl      string    `json:"flowControl"`
+	LineEnding       string    `json:"lineEnding"`
+	LocalEcho        bool      `json:"localEcho"`
+	Highlight        bool      `json:"highlight"`
+	ThemeID          string    `json:"themeId"`
+	DTROnConnect     string    `json:"dtrOnConnect"`    // "default" | "assert" | "deassert"
+	RTSOnConnect     string    `json:"rtsOnConnect"`
+	DTROnDisconnect  string    `json:"dtrOnDisconnect"`
+	RTSOnDisconnect  string    `json:"rtsOnDisconnect"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 func Defaults() Profile {
 	return Profile{
-		BaudRate:    9600,
-		DataBits:    8,
-		Parity:      "none",
-		StopBits:    "1",
-		FlowControl: "none",
-		LineEnding:  "cr",
-		LocalEcho:   false,
-		Highlight:   true,
+		BaudRate:        9600,
+		DataBits:        8,
+		Parity:          "none",
+		StopBits:        "1",
+		FlowControl:     "none",
+		LineEnding:      "cr",
+		LocalEcho:       false,
+		Highlight:       true,
+		DTROnConnect:    "default",
+		RTSOnConnect:    "default",
+		DTROnDisconnect: "default",
+		RTSOnDisconnect: "default",
 	}
 }
 
@@ -204,6 +212,20 @@ func validate(p Profile) error {
 	case "cr", "lf", "crlf":
 	default:
 		return fmt.Errorf("invalid line ending: %s", p.LineEnding)
+	}
+	for _, f := range []struct {
+		name, value string
+	}{
+		{"dtrOnConnect", p.DTROnConnect},
+		{"rtsOnConnect", p.RTSOnConnect},
+		{"dtrOnDisconnect", p.DTROnDisconnect},
+		{"rtsOnDisconnect", p.RTSOnDisconnect},
+	} {
+		switch f.value {
+		case "", "default", "assert", "deassert":
+		default:
+			return fmt.Errorf("invalid %s: %s", f.name, f.value)
+		}
 	}
 	return nil
 }

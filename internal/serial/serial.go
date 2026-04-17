@@ -32,6 +32,13 @@ type Config struct {
 	Parity      string
 	StopBits    string
 	FlowControl string
+
+	// Control-line policies: "" or "default" means leave as-is (OS default).
+	// "assert" forces the line high; "deassert" forces it low.
+	DTROnConnect    string
+	RTSOnConnect    string
+	DTROnDisconnect string
+	RTSOnDisconnect string
 }
 
 // ListPorts returns all available serial ports with USB metadata when available.
@@ -66,12 +73,17 @@ func ListPorts() ([]PortInfo, error) {
 }
 
 type Session struct {
-	port   serial.Port
-	mu     sync.Mutex
-	closed atomic.Bool
-	wg     sync.WaitGroup
-	onRead func([]byte)
-	onExit func(error)
+	port     serial.Port
+	mu       sync.Mutex
+	closed   atomic.Bool
+	wg       sync.WaitGroup
+	onRead   func([]byte)
+	onExit   func(error)
+	dtrState atomic.Bool
+	rtsState atomic.Bool
+	// Control-line policies to apply on Close.
+	dtrOnClose string
+	rtsOnClose string
 }
 
 func Open(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error) {
@@ -87,10 +99,45 @@ func Open(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error)
 		_ = port.Close()
 		return nil, fmt.Errorf("set read timeout on %s: %w", cfg.PortName, err)
 	}
-	s := &Session{port: port, onRead: onRead, onExit: onExit}
+
+	// macOS/Linux assert DTR and RTS by default after open.
+	dtr := true
+	rts := true
+	if v, ok := applyLine(port.SetDTR, cfg.DTROnConnect); ok {
+		dtr = v
+	}
+	if v, ok := applyLine(port.SetRTS, cfg.RTSOnConnect); ok {
+		rts = v
+	}
+
+	s := &Session{
+		port:       port,
+		onRead:     onRead,
+		onExit:     onExit,
+		dtrOnClose: cfg.DTROnDisconnect,
+		rtsOnClose: cfg.RTSOnDisconnect,
+	}
+	s.dtrState.Store(dtr)
+	s.rtsState.Store(rts)
 	s.wg.Add(1)
 	go s.readPump()
 	return s, nil
+}
+
+// applyLine honors a policy ("assert"/"deassert"/"default"/"") by calling the
+// setter if the policy is explicit. Returns the resulting logical state and
+// whether the setter was invoked.
+func applyLine(setter func(bool) error, policy string) (bool, bool) {
+	switch policy {
+	case "assert":
+		_ = setter(true)
+		return true, true
+	case "deassert":
+		_ = setter(false)
+		return false, true
+	default:
+		return true, false
+	}
 }
 
 func (s *Session) readPump() {
@@ -133,7 +180,11 @@ func (s *Session) SetRTS(v bool) error {
 	if s.closed.Load() {
 		return errors.New("session closed")
 	}
-	return s.port.SetRTS(v)
+	if err := s.port.SetRTS(v); err != nil {
+		return err
+	}
+	s.rtsState.Store(v)
+	return nil
 }
 
 func (s *Session) SetDTR(v bool) error {
@@ -142,13 +193,25 @@ func (s *Session) SetDTR(v bool) error {
 	if s.closed.Load() {
 		return errors.New("session closed")
 	}
-	return s.port.SetDTR(v)
+	if err := s.port.SetDTR(v); err != nil {
+		return err
+	}
+	s.dtrState.Store(v)
+	return nil
+}
+
+// ControlLines reports the last known state of the DTR and RTS lines.
+func (s *Session) ControlLines() (dtr, rts bool) {
+	return s.dtrState.Load(), s.rtsState.Load()
 }
 
 func (s *Session) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
+	// Apply on-disconnect control-line policy before releasing the port.
+	applyLine(s.port.SetDTR, s.dtrOnClose)
+	applyLine(s.port.SetRTS, s.rtsOnClose)
 	err := s.port.Close()
 	// Wait for the read pump to exit so the OS-level FD is definitely
 	// released before we return. With readTimeout this is bounded.

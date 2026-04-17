@@ -8,6 +8,7 @@
     DATA_BITS,
     FLOW_CONTROL,
     LINE_ENDINGS,
+    LINE_POLICIES,
     type Profile,
     type PortInfo,
     type Theme,
@@ -320,6 +321,73 @@
     </div>
   </section>
 
+  <section class="control-lines">
+    <details>
+      <summary>
+        <h3>Control Lines</h3>
+        <span class="hint">Advanced — only needed for specific adapters or devices</span>
+      </summary>
+
+      <div class="grid">
+        <div class="field">
+          <label for="dtr-connect">DTR on connect</label>
+          <select
+            id="dtr-connect"
+            bind:value={draft.dtrOnConnect}
+            on:change={markDirty}
+            disabled={locked}
+          >
+            {#each LINE_POLICIES as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="rts-connect">RTS on connect</label>
+          <select
+            id="rts-connect"
+            bind:value={draft.rtsOnConnect}
+            on:change={markDirty}
+            disabled={locked}
+          >
+            {#each LINE_POLICIES as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="dtr-disconnect">DTR on disconnect</label>
+          <select
+            id="dtr-disconnect"
+            bind:value={draft.dtrOnDisconnect}
+            on:change={markDirty}
+            disabled={locked}
+          >
+            {#each LINE_POLICIES as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="rts-disconnect">RTS on disconnect</label>
+          <select
+            id="rts-disconnect"
+            bind:value={draft.rtsOnDisconnect}
+            on:change={markDirty}
+            disabled={locked}
+          >
+            {#each LINE_POLICIES as opt}
+              <option value={opt.value}>{opt.label}</option>
+            {/each}
+          </select>
+        </div>
+      </div>
+    </details>
+  </section>
+
   <section>
     <h3>Appearance</h3>
     <div class="grid">
@@ -502,5 +570,44 @@
     color: var(--danger);
     border-radius: var(--radius-md);
     font-size: 12px;
+  }
+
+  .control-lines details summary {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    cursor: pointer;
+    list-style: none;
+    padding: 2px 0;
+    margin-bottom: 12px;
+  }
+
+  .control-lines details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .control-lines details summary h3 {
+    margin: 0;
+  }
+
+  .control-lines details summary::before {
+    content: "▸";
+    color: var(--fg-tertiary);
+    font-size: 10px;
+    margin-right: 2px;
+    transition: transform 0.1s;
+    display: inline-block;
+  }
+
+  .control-lines details[open] summary::before {
+    transform: rotate(90deg);
+  }
+
+  .control-lines .hint {
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: normal;
   }
 </style>
