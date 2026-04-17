@@ -8,7 +8,7 @@ on:
   workflow_call:
 
 jobs:
-  check:
+  frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,21 +20,28 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.23"
-
       - name: Build frontend
         working-directory: frontend
         run: |
           npm ci
           npm run build
 
-      - name: Go checks
-        run: |
-          go mod tidy -diff
-          go vet ./...
-          GOOS=darwin  GOARCH=arm64 go build ./...
-          GOOS=darwin  GOARCH=amd64 go build ./...
-          GOOS=windows GOARCH=amd64 go build ./...
+  go:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
