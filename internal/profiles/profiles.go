@@ -25,6 +25,7 @@ type Profile struct {
 	FlowControl string    `json:"flowControl"`
 	LineEnding  string    `json:"lineEnding"`
 	LocalEcho   bool      `json:"localEcho"`
+	Highlight   bool      `json:"highlight"`
 	ThemeID     string    `json:"themeId"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
@@ -39,6 +40,7 @@ func Defaults() Profile {
 		FlowControl: "none",
 		LineEnding:  "cr",
 		LocalEcho:   false,
+		Highlight:   true,
 	}
 }
 

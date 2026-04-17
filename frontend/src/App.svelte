@@ -49,6 +49,7 @@
     | "lf"
     | "crlf";
   $: termLocalEcho = activeProfile?.localEcho ?? currentProfile?.localEcho ?? false;
+  $: termHighlight = activeProfile?.highlight ?? currentProfile?.highlight ?? true;
 
   $: effectiveThemeID =
     (activeProfile?.themeId || currentProfile?.themeId) ||
@@ -244,6 +245,7 @@
         localEcho={termLocalEcho}
         theme={effectiveTheme}
         fontSize={termFontSize}
+        highlight={termHighlight}
         onStatus={(m) => (statusMsg = m)}
       />
     {:else}

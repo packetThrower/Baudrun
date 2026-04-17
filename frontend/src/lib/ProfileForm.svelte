@@ -298,6 +298,17 @@
           Local echo
         </label>
       </div>
+
+      <div class="field checkbox">
+        <label>
+          <input
+            type="checkbox"
+            bind:checked={draft.highlight}
+            on:change={markDirty}
+          />
+          Syntax highlighting
+        </label>
+      </div>
     </div>
   </section>
 
