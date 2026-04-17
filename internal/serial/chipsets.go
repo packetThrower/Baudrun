@@ -61,7 +61,7 @@ func IdentifyChipset(vid, pid, manufacturer string) ChipsetInfo {
 
 // NeedsDriver reports whether a detected chipset requires the user to install
 // something. Only non-empty DriverURL means "nudge the user" — otherwise the
-// device is either unknown or already covered by macOS's built-in drivers.
+// device is either unknown, built-in, or unactionable.
 func (c ChipsetInfo) NeedsDriver() bool {
 	return c.Name != "" && c.DriverURL != ""
 }
@@ -75,7 +75,6 @@ var chipsetsByVID = map[string]string{
 	"04b4": "Cypress",
 	"0557": "ATEN",
 	"0d28": "ARM mbed (CDC-ACM)",
-	"0451": "TUSB3410 (Texas Instruments)",
 	"9710": "MCS7810/20/40 (MosChip / ASIX)",
 	"0711": "MCTU232 (Magic Control)",
 	"1393": "Moxa UPort",
@@ -88,7 +87,6 @@ var driverURLs = map[string]string{
 	"1a86": "https://www.wch-ic.com/downloads/CH34XSER_MAC_ZIP.html",
 	"04d8": "https://www.microchip.com/en-us/product/MCP2221A",
 	"04b4": "https://www.infineon.com/cms/en/design-support/tools/sdk/",
-	"0451": "https://www.ti.com/tool/TUSB3410DRV",
 	"9710": "https://www.asix.com.tw",
 	"0711": "https://www.mct.com.tw",
 	"1393": "https://www.moxa.com/en/support/product-support/software-and-documentation",
