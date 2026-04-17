@@ -1,0 +1,26 @@
+# Wails build artifacts
+build/bin/
+build/**/Info.dev.plist
+
+# Frontend build output
+frontend/dist/
+frontend/node_modules/
+node_modules/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Logs & temp
+*.log
+*.tmp
