@@ -11,20 +11,6 @@ import (
 	"go.bug.st/serial/enumerator"
 )
 
-// USBSerialCandidate describes a USB device whose vendor ID (or manufacturer
-// string) maps to a known serial chipset but which isn't currently accessible
-// as a /dev/cu.* port — i.e., the user probably hasn't installed the vendor
-// driver yet.
-type USBSerialCandidate struct {
-	VID          string `json:"vid"`
-	PID          string `json:"pid"`
-	Chipset      string `json:"chipset"`
-	Manufacturer string `json:"manufacturer,omitempty"`
-	Product      string `json:"product,omitempty"`
-	SerialNumber string `json:"serialNumber,omitempty"`
-	DriverURL    string `json:"driverURL,omitempty"`
-}
-
 // DetectMissingDrivers returns USB devices whose VID or manufacturer string
 // matches a known serial chipset but which aren't currently accessible as
 // serial ports. macOS-only; reads the IOKit registry via ioreg, which is
@@ -68,6 +54,17 @@ func DetectMissingDrivers() ([]USBSerialCandidate, error) {
 			SerialNumber: d.SerialNum,
 			DriverURL:    info.DriverURL,
 		})
+	}
+
+	// Also flag drivered ports whose product name is a driver-issue
+	// placeholder (counterfeit Prolific detection and similar).
+	for _, c := range detectSuspectEnumeratedPorts() {
+		key := c.VID + ":" + c.PID + ":" + c.SerialNumber
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		missing = append(missing, c)
 	}
 	return missing, nil
 }

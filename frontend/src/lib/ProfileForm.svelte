@@ -89,9 +89,18 @@
     }
   }
 
+  const SUSPECT_PRODUCT_RE =
+    /please install|please download|support windows|counterfeit|not support/i;
+
   function formatPortLabel(p: PortInfo): string {
+    let product = p.product || "";
+    // Windows-issued stub drivers sometimes use the entire warning message as
+    // the product name. Replace with a terse "(driver issue)" note.
+    if (product && SUSPECT_PRODUCT_RE.test(product)) {
+      product = "driver issue";
+    }
     const parts: string[] = [p.name];
-    const detail = [p.product, p.chipset].filter(Boolean).join(" · ");
+    const detail = [product, p.chipset].filter(Boolean).join(" · ");
     if (detail) parts.push(detail);
     return parts.join(" — ");
   }
@@ -178,8 +187,17 @@
               <div class="driver-title">
                 {d.chipset} detected — driver not loaded
               </div>
-              <div class="driver-sub">
-                {d.product || d.manufacturer || "USB device"}
+              {#if d.reason}
+                <div class="driver-sub">{d.reason}</div>
+              {/if}
+              <div class="driver-sub driver-meta">
+                {#if d.product && !/please install|please download|support windows|counterfeit|not support/i.test(d.product)}
+                  {d.product}
+                {:else if d.manufacturer}
+                  {d.manufacturer}
+                {:else}
+                  USB device
+                {/if}
                 {#if d.serialNumber}
                   · serial {d.serialNumber}
                 {/if}

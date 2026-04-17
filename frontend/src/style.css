@@ -71,6 +71,20 @@ textarea {
   padding: 5px 8px;
   outline: none;
   transition: background 0.12s, border-color 0.12s;
+  /* Force native UI controls (dropdown popups, spinners) into dark mode on
+     Windows WebView2 / Chromium, which otherwise renders them light. */
+  color-scheme: dark;
+}
+
+option,
+optgroup {
+  background-color: #1e1e22;
+  color: #e4e4e7;
+}
+
+optgroup {
+  color: #9aa0a6;
+  font-style: italic;
 }
 
 input:focus,
