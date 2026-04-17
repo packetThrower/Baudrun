@@ -9,5 +9,11 @@
   "author": {
     "name": "Will Lehnertz",
     "email": "wlehnertz@otec.coop"
+  },
+  "info": {
+    "productName": "Seriesly",
+    "productVersion": "2026.04.17-1",
+    "copyright": "Copyright © 2026 Will Lehnertz",
+    "comments": "A serial terminal for network devices."
   }
 }
