@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # CalVer: YYYY.MM.DD-patch, e.g. 2026.04.17-1
+      - "20*.*.*-*"
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  build-macos:
+    needs: [ci]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Patch productVersion from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp
+          mv wails.json.tmp wails.json
+          echo "Using version: $VERSION"
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build (universal)
+        run: wails build -platform darwin/universal
+
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          cd build/bin
+          zip -r "../../Seriesly-macOS-${VERSION}.zip" Seriesly.app
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-package
+          path: Seriesly-macOS-*.zip
+
+  build-windows:
+    needs: [ci]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Patch productVersion from tag
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}"
+          $json = Get-Content wails.json -Raw | ConvertFrom-Json
+          $json.info.productVersion = $version
+          $json | ConvertTo-Json -Depth 10 | Set-Content wails.json
+          Write-Host "Using version: $version"
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        run: wails build -platform windows/amd64
+
+      - name: Package
+        shell: powershell
+        run: |
+          $version = "${{ github.ref_name }}"
+          Compress-Archive -Path build\bin\Seriesly.exe -DestinationPath "Seriesly-Windows-${version}.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: Seriesly-Windows-*.zip
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/macos-package/*
+            artifacts/windows-package/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
