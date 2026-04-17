@@ -1,3 +1,22 @@
+export namespace main {
+	
+	export class ControlLines {
+	    dtr: boolean;
+	    rts: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ControlLines(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.dtr = source["dtr"];
+	        this.rts = source["rts"];
+	    }
+	}
+
+}
+
 export namespace profiles {
 	
 	export class Profile {
@@ -13,6 +32,10 @@ export namespace profiles {
 	    localEcho: boolean;
 	    highlight: boolean;
 	    themeId: string;
+	    dtrOnConnect: string;
+	    rtsOnConnect: string;
+	    dtrOnDisconnect: string;
+	    rtsOnDisconnect: string;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -36,6 +59,10 @@ export namespace profiles {
 	        this.localEcho = source["localEcho"];
 	        this.highlight = source["highlight"];
 	        this.themeId = source["themeId"];
+	        this.dtrOnConnect = source["dtrOnConnect"];
+	        this.rtsOnConnect = source["rtsOnConnect"];
+	        this.dtrOnDisconnect = source["dtrOnDisconnect"];
+	        this.rtsOnDisconnect = source["rtsOnDisconnect"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }

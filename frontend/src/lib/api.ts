@@ -1,11 +1,12 @@
 import * as App from "../../wailsjs/go/main/App.js";
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime.js";
-import type { profiles, serial, themes, settings } from "../../wailsjs/go/models";
+import type { main, profiles, serial, themes, settings } from "../../wailsjs/go/models";
 
 export type Profile = profiles.Profile;
 export type PortInfo = serial.PortInfo;
 export type Theme = themes.Theme;
 export type Settings = settings.Settings;
+export type ControlLines = main.ControlLines;
 
 export const EVT_DATA = "serial:data";
 export const EVT_DISCONNECT = "serial:disconnect";
@@ -30,6 +31,8 @@ export const api = {
 
   getSettings: App.GetSettings,
   updateSettings: App.UpdateSettings,
+
+  getControlLines: App.GetControlLines,
 
   sendBytes(bytes: Uint8Array): Promise<void> {
     return App.Send(base64Encode(bytes));
@@ -126,4 +129,10 @@ export const LINE_ENDINGS = [
   { value: "cr", label: "CR (\\r) — switches, routers" },
   { value: "lf", label: "LF (\\n) — Linux consoles" },
   { value: "crlf", label: "CRLF (\\r\\n) — legacy / Windows" },
+];
+
+export const LINE_POLICIES = [
+  { value: "default", label: "Default (leave as-is)" },
+  { value: "assert", label: "Assert (high)" },
+  { value: "deassert", label: "Deassert (low)" },
 ];

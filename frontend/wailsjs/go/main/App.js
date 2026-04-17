@@ -30,6 +30,10 @@ export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
 }
 
+export function GetControlLines() {
+  return window['go']['main']['App']['GetControlLines']();
+}
+
 export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }

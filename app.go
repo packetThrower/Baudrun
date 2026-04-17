@@ -174,12 +174,16 @@ func (a *App) Connect(profileID string) error {
 	a.sessMu.Unlock()
 
 	cfg := sserial.Config{
-		PortName:    p.PortName,
-		BaudRate:    p.BaudRate,
-		DataBits:    p.DataBits,
-		Parity:      p.Parity,
-		StopBits:    p.StopBits,
-		FlowControl: p.FlowControl,
+		PortName:        p.PortName,
+		BaudRate:        p.BaudRate,
+		DataBits:        p.DataBits,
+		Parity:          p.Parity,
+		StopBits:        p.StopBits,
+		FlowControl:     p.FlowControl,
+		DTROnConnect:    p.DTROnConnect,
+		RTSOnConnect:    p.RTSOnConnect,
+		DTROnDisconnect: p.DTROnDisconnect,
+		RTSOnDisconnect: p.RTSOnDisconnect,
 	}
 
 	sess, err := sserial.Open(cfg,
@@ -260,4 +264,20 @@ func (a *App) ActiveProfileID() string {
 	a.sessMu.Lock()
 	defer a.sessMu.Unlock()
 	return a.sessID
+}
+
+type ControlLines struct {
+	DTR bool `json:"dtr"`
+	RTS bool `json:"rts"`
+}
+
+func (a *App) GetControlLines() (ControlLines, error) {
+	a.sessMu.Lock()
+	sess := a.session
+	a.sessMu.Unlock()
+	if sess == nil {
+		return ControlLines{}, errors.New("not connected")
+	}
+	dtr, rts := sess.ControlLines()
+	return ControlLines{DTR: dtr, RTS: rts}, nil
 }

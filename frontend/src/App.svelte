@@ -30,6 +30,8 @@
   let offDisconnect: (() => void) | null = null;
   let settingsOpen = false;
   let suspended = false;
+  let ctrlDTR = true;
+  let ctrlRTS = true;
 
   $: selectedExisting = $profiles.find((p) => p.id === $selectedProfileID) ?? null;
   $: currentProfile = draft ?? selectedExisting;
@@ -159,11 +161,42 @@
       await api.connect(id);
       session.set({ status: "connected", profileID: id });
       statusMsg = `Connected to ${currentProfile.portName} @ ${currentProfile.baudRate}`;
+      await refreshControlLines();
       await tick();
       terminalRef?.focus();
     } catch (e) {
       session.set({ status: "idle" });
       statusMsg = `Connect failed: ${e}`;
+    }
+  }
+
+  async function refreshControlLines() {
+    try {
+      const cl = await api.getControlLines();
+      ctrlDTR = cl.dtr;
+      ctrlRTS = cl.rts;
+    } catch {
+      // Not connected yet or backend unavailable — keep assumed state.
+    }
+  }
+
+  async function toggleDTR() {
+    const next = !ctrlDTR;
+    try {
+      await api.setDTR(next);
+      ctrlDTR = next;
+    } catch (e) {
+      statusMsg = `DTR toggle failed: ${e}`;
+    }
+  }
+
+  async function toggleRTS() {
+    const next = !ctrlRTS;
+    try {
+      await api.setRTS(next);
+      ctrlRTS = next;
+    } catch (e) {
+      statusMsg = `RTS toggle failed: ${e}`;
     }
   }
 
@@ -296,6 +329,22 @@
             </div>
           </div>
           <div class="session-actions">
+            <button
+              class="line-btn"
+              class:asserted={ctrlDTR}
+              on:click={toggleDTR}
+              title="Toggle DTR line ({ctrlDTR ? 'asserted' : 'deasserted'})"
+            >
+              <span class="line-dot"></span>DTR
+            </button>
+            <button
+              class="line-btn"
+              class:asserted={ctrlRTS}
+              on:click={toggleRTS}
+              title="Toggle RTS line ({ctrlRTS ? 'asserted' : 'deasserted'})"
+            >
+              <span class="line-dot"></span>RTS
+            </button>
             <button on:click={() => terminalRef?.clear()}>Clear</button>
             <button on:click={handleSuspend} title="Keep session alive; return to profile">
               Suspend
@@ -436,5 +485,29 @@
 
   .terminal-layer.hidden {
     display: none;
+  }
+
+  .line-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
+  .line-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    border: 1px solid var(--fg-tertiary);
+    background: transparent;
+  }
+
+  .line-btn.asserted .line-dot {
+    background: var(--success);
+    border-color: var(--success);
+    box-shadow: 0 0 5px rgba(50, 215, 75, 0.6);
   }
 </style>
