@@ -42,6 +42,10 @@ export function ImportTheme() {
   return window['go']['main']['App']['ImportTheme']();
 }
 
+export function ListMissingDrivers() {
+  return window['go']['main']['App']['ListMissingDrivers']();
+}
+
 export function ListPorts() {
   return window['go']['main']['App']['ListPorts']();
 }

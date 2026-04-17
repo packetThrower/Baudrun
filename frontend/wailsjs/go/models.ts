@@ -97,6 +97,7 @@ export namespace serial {
 	    pid?: string;
 	    serialNumber?: string;
 	    product?: string;
+	    chipset?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PortInfo(source);
@@ -110,6 +111,31 @@ export namespace serial {
 	        this.pid = source["pid"];
 	        this.serialNumber = source["serialNumber"];
 	        this.product = source["product"];
+	        this.chipset = source["chipset"];
+	    }
+	}
+	export class USBSerialCandidate {
+	    vid: string;
+	    pid: string;
+	    chipset: string;
+	    manufacturer?: string;
+	    product?: string;
+	    serialNumber?: string;
+	    driverURL?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new USBSerialCandidate(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.vid = source["vid"];
+	        this.pid = source["pid"];
+	        this.chipset = source["chipset"];
+	        this.manufacturer = source["manufacturer"];
+	        this.product = source["product"];
+	        this.serialNumber = source["serialNumber"];
+	        this.driverURL = source["driverURL"];
 	    }
 	}
 

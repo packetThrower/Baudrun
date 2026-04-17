@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte";
+  import { BrowserOpenURL } from "../../wailsjs/runtime/runtime.js";
   import {
     api,
     BAUD_RATES,
@@ -12,6 +13,7 @@
     type Profile,
     type PortInfo,
     type Theme,
+    type USBSerialCandidate,
   } from "./api";
 
   export let profile: Profile;
@@ -34,6 +36,7 @@
   let syncedFrom: Profile = profile;
   let dirty = false;
   let ports: PortInfo[] = [];
+  let missingDrivers: USBSerialCandidate[] = [];
   let loadingPorts = false;
   let saving = false;
   let error = "";
@@ -54,7 +57,14 @@
   async function refreshPorts() {
     loadingPorts = true;
     try {
-      ports = (await api.listPorts()) ?? [];
+      const pPromise = api.listPorts();
+      const mPromise = api.listMissingDrivers().catch((e) => {
+        console.warn("listMissingDrivers failed:", e);
+        return [] as USBSerialCandidate[];
+      });
+      const [p, missing] = await Promise.all([pPromise, mPromise]);
+      ports = p ?? [];
+      missingDrivers = missing ?? [];
     } catch (e) {
       console.error("list ports", e);
     } finally {
@@ -80,8 +90,10 @@
   }
 
   function formatPortLabel(p: PortInfo): string {
-    const label = p.product || p.serialNumber;
-    return label ? `${p.name} — ${label}` : p.name;
+    const parts: string[] = [p.name];
+    const detail = [p.product, p.chipset].filter(Boolean).join(" · ");
+    if (detail) parts.push(detail);
+    return parts.join(" — ");
   }
 
   function portMissing(name: string): boolean {
@@ -156,6 +168,33 @@
 
   <section>
     <h3>Connection</h3>
+
+    {#if missingDrivers.length > 0}
+      <div class="driver-banner">
+        {#each missingDrivers as d (d.vid + ":" + d.pid + ":" + d.serialNumber)}
+          <div class="driver-row">
+            <div class="driver-icon" aria-hidden="true">!</div>
+            <div class="driver-text">
+              <div class="driver-title">
+                {d.chipset} detected — driver not loaded
+              </div>
+              <div class="driver-sub">
+                {d.product || d.manufacturer || "USB device"}
+                {#if d.serialNumber}
+                  · serial {d.serialNumber}
+                {/if}
+              </div>
+            </div>
+            {#if d.driverURL}
+              <button on:click={() => BrowserOpenURL(d.driverURL)}>
+                Install driver…
+              </button>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+
     <div class="grid">
       <div class="field full">
         <label for="port">Serial Port</label>
@@ -609,5 +648,53 @@
     font-weight: normal;
     text-transform: none;
     letter-spacing: normal;
+  }
+
+  .driver-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .driver-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: rgba(245, 215, 110, 0.1);
+    border: 1px solid rgba(245, 215, 110, 0.3);
+    border-radius: var(--radius-md);
+  }
+
+  .driver-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(245, 215, 110, 0.25);
+    color: #f5d76e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .driver-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .driver-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-primary);
+  }
+
+  .driver-sub {
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    margin-top: 1px;
   }
 </style>
