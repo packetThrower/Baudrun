@@ -186,6 +186,7 @@
   async function handleResume() {
     suspended = false;
     await tick();
+    terminalRef?.refit();
     terminalRef?.focus();
   }
 
@@ -238,74 +239,80 @@
   />
 
   <main class="main">
-    {#if settingsOpen}
-      <Settings
-        themes={$themes}
-        settings={$settings}
-        on:setDefault={(e) => handleSetDefault(e.detail)}
-        on:import={handleImportTheme}
-        on:delete={(e) => handleDeleteTheme(e.detail)}
-        on:setFontSize={(e) => handleSetFontSize(e.detail)}
-      />
-    {:else if !currentProfile}
-      <div class="titlebar" style="--wails-draggable: drag;"></div>
-      <div class="empty-main">
-        <div class="empty-inner">
-          <div class="brand">Seriesly</div>
-          <p>A serial terminal for network devices.</p>
-          <button class="primary" on:click={handleCreate}>
-            Create a Profile
-          </button>
-        </div>
-      </div>
-    {:else if viewingTerminal}
-      <div class="titlebar" style="--wails-draggable: drag;"></div>
-      <header class="session-header">
-        <div class="session-meta">
-          <span class="dot"></span>
-          <div class="session-text">
-            <strong>{activeProfile?.name ?? currentProfile.name}</strong>
-            <span class="session-sub">
-              {activeProfile?.portName ?? currentProfile.portName} ·
-              {activeProfile?.baudRate ?? currentProfile.baudRate}
-              /{activeProfile?.dataBits ?? currentProfile.dataBits}
-              {(activeProfile?.parity ?? currentProfile.parity)[0].toUpperCase()}
-              {activeProfile?.stopBits ?? currentProfile.stopBits}
-            </span>
+    {#if !viewingTerminal}
+      {#if settingsOpen}
+        <Settings
+          themes={$themes}
+          settings={$settings}
+          on:setDefault={(e) => handleSetDefault(e.detail)}
+          on:import={handleImportTheme}
+          on:delete={(e) => handleDeleteTheme(e.detail)}
+          on:setFontSize={(e) => handleSetFontSize(e.detail)}
+        />
+      {:else if !currentProfile}
+        <div class="titlebar" style="--wails-draggable: drag;"></div>
+        <div class="empty-main">
+          <div class="empty-inner">
+            <div class="brand">Seriesly</div>
+            <p>A serial terminal for network devices.</p>
+            <button class="primary" on:click={handleCreate}>
+              Create a Profile
+            </button>
           </div>
         </div>
-        <div class="session-actions">
-          <button on:click={() => terminalRef?.clear()}>Clear</button>
-          <button on:click={handleSuspend} title="Keep session alive; return to profile">
-            Suspend
-          </button>
-          <button class="primary" on:click={handleDisconnect}>Disconnect</button>
-        </div>
-      </header>
-      <Terminal
-        bind:this={terminalRef}
-        lineEnding={termLineEnding}
-        localEcho={termLocalEcho}
-        theme={effectiveTheme}
-        fontSize={termFontSize}
-        highlight={termHighlight}
-        onStatus={(m) => (statusMsg = m)}
-      />
-    {:else}
-      <ProfileForm
-        profile={currentProfile}
-        {isNew}
-        canConnect={!!currentProfile.id && !!currentProfile.portName}
-        {isConnected}
-        {isConnecting}
-        themes={$themes}
-        defaultThemeID={$settings.defaultThemeId}
-        on:save={(e) => handleSave(e.detail)}
-        on:delete={(e) => handleDelete(e.detail)}
-        on:connect={handleConnect}
-        on:disconnect={handleDisconnect}
-        on:resume={handleResume}
-      />
+      {:else}
+        <ProfileForm
+          profile={currentProfile}
+          {isNew}
+          canConnect={!!currentProfile.id && !!currentProfile.portName}
+          {isConnected}
+          {isConnecting}
+          themes={$themes}
+          defaultThemeID={$settings.defaultThemeId}
+          on:save={(e) => handleSave(e.detail)}
+          on:delete={(e) => handleDelete(e.detail)}
+          on:connect={handleConnect}
+          on:disconnect={handleDisconnect}
+          on:resume={handleResume}
+        />
+      {/if}
+    {/if}
+
+    {#if hasSession}
+      <div class="terminal-layer" class:hidden={!viewingTerminal}>
+        <div class="titlebar" style="--wails-draggable: drag;"></div>
+        <header class="session-header">
+          <div class="session-meta">
+            <span class="dot"></span>
+            <div class="session-text">
+              <strong>{activeProfile?.name ?? currentProfile?.name ?? ""}</strong>
+              <span class="session-sub">
+                {activeProfile?.portName ?? currentProfile?.portName ?? ""} ·
+                {activeProfile?.baudRate ?? currentProfile?.baudRate ?? ""}
+                /{activeProfile?.dataBits ?? currentProfile?.dataBits ?? ""}
+                {((activeProfile?.parity ?? currentProfile?.parity) || " ")[0].toUpperCase()}
+                {activeProfile?.stopBits ?? currentProfile?.stopBits ?? ""}
+              </span>
+            </div>
+          </div>
+          <div class="session-actions">
+            <button on:click={() => terminalRef?.clear()}>Clear</button>
+            <button on:click={handleSuspend} title="Keep session alive; return to profile">
+              Suspend
+            </button>
+            <button class="primary" on:click={handleDisconnect}>Disconnect</button>
+          </div>
+        </header>
+        <Terminal
+          bind:this={terminalRef}
+          lineEnding={termLineEnding}
+          localEcho={termLocalEcho}
+          theme={effectiveTheme}
+          fontSize={termFontSize}
+          highlight={termHighlight}
+          onStatus={(m) => (statusMsg = m)}
+        />
+      </div>
     {/if}
 
     <footer class="status">
@@ -418,5 +425,16 @@
     align-items: center;
     flex-shrink: 0;
     background: rgba(0, 0, 0, 0.2);
+  }
+
+  .terminal-layer {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .terminal-layer.hidden {
+    display: none;
   }
 </style>
