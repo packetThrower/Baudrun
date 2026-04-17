@@ -10,6 +10,7 @@
     LINE_ENDINGS,
     type Profile,
     type PortInfo,
+    type Theme,
   } from "./api";
 
   export let profile: Profile;
@@ -17,6 +18,8 @@
   export let canConnect: boolean;
   export let isConnected: boolean;
   export let isConnecting: boolean;
+  export let themes: Theme[] = [];
+  export let defaultThemeID: string = "seriesly";
 
   const dispatch = createEventDispatcher<{
     save: Profile;
@@ -88,6 +91,8 @@
     if (v !== "custom") draft.baudRate = Number(v);
     markDirty();
   }
+
+  $: defaultThemeName = themes.find((t) => t.id === defaultThemeID)?.name ?? "Seriesly";
 </script>
 
 <div class="form">
@@ -292,6 +297,36 @@
           />
           Local echo
         </label>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>Appearance</h3>
+    <div class="grid">
+      <div class="field full">
+        <label for="theme">Theme</label>
+        <select
+          id="theme"
+          bind:value={draft.themeId}
+          on:change={markDirty}
+        >
+          <option value="">Default — {defaultThemeName}</option>
+          {#if themes.some((t) => t.source === "builtin")}
+            <optgroup label="Built-in">
+              {#each themes.filter((t) => t.source === "builtin") as t (t.id)}
+                <option value={t.id}>{t.name}</option>
+              {/each}
+            </optgroup>
+          {/if}
+          {#if themes.some((t) => t.source === "user")}
+            <optgroup label="Custom">
+              {#each themes.filter((t) => t.source === "user") as t (t.id)}
+                <option value={t.id}>{t.name}</option>
+              {/each}
+            </optgroup>
+          {/if}
+        </select>
       </div>
     </div>
   </section>

@@ -3,7 +3,8 @@
   import Sidebar from "./lib/Sidebar.svelte";
   import ProfileForm from "./lib/ProfileForm.svelte";
   import Terminal from "./lib/Terminal.svelte";
-  import { api, type Profile } from "./lib/api";
+  import Settings from "./lib/Settings.svelte";
+  import { api, type Profile, type Theme } from "./lib/api";
   import {
     profiles,
     selectedProfileID,
@@ -12,12 +13,22 @@
     updateProfile,
     deleteProfile,
   } from "./stores/profiles";
+  import {
+    themes,
+    settings,
+    loadThemes,
+    loadSettings,
+    importTheme,
+    deleteTheme,
+    setDefaultTheme,
+  } from "./stores/themes";
   import { session } from "./stores/session";
 
   let draft: Profile | null = null;
   let terminalRef: Terminal | null = null;
   let statusMsg = "";
   let offDisconnect: (() => void) | null = null;
+  let settingsOpen = false;
 
   $: selectedExisting = $profiles.find((p) => p.id === $selectedProfileID) ?? null;
   $: currentProfile = draft ?? selectedExisting;
@@ -39,8 +50,23 @@
     | "crlf";
   $: termLocalEcho = activeProfile?.localEcho ?? currentProfile?.localEcho ?? false;
 
+  $: effectiveThemeID =
+    (activeProfile?.themeId || currentProfile?.themeId) ||
+    $settings.defaultThemeId ||
+    "seriesly";
+  $: effectiveTheme = resolveTheme(effectiveThemeID, $themes);
+  $: termFontSize = $settings.fontSize || 13;
+
+  function resolveTheme(id: string, all: Theme[]): Theme | undefined {
+    return (
+      all.find((t) => t.id === id) ??
+      all.find((t) => t.id === "seriesly") ??
+      all[0]
+    );
+  }
+
   onMount(async () => {
-    await loadProfiles();
+    await Promise.all([loadProfiles(), loadThemes(), loadSettings()]);
 
     offDisconnect = api.onDisconnect((reason) => {
       session.set({ status: "idle" });
@@ -59,12 +85,14 @@
 
   async function handleSelect(id: string) {
     draft = null;
+    settingsOpen = false;
     selectedProfileID.set(id);
   }
 
   async function handleCreate() {
     const base = await api.defaultProfile();
     draft = { ...base, id: "", name: "Untitled" } as Profile;
+    settingsOpen = false;
   }
 
   async function handleSave(p: Profile) {
@@ -119,6 +147,42 @@
       statusMsg = `Disconnect failed: ${e}`;
     }
   }
+
+  async function handleImportTheme() {
+    try {
+      const t = await importTheme();
+      if (t) statusMsg = `Imported theme: ${t.name}`;
+    } catch (e) {
+      statusMsg = `Import failed: ${e}`;
+    }
+  }
+
+  async function handleDeleteTheme(id: string) {
+    try {
+      await deleteTheme(id);
+      statusMsg = "Theme removed";
+    } catch (e) {
+      statusMsg = `Delete failed: ${e}`;
+    }
+  }
+
+  async function handleSetDefault(id: string) {
+    try {
+      await setDefaultTheme(id);
+      statusMsg = "Default theme updated";
+    } catch (e) {
+      statusMsg = `Update failed: ${e}`;
+    }
+  }
+
+  async function handleSetFontSize(size: number) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, fontSize: size });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Font update failed: ${e}`;
+    }
+  }
 </script>
 
 <div class="shell">
@@ -126,12 +190,23 @@
     profiles={$profiles}
     selectedID={$selectedProfileID}
     activeID={activeProfileID}
+    {settingsOpen}
     on:select={(e) => handleSelect(e.detail)}
     on:create={handleCreate}
+    on:settings={() => (settingsOpen = !settingsOpen)}
   />
 
   <main class="main">
-    {#if !currentProfile}
+    {#if settingsOpen}
+      <Settings
+        themes={$themes}
+        settings={$settings}
+        on:setDefault={(e) => handleSetDefault(e.detail)}
+        on:import={handleImportTheme}
+        on:delete={(e) => handleDeleteTheme(e.detail)}
+        on:setFontSize={(e) => handleSetFontSize(e.detail)}
+      />
+    {:else if !currentProfile}
       <div class="titlebar" style="--wails-draggable: drag;"></div>
       <div class="empty-main">
         <div class="empty-inner">
@@ -167,6 +242,8 @@
         bind:this={terminalRef}
         lineEnding={termLineEnding}
         localEcho={termLocalEcho}
+        theme={effectiveTheme}
+        fontSize={termFontSize}
         onStatus={(m) => (statusMsg = m)}
       />
     {:else}
@@ -176,6 +253,8 @@
         canConnect={!!currentProfile.id && !!currentProfile.portName}
         isConnected={false}
         {isConnecting}
+        themes={$themes}
+        defaultThemeID={$settings.defaultThemeId}
         on:save={(e) => handleSave(e.detail)}
         on:delete={(e) => handleDelete(e.detail)}
         on:connect={handleConnect}

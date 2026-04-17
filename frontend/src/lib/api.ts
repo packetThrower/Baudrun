@@ -1,9 +1,11 @@
 import * as App from "../../wailsjs/go/main/App.js";
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime.js";
-import type { profiles, serial } from "../../wailsjs/go/models";
+import type { profiles, serial, themes, settings } from "../../wailsjs/go/models";
 
 export type Profile = profiles.Profile;
 export type PortInfo = serial.PortInfo;
+export type Theme = themes.Theme;
+export type Settings = settings.Settings;
 
 export const EVT_DATA = "serial:data";
 export const EVT_DISCONNECT = "serial:disconnect";
@@ -21,6 +23,13 @@ export const api = {
   activeProfileID: App.ActiveProfileID,
   setRTS: App.SetRTS,
   setDTR: App.SetDTR,
+
+  listThemes: App.ListThemes,
+  importTheme: App.ImportTheme,
+  deleteTheme: App.DeleteTheme,
+
+  getSettings: App.GetSettings,
+  updateSettings: App.UpdateSettings,
 
   sendBytes(bytes: Uint8Array): Promise<void> {
     return App.Send(base64Encode(bytes));
@@ -59,6 +68,33 @@ function base64Decode(b64: string): Uint8Array {
   return bytes;
 }
 
+export function themeToXterm(t: Theme) {
+  return {
+    background: t.background,
+    foreground: t.foreground,
+    cursor: t.cursor,
+    cursorAccent: t.cursorAccent || t.background,
+    selectionBackground: t.selection,
+    selectionForeground: t.selectionForeground || undefined,
+    black: t.black,
+    red: t.red,
+    green: t.green,
+    yellow: t.yellow,
+    blue: t.blue,
+    magenta: t.magenta,
+    cyan: t.cyan,
+    white: t.white,
+    brightBlack: t.brightBlack,
+    brightRed: t.brightRed,
+    brightGreen: t.brightGreen,
+    brightYellow: t.brightYellow,
+    brightBlue: t.brightBlue,
+    brightMagenta: t.brightMagenta,
+    brightCyan: t.brightCyan,
+    brightWhite: t.brightWhite,
+  };
+}
+
 export const BAUD_RATES = [
   300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800,
   921600,
@@ -87,7 +123,7 @@ export const FLOW_CONTROL = [
 ];
 
 export const LINE_ENDINGS = [
-  { value: "cr", label: "CR (\\r)" },
-  { value: "lf", label: "LF (\\n)" },
-  { value: "crlf", label: "CRLF (\\r\\n)" },
+  { value: "cr", label: "CR (\\r) — switches, routers" },
+  { value: "lf", label: "LF (\\n) — Linux consoles" },
+  { value: "crlf", label: "CRLF (\\r\\n) — legacy / Windows" },
 ];

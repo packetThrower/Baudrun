@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"Seriesly/internal/appdata"
+
 	"github.com/google/uuid"
 )
 
@@ -23,6 +25,7 @@ type Profile struct {
 	FlowControl string    `json:"flowControl"`
 	LineEnding  string    `json:"lineEnding"`
 	LocalEcho   bool      `json:"localEcho"`
+	ThemeID     string    `json:"themeId"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
@@ -34,7 +37,7 @@ func Defaults() Profile {
 		Parity:      "none",
 		StopBits:    "1",
 		FlowControl: "none",
-		LineEnding:  "crlf",
+		LineEnding:  "cr",
 		LocalEcho:   false,
 	}
 }
@@ -46,7 +49,7 @@ type Store struct {
 }
 
 func NewStore() (*Store, error) {
-	dir, err := supportDir()
+	dir, err := appdata.SupportDir()
 	if err != nil {
 		return nil, err
 	}
@@ -58,14 +61,6 @@ func NewStore() (*Store, error) {
 		return nil, err
 	}
 	return s, nil
-}
-
-func supportDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, "Library", "Application Support", "Seriesly"), nil
 }
 
 func (s *Store) load() error {

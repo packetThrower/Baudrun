@@ -22,8 +22,20 @@ export function DeleteProfile(arg1) {
   return window['go']['main']['App']['DeleteProfile'](arg1);
 }
 
+export function DeleteTheme(arg1) {
+  return window['go']['main']['App']['DeleteTheme'](arg1);
+}
+
 export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
+}
+
+export function GetSettings() {
+  return window['go']['main']['App']['GetSettings']();
+}
+
+export function ImportTheme() {
+  return window['go']['main']['App']['ImportTheme']();
 }
 
 export function ListPorts() {
@@ -32,6 +44,10 @@ export function ListPorts() {
 
 export function ListProfiles() {
   return window['go']['main']['App']['ListProfiles']();
+}
+
+export function ListThemes() {
+  return window['go']['main']['App']['ListThemes']();
 }
 
 export function Send(arg1) {
@@ -48,4 +64,8 @@ export function SetRTS(arg1) {
 
 export function UpdateProfile(arg1) {
   return window['go']['main']['App']['UpdateProfile'](arg1);
+}
+
+export function UpdateSettings(arg1) {
+  return window['go']['main']['App']['UpdateSettings'](arg1);
 }

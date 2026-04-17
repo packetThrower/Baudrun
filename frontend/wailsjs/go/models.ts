@@ -11,6 +11,7 @@ export namespace profiles {
 	    flowControl: string;
 	    lineEnding: string;
 	    localEcho: boolean;
+	    themeId: string;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -32,6 +33,7 @@ export namespace profiles {
 	        this.flowControl = source["flowControl"];
 	        this.lineEnding = source["lineEnding"];
 	        this.localEcho = source["localEcho"];
+	        this.themeId = source["themeId"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
@@ -79,6 +81,90 @@ export namespace serial {
 	        this.pid = source["pid"];
 	        this.serialNumber = source["serialNumber"];
 	        this.product = source["product"];
+	    }
+	}
+
+}
+
+export namespace settings {
+	
+	export class Settings {
+	    defaultThemeId: string;
+	    fontSize?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Settings(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.defaultThemeId = source["defaultThemeId"];
+	        this.fontSize = source["fontSize"];
+	    }
+	}
+
+}
+
+export namespace themes {
+	
+	export class Theme {
+	    id: string;
+	    name: string;
+	    source: string;
+	    background: string;
+	    foreground: string;
+	    cursor: string;
+	    cursorAccent?: string;
+	    selection: string;
+	    selectionForeground?: string;
+	    black: string;
+	    red: string;
+	    green: string;
+	    yellow: string;
+	    blue: string;
+	    magenta: string;
+	    cyan: string;
+	    white: string;
+	    brightBlack: string;
+	    brightRed: string;
+	    brightGreen: string;
+	    brightYellow: string;
+	    brightBlue: string;
+	    brightMagenta: string;
+	    brightCyan: string;
+	    brightWhite: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Theme(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.source = source["source"];
+	        this.background = source["background"];
+	        this.foreground = source["foreground"];
+	        this.cursor = source["cursor"];
+	        this.cursorAccent = source["cursorAccent"];
+	        this.selection = source["selection"];
+	        this.selectionForeground = source["selectionForeground"];
+	        this.black = source["black"];
+	        this.red = source["red"];
+	        this.green = source["green"];
+	        this.yellow = source["yellow"];
+	        this.blue = source["blue"];
+	        this.magenta = source["magenta"];
+	        this.cyan = source["cyan"];
+	        this.white = source["white"];
+	        this.brightBlack = source["brightBlack"];
+	        this.brightRed = source["brightRed"];
+	        this.brightGreen = source["brightGreen"];
+	        this.brightYellow = source["brightYellow"];
+	        this.brightBlue = source["brightBlue"];
+	        this.brightMagenta = source["brightMagenta"];
+	        this.brightCyan = source["brightCyan"];
+	        this.brightWhite = source["brightWhite"];
 	    }
 	}
 
