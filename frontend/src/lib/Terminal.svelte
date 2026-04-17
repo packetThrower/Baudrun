@@ -4,10 +4,12 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import "@xterm/xterm/css/xterm.css";
-  import { api } from "./api";
+  import { api, themeToXterm, type Theme } from "./api";
 
   export let lineEnding: "cr" | "lf" | "crlf" = "crlf";
   export let localEcho: boolean = false;
+  export let theme: Theme | undefined = undefined;
+  export let fontSize: number = 13;
   export let onStatus: (msg: string) => void = () => {};
 
   let hostEl: HTMLDivElement;
@@ -49,40 +51,39 @@
     api.sendBytes(out).catch((e) => onStatus(`send failed: ${e}`));
   }
 
+  const fallbackTheme = {
+    background: "#0b0b0d",
+    foreground: "#e4e4e7",
+    cursor: "#ffffff",
+    cursorAccent: "#0b0b0d",
+    selectionBackground: "#1a3a5c",
+    black: "#1e1e22", red: "#ff6961", green: "#7cd992", yellow: "#f5d76e",
+    blue: "#6cb6ff", magenta: "#d794ff", cyan: "#7ce0e0", white: "#d4d4d8",
+    brightBlack: "#4a4a52", brightRed: "#ff8a80", brightGreen: "#a2e5b3",
+    brightYellow: "#fce488", brightBlue: "#94ccff", brightMagenta: "#e5b6ff",
+    brightCyan: "#a6ecec", brightWhite: "#ffffff",
+  };
+
+  $: if (term && theme) {
+    term.options.theme = themeToXterm(theme);
+  }
+  $: if (term && fontSize && fontSize > 0) {
+    term.options.fontSize = fontSize;
+    try { fit?.fit(); } catch {}
+  }
+
   onMount(() => {
     term = new Terminal({
       fontFamily: getComputedStyle(document.documentElement)
         .getPropertyValue("--font-mono")
         .trim() || "SF Mono, Menlo, monospace",
-      fontSize: 13,
+      fontSize: fontSize || 13,
       cursorBlink: true,
       cursorStyle: "block",
       allowProposedApi: true,
       scrollback: 10000,
       convertEol: false,
-      theme: {
-        background: "#0b0b0d",
-        foreground: "#e4e4e7",
-        cursor: "#ffffff",
-        cursorAccent: "#0b0b0d",
-        selectionBackground: "rgba(10, 132, 255, 0.4)",
-        black: "#1e1e22",
-        red: "#ff6961",
-        green: "#7cd992",
-        yellow: "#f5d76e",
-        blue: "#6cb6ff",
-        magenta: "#d794ff",
-        cyan: "#7ce0e0",
-        white: "#d4d4d8",
-        brightBlack: "#4a4a52",
-        brightRed: "#ff8a80",
-        brightGreen: "#a2e5b3",
-        brightYellow: "#fce488",
-        brightBlue: "#94ccff",
-        brightMagenta: "#e5b6ff",
-        brightCyan: "#a6ecec",
-        brightWhite: "#ffffff",
-      },
+      theme: theme ? themeToXterm(theme) : fallbackTheme,
     });
 
     fit = new FitAddon();
@@ -122,7 +123,7 @@
   }
 </script>
 
-<div class="wrap">
+<div class="wrap" style:background-color={theme?.background ?? "#0b0b0d"}>
   <div class="host" bind:this={hostEl}></div>
 </div>
 
@@ -131,7 +132,6 @@
     flex: 1;
     min-height: 0;
     display: flex;
-    background: var(--bg-terminal);
     padding: 10px 8px 8px 12px;
     overflow: hidden;
   }

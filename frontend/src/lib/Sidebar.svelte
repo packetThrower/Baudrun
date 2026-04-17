@@ -6,10 +6,12 @@
   export let profiles: Profile[];
   export let selectedID: string | null;
   export let activeID: string;
+  export let settingsOpen: boolean = false;
 
   const dispatch = createEventDispatcher<{
     select: string;
     create: void;
+    settings: void;
   }>();
 
   $: sorted = [...profiles].sort((a, b) => a.name.localeCompare(b.name));
@@ -20,21 +22,23 @@
 
   <div class="header">
     <span class="title">Profiles</span>
-    <button
-      class="icon-btn"
-      title="New profile"
-      on:click={() => dispatch("create")}
-      aria-label="New profile"
-    >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path
-          d="M7 2v10M2 7h10"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-        />
-      </svg>
-    </button>
+    <div class="header-actions">
+      <button
+        class="icon-btn"
+        title="New profile"
+        on:click={() => dispatch("create")}
+        aria-label="New profile"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path
+            d="M7 2v10M2 7h10"
+            stroke="currentColor"
+            stroke-width="1.6"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
+    </div>
   </div>
 
   {#if sorted.length === 0}
@@ -48,7 +52,7 @@
         <li>
           <button
             class="row"
-            class:selected={p.id === selectedID}
+            class:selected={p.id === selectedID && !settingsOpen}
             on:click={() => dispatch("select", p.id)}
           >
             <span class="indicator" class:active={p.id === activeID}></span>
@@ -63,6 +67,26 @@
       {/each}
     </ul>
   {/if}
+
+  <div class="footer">
+    <button
+      class="footer-btn"
+      class:active={settingsOpen}
+      on:click={() => dispatch("settings")}
+      title="Settings"
+    >
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+        <circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3" />
+        <path
+          d="M7 1v1.5M7 11.5V13M13 7h-1.5M2.5 7H1M11.243 2.757l-1.06 1.06M3.818 10.182l-1.06 1.06M11.243 11.243l-1.06-1.06M3.818 3.818l-1.06-1.06"
+          stroke="currentColor"
+          stroke-width="1.3"
+          stroke-linecap="round"
+        />
+      </svg>
+      <span>Settings</span>
+    </button>
+  </div>
 </aside>
 
 <style>
@@ -187,5 +211,40 @@
   .empty p {
     margin: 0 0 12px 0;
     font-size: 12px;
+  }
+
+  .header-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .footer {
+    padding: 6px 8px 10px 8px;
+    border-top: 1px solid var(--border-subtle);
+    flex-shrink: 0;
+  }
+
+  .footer-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 10px;
+    background: transparent;
+    border: none;
+    color: var(--fg-secondary);
+    border-radius: var(--radius-md);
+    text-align: left;
+    font-size: 12px;
+  }
+
+  .footer-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+
+  .footer-btn.active {
+    background: var(--bg-active);
+    color: var(--fg-primary);
   }
 </style>

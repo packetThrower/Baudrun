@@ -7,8 +7,11 @@ import (
 	"fmt"
 	"sync"
 
+	"Seriesly/internal/appdata"
 	"Seriesly/internal/profiles"
 	sserial "Seriesly/internal/serial"
+	"Seriesly/internal/settings"
+	"Seriesly/internal/themes"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -19,11 +22,13 @@ const (
 )
 
 type App struct {
-	ctx     context.Context
-	store   *profiles.Store
-	sessMu  sync.Mutex
-	session *sserial.Session
-	sessID  string
+	ctx      context.Context
+	store    *profiles.Store
+	themes   *themes.Store
+	settings *settings.Store
+	sessMu   sync.Mutex
+	session  *sserial.Session
+	sessID   string
 }
 
 func NewApp() *App {
@@ -32,12 +37,30 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	store, err := profiles.NewStore()
+
+	supportDir, err := appdata.SupportDir()
 	if err != nil {
-		runtime.LogErrorf(ctx, "profile store init: %v", err)
+		runtime.LogErrorf(ctx, "resolve support dir: %v", err)
 		return
 	}
-	a.store = store
+
+	if store, err := profiles.NewStore(); err == nil {
+		a.store = store
+	} else {
+		runtime.LogErrorf(ctx, "profile store init: %v", err)
+	}
+
+	if ts, err := themes.NewStore(supportDir); err == nil {
+		a.themes = ts
+	} else {
+		runtime.LogErrorf(ctx, "theme store init: %v", err)
+	}
+
+	if st, err := settings.NewStore(supportDir); err == nil {
+		a.settings = st
+	} else {
+		runtime.LogErrorf(ctx, "settings store init: %v", err)
+	}
 }
 
 // Profile API
@@ -72,6 +95,60 @@ func (a *App) DeleteProfile(id string) error {
 
 func (a *App) DefaultProfile() profiles.Profile {
 	return profiles.Defaults()
+}
+
+// Theme API
+
+func (a *App) ListThemes() []themes.Theme {
+	if a.themes == nil {
+		return []themes.Theme{}
+	}
+	return a.themes.List()
+}
+
+func (a *App) ImportTheme() (themes.Theme, error) {
+	if a.themes == nil {
+		return themes.Theme{}, errors.New("themes unavailable")
+	}
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Import iTerm2 color scheme",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "iTerm2 Color Schemes (*.itermcolors)", Pattern: "*.itermcolors"},
+		},
+		ShowHiddenFiles:            false,
+		CanCreateDirectories:       false,
+		TreatPackagesAsDirectories: true,
+	})
+	if err != nil {
+		return themes.Theme{}, err
+	}
+	if path == "" {
+		return themes.Theme{}, errors.New("cancelled")
+	}
+	return a.themes.Import(path)
+}
+
+func (a *App) DeleteTheme(id string) error {
+	if a.themes == nil {
+		return errors.New("themes unavailable")
+	}
+	return a.themes.Delete(id)
+}
+
+// Settings API
+
+func (a *App) GetSettings() settings.Settings {
+	if a.settings == nil {
+		return settings.Settings{DefaultThemeID: themes.DefaultThemeID, FontSize: 13}
+	}
+	return a.settings.Get()
+}
+
+func (a *App) UpdateSettings(s settings.Settings) (settings.Settings, error) {
+	if a.settings == nil {
+		return settings.Settings{}, errors.New("settings unavailable")
+	}
+	return a.settings.Update(s)
 }
 
 // Serial API
