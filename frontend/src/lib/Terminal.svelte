@@ -135,6 +135,12 @@
   export function clear() {
     term?.clear();
   }
+
+  export function refit() {
+    try {
+      fit?.fit();
+    } catch {}
+  }
 </script>
 
 <div class="wrap" style:background-color={theme?.background ?? "#0b0b0d"}>
