@@ -553,6 +553,8 @@
 
 <style>
   .form {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -583,8 +585,9 @@
   }
 
   .name-input {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: 600;
+    letter-spacing: -0.01em;
     background: transparent;
     border: 1px solid transparent;
     padding: 4px 6px;
@@ -628,16 +631,15 @@
   }
 
   section {
-    margin-bottom: 24px;
+    margin-bottom: 28px;
   }
 
   section h3 {
     margin: 0 0 12px 0;
-    font-size: 11px;
+    font-size: 15px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--fg-secondary);
+    letter-spacing: -0.005em;
+    color: var(--fg-primary);
   }
 
   .grid {
@@ -706,12 +708,14 @@
 
   .advanced details summary {
     display: flex;
-    align-items: baseline;
-    gap: 10px;
+    align-items: center;
+    gap: 8px;
     cursor: pointer;
     list-style: none;
-    padding: 2px 0;
-    margin-bottom: 12px;
+    padding: 6px 0;
+    margin-bottom: 14px;
+    border-radius: var(--radius-sm);
+    user-select: none;
   }
 
   .advanced details summary::-webkit-details-marker {
@@ -723,12 +727,20 @@
   }
 
   .advanced details summary::before {
-    content: "▸";
-    color: var(--fg-tertiary);
-    font-size: 10px;
-    margin-right: 2px;
-    transition: transform 0.1s;
+    content: "";
     display: inline-block;
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 7px solid var(--fg-secondary);
+    margin-right: 2px;
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .advanced details summary:hover::before {
+    border-left-color: var(--fg-primary);
   }
 
   .advanced details[open] summary::before {
@@ -736,41 +748,37 @@
   }
 
   .advanced .hint {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--fg-tertiary);
     font-weight: normal;
-    text-transform: none;
-    letter-spacing: normal;
   }
 
   .advanced .sub {
-    margin: 0 0 18px 0;
-    padding-left: 16px;
-    border-left: 2px solid var(--border-subtle);
+    padding: 16px;
+    margin-bottom: 10px;
+    background: var(--bg-panel);
+    border-radius: var(--radius-md);
   }
 
   .advanced .sub h4 {
-    margin: 0 0 4px 0;
-    font-size: 11px;
+    margin: 0 0 6px 0;
+    font-size: 13px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--fg-secondary);
+    color: var(--fg-primary);
   }
 
   .advanced .section-hint {
-    margin: 0 0 10px 0;
-    font-size: 11px;
-    color: var(--fg-tertiary);
+    margin: 0 0 12px 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--fg-secondary);
   }
 
   .advanced .inline-hint {
     margin-left: 6px;
-    font-size: 11px;
+    font-size: 12px;
     color: var(--fg-tertiary);
     font-weight: normal;
-    text-transform: none;
-    letter-spacing: normal;
   }
 
   .field.checkbox.full {
