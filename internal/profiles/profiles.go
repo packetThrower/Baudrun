@@ -31,6 +31,9 @@ type Profile struct {
 	RTSOnConnect     string    `json:"rtsOnConnect"`
 	DTROnDisconnect  string    `json:"dtrOnDisconnect"`
 	RTSOnDisconnect  string    `json:"rtsOnDisconnect"`
+	HexView          bool      `json:"hexView"`
+	Timestamps       bool      `json:"timestamps"`
+	LogEnabled       bool      `json:"logEnabled"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 }

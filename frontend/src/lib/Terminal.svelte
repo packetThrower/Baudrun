@@ -6,12 +6,15 @@
   import "@xterm/xterm/css/xterm.css";
   import { api, themeToXterm, type Theme } from "./api";
   import { TerminalHighlighter } from "./highlight";
+  import { HexFormatter } from "./hexdump";
 
   export let lineEnding: "cr" | "lf" | "crlf" = "crlf";
   export let localEcho: boolean = false;
   export let theme: Theme | undefined = undefined;
   export let fontSize: number = 13;
   export let highlight: boolean = true;
+  export let hexView: boolean = false;
+  export let timestamps: boolean = false;
   export let onStatus: (msg: string) => void = () => {};
 
   let hostEl: HTMLDivElement;
@@ -20,9 +23,12 @@
   let unsubData: (() => void) | null = null;
   let ro: ResizeObserver | null = null;
   let highlighter: TerminalHighlighter | null = null;
+  let hexFormatter: HexFormatter | null = null;
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
   $: if (highlighter && !highlight) highlighter.reset();
+  $: if (hexFormatter && !hexView) hexFormatter.reset();
+  $: if (highlighter && hexView) highlighter.reset();
 
   function eolBytes(): Uint8Array {
     switch (lineEnding) {
@@ -104,11 +110,18 @@
     highlighter = new TerminalHighlighter((text) => {
       if (term) term.write(text);
     });
+    hexFormatter = new HexFormatter((text) => {
+      if (term) term.write(text);
+    });
 
     unsubData = api.onData((bytes) => {
-      if (!term || !highlighter) return;
-      const text = decoder.decode(bytes, { stream: true });
-      highlighter.feed(text, highlight);
+      if (!term) return;
+      if (hexView) {
+        hexFormatter?.feed(bytes);
+      } else {
+        const text = decoder.decode(bytes, { stream: true });
+        highlighter?.feed(text, highlight, timestamps);
+      }
     });
 
     ro = new ResizeObserver(() => {
@@ -124,6 +137,8 @@
     unsubData?.();
     highlighter?.dispose();
     highlighter = null;
+    hexFormatter?.dispose();
+    hexFormatter = null;
     term?.dispose();
     term = null;
   });

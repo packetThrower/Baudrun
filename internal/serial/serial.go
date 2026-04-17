@@ -3,6 +3,7 @@ package serial
 import (
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -94,6 +95,21 @@ type Session struct {
 	// Control-line policies to apply on Close.
 	dtrOnClose string
 	rtsOnClose string
+	// Optional sink for received bytes (session logging). Owned by the
+	// session; closed on Close.
+	logWriter io.WriteCloser
+}
+
+// SetLogWriter attaches a writer that will receive a copy of every byte
+// read from the port. Passing nil detaches and closes any existing writer.
+// Intended to be called right after Open.
+func (s *Session) SetLogWriter(w io.WriteCloser) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.logWriter != nil {
+		_ = s.logWriter.Close()
+	}
+	s.logWriter = w
 }
 
 func Open(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error) {
@@ -167,10 +183,15 @@ func (s *Session) readPump() {
 			}
 			return
 		}
-		if n > 0 && s.onRead != nil {
+		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			s.onRead(chunk)
+			if s.onRead != nil {
+				s.onRead(chunk)
+			}
+			if w := s.logWriter; w != nil {
+				_, _ = w.Write(chunk)
+			}
 		}
 	}
 }
@@ -226,6 +247,10 @@ func (s *Session) Close() error {
 	// Wait for the read pump to exit so the OS-level FD is definitely
 	// released before we return. With readTimeout this is bounded.
 	s.wg.Wait()
+	if s.logWriter != nil {
+		_ = s.logWriter.Close()
+		s.logWriter = nil
+	}
 	return err
 }
 

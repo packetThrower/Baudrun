@@ -171,7 +171,29 @@ function highlightLine(line: string): string {
     .join("");
 }
 
-export function highlightLines(block: string): string {
+function plainLines(block: string, timestamps: boolean): string {
+  if (!timestamps) return block;
+  const parts = block.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const isLast = i === parts.length - 1;
+    const raw = parts[i];
+    if (raw === "" && isLast) break;
+    out.push(timestampPrefix() + raw + (isLast ? "" : "\n"));
+  }
+  return out.join("");
+}
+
+function timestampPrefix(): string {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  const ms = String(d.getMilliseconds()).padStart(3, "0");
+  return `\x1b[90m[${hh}:${mm}:${ss}.${ms}]\x1b[0m `;
+}
+
+export function highlightLines(block: string, timestamps = false): string {
   // block contains one or more complete lines ending in \n (with optional \r).
   // Split on \n, highlight each stripped line, rejoin preserving line endings.
   const parts = block.split("\n");
@@ -186,7 +208,8 @@ export function highlightLines(block: string): string {
     const cr = raw.endsWith("\r");
     const bare = cr ? raw.slice(0, -1) : raw;
     const highlighted = highlightLine(bare);
-    out.push(highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
+    const prefix = timestamps ? timestampPrefix() : "";
+    out.push(prefix + highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
   }
   return out.join("");
 }
@@ -198,8 +221,8 @@ export class TerminalHighlighter {
 
   constructor(private writeCb: (text: string) => void) {}
 
-  feed(text: string, enabled: boolean) {
-    if (!enabled) {
+  feed(text: string, highlight: boolean, timestamps = false) {
+    if (!highlight && !timestamps) {
       this.flushNow();
       this.writeCb(text);
       return;
@@ -209,7 +232,10 @@ export class TerminalHighlighter {
     if (lastNL >= 0) {
       const complete = this.buffer.slice(0, lastNL + 1);
       this.buffer = this.buffer.slice(lastNL + 1);
-      this.writeCb(highlightLines(complete));
+      const processed = highlight
+        ? highlightLines(complete, timestamps)
+        : plainLines(complete, timestamps);
+      this.writeCb(processed);
     }
     this.scheduleFlush();
   }

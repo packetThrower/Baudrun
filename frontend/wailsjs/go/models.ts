@@ -36,6 +36,9 @@ export namespace profiles {
 	    rtsOnConnect: string;
 	    dtrOnDisconnect: string;
 	    rtsOnDisconnect: string;
+	    hexView: boolean;
+	    timestamps: boolean;
+	    logEnabled: boolean;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -63,6 +66,9 @@ export namespace profiles {
 	        this.rtsOnConnect = source["rtsOnConnect"];
 	        this.dtrOnDisconnect = source["dtrOnDisconnect"];
 	        this.rtsOnDisconnect = source["rtsOnDisconnect"];
+	        this.hexView = source["hexView"];
+	        this.timestamps = source["timestamps"];
+	        this.logEnabled = source["logEnabled"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
@@ -148,6 +154,7 @@ export namespace settings {
 	export class Settings {
 	    defaultThemeId: string;
 	    fontSize?: number;
+	    logDir?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -157,6 +164,7 @@ export namespace settings {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.defaultThemeId = source["defaultThemeId"];
 	        this.fontSize = source["fontSize"];
+	        this.logDir = source["logDir"];
 	    }
 	}
 

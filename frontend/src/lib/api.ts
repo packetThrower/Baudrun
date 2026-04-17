@@ -33,6 +33,8 @@ export const api = {
 
   getSettings: App.GetSettings,
   updateSettings: App.UpdateSettings,
+  pickLogDirectory: App.PickLogDirectory,
+  defaultLogDirectory: App.DefaultLogDirectory,
 
   getControlLines: App.GetControlLines,
 
