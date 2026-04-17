@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 )
+
+// readTimeout bounds how long port.Read blocks before returning with n=0 so
+// the read pump can observe Close() and exit promptly. Without this, closing
+// from another goroutine can leave the read stuck in the kernel on macOS.
+const readTimeout = 100 * time.Millisecond
 
 type PortInfo struct {
 	Name         string `json:"name"`
@@ -63,6 +69,7 @@ type Session struct {
 	port   serial.Port
 	mu     sync.Mutex
 	closed atomic.Bool
+	wg     sync.WaitGroup
 	onRead func([]byte)
 	onExit func(error)
 }
@@ -76,14 +83,23 @@ func Open(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", cfg.PortName, err)
 	}
+	if err := port.SetReadTimeout(readTimeout); err != nil {
+		_ = port.Close()
+		return nil, fmt.Errorf("set read timeout on %s: %w", cfg.PortName, err)
+	}
 	s := &Session{port: port, onRead: onRead, onExit: onExit}
+	s.wg.Add(1)
 	go s.readPump()
 	return s, nil
 }
 
 func (s *Session) readPump() {
+	defer s.wg.Done()
 	buf := make([]byte, 4096)
 	for {
+		if s.closed.Load() {
+			return
+		}
 		n, err := s.port.Read(buf)
 		if s.closed.Load() {
 			return
@@ -133,7 +149,11 @@ func (s *Session) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil
 	}
-	return s.port.Close()
+	err := s.port.Close()
+	// Wait for the read pump to exit so the OS-level FD is definitely
+	// released before we return. With readTimeout this is bounded.
+	s.wg.Wait()
+	return err
 }
 
 func buildMode(cfg Config) (*serial.Mode, error) {

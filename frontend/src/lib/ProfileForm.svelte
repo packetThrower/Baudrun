@@ -26,6 +26,7 @@
     delete: string;
     connect: void;
     disconnect: void;
+    resume: void;
   }>();
 
   let draft: Profile = { ...profile };
@@ -109,7 +110,11 @@
         disabled={locked}
       />
       <span class="subtitle">
-        {isNew ? "New profile" : "Edit profile"}
+        {#if isConnected}
+          <span class="dot-pill"></span> Session suspended
+        {:else}
+          {isNew ? "New profile" : "Edit profile"}
+        {/if}
       </span>
     </div>
     <div class="header-actions">
@@ -126,8 +131,11 @@
         {isNew ? "Create" : "Save"}
       </button>
       {#if isConnected}
-        <button class="primary" on:click={() => dispatch("disconnect")}>
+        <button on:click={() => dispatch("disconnect")}>
           Disconnect
+        </button>
+        <button class="primary" on:click={() => dispatch("resume")}>
+          Resume
         </button>
       {:else}
         <button
@@ -399,6 +407,18 @@
     color: var(--fg-tertiary);
     text-transform: uppercase;
     letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dot-pill {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
   }
 
   .header-actions {
