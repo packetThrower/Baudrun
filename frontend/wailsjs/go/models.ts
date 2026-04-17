@@ -155,6 +155,7 @@ export namespace settings {
 	    defaultThemeId: string;
 	    fontSize?: number;
 	    logDir?: string;
+	    disableDriverDetection?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -165,6 +166,7 @@ export namespace settings {
 	        this.defaultThemeId = source["defaultThemeId"];
 	        this.fontSize = source["fontSize"];
 	        this.logDir = source["logDir"];
+	        this.disableDriverDetection = source["disableDriverDetection"];
 	    }
 	}
 

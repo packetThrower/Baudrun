@@ -2,6 +2,11 @@
   import { createEventDispatcher, onMount } from "svelte";
   import { BrowserOpenURL } from "../../wailsjs/runtime/runtime.js";
   import {
+    dismissedDrivers,
+    dismissDriver,
+    driverKey,
+  } from "../stores/drivers";
+  import {
     api,
     BAUD_RATES,
     PARITIES,
@@ -23,6 +28,7 @@
   export let isConnecting: boolean;
   export let themes: Theme[] = [];
   export let defaultThemeID: string = "seriesly";
+  export let detectDrivers: boolean = true;
 
   const dispatch = createEventDispatcher<{
     save: Profile;
@@ -58,10 +64,12 @@
     loadingPorts = true;
     try {
       const pPromise = api.listPorts();
-      const mPromise = api.listMissingDrivers().catch((e) => {
-        console.warn("listMissingDrivers failed:", e);
-        return [] as USBSerialCandidate[];
-      });
+      const mPromise = detectDrivers
+        ? api.listMissingDrivers().catch((e) => {
+            console.warn("listMissingDrivers failed:", e);
+            return [] as USBSerialCandidate[];
+          })
+        : Promise.resolve([] as USBSerialCandidate[]);
       const [p, missing] = await Promise.all([pPromise, mPromise]);
       ports = p ?? [];
       missingDrivers = missing ?? [];
@@ -71,6 +79,17 @@
       loadingPorts = false;
     }
   }
+
+  // Rescan when the global toggle flips so banners disappear/reappear live.
+  let lastDetectDrivers = detectDrivers;
+  $: if (detectDrivers !== lastDetectDrivers) {
+    lastDetectDrivers = detectDrivers;
+    refreshPorts();
+  }
+
+  $: visibleMissing = missingDrivers.filter(
+    (d) => !$dismissedDrivers.has(driverKey(d)),
+  );
 
   function markDirty() {
     dirty = true;
@@ -178,9 +197,9 @@
   <section>
     <h3>Connection</h3>
 
-    {#if missingDrivers.length > 0}
+    {#if visibleMissing.length > 0}
       <div class="driver-banner">
-        {#each missingDrivers as d (d.vid + ":" + d.pid + ":" + d.serialNumber)}
+        {#each visibleMissing as d (driverKey(d))}
           <div class="driver-row">
             <div class="driver-icon" aria-hidden="true">!</div>
             <div class="driver-text">
@@ -208,6 +227,14 @@
                 Install driver…
               </button>
             {/if}
+            <button
+              class="driver-close"
+              on:click={() => dismissDriver(driverKey(d))}
+              title="Dismiss"
+              aria-label="Dismiss driver notice"
+            >
+              ×
+            </button>
           </div>
         {/each}
       </div>
@@ -796,5 +823,26 @@
     font-size: 11px;
     color: var(--fg-tertiary);
     margin-top: 1px;
+  }
+
+  .driver-close {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: var(--fg-tertiary);
+    font-size: 18px;
+    line-height: 1;
+    flex-shrink: 0;
+    border-radius: var(--radius-sm);
+  }
+
+  .driver-close:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--fg-primary);
   }
 </style>
