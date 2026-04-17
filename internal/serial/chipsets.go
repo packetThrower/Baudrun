@@ -75,6 +75,11 @@ var chipsetsByVID = map[string]string{
 	"04b4": "Cypress",
 	"0557": "ATEN",
 	"0d28": "ARM mbed (CDC-ACM)",
+	"0451": "TUSB3410 (Texas Instruments)",
+	"9710": "MCS7810/20/40 (MosChip / ASIX)",
+	"0711": "MCTU232 (Magic Control)",
+	"1393": "Moxa UPort",
+	"05d1": "Brainboxes",
 }
 
 var driverURLs = map[string]string{
@@ -83,6 +88,11 @@ var driverURLs = map[string]string{
 	"1a86": "https://www.wch-ic.com/downloads/CH34XSER_MAC_ZIP.html",
 	"04d8": "https://www.microchip.com/en-us/product/MCP2221A",
 	"04b4": "https://www.infineon.com/cms/en/design-support/tools/sdk/",
+	"0451": "https://www.ti.com/tool/TUSB3410DRV",
+	"9710": "https://www.asix.com.tw",
+	"0711": "https://www.mct.com.tw",
+	"1393": "https://www.moxa.com/en/support/product-support/software-and-documentation",
+	"05d1": "https://www.brainboxes.com",
 }
 
 // knownRebrands: (VID:PID) → chipset+driver for devices that use a common
@@ -106,6 +116,8 @@ var manufacturerMatches = []struct {
 	{"prolific", ChipsetInfo{Name: "Prolific PL2303", DriverURL: "https://www.prolific.com.tw"}},
 	{"qinheng", ChipsetInfo{Name: "WCH CH340/CH341", DriverURL: "https://www.wch-ic.com/downloads/CH34XSER_MAC_ZIP.html"}},
 	{"wch.cn", ChipsetInfo{Name: "WCH CH340/CH341", DriverURL: "https://www.wch-ic.com/downloads/CH34XSER_MAC_ZIP.html"}},
+	{"moxa", ChipsetInfo{Name: "Moxa UPort", DriverURL: "https://www.moxa.com/en/support/product-support/software-and-documentation"}},
+	{"brainboxes", ChipsetInfo{Name: "Brainboxes", DriverURL: "https://www.brainboxes.com"}},
 }
 
 func chipsetFromManufacturer(s string) ChipsetInfo {
