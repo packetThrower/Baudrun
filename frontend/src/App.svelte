@@ -286,6 +286,18 @@
     }
   }
 
+  async function handleSetDetectDrivers(enabled: boolean) {
+    try {
+      const updated = await api.updateSettings({
+        ...$settings,
+        disableDriverDetection: !enabled,
+      });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Setting update failed: ${e}`;
+    }
+  }
+
 </script>
 
 <div class="shell">
@@ -312,6 +324,7 @@
           on:setFontSize={(e) => handleSetFontSize(e.detail)}
           on:setLogDir={(e) => handleSetLogDir(e.detail)}
           on:pickLogDir={handlePickLogDir}
+          on:setDetectDrivers={(e) => handleSetDetectDrivers(e.detail)}
         />
       {:else if !currentProfile}
         <div class="titlebar" style="--wails-draggable: drag;"></div>
@@ -333,6 +346,7 @@
           {isConnecting}
           themes={$themes}
           defaultThemeID={$settings.defaultThemeId}
+          detectDrivers={!$settings.disableDriverDetection}
           on:save={(e) => handleSave(e.detail)}
           on:delete={(e) => handleDelete(e.detail)}
           on:connect={handleConnect}

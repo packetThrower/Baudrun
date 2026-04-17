@@ -10,9 +10,10 @@ import (
 )
 
 type Settings struct {
-	DefaultThemeID string `json:"defaultThemeId"`
-	FontSize       int    `json:"fontSize,omitempty"`
-	LogDir         string `json:"logDir,omitempty"`
+	DefaultThemeID         string `json:"defaultThemeId"`
+	FontSize               int    `json:"fontSize,omitempty"`
+	LogDir                 string `json:"logDir,omitempty"`
+	DisableDriverDetection bool   `json:"disableDriverDetection,omitempty"`
 }
 
 type Store struct {

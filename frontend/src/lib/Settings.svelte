@@ -12,6 +12,7 @@
     setFontSize: number;
     setLogDir: string;
     pickLogDir: void;
+    setDetectDrivers: boolean;
   }>();
 
   let importing = false;
@@ -39,6 +40,10 @@
 
   function onLogDirChange(e: Event) {
     dispatch("setLogDir", (e.target as HTMLInputElement).value.trim());
+  }
+
+  function onDetectDriversChange(e: Event) {
+    dispatch("setDetectDrivers", (e.target as HTMLInputElement).checked);
   }
 
   export let defaultLogDir: string = "";
@@ -171,6 +176,22 @@
             </button>
           {/if}
         </div>
+      </div>
+
+      <div class="sub">
+        <h4>USB Driver Detection</h4>
+        <p class="section-hint">
+          Show a banner in the profile form when a USB-serial adapter is
+          plugged in without its vendor driver installed.
+        </p>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={!settings.disableDriverDetection}
+            on:change={onDetectDriversChange}
+          />
+          Detect un-drivered USB adapters
+        </label>
       </div>
     </details>
   </section>
@@ -375,5 +396,22 @@
     flex: 1;
     font-family: var(--font-mono);
     font-size: 12px;
+  }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13px;
+    color: var(--fg-primary);
+    font-weight: normal;
+    cursor: pointer;
+  }
+
+  .toggle input {
+    width: auto;
+    accent-color: var(--accent);
   }
 </style>
