@@ -378,73 +378,6 @@
     </div>
   </section>
 
-  <section class="control-lines">
-    <details>
-      <summary>
-        <h3>Control Lines</h3>
-        <span class="hint">Advanced — only needed for specific adapters or devices</span>
-      </summary>
-
-      <div class="grid">
-        <div class="field">
-          <label for="dtr-connect">DTR on connect</label>
-          <select
-            id="dtr-connect"
-            bind:value={draft.dtrOnConnect}
-            on:change={markDirty}
-            disabled={locked}
-          >
-            {#each LINE_POLICIES as opt}
-              <option value={opt.value}>{opt.label}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="rts-connect">RTS on connect</label>
-          <select
-            id="rts-connect"
-            bind:value={draft.rtsOnConnect}
-            on:change={markDirty}
-            disabled={locked}
-          >
-            {#each LINE_POLICIES as opt}
-              <option value={opt.value}>{opt.label}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="dtr-disconnect">DTR on disconnect</label>
-          <select
-            id="dtr-disconnect"
-            bind:value={draft.dtrOnDisconnect}
-            on:change={markDirty}
-            disabled={locked}
-          >
-            {#each LINE_POLICIES as opt}
-              <option value={opt.value}>{opt.label}</option>
-            {/each}
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="rts-disconnect">RTS on disconnect</label>
-          <select
-            id="rts-disconnect"
-            bind:value={draft.rtsOnDisconnect}
-            on:change={markDirty}
-            disabled={locked}
-          >
-            {#each LINE_POLICIES as opt}
-              <option value={opt.value}>{opt.label}</option>
-            {/each}
-          </select>
-        </div>
-      </div>
-    </details>
-  </section>
-
   <section>
     <h3>Appearance</h3>
     <div class="grid">
@@ -473,6 +406,121 @@
         </select>
       </div>
     </div>
+  </section>
+
+  <section class="advanced">
+    <details>
+      <summary>
+        <h3>Advanced</h3>
+        <span class="hint">Control lines, hex view, timestamps, session logging</span>
+      </summary>
+
+      <section class="sub">
+        <h4>Control Lines</h4>
+        <p class="section-hint">
+          Only needed for specific adapters or devices (RS-485 direction,
+          Arduino DTR-reset, firmwares that key off DTR for session lifecycle).
+        </p>
+        <div class="grid">
+          <div class="field">
+            <label for="dtr-connect">DTR on connect</label>
+            <select
+              id="dtr-connect"
+              bind:value={draft.dtrOnConnect}
+              on:change={markDirty}
+              disabled={locked}
+            >
+              {#each LINE_POLICIES as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="rts-connect">RTS on connect</label>
+            <select
+              id="rts-connect"
+              bind:value={draft.rtsOnConnect}
+              on:change={markDirty}
+              disabled={locked}
+            >
+              {#each LINE_POLICIES as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="dtr-disconnect">DTR on disconnect</label>
+            <select
+              id="dtr-disconnect"
+              bind:value={draft.dtrOnDisconnect}
+              on:change={markDirty}
+              disabled={locked}
+            >
+              {#each LINE_POLICIES as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="rts-disconnect">RTS on disconnect</label>
+            <select
+              id="rts-disconnect"
+              bind:value={draft.rtsOnDisconnect}
+              on:change={markDirty}
+              disabled={locked}
+            >
+              {#each LINE_POLICIES as opt}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section class="sub">
+        <h4>Output</h4>
+        <div class="grid">
+          <div class="field checkbox">
+            <label>
+              <input
+                type="checkbox"
+                bind:checked={draft.hexView}
+                on:change={markDirty}
+              />
+              Hex view
+              <span class="inline-hint">show incoming bytes as hex dump</span>
+            </label>
+          </div>
+
+          <div class="field checkbox">
+            <label>
+              <input
+                type="checkbox"
+                bind:checked={draft.timestamps}
+                on:change={markDirty}
+              />
+              Line timestamps
+              <span class="inline-hint">prefix each line with wall-clock time</span>
+            </label>
+          </div>
+
+          <div class="field checkbox full">
+            <label>
+              <input
+                type="checkbox"
+                bind:checked={draft.logEnabled}
+                on:change={markDirty}
+              />
+              Record session to file
+              <span class="inline-hint">raw bytes; destination set in Settings → Advanced</span>
+            </label>
+          </div>
+        </div>
+      </section>
+    </details>
   </section>
 </div>
 
@@ -629,7 +677,7 @@
     font-size: 12px;
   }
 
-  .control-lines details summary {
+  .advanced details summary {
     display: flex;
     align-items: baseline;
     gap: 10px;
@@ -639,15 +687,15 @@
     margin-bottom: 12px;
   }
 
-  .control-lines details summary::-webkit-details-marker {
+  .advanced details summary::-webkit-details-marker {
     display: none;
   }
 
-  .control-lines details summary h3 {
+  .advanced details summary h3 {
     margin: 0;
   }
 
-  .control-lines details summary::before {
+  .advanced details summary::before {
     content: "▸";
     color: var(--fg-tertiary);
     font-size: 10px;
@@ -656,16 +704,50 @@
     display: inline-block;
   }
 
-  .control-lines details[open] summary::before {
+  .advanced details[open] summary::before {
     transform: rotate(90deg);
   }
 
-  .control-lines .hint {
+  .advanced .hint {
     font-size: 11px;
     color: var(--fg-tertiary);
     font-weight: normal;
     text-transform: none;
     letter-spacing: normal;
+  }
+
+  .advanced .sub {
+    margin: 0 0 18px 0;
+    padding-left: 16px;
+    border-left: 2px solid var(--border-subtle);
+  }
+
+  .advanced .sub h4 {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-secondary);
+  }
+
+  .advanced .section-hint {
+    margin: 0 0 10px 0;
+    font-size: 11px;
+    color: var(--fg-tertiary);
+  }
+
+  .advanced .inline-hint {
+    margin-left: 6px;
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .field.checkbox.full {
+    grid-column: 1 / -1;
   }
 
   .driver-banner {

@@ -5,7 +5,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"Seriesly/internal/appdata"
 	"Seriesly/internal/profiles"
@@ -151,6 +155,24 @@ func (a *App) UpdateSettings(s settings.Settings) (settings.Settings, error) {
 	return a.settings.Update(s)
 }
 
+// PickLogDirectory opens a native folder-selection dialog and returns the
+// chosen path, or empty string if the user cancelled.
+func (a *App) PickLogDirectory() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Choose session log directory",
+	})
+}
+
+// DefaultLogDirectory returns the path session logs land in when no
+// LogDir is configured — shown as a hint in the Settings UI.
+func (a *App) DefaultLogDirectory() (string, error) {
+	support, err := appdata.SupportDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(support, "logs"), nil
+}
+
 // Serial API
 
 func (a *App) ListPorts() ([]sserial.PortInfo, error) {
@@ -210,11 +232,57 @@ func (a *App) Connect(profileID string) error {
 		return err
 	}
 
+	if p.LogEnabled {
+		if logFile, err := a.openSessionLog(p); err == nil {
+			sess.SetLogWriter(logFile)
+		} else {
+			runtime.LogErrorf(a.ctx, "open session log: %v", err)
+		}
+	}
+
 	a.sessMu.Lock()
 	a.session = sess
 	a.sessID = profileID
 	a.sessMu.Unlock()
 	return nil
+}
+
+func (a *App) openSessionLog(p profiles.Profile) (*os.File, error) {
+	dir := ""
+	if a.settings != nil {
+		dir = a.settings.Get().LogDir
+	}
+	if dir == "" {
+		support, err := appdata.SupportDir()
+		if err != nil {
+			return nil, err
+		}
+		dir = filepath.Join(support, "logs")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("create log dir: %w", err)
+	}
+	stamp := time.Now().Format("2006-01-02_150405")
+	name := fmt.Sprintf("%s_%s.log", slugifyName(p.Name), stamp)
+	return os.Create(filepath.Join(dir, name))
+}
+
+func slugifyName(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == ' ', r == '-', r == '_', r == '.':
+			b.WriteByte('-')
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "session"
+	}
+	return out
 }
 
 func (a *App) Disconnect() error {

@@ -56,6 +56,8 @@
     | "crlf";
   $: termLocalEcho = activeProfile?.localEcho ?? currentProfile?.localEcho ?? false;
   $: termHighlight = activeProfile?.highlight ?? currentProfile?.highlight ?? true;
+  $: termHexView = activeProfile?.hexView ?? currentProfile?.hexView ?? false;
+  $: termTimestamps = activeProfile?.timestamps ?? currentProfile?.timestamps ?? false;
 
   $: effectiveThemeID =
     (activeProfile?.themeId || currentProfile?.themeId) ||
@@ -72,6 +74,8 @@
     );
   }
 
+  let defaultLogDir = "";
+
   onMount(async () => {
     await Promise.all([loadProfiles(), loadThemes(), loadSettings()]);
 
@@ -83,6 +87,10 @@
     try {
       const activeID = await api.activeProfileID();
       if (activeID) session.set({ status: "connected", profileID: activeID });
+    } catch {}
+
+    try {
+      defaultLogDir = await api.defaultLogDirectory();
     } catch {}
   });
 
@@ -258,6 +266,26 @@
       statusMsg = `Font update failed: ${e}`;
     }
   }
+
+  async function handleSetLogDir(dir: string) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, logDir: dir });
+      settings.set(updated);
+      statusMsg = dir ? "Log directory updated" : "Log directory reset to default";
+    } catch (e) {
+      statusMsg = `Log dir update failed: ${e}`;
+    }
+  }
+
+  async function handlePickLogDir() {
+    try {
+      const dir = await api.pickLogDirectory();
+      if (dir) await handleSetLogDir(dir);
+    } catch (e) {
+      statusMsg = `Directory pick failed: ${e}`;
+    }
+  }
+
 </script>
 
 <div class="shell">
@@ -277,10 +305,13 @@
         <Settings
           themes={$themes}
           settings={$settings}
+          {defaultLogDir}
           on:setDefault={(e) => handleSetDefault(e.detail)}
           on:import={handleImportTheme}
           on:delete={(e) => handleDeleteTheme(e.detail)}
           on:setFontSize={(e) => handleSetFontSize(e.detail)}
+          on:setLogDir={(e) => handleSetLogDir(e.detail)}
+          on:pickLogDir={handlePickLogDir}
         />
       {:else if !currentProfile}
         <div class="titlebar" style="--wails-draggable: drag;"></div>
@@ -359,6 +390,8 @@
           theme={effectiveTheme}
           fontSize={termFontSize}
           highlight={termHighlight}
+          hexView={termHexView}
+          timestamps={termTimestamps}
           onStatus={(m) => (statusMsg = m)}
         />
       </div>

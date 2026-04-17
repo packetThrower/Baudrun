@@ -12,6 +12,7 @@ import (
 type Settings struct {
 	DefaultThemeID string `json:"defaultThemeId"`
 	FontSize       int    `json:"fontSize,omitempty"`
+	LogDir         string `json:"logDir,omitempty"`
 }
 
 type Store struct {

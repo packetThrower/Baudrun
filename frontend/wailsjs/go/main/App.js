@@ -14,6 +14,10 @@ export function CreateProfile(arg1) {
   return window['go']['main']['App']['CreateProfile'](arg1);
 }
 
+export function DefaultLogDirectory() {
+  return window['go']['main']['App']['DefaultLogDirectory']();
+}
+
 export function DefaultProfile() {
   return window['go']['main']['App']['DefaultProfile']();
 }
@@ -56,6 +60,10 @@ export function ListProfiles() {
 
 export function ListThemes() {
   return window['go']['main']['App']['ListThemes']();
+}
+
+export function PickLogDirectory() {
+  return window['go']['main']['App']['PickLogDirectory']();
 }
 
 export function Send(arg1) {

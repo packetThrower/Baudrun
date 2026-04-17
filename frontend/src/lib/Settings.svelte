@@ -10,6 +10,8 @@
     import: void;
     delete: string;
     setFontSize: number;
+    setLogDir: string;
+    pickLogDir: void;
   }>();
 
   let importing = false;
@@ -34,6 +36,12 @@
   function onFontSizeChange(e: Event) {
     dispatch("setFontSize", Number((e.target as HTMLInputElement).value));
   }
+
+  function onLogDirChange(e: Event) {
+    dispatch("setLogDir", (e.target as HTMLInputElement).value.trim());
+  }
+
+  export let defaultLogDir: string = "";
 
   $: builtinThemes = themes.filter((t) => t.source === "builtin");
   $: userThemes = themes.filter((t) => t.source === "user");
@@ -134,6 +142,37 @@
         </li>
       {/each}
     </ul>
+  </section>
+
+  <section class="advanced">
+    <details>
+      <summary>
+        <h3>Advanced</h3>
+        <span class="hint">Session logging and other global defaults</span>
+      </summary>
+
+      <div class="sub">
+        <h4>Session Log Directory</h4>
+        <p class="section-hint">
+          Where profiles with "Record session to file" enabled write their logs.
+          Leave blank to use the default.
+        </p>
+        <div class="log-row">
+          <input
+            type="text"
+            value={settings.logDir || ""}
+            placeholder={defaultLogDir}
+            on:change={onLogDirChange}
+          />
+          <button on:click={() => dispatch("pickLogDir")}>Choose…</button>
+          {#if settings.logDir}
+            <button on:click={() => dispatch("setLogDir", "")} title="Reset to default">
+              Reset
+            </button>
+          {/if}
+        </div>
+      </div>
+    </details>
   </section>
 </div>
 
@@ -271,6 +310,70 @@
     background: rgba(255, 69, 58, 0.12);
     color: var(--danger);
     border-radius: var(--radius-md);
+    font-size: 12px;
+  }
+
+  .advanced details summary {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    cursor: pointer;
+    list-style: none;
+    padding: 2px 0;
+    margin-bottom: 12px;
+  }
+
+  .advanced details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .advanced details summary h3 {
+    margin: 0;
+  }
+
+  .advanced details summary::before {
+    content: "▸";
+    color: var(--fg-tertiary);
+    font-size: 10px;
+    margin-right: 2px;
+    transition: transform 0.1s;
+    display: inline-block;
+  }
+
+  .advanced details[open] summary::before {
+    transform: rotate(90deg);
+  }
+
+  .advanced .hint {
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: normal;
+  }
+
+  .advanced .sub {
+    padding-left: 16px;
+    border-left: 2px solid var(--border-subtle);
+  }
+
+  .advanced .sub h4 {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-secondary);
+  }
+
+  .log-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .log-row input {
+    flex: 1;
+    font-family: var(--font-mono);
     font-size: 12px;
   }
 </style>

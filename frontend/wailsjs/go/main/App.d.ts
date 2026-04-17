@@ -12,6 +12,8 @@ export function Connect(arg1:string):Promise<void>;
 
 export function CreateProfile(arg1:profiles.Profile):Promise<profiles.Profile>;
 
+export function DefaultLogDirectory():Promise<string>;
+
 export function DefaultProfile():Promise<profiles.Profile>;
 
 export function DeleteProfile(arg1:string):Promise<void>;
@@ -33,6 +35,8 @@ export function ListPorts():Promise<Array<serial.PortInfo>>;
 export function ListProfiles():Promise<Array<profiles.Profile>>;
 
 export function ListThemes():Promise<Array<themes.Theme>>;
+
+export function PickLogDirectory():Promise<string>;
 
 export function Send(arg1:string):Promise<void>;
 
