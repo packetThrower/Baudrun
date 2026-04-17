@@ -11,6 +11,7 @@ export namespace profiles {
 	    flowControl: string;
 	    lineEnding: string;
 	    localEcho: boolean;
+	    highlight: boolean;
 	    themeId: string;
 	    // Go type: time
 	    createdAt: any;
@@ -33,6 +34,7 @@ export namespace profiles {
 	        this.flowControl = source["flowControl"];
 	        this.lineEnding = source["lineEnding"];
 	        this.localEcho = source["localEcho"];
+	        this.highlight = source["highlight"];
 	        this.themeId = source["themeId"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);

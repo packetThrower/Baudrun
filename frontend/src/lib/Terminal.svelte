@@ -5,11 +5,13 @@
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import "@xterm/xterm/css/xterm.css";
   import { api, themeToXterm, type Theme } from "./api";
+  import { TerminalHighlighter } from "./highlight";
 
   export let lineEnding: "cr" | "lf" | "crlf" = "crlf";
   export let localEcho: boolean = false;
   export let theme: Theme | undefined = undefined;
   export let fontSize: number = 13;
+  export let highlight: boolean = true;
   export let onStatus: (msg: string) => void = () => {};
 
   let hostEl: HTMLDivElement;
@@ -17,6 +19,10 @@
   let fit: FitAddon | null = null;
   let unsubData: (() => void) | null = null;
   let ro: ResizeObserver | null = null;
+  let highlighter: TerminalHighlighter | null = null;
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+
+  $: if (highlighter && !highlight) highlighter.reset();
 
   function eolBytes(): Uint8Array {
     switch (lineEnding) {
@@ -95,8 +101,14 @@
 
     term.onData(handleInput);
 
+    highlighter = new TerminalHighlighter((text) => {
+      if (term) term.write(text);
+    });
+
     unsubData = api.onData((bytes) => {
-      if (term) term.write(bytes);
+      if (!term || !highlighter) return;
+      const text = decoder.decode(bytes, { stream: true });
+      highlighter.feed(text, highlight);
     });
 
     ro = new ResizeObserver(() => {
@@ -110,6 +122,8 @@
   onDestroy(() => {
     ro?.disconnect();
     unsubData?.();
+    highlighter?.dispose();
+    highlighter = null;
     term?.dispose();
     term = null;
   });
