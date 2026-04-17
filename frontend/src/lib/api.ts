@@ -4,6 +4,7 @@ import type { main, profiles, serial, themes, settings } from "../../wailsjs/go/
 
 export type Profile = profiles.Profile;
 export type PortInfo = serial.PortInfo;
+export type USBSerialCandidate = serial.USBSerialCandidate;
 export type Theme = themes.Theme;
 export type Settings = settings.Settings;
 export type ControlLines = main.ControlLines;
@@ -19,6 +20,7 @@ export const api = {
   defaultProfile: App.DefaultProfile,
 
   listPorts: App.ListPorts,
+  listMissingDrivers: App.ListMissingDrivers,
   connect: App.Connect,
   disconnect: App.Disconnect,
   activeProfileID: App.ActiveProfileID,

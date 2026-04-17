@@ -26,6 +26,8 @@ export function GetSettings():Promise<settings.Settings>;
 
 export function ImportTheme():Promise<themes.Theme>;
 
+export function ListMissingDrivers():Promise<Array<serial.USBSerialCandidate>>;
+
 export function ListPorts():Promise<Array<serial.PortInfo>>;
 
 export function ListProfiles():Promise<Array<profiles.Profile>>;

@@ -157,6 +157,10 @@ func (a *App) ListPorts() ([]sserial.PortInfo, error) {
 	return sserial.ListPorts()
 }
 
+func (a *App) ListMissingDrivers() ([]sserial.USBSerialCandidate, error) {
+	return sserial.DetectMissingDrivers()
+}
+
 func (a *App) Connect(profileID string) error {
 	if a.store == nil {
 		return errors.New("store unavailable")

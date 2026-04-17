@@ -3,6 +3,8 @@ package serial
 import (
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +25,7 @@ type PortInfo struct {
 	PID          string `json:"pid,omitempty"`
 	SerialNumber string `json:"serialNumber,omitempty"`
 	Product      string `json:"product,omitempty"`
+	Chipset      string `json:"chipset,omitempty"`
 }
 
 type Config struct {
@@ -44,6 +47,8 @@ type Config struct {
 // ListPorts returns all available serial ports with USB metadata when available.
 // The basic port list is authoritative; detailed USB info is merged in as a best effort
 // so devices without USB ancestry (Bluetooth SPP, built-in serial, some adapters) still appear.
+// On macOS, /dev/tty.* entries are filtered out — they're the blocking twin of the
+// /dev/cu.* callout device and terminal apps should always use the cu.* path.
 func ListPorts() ([]PortInfo, error) {
 	names, err := serial.GetPortsList()
 	if err != nil {
@@ -59,6 +64,9 @@ func ListPorts() ([]PortInfo, error) {
 
 	out := make([]PortInfo, 0, len(names))
 	for _, n := range names {
+		if strings.HasPrefix(n, "/dev/tty.") {
+			continue
+		}
 		p := PortInfo{Name: n}
 		if d := meta[n]; d != nil {
 			p.IsUSB = d.IsUSB
@@ -66,9 +74,11 @@ func ListPorts() ([]PortInfo, error) {
 			p.PID = d.PID
 			p.SerialNumber = d.SerialNumber
 			p.Product = d.Product
+			p.Chipset = Chipset(d.VID)
 		}
 		out = append(out, p)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
