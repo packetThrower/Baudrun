@@ -2,6 +2,23 @@ package serial
 
 import "strings"
 
+// USBSerialCandidate describes a USB device whose vendor ID (or manufacturer
+// string) maps to a known serial chipset but which isn't currently accessible
+// as a serial port — i.e., the user probably hasn't installed the vendor
+// driver yet.
+type USBSerialCandidate struct {
+	VID          string `json:"vid"`
+	PID          string `json:"pid"`
+	Chipset      string `json:"chipset"`
+	Manufacturer string `json:"manufacturer,omitempty"`
+	Product      string `json:"product,omitempty"`
+	SerialNumber string `json:"serialNumber,omitempty"`
+	DriverURL    string `json:"driverURL,omitempty"`
+	// Reason, if set, replaces the default "driver not loaded" banner copy
+	// with a more specific explanation (e.g., Prolific-legacy-chip warning).
+	Reason string `json:"reason,omitempty"`
+}
+
 // ChipsetInfo names a USB serial bridge family and points at the driver the
 // user needs to install, if any.
 type ChipsetInfo struct {
@@ -102,4 +119,19 @@ func chipsetFromManufacturer(s string) ChipsetInfo {
 		}
 	}
 	return ChipsetInfo{}
+}
+
+// IsSuspectProduct reports whether a USB product string looks like a
+// driver-issue placeholder rather than a real product name. Common case:
+// counterfeit-detecting Prolific drivers enumerate the chip with a warning
+// string ("Please install corresponding PL2303 driver ...") as the device
+// name. The port appears "drivered" to the OS, but serial I/O won't work.
+func IsSuspectProduct(s string) bool {
+	lc := strings.ToLower(s)
+	return strings.Contains(lc, "please install") ||
+		strings.Contains(lc, "please download") ||
+		strings.Contains(lc, "support windows") ||
+		strings.Contains(lc, "counterfeit") ||
+		strings.Contains(lc, "not supported") ||
+		strings.Contains(lc, "not support")
 }

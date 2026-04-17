@@ -122,6 +122,7 @@ export namespace serial {
 	    product?: string;
 	    serialNumber?: string;
 	    driverURL?: string;
+	    reason?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new USBSerialCandidate(source);
@@ -136,6 +137,7 @@ export namespace serial {
 	        this.product = source["product"];
 	        this.serialNumber = source["serialNumber"];
 	        this.driverURL = source["driverURL"];
+	        this.reason = source["reason"];
 	    }
 	}
 
