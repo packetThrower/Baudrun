@@ -29,6 +29,7 @@
   let statusMsg = "";
   let offDisconnect: (() => void) | null = null;
   let settingsOpen = false;
+  let suspended = false;
 
   $: selectedExisting = $profiles.find((p) => p.id === $selectedProfileID) ?? null;
   $: currentProfile = draft ?? selectedExisting;
@@ -43,6 +44,9 @@
   $: isConnecting =
     $session.status === "connecting" &&
     currentProfile?.id === $session.profileID;
+  $: viewingTerminal = isConnected && !suspended;
+  $: hasSession =
+    $session.status === "connected" || $session.status === "connecting";
   $: activeProfile = $profiles.find((p) => p.id === activeProfileID) ?? null;
   $: termLineEnding = (activeProfile?.lineEnding ?? currentProfile?.lineEnding ?? "crlf") as
     | "cr"
@@ -84,16 +88,39 @@
     offDisconnect?.();
   });
 
+  async function maybeAutoDisconnect() {
+    if (hasSession && !suspended) {
+      try {
+        await api.disconnect();
+        session.set({ status: "idle" });
+      } catch (e) {
+        statusMsg = `Disconnect failed: ${e}`;
+      }
+    }
+  }
+
   async function handleSelect(id: string) {
+    // If leaving an active terminal view (not suspended), tear down serial.
+    if (viewingTerminal && id !== currentProfile?.id) {
+      await maybeAutoDisconnect();
+    }
     draft = null;
     settingsOpen = false;
     selectedProfileID.set(id);
   }
 
   async function handleCreate() {
+    if (viewingTerminal) await maybeAutoDisconnect();
     const base = await api.defaultProfile();
     draft = { ...base, id: "", name: "Untitled" } as Profile;
     settingsOpen = false;
+  }
+
+  async function handleToggleSettings() {
+    if (!settingsOpen && viewingTerminal) {
+      await maybeAutoDisconnect();
+    }
+    settingsOpen = !settingsOpen;
   }
 
   async function handleSave(p: Profile) {
@@ -126,6 +153,7 @@
     if (!currentProfile?.id) return;
     const id = currentProfile.id;
     session.set({ status: "connecting", profileID: id });
+    suspended = false;
     statusMsg = "Connecting…";
     try {
       await api.connect(id);
@@ -143,10 +171,22 @@
     try {
       await api.disconnect();
       session.set({ status: "idle" });
+      suspended = false;
       statusMsg = "Disconnected";
     } catch (e) {
       statusMsg = `Disconnect failed: ${e}`;
     }
+  }
+
+  function handleSuspend() {
+    suspended = true;
+    statusMsg = "Session kept alive in background";
+  }
+
+  async function handleResume() {
+    suspended = false;
+    await tick();
+    terminalRef?.focus();
   }
 
   async function handleImportTheme() {
@@ -194,7 +234,7 @@
     {settingsOpen}
     on:select={(e) => handleSelect(e.detail)}
     on:create={handleCreate}
-    on:settings={() => (settingsOpen = !settingsOpen)}
+    on:settings={handleToggleSettings}
   />
 
   <main class="main">
@@ -218,7 +258,7 @@
           </button>
         </div>
       </div>
-    {:else if isConnected}
+    {:else if viewingTerminal}
       <div class="titlebar" style="--wails-draggable: drag;"></div>
       <header class="session-header">
         <div class="session-meta">
@@ -236,6 +276,9 @@
         </div>
         <div class="session-actions">
           <button on:click={() => terminalRef?.clear()}>Clear</button>
+          <button on:click={handleSuspend} title="Keep session alive; return to profile">
+            Suspend
+          </button>
           <button class="primary" on:click={handleDisconnect}>Disconnect</button>
         </div>
       </header>
@@ -253,7 +296,7 @@
         profile={currentProfile}
         {isNew}
         canConnect={!!currentProfile.id && !!currentProfile.portName}
-        isConnected={false}
+        {isConnected}
         {isConnecting}
         themes={$themes}
         defaultThemeID={$settings.defaultThemeId}
@@ -261,6 +304,7 @@
         on:delete={(e) => handleDelete(e.detail)}
         on:connect={handleConnect}
         on:disconnect={handleDisconnect}
+        on:resume={handleResume}
       />
     {/if}
 
