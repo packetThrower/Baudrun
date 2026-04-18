@@ -93,4 +93,19 @@ var builtins = []Theme{
 		BrightBlack: "#969896", BrightRed: "#cc6666", BrightGreen: "#b5bd68", BrightYellow: "#f0c674",
 		BrightBlue:  "#81a2be", BrightMagenta: "#b294bb", BrightCyan: "#8abeb7", BrightWhite: "#ffffff",
 	},
+	// ANSI palette built from Bang Wong's colorblind-safe color set
+	// (Nature Methods, 2011). The red and green slots are vermillion and
+	// bluish-green — perpendicular to the protan/deutan confusion axis, so
+	// "up" vs "down" output stays distinguishable for ~6% of men who
+	// otherwise see standard red and green as similar.
+	{
+		ID: "colorblind-safe", Name: "Colorblind Safe", Source: "builtin",
+		Background: "#1a1a1a", Foreground: "#e0e0e0",
+		Cursor: "#e0e0e0", CursorAccent: "#1a1a1a",
+		Selection: "#3a3a3a",
+		Black:       "#000000", Red: "#d55e00", Green: "#009e73", Yellow: "#f0e442",
+		Blue:        "#0072b2", Magenta: "#cc79a7", Cyan: "#56b4e9", White: "#e0e0e0",
+		BrightBlack: "#666666", BrightRed: "#f08a3e", BrightGreen: "#33c49f", BrightYellow: "#f8f070",
+		BrightBlue:  "#3e9dd8", BrightMagenta: "#e0a4c3", BrightCyan: "#85ccf1", BrightWhite: "#ffffff",
+	},
 }
