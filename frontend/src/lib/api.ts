@@ -1,6 +1,13 @@
 import * as App from "../../wailsjs/go/main/App.js";
 import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime.js";
-import type { main, profiles, serial, themes, settings } from "../../wailsjs/go/models";
+import type {
+  main,
+  profiles,
+  serial,
+  themes,
+  settings,
+  skins,
+} from "../../wailsjs/go/models";
 
 export type Profile = profiles.Profile;
 export type PortInfo = serial.PortInfo;
@@ -8,6 +15,7 @@ export type USBSerialCandidate = serial.USBSerialCandidate;
 export type Theme = themes.Theme;
 export type Settings = settings.Settings;
 export type ControlLines = main.ControlLines;
+export type Skin = skins.Skin;
 
 export const EVT_DATA = "serial:data";
 export const EVT_DISCONNECT = "serial:disconnect";
@@ -30,6 +38,10 @@ export const api = {
   listThemes: App.ListThemes,
   importTheme: App.ImportTheme,
   deleteTheme: App.DeleteTheme,
+
+  listSkins: App.ListSkins,
+  importSkin: App.ImportSkin,
+  deleteSkin: App.DeleteSkin,
 
   getSettings: App.GetSettings,
   updateSettings: App.UpdateSettings,

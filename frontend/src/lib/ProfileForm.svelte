@@ -190,9 +190,10 @@
     </div>
   </header>
 
-  {#if error}
-    <div class="error">{error}</div>
-  {/if}
+  <div class="scroll">
+    {#if error}
+      <div class="error">{error}</div>
+    {/if}
 
   <section>
     <h3>Connection</h3>
@@ -549,6 +550,7 @@
       </section>
     </details>
   </section>
+  </div>
 </div>
 
 <style>
@@ -557,23 +559,27 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  .scroll {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    padding: 0 28px 28px 28px;
+    padding: 20px 28px 28px 28px;
   }
 
   .titlebar {
     height: var(--titlebar-height);
-    margin: 0 -28px;
     flex-shrink: 0;
   }
 
   header {
+    flex-shrink: 0;
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    padding-bottom: 18px;
-    margin-bottom: 20px;
+    padding: 0 28px 18px 28px;
     border-bottom: 1px solid var(--border-subtle);
   }
 
@@ -758,6 +764,9 @@
     margin-bottom: 10px;
     background: var(--bg-panel);
     border-radius: var(--radius-md);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
   }
 
   .advanced .sub h4 {

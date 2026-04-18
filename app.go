@@ -15,6 +15,7 @@ import (
 	"Seriesly/internal/profiles"
 	sserial "Seriesly/internal/serial"
 	"Seriesly/internal/settings"
+	"Seriesly/internal/skins"
 	"Seriesly/internal/themes"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -29,6 +30,7 @@ type App struct {
 	ctx      context.Context
 	store    *profiles.Store
 	themes   *themes.Store
+	skins    *skins.Store
 	settings *settings.Store
 	sessMu   sync.Mutex
 	session  *sserial.Session
@@ -58,6 +60,12 @@ func (a *App) startup(ctx context.Context) {
 		a.themes = ts
 	} else {
 		runtime.LogErrorf(ctx, "theme store init: %v", err)
+	}
+
+	if sk, err := skins.NewStore(supportDir); err == nil {
+		a.skins = sk
+	} else {
+		runtime.LogErrorf(ctx, "skin store init: %v", err)
 	}
 
 	if st, err := settings.NewStore(supportDir); err == nil {
@@ -137,6 +145,44 @@ func (a *App) DeleteTheme(id string) error {
 		return errors.New("themes unavailable")
 	}
 	return a.themes.Delete(id)
+}
+
+// Skin API
+
+func (a *App) ListSkins() []skins.Skin {
+	if a.skins == nil {
+		return []skins.Skin{}
+	}
+	return a.skins.List()
+}
+
+func (a *App) ImportSkin() (skins.Skin, error) {
+	if a.skins == nil {
+		return skins.Skin{}, errors.New("skins unavailable")
+	}
+	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Import skin",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Seriesly skin (*.json)", Pattern: "*.json"},
+		},
+		ShowHiddenFiles:            false,
+		CanCreateDirectories:       false,
+		TreatPackagesAsDirectories: true,
+	})
+	if err != nil {
+		return skins.Skin{}, err
+	}
+	if path == "" {
+		return skins.Skin{}, errors.New("cancelled")
+	}
+	return a.skins.Import(path)
+}
+
+func (a *App) DeleteSkin(id string) error {
+	if a.skins == nil {
+		return errors.New("skins unavailable")
+	}
+	return a.skins.Delete(id)
 }
 
 // Settings API

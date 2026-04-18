@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { Theme, Settings } from "./api";
+  import type { Theme, Settings, Skin } from "./api";
 
   export let themes: Theme[] = [];
+  export let skins: Skin[] = [];
   export let settings: Settings;
 
   const dispatch = createEventDispatcher<{
@@ -13,6 +14,9 @@
     setLogDir: string;
     pickLogDir: void;
     setDetectDrivers: boolean;
+    setSkin: string;
+    importSkin: void;
+    deleteSkin: string;
   }>();
 
   let importing = false;
@@ -46,6 +50,10 @@
     dispatch("setDetectDrivers", (e.target as HTMLInputElement).checked);
   }
 
+  function onSkinChange(e: Event) {
+    dispatch("setSkin", (e.target as HTMLSelectElement).value);
+  }
+
   export let defaultLogDir: string = "";
 
   $: builtinThemes = themes.filter((t) => t.source === "builtin");
@@ -61,6 +69,41 @@
       <span class="subtitle">Global preferences</span>
     </div>
   </header>
+
+  <div class="scroll">
+  <section>
+    <h3>App Skin</h3>
+    <p class="section-hint">
+      The overall look of the app's chrome — colors, typography, radii.
+      Distinct from terminal themes below, which control the terminal
+      viewport's color scheme.
+    </p>
+    <div class="grid">
+      <div class="field full">
+        <label for="skin">Skin</label>
+        <select
+          id="skin"
+          value={settings.skinId || "seriesly"}
+          on:change={onSkinChange}
+        >
+          {#if skins.some((s) => s.source === "builtin")}
+            <optgroup label="Built-in">
+              {#each skins.filter((s) => s.source === "builtin") as s (s.id)}
+                <option value={s.id}>{s.name}</option>
+              {/each}
+            </optgroup>
+          {/if}
+          {#if skins.some((s) => s.source === "user")}
+            <optgroup label="Custom">
+              {#each skins.filter((s) => s.source === "user") as s (s.id)}
+                <option value={s.id}>{s.name}</option>
+              {/each}
+            </optgroup>
+          {/if}
+        </select>
+      </div>
+    </div>
+  </section>
 
   <section>
     <h3>Default Theme</h3>
@@ -195,6 +238,7 @@
       </div>
     </details>
   </section>
+  </div>
 </div>
 
 <style>
@@ -203,19 +247,23 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+
+  .scroll {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    padding: 0 28px 28px 28px;
+    padding: 20px 28px 28px 28px;
   }
 
   .titlebar {
     height: var(--titlebar-height);
-    margin: 0 -28px;
     flex-shrink: 0;
   }
 
   header {
-    padding-bottom: 18px;
-    margin-bottom: 20px;
+    flex-shrink: 0;
+    padding: 0 28px 18px 28px;
     border-bottom: 1px solid var(--border-subtle);
   }
 
@@ -288,6 +336,9 @@
     padding: 10px 12px;
     background: var(--bg-panel);
     border-radius: var(--radius-md);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
   }
 
   .swatch {
@@ -388,6 +439,9 @@
     margin-bottom: 10px;
     background: var(--bg-panel);
     border-radius: var(--radius-md);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
   }
 
   .advanced .sub h4 {

@@ -14,6 +14,7 @@ type Settings struct {
 	FontSize               int    `json:"fontSize,omitempty"`
 	LogDir                 string `json:"logDir,omitempty"`
 	DisableDriverDetection bool   `json:"disableDriverDetection,omitempty"`
+	SkinID                 string `json:"skinId,omitempty"`
 }
 
 type Store struct {
@@ -54,14 +55,14 @@ func (st *Store) Update(s Settings) (Settings, error) {
 func (st *Store) load() error {
 	data, err := os.ReadFile(st.path)
 	if errors.Is(err, os.ErrNotExist) {
-		st.s = Settings{DefaultThemeID: "seriesly", FontSize: 13}
+		st.s = Settings{DefaultThemeID: "seriesly", FontSize: 13, SkinID: "seriesly"}
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("read settings: %w", err)
 	}
 	if len(data) == 0 {
-		st.s = Settings{DefaultThemeID: "seriesly", FontSize: 13}
+		st.s = Settings{DefaultThemeID: "seriesly", FontSize: 13, SkinID: "seriesly"}
 		return nil
 	}
 	return json.Unmarshal(data, &st.s)

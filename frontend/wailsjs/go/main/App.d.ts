@@ -3,6 +3,7 @@
 import {profiles} from '../models';
 import {main} from '../models';
 import {settings} from '../models';
+import {skins} from '../models';
 import {themes} from '../models';
 import {serial} from '../models';
 
@@ -18,6 +19,8 @@ export function DefaultProfile():Promise<profiles.Profile>;
 
 export function DeleteProfile(arg1:string):Promise<void>;
 
+export function DeleteSkin(arg1:string):Promise<void>;
+
 export function DeleteTheme(arg1:string):Promise<void>;
 
 export function Disconnect():Promise<void>;
@@ -26,6 +29,8 @@ export function GetControlLines():Promise<main.ControlLines>;
 
 export function GetSettings():Promise<settings.Settings>;
 
+export function ImportSkin():Promise<skins.Skin>;
+
 export function ImportTheme():Promise<themes.Theme>;
 
 export function ListMissingDrivers():Promise<Array<serial.USBSerialCandidate>>;
@@ -33,6 +38,8 @@ export function ListMissingDrivers():Promise<Array<serial.USBSerialCandidate>>;
 export function ListPorts():Promise<Array<serial.PortInfo>>;
 
 export function ListProfiles():Promise<Array<profiles.Profile>>;
+
+export function ListSkins():Promise<Array<skins.Skin>>;
 
 export function ListThemes():Promise<Array<themes.Theme>>;
 

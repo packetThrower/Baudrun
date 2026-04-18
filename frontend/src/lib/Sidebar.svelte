@@ -97,7 +97,9 @@
     min-width: 240px;
     height: 100%;
     background: var(--bg-sidebar);
-    border-right: 1px solid var(--border-subtle);
+    border-right: var(--sidebar-divider, 1px solid var(--border-subtle));
+    border-radius: var(--panel-radius);
+    box-shadow: var(--panel-shadow);
     overflow: hidden;
   }
 

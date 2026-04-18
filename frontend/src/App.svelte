@@ -22,6 +22,15 @@
     deleteTheme,
     setDefaultTheme,
   } from "./stores/themes";
+  import {
+    skins,
+    activeSkinID,
+    loadSkins,
+    applySkin,
+    resolveSkin,
+    importSkin,
+    deleteSkin,
+  } from "./stores/skins";
   import { session } from "./stores/session";
 
   let draft: Profile | null = null;
@@ -66,6 +75,9 @@
   $: effectiveTheme = resolveTheme(effectiveThemeID, $themes);
   $: termFontSize = $settings.fontSize || 13;
 
+  // Re-apply skin whenever the active selection or the loaded skin list changes.
+  $: applySkin(resolveSkin($activeSkinID, $skins));
+
   function resolveTheme(id: string, all: Theme[]): Theme | undefined {
     return (
       all.find((t) => t.id === id) ??
@@ -77,7 +89,14 @@
   let defaultLogDir = "";
 
   onMount(async () => {
-    await Promise.all([loadProfiles(), loadThemes(), loadSettings()]);
+    await Promise.all([
+      loadProfiles(),
+      loadThemes(),
+      loadSkins(),
+      loadSettings(),
+    ]);
+    activeSkinID.set($settings.skinId || "seriesly");
+    applySkin(resolveSkin($activeSkinID, $skins));
 
     offDisconnect = api.onDisconnect((reason) => {
       session.set({ status: "idle" });
@@ -298,6 +317,36 @@
     }
   }
 
+  async function handleSetSkin(id: string) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, skinId: id });
+      settings.set(updated);
+      activeSkinID.set(id);
+      statusMsg = `Skin: ${$skins.find((s) => s.id === id)?.name ?? id}`;
+    } catch (e) {
+      statusMsg = `Skin change failed: ${e}`;
+    }
+  }
+
+  async function handleImportSkin() {
+    try {
+      const s = await importSkin();
+      if (s) statusMsg = `Imported skin: ${s.name}`;
+    } catch (e) {
+      statusMsg = `Import failed: ${e}`;
+    }
+  }
+
+  async function handleDeleteSkin(id: string) {
+    try {
+      await deleteSkin(id);
+      if ($activeSkinID === id) await handleSetSkin("seriesly");
+      statusMsg = "Skin removed";
+    } catch (e) {
+      statusMsg = `Delete failed: ${e}`;
+    }
+  }
+
 </script>
 
 <div class="shell">
@@ -316,6 +365,7 @@
       {#if settingsOpen}
         <Settings
           themes={$themes}
+          skins={$skins}
           settings={$settings}
           {defaultLogDir}
           on:setDefault={(e) => handleSetDefault(e.detail)}
@@ -325,6 +375,9 @@
           on:setLogDir={(e) => handleSetLogDir(e.detail)}
           on:pickLogDir={handlePickLogDir}
           on:setDetectDrivers={(e) => handleSetDetectDrivers(e.detail)}
+          on:setSkin={(e) => handleSetSkin(e.detail)}
+          on:importSkin={handleImportSkin}
+          on:deleteSkin={(e) => handleDeleteSkin(e.detail)}
         />
       {:else if !currentProfile}
         <div class="titlebar" style="--wails-draggable: drag;"></div>
@@ -423,7 +476,10 @@
     flex: 1;
     min-height: 0;
     height: 100%;
-    background: var(--bg-main);
+    padding: var(--shell-padding);
+    gap: var(--shell-gap);
+    /* No background here — sidebar and main carry their own. With non-zero
+       shell-padding, the window's vibrancy shows through the gaps. */
   }
 
   .main {
@@ -433,6 +489,9 @@
     min-width: 0;
     min-height: 0;
     background: var(--bg-main);
+    border-radius: var(--panel-radius);
+    box-shadow: var(--panel-shadow);
+    overflow: hidden;
   }
 
   .titlebar {
