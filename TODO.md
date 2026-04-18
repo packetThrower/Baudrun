@@ -60,3 +60,61 @@ Non-goals / won't-do:
 - tree-sitter / Pygments / chroma lexers — overkill for line-level
   streaming. Our regex engine is the right shape; we're just moving
   the rules out of the binary.
+
+## Skin system
+
+Make the app chrome user-swappable via CSS custom properties + JSON
+preset files. Distinct from themes (terminal color schemes) — skins
+change the whole UI feel. Current look is early-2020s macOS; add
+more modern and cross-platform looks.
+
+- [ ] **Expand the CSS variable surface in `style.css`.** Currently
+      parameterized: colors, a few radii. Missing: fonts, spacing
+      scale, shadows, border widths, focus ring style. Refactor
+      component CSS to reference variables everywhere (no more
+      hard-coded `15px`, `6px` scattered through `.svelte` files).
+- [ ] **Skin JSON format.** Flat map of `--foo-bar: value` pairs with
+      identity metadata:
+      ```json
+      {
+        "id": "macos-26",
+        "name": "macOS 26 (Liquid Glass)",
+        "source": "builtin",
+        "fontUI": "-apple-system, 'SF Pro', system-ui",
+        "bgPanel": "rgba(255,255,255,0.12)",
+        "radiusMd": "10px",
+        ...
+      }
+      ```
+      Built-in skins bundled via `//go:embed`, user-added ones at
+      `~/Library/Application Support/Seriesly/skins/<id>.json`.
+- [ ] **Svelte store + applier.** `applySkin(skin)` iterates entries
+      and calls `document.documentElement.style.setProperty`. Live
+      swap, no reload.
+- [ ] **Settings UI.** Add "Skin" picker to Settings → Appearance
+      alongside the theme picker. Per-app-global (not per-profile —
+      skins are about the app chrome, not what's being viewed).
+- [ ] **Bundled skins** in priority order:
+      - `seriesly` — current look (the default)
+      - `macos-26` — liquid glass: more translucent, bigger radii,
+        floating surfaces, lighter borders, brighter accents
+      - `windows-11` — Fluent/Mica: Segoe UI Variable, 8px radii,
+        solid surfaces, Fluent accent palette
+      - `gnome-adwaita` — Cantarell font, generous spacing, GNOME
+        green accent, flatter
+      - `kde-breeze` — Breeze palette, slightly more angular
+      - `macos-classic` — pre-Big Sur square style
+      - `crt` — green phosphor on black, monospace everywhere
+      - `high-contrast` — a11y-oriented
+- [ ] **Import from user-drop'd JSON** — same Svelte/Go pattern we
+      used for `.itermcolors` theme import.
+
+Known caveats to document in a README section:
+- Native `<select>` dropdowns stay OS-native regardless of skin
+  (Chromium delegates popup rendering to the OS). Close-but-not-exact
+  for Windows 11 / GNOME skins.
+- Window chrome (`mac.TitleBarHiddenInset`, Windows Mica backdrop,
+  vibrancy) requires Wails startup config and relaunch. Skins can
+  hint at this via an `.extras.requiresRelaunch` flag and prompt
+  the user.
+- Window shape (macOS squircle vs. Windows rect) is fixed per-OS.
