@@ -16,14 +16,47 @@
       DigiCert / Sectigo / SSL.com (~$200+/yr; EV cert is pricier but
       skips SmartScreen warmup). Add as secrets, sign the .exe with
       `signtool` in the `build-windows` job.
-- [ ] **Public downloads for a private source repo.** Two-repo setup:
-      1. Create public `otec-it/Seriesly-downloads` (empty, README points
-         at Releases).
-      2. Generate a fine-grained PAT scoped only to that repo with
-         `Contents: Read and write`. Add to the private repo's Actions
-         secrets as `RELEASES_REPO_TOKEN`.
-      3. In `release.yml`, add `repository: otec-it/Seriesly-downloads`
-         and `token: ${{ secrets.RELEASES_REPO_TOKEN }}` to the
-         `softprops/action-gh-release` step.
+- [ ] **Public downloads for a private source repo.** Shared
+      downloads repo serving both Seriesly and get_switch_info:
+      1. Create public `otec-it/downloads` (empty, README listing
+         apps + links to their Releases pages).
+      2. Generate one fine-grained PAT scoped to that repo with
+         `Contents: Read and write`. Add to *each* private source
+         repo's Actions secrets as `RELEASES_REPO_TOKEN`.
+      3. In each `release.yml`, point `softprops/action-gh-release` at
+         the shared repo with prefixed tags:
+         ```yaml
+         repository: otec-it/downloads
+         token: ${{ secrets.RELEASES_REPO_TOKEN }}
+         tag_name: seriesly-${{ github.ref_name }}      # or portfinder-
+         name: Seriesly ${{ github.ref_name }}
+         ```
       Do this **after** signing is in place so the first public release
       is already a trustworthy binary.
+
+## Syntax highlighting — Tier 2
+
+Current highlighter is a line-buffered regex rule engine baked into the
+binary. Tier 2 is making it data-driven + shareable:
+
+- [ ] **User-editable rule file** at
+      `~/Library/Application Support/Seriesly/highlight-rules.json`.
+      Format: array of `{ pattern, open, close, group? }` objects.
+      Ship current built-in rules as the default file on first run;
+      users can add patterns without rebuilding.
+- [ ] **Preset packs** as bundled read-only rule sets: `cisco-ios`,
+      `junos`, `ruggedcom-ros`, `aruba-cx`, `f5-tmos`. Each ~10-20
+      patterns. Enable/disable per profile via a Settings → Advanced
+      picker (multi-select).
+- [ ] **Import from iTerm2 Triggers.** iTerm stores triggers in its
+      plist; the "highlight foreground" action maps cleanly to our
+      rule shape. Importer pulls matching entries out, surfaces the
+      rest as ignored. Lets users bring existing configs over.
+- [ ] **Import from grc configs.** grc's text format is simple
+      (regex + colour codes + optional `count=more`). One-shot importer
+      from a user-selected grc conf file.
+
+Non-goals / won't-do:
+- tree-sitter / Pygments / chroma lexers — overkill for line-level
+  streaming. Our regex engine is the right shape; we're just moving
+  the rules out of the binary.
