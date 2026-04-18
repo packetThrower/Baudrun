@@ -763,6 +763,7 @@
     padding: 16px;
     margin-bottom: 10px;
     background: var(--bg-panel);
+    border: var(--panel-border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-panel);
     backdrop-filter: blur(var(--blur-strength));

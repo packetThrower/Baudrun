@@ -46,8 +46,10 @@ var builtins = []Skin{
 			"--fg-tertiary":  "rgba(255, 255, 255, 0.4)",
 
 			// Borders
-			"--border-subtle": "rgba(255, 255, 255, 0.08)",
-			"--border-strong": "rgba(255, 255, 255, 0.14)",
+			"--border-subtle":     "rgba(255, 255, 255, 0.08)",
+			"--border-strong":     "rgba(255, 255, 255, 0.14)",
+			"--input-border-idle": "transparent",
+			"--panel-border":      "none",
 
 			// Semantic
 			"--accent":       "#0a84ff",
@@ -150,6 +152,76 @@ var builtins = []Skin{
 
 			// Slightly taller titlebar region
 			"--titlebar-height": "44px",
+		},
+	},
+	{
+		ID:          "high-contrast",
+		Name:        "High Contrast",
+		Source:      "builtin",
+		Description: "Accessibility-focused: solid black background, pure white foreground, strong borders everywhere, bright accent colors. No translucency, no blur, no soft shadows.",
+		Vars: map[string]string{
+			// Bigger type for readability
+			"--font-size-base":    "14px",
+			"--font-size-label":   "12px",
+			"--font-size-section": "16px",
+			"--font-size-h1":      "26px",
+			"--label-weight":      "600",
+
+			// Solid surfaces — zero translucency
+			"--bg-window":      "#000000",
+			"--bg-sidebar":     "#000000",
+			"--bg-main":        "#000000",
+			"--bg-panel":       "#0f0f0f",
+			"--bg-hover":       "#2a2a2a",
+			"--bg-active":      "#1b4b7a",
+			"--bg-input":       "#000000",
+			"--bg-input-focus": "#1a1a1a",
+			"--bg-terminal":    "#000000",
+
+			// Native popups — black with white text
+			"--option-bg":       "#000000",
+			"--option-fg":       "#ffffff",
+			"--option-group-fg": "#cccccc",
+
+			// Maximum foreground contrast
+			"--fg-primary":   "#ffffff",
+			"--fg-secondary": "#e0e0e0",
+			"--fg-tertiary":  "#b8b8b8",
+
+			// Borders on everything — this is the defining feature
+			"--border-subtle":     "#ffffff",
+			"--border-strong":     "#ffffff",
+			"--input-border-idle": "#ffffff",
+			"--panel-border":      "1px solid #ffffff",
+			"--sidebar-divider":   "2px solid #ffffff",
+
+			// Bright, distinct accents (WCAG AAA contrast against black)
+			"--accent":       "#5bc2ff",
+			"--accent-hover": "#9ddaff",
+			"--danger":       "#ff6a6a",
+			"--success":      "#5fff7f",
+			"--warn":         "#ffd700",
+
+			// Sharp, squared edges
+			"--radius-sm": "2px",
+			"--radius-md": "3px",
+			"--radius-lg": "4px",
+
+			// No soft effects — rely on color and borders, not blur or shadow
+			"--shadow-panel":    "none",
+			"--shadow-floating": "none",
+			"--blur-strength":   "0px",
+
+			// Scrollbar has to be clearly visible
+			"--scrollbar-thumb":       "#ffffff",
+			"--scrollbar-thumb-hover": "#cccccc",
+
+			// Flush layout; no floating bubble (the border already separates surfaces)
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "38px",
 		},
 	},
 }

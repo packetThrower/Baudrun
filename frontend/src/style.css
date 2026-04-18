@@ -39,6 +39,8 @@
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
+  --input-border-idle: transparent;
+  --panel-border: none;
 
   /* Semantic accents */
   --accent: #0a84ff;
@@ -106,7 +108,7 @@ textarea {
   font-size: var(--font-size-base);
   color: var(--fg-primary);
   background: var(--bg-input);
-  border: 1px solid transparent;
+  border: 1px solid var(--input-border-idle);
   border-radius: var(--radius-md);
   padding: 5px 8px;
   outline: none;
