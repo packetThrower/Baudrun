@@ -224,4 +224,81 @@ var builtins = []Skin{
 			"--titlebar-height": "38px",
 		},
 	},
+	{
+		ID:          "windows-11",
+		Name:        "Windows 11 (Fluent)",
+		Source:      "builtin",
+		Description: "Windows 11 Fluent / Mica-inspired: Segoe UI, Cascadia Code for mono, sentence-case labels, solid dark surfaces with stroke borders, 4/8px radii, Fluent accent blue.",
+		Vars: map[string]string{
+			// Segoe UI Variable on Windows falls through to the next available
+			// family on macOS (no Segoe pre-installed). Cascadia Code is the
+			// Windows Terminal default; falls back to Consolas, then generics.
+			"--font-ui":   `"Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif`,
+			"--font-mono": `"Cascadia Code", "Cascadia Mono", Consolas, "Courier New", ui-monospace, monospace`,
+
+			// Sentence-case labels — Fluent's row labels are not iOS small-caps
+			"--label-transform":      "none",
+			"--label-letter-spacing": "0",
+			"--label-weight":         "600",
+			"--font-size-label":      "12px",
+			"--font-size-h1":         "22px",
+
+			// Mica-ish opaque surfaces. Sidebar sits slightly lighter than main
+			// to mimic the Windows 11 navigation pane tint.
+			"--bg-window":      "#1a1a1a",
+			"--bg-sidebar":     "#202020",
+			"--bg-main":        "#1c1c1c",
+			"--bg-panel":       "#2d2d2d",
+			"--bg-hover":       "rgba(255, 255, 255, 0.06)",
+			"--bg-active":      "rgba(96, 205, 255, 0.22)",
+			"--bg-input":       "#2c2c2c",
+			"--bg-input-focus": "#363636",
+			"--bg-terminal":    "#0c0c0c",
+
+			// Native popups (Windows uses these for <select> dropdowns)
+			"--option-bg":       "#2d2d2d",
+			"--option-fg":       "#ffffff",
+			"--option-group-fg": "rgba(255, 255, 255, 0.6)",
+
+			// Foreground
+			"--fg-primary":   "#ffffff",
+			"--fg-secondary": "rgba(255, 255, 255, 0.8)",
+			"--fg-tertiary":  "rgba(255, 255, 255, 0.55)",
+
+			// Fluent-style strokes: always-visible 1px card borders
+			"--border-subtle":     "rgba(255, 255, 255, 0.08)",
+			"--border-strong":     "rgba(255, 255, 255, 0.14)",
+			"--input-border-idle": "rgba(255, 255, 255, 0.10)",
+			"--panel-border":      "1px solid rgba(255, 255, 255, 0.08)",
+			"--sidebar-divider":   "1px solid rgba(255, 255, 255, 0.08)",
+
+			// Windows 11 dark-mode accent (light sky blue) + status palette
+			"--accent":       "#60cdff",
+			"--accent-hover": "#86d8ff",
+			"--danger":       "#ff99a4",
+			"--success":      "#6ccb5f",
+			"--warn":         "#ffc83d",
+
+			// Fluent uses 4px for controls, 8px for cards
+			"--radius-sm": "4px",
+			"--radius-md": "4px",
+			"--radius-lg": "8px",
+
+			// Subtle card elevation; no blur (Mica is a material, not a CSS effect)
+			"--shadow-panel":    "0 2px 4px rgba(0, 0, 0, 0.18)",
+			"--shadow-floating": "0 8px 16px rgba(0, 0, 0, 0.3)",
+			"--blur-strength":   "0px",
+
+			// Scrollbars — Windows 11 uses thin, subtle
+			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.20)",
+			"--scrollbar-thumb-hover": "rgba(255, 255, 255, 0.35)",
+
+			// Flush layout (no floating bubble — that's macOS 26's move)
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "32px",
+		},
+	},
 }
