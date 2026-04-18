@@ -26,6 +26,10 @@ export function DeleteProfile(arg1) {
   return window['go']['main']['App']['DeleteProfile'](arg1);
 }
 
+export function DeleteSkin(arg1) {
+  return window['go']['main']['App']['DeleteSkin'](arg1);
+}
+
 export function DeleteTheme(arg1) {
   return window['go']['main']['App']['DeleteTheme'](arg1);
 }
@@ -42,6 +46,10 @@ export function GetSettings() {
   return window['go']['main']['App']['GetSettings']();
 }
 
+export function ImportSkin() {
+  return window['go']['main']['App']['ImportSkin']();
+}
+
 export function ImportTheme() {
   return window['go']['main']['App']['ImportTheme']();
 }
@@ -56,6 +64,10 @@ export function ListPorts() {
 
 export function ListProfiles() {
   return window['go']['main']['App']['ListProfiles']();
+}
+
+export function ListSkins() {
+  return window['go']['main']['App']['ListSkins']();
 }
 
 export function ListThemes() {

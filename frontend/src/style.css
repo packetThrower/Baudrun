@@ -1,9 +1,21 @@
 :root {
   color-scheme: dark;
+
+  /* Typography */
   --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro",
     system-ui, sans-serif;
   --font-mono: "SF Mono", Menlo, Monaco, "Roboto Mono", ui-monospace, monospace;
+  --font-size-base: 13px;
+  --font-size-label: 11px;
+  --font-size-section: 15px;
+  --font-size-h1: 24px;
 
+  /* Label styling — skins can override to sentence-case, wider spacing, etc. */
+  --label-transform: uppercase;
+  --label-letter-spacing: 0.04em;
+  --label-weight: 500;
+
+  /* Surface colors */
   --bg-window: rgba(30, 30, 34, 0);
   --bg-sidebar: rgba(255, 255, 255, 0.04);
   --bg-main: rgba(20, 20, 22, 0.55);
@@ -14,22 +26,50 @@
   --bg-input-focus: rgba(255, 255, 255, 0.12);
   --bg-terminal: #0b0b0d;
 
+  /* Native-control fallbacks (for <option>/<optgroup> popups) */
+  --option-bg: #1e1e22;
+  --option-fg: #e4e4e7;
+  --option-group-fg: #9aa0a6;
+
+  /* Foreground colors */
   --fg-primary: rgba(255, 255, 255, 0.95);
   --fg-secondary: rgba(255, 255, 255, 0.65);
   --fg-tertiary: rgba(255, 255, 255, 0.4);
 
+  /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
 
+  /* Semantic accents */
   --accent: #0a84ff;
   --accent-hover: #409cff;
   --danger: #ff453a;
   --success: #32d74b;
+  --warn: #f5d76e;
 
+  /* Radii */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 10px;
 
+  /* Elevation — skins can swap for more pronounced shadows */
+  --shadow-panel: none;
+  --shadow-floating: none;
+
+  /* Backdrop blur strength — 0 disables the effect; skins can dial up */
+  --blur-strength: 0px;
+
+  /* Scrollbar chrome */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
+
+  /* Floating-panel controls (macOS 26 "bubble" look when non-zero) */
+  --shell-padding: 0;
+  --shell-gap: 0;
+  --panel-radius: 0;
+  --panel-shadow: none;
+
+  /* Chrome */
   --titlebar-height: 38px;
 }
 
@@ -45,7 +85,7 @@ body {
   background: var(--bg-window);
   color: var(--fg-primary);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
@@ -63,7 +103,7 @@ select,
 textarea {
   user-select: text;
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--fg-primary);
   background: var(--bg-input);
   border: 1px solid transparent;
@@ -78,12 +118,12 @@ textarea {
 
 option,
 optgroup {
-  background-color: #1e1e22;
-  color: #e4e4e7;
+  background-color: var(--option-bg);
+  color: var(--option-fg);
 }
 
 optgroup {
-  color: #9aa0a6;
+  color: var(--option-group-fg);
   font-style: italic;
 }
 
@@ -96,7 +136,7 @@ textarea:focus {
 
 button {
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--font-size-base);
   color: var(--fg-primary);
   background: var(--bg-input);
   border: 1px solid var(--border-subtle);
@@ -132,12 +172,12 @@ button.danger {
 
 label {
   display: block;
-  font-size: 11px;
+  font-size: var(--font-size-label);
   color: var(--fg-secondary);
   margin-bottom: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 500;
+  text-transform: var(--label-transform);
+  letter-spacing: var(--label-letter-spacing);
+  font-weight: var(--label-weight);
 }
 
 ::-webkit-scrollbar {
@@ -150,14 +190,14 @@ label {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--scrollbar-thumb);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: var(--scrollbar-thumb-hover);
   background-clip: padding-box;
   border: 2px solid transparent;
 }

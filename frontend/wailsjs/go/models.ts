@@ -156,6 +156,7 @@ export namespace settings {
 	    fontSize?: number;
 	    logDir?: string;
 	    disableDriverDetection?: boolean;
+	    skinId?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -167,6 +168,32 @@ export namespace settings {
 	        this.fontSize = source["fontSize"];
 	        this.logDir = source["logDir"];
 	        this.disableDriverDetection = source["disableDriverDetection"];
+	        this.skinId = source["skinId"];
+	    }
+	}
+
+}
+
+export namespace skins {
+	
+	export class Skin {
+	    id: string;
+	    name: string;
+	    source: string;
+	    description?: string;
+	    vars: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Skin(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.source = source["source"];
+	        this.description = source["description"];
+	        this.vars = source["vars"];
 	    }
 	}
 
