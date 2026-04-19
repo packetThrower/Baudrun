@@ -40,6 +40,8 @@
   let terminalRef: Terminal | null = null;
   let statusMsg = "";
   let offDisconnect: (() => void) | null = null;
+  let offReconnecting: (() => void) | null = null;
+  let offReconnected: (() => void) | null = null;
   let settingsOpen = false;
   let suspended = false;
   let ctrlDTR = true;
@@ -49,7 +51,9 @@
   $: currentProfile = draft ?? selectedExisting;
   $: isNew = !!draft;
   $: activeProfileID =
-    $session.status === "connected" || $session.status === "connecting"
+    $session.status === "connected" ||
+    $session.status === "connecting" ||
+    $session.status === "reconnecting"
       ? $session.profileID
       : "";
   $: isConnected =
@@ -58,9 +62,15 @@
   $: isConnecting =
     $session.status === "connecting" &&
     currentProfile?.id === $session.profileID;
-  $: viewingTerminal = isConnected && !suspended;
+  $: isReconnecting =
+    $session.status === "reconnecting" &&
+    currentProfile?.id === $session.profileID;
+  // Keep the terminal visible during a reconnect so scrollback survives.
+  $: viewingTerminal = (isConnected || isReconnecting) && !suspended;
   $: hasSession =
-    $session.status === "connected" || $session.status === "connecting";
+    $session.status === "connected" ||
+    $session.status === "connecting" ||
+    $session.status === "reconnecting";
   $: activeProfile = $profiles.find((p) => p.id === activeProfileID) ?? null;
   $: termLineEnding = (activeProfile?.lineEnding ?? currentProfile?.lineEnding ?? "crlf") as
     | "cr"
@@ -114,6 +124,26 @@
       statusMsg = reason ? `Disconnected: ${reason}` : "Disconnected";
     });
 
+    offReconnecting = api.onReconnecting((portName) => {
+      // Keep profileID from the current state so the UI stays anchored
+      // to the same profile while we wait for the adapter to reappear.
+      session.update((s) => {
+        const id =
+          s.status === "connected" ||
+          s.status === "connecting" ||
+          s.status === "reconnecting"
+            ? s.profileID
+            : "";
+        return { status: "reconnecting", profileID: id };
+      });
+      statusMsg = `Reconnecting to ${portName}…`;
+    });
+
+    offReconnected = api.onReconnected((profileID) => {
+      session.set({ status: "connected", profileID });
+      statusMsg = "Reconnected";
+    });
+
     try {
       const activeID = await api.activeProfileID();
       if (activeID) session.set({ status: "connected", profileID: activeID });
@@ -126,6 +156,8 @@
 
   onDestroy(() => {
     offDisconnect?.();
+    offReconnecting?.();
+    offReconnected?.();
   });
 
   async function maybeAutoDisconnect() {
@@ -445,7 +477,7 @@
         <div class="titlebar" style="--wails-draggable: drag;"></div>
         <header class="session-header">
           <div class="session-meta">
-            <span class="dot"></span>
+            <span class="dot" class:reconnecting={isReconnecting}></span>
             <div class="session-text">
               <strong>{activeProfile?.name ?? currentProfile?.name ?? ""}</strong>
               <span class="session-sub">
@@ -454,6 +486,7 @@
                 /{activeProfile?.dataBits ?? currentProfile?.dataBits ?? ""}
                 {((activeProfile?.parity ?? currentProfile?.parity) || " ")[0].toUpperCase()}
                 {activeProfile?.stopBits ?? currentProfile?.stopBits ?? ""}
+                {#if isReconnecting} · reconnecting…{/if}
               </span>
             </div>
           </div>
@@ -462,6 +495,7 @@
               class="line-btn"
               class:asserted={ctrlDTR}
               on:click={toggleDTR}
+              disabled={isReconnecting}
               title="Toggle DTR line ({ctrlDTR ? 'asserted' : 'deasserted'})"
             >
               <span class="line-dot"></span>DTR
@@ -470,12 +504,14 @@
               class="line-btn"
               class:asserted={ctrlRTS}
               on:click={toggleRTS}
+              disabled={isReconnecting}
               title="Toggle RTS line ({ctrlRTS ? 'asserted' : 'deasserted'})"
             >
               <span class="line-dot"></span>RTS
             </button>
             <button
               on:click={sendBreak}
+              disabled={isReconnecting}
               title="Send a ~300ms serial break (Cisco ROMMON, Juniper diag mode, boot-loader interrupt)"
             >
               Break
@@ -609,6 +645,17 @@
     border-radius: 50%;
     background: var(--success);
     box-shadow: 0 0 8px var(--success);
+  }
+
+  .dot.reconnecting {
+    background: var(--warn);
+    box-shadow: 0 0 8px var(--warn);
+    animation: reconnect-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes reconnect-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
   }
 
   .status {

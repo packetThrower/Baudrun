@@ -39,6 +39,7 @@ export namespace profiles {
 	    hexView: boolean;
 	    timestamps: boolean;
 	    logEnabled: boolean;
+	    autoReconnect: boolean;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -69,6 +70,7 @@ export namespace profiles {
 	        this.hexView = source["hexView"];
 	        this.timestamps = source["timestamps"];
 	        this.logEnabled = source["logEnabled"];
+	        this.autoReconnect = source["autoReconnect"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }

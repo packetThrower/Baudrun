@@ -546,6 +546,18 @@
               <span class="inline-hint">raw bytes; destination set in Settings → Advanced</span>
             </label>
           </div>
+
+          <div class="field checkbox full">
+            <label>
+              <input
+                type="checkbox"
+                bind:checked={draft.autoReconnect}
+                on:change={markDirty}
+              />
+              Auto-reconnect on drop
+              <span class="inline-hint">poll for the port to reappear (up to 30s) and reopen transparently</span>
+            </label>
+          </div>
         </div>
       </section>
     </details>

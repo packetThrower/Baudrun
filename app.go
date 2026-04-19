@@ -22,8 +22,13 @@ import (
 )
 
 const (
-	EventSerialData       = "serial:data"
-	EventSerialDisconnect = "serial:disconnect"
+	EventSerialData         = "serial:data"
+	EventSerialDisconnect   = "serial:disconnect"
+	EventSerialReconnecting = "serial:reconnecting"
+	EventSerialReconnected  = "serial:reconnected"
+
+	reconnectInterval = 1 * time.Second
+	reconnectTimeout  = 30 * time.Second
 )
 
 type App struct {
@@ -35,6 +40,11 @@ type App struct {
 	sessMu   sync.Mutex
 	session  *sserial.Session
 	sessID   string
+	// sessProfile snapshots the profile used for the current session
+	// so auto-reconnect can reopen with the same config without hitting
+	// the profile store again (user could have edited it mid-reconnect).
+	sessProfile     profiles.Profile
+	reconnectCancel context.CancelFunc
 }
 
 func NewApp() *App {
@@ -237,7 +247,13 @@ func (a *App) Connect(profileID string) error {
 	if !ok {
 		return fmt.Errorf("profile %s not found", profileID)
 	}
+	return a.openSession(p)
+}
 
+// openSession opens the port for a profile and wires the data/exit
+// callbacks. Shared between the user-initiated Connect and the
+// auto-reconnect retry loop so both paths produce identical sessions.
+func (a *App) openSession(p profiles.Profile) error {
 	a.sessMu.Lock()
 	if a.session != nil {
 		a.sessMu.Unlock()
@@ -262,17 +278,7 @@ func (a *App) Connect(profileID string) error {
 		func(chunk []byte) {
 			runtime.EventsEmit(a.ctx, EventSerialData, base64.StdEncoding.EncodeToString(chunk))
 		},
-		func(err error) {
-			msg := ""
-			if err != nil {
-				msg = err.Error()
-			}
-			a.sessMu.Lock()
-			a.session = nil
-			a.sessID = ""
-			a.sessMu.Unlock()
-			runtime.EventsEmit(a.ctx, EventSerialDisconnect, msg)
-		},
+		a.onSessionExit,
 	)
 	if err != nil {
 		return err
@@ -288,9 +294,98 @@ func (a *App) Connect(profileID string) error {
 
 	a.sessMu.Lock()
 	a.session = sess
-	a.sessID = profileID
+	a.sessID = p.ID
+	a.sessProfile = p
 	a.sessMu.Unlock()
 	return nil
+}
+
+// onSessionExit fires from the read pump when the port returns an
+// error — typically "device disconnected" when a USB-serial adapter
+// re-enumerates or is unplugged. If the profile opts into
+// auto-reconnect we kick off a retry loop instead of surfacing the
+// disconnect; the xterm stays mounted on the frontend so scrollback
+// survives the gap.
+func (a *App) onSessionExit(exitErr error) {
+	a.sessMu.Lock()
+	profile := a.sessProfile
+	sess := a.session
+	a.session = nil
+	a.sessMu.Unlock()
+
+	// Release the orphaned session's fd + log writer. Close must be
+	// async — we're running inside the session's read pump and Close
+	// waits for that same pump to exit via WaitGroup, so a synchronous
+	// call would deadlock.
+	if sess != nil {
+		go func() { _ = sess.Close() }()
+	}
+
+	if profile.AutoReconnect {
+		a.startReconnect(profile)
+		return
+	}
+
+	msg := ""
+	if exitErr != nil {
+		msg = exitErr.Error()
+	}
+	a.sessMu.Lock()
+	a.sessID = ""
+	a.sessProfile = profiles.Profile{}
+	a.sessMu.Unlock()
+	runtime.EventsEmit(a.ctx, EventSerialDisconnect, msg)
+}
+
+func (a *App) startReconnect(p profiles.Profile) {
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.sessMu.Lock()
+	if a.reconnectCancel != nil {
+		a.reconnectCancel()
+	}
+	a.reconnectCancel = cancel
+	a.sessMu.Unlock()
+
+	runtime.EventsEmit(a.ctx, EventSerialReconnecting, p.PortName)
+	go a.reconnectLoop(ctx, p)
+}
+
+func (a *App) reconnectLoop(ctx context.Context, p profiles.Profile) {
+	defer func() {
+		a.sessMu.Lock()
+		a.reconnectCancel = nil
+		a.sessMu.Unlock()
+	}()
+
+	deadline := time.Now().Add(reconnectTimeout)
+	ticker := time.NewTicker(reconnectInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			a.finishFailedReconnect("reconnect cancelled")
+			return
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				a.finishFailedReconnect("reconnect timeout")
+				return
+			}
+			if err := a.openSession(p); err != nil {
+				continue
+			}
+			runtime.EventsEmit(a.ctx, EventSerialReconnected, p.ID)
+			return
+		}
+	}
+}
+
+func (a *App) finishFailedReconnect(reason string) {
+	a.sessMu.Lock()
+	a.sessID = ""
+	a.sessProfile = profiles.Profile{}
+	a.sessMu.Unlock()
+	runtime.EventsEmit(a.ctx, EventSerialDisconnect, reason)
 }
 
 func (a *App) openSessionLog(p profiles.Profile) (*os.File, error) {
@@ -334,9 +429,18 @@ func slugifyName(s string) string {
 func (a *App) Disconnect() error {
 	a.sessMu.Lock()
 	sess := a.session
+	cancel := a.reconnectCancel
 	a.session = nil
 	a.sessID = ""
+	a.sessProfile = profiles.Profile{}
+	a.reconnectCancel = nil
 	a.sessMu.Unlock()
+	// Cancel a pending reconnect before closing — the reconnect loop
+	// might otherwise briefly reopen the port between our Close and
+	// the user's expectation that the port is free.
+	if cancel != nil {
+		cancel()
+	}
 	if sess == nil {
 		return nil
 	}

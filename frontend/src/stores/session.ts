@@ -4,6 +4,7 @@ export type SessionState =
   | { status: "idle" }
   | { status: "connecting"; profileID: string }
   | { status: "connected"; profileID: string }
+  | { status: "reconnecting"; profileID: string }
   | { status: "error"; message: string };
 
 export const session = writable<SessionState>({ status: "idle" });
