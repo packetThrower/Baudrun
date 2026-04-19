@@ -12,14 +12,18 @@ var builtins = []Skin{
 		Description:   "The default look with translucent panels and compact iOS-style labels. Adapts to system light/dark.",
 		SupportsLight: true,
 		LightVars: map[string]string{
-			"--bg-window":             "rgba(245, 245, 247, 0)",
-			"--bg-sidebar":            "rgba(0, 0, 0, 0.04)",
-			"--bg-main":                "rgba(245, 245, 247, 0.85)",
-			"--bg-panel":               "rgba(0, 0, 0, 0.05)",
+			// The window's NSVisualEffectView is pinned dark (Wails v2.12
+			// can't flip it live on macOS), so light surfaces must be
+			// opaque — any alpha lets the dark vibrancy bleed through and
+			// the whole thing looks muddy.
+			"--bg-window":             "#f5f5f7",
+			"--bg-sidebar":            "#ececee",
+			"--bg-main":               "#f5f5f7",
+			"--bg-panel":               "#ffffff",
 			"--bg-hover":               "rgba(0, 0, 0, 0.06)",
 			"--bg-active":              "rgba(0, 113, 227, 0.18)",
-			"--bg-input":               "rgba(0, 0, 0, 0.06)",
-			"--bg-input-focus":         "rgba(0, 0, 0, 0.10)",
+			"--bg-input":               "#ffffff",
+			"--bg-input-focus":         "#f0f0f2",
 			"--option-bg":              "#ffffff",
 			"--option-fg":              "#1d1d1f",
 			"--option-group-fg":        "rgba(0, 0, 0, 0.55)",
@@ -119,13 +123,19 @@ var builtins = []Skin{
 		Description:   "Frosted surfaces, larger squircle radii, sentence-case labels, brighter accents. Evokes the Liquid Glass design language.",
 		SupportsLight: true,
 		LightVars: map[string]string{
-			"--bg-sidebar":     "rgba(0, 0, 0, 0.04)",
-			"--bg-main":        "rgba(255, 255, 255, 0.45)",
-			"--bg-panel":       "rgba(255, 255, 255, 0.7)",
+			// Liquid Glass in light mode paints the shell backdrop opaque
+			// (--shell-bg) so the floating-bubble gaps aren't framed by
+			// the dark NSVisualEffectView that's pinned behind the window.
+			// Surfaces are opaque light for the same reason — any alpha
+			// would reveal dark vibrancy and muddy the look.
+			"--shell-bg":       "#e8e8ea",
+			"--bg-sidebar":     "#ffffff",
+			"--bg-main":        "#ffffff",
+			"--bg-panel":       "#ffffff",
 			"--bg-hover":       "rgba(0, 0, 0, 0.06)",
 			"--bg-active":      "rgba(0, 122, 255, 0.22)",
-			"--bg-input":       "rgba(0, 0, 0, 0.06)",
-			"--bg-input-focus": "rgba(0, 0, 0, 0.10)",
+			"--bg-input":       "rgba(0, 0, 0, 0.05)",
+			"--bg-input-focus": "rgba(0, 0, 0, 0.08)",
 
 			"--option-bg":       "#ffffff",
 			"--option-fg":       "#1d1d1f",
@@ -141,7 +151,7 @@ var builtins = []Skin{
 			"--accent":       "#007aff",
 			"--accent-hover": "#2a93ff",
 
-			"--panel-shadow":          "0 10px 40px rgba(0, 0, 0, 0.12), 0 1px 0 rgba(255, 255, 255, 0.6) inset",
+			"--panel-shadow":          "0 10px 40px rgba(0, 0, 0, 0.12), 0 1px 0 rgba(255, 255, 255, 0.8) inset",
 			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.22)",
 			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.35)",
 		},

@@ -79,24 +79,14 @@
   $: termFontSize = $settings.fontSize || 13;
 
   // Re-apply skin whenever the active selection, loaded list, appearance
-  // preference, or system color scheme changes.
+  // preference, or system color scheme changes. The window's own NSAppearance
+  // is pinned dark at launch (main.go) because Wails v2.12's runtime theme
+  // setters are empty stubs on macOS — only CSS swaps live.
   $: applySkin(
     resolveSkin($activeSkinID, $skins),
     $appearance,
     $systemIsDark,
   );
-
-  // Flip the OS window vibrancy to match the active mode so translucent
-  // skins sit on the correct backdrop material. Dark-only skins (CRT)
-  // pin the window to dark regardless of the preference.
-  $: {
-    const s = resolveSkin($activeSkinID, $skins);
-    if (s) {
-      const wantDark = s.supportsLight === false;
-      const mode = wantDark ? "dark" : $appearance;
-      api.setWindowAppearance(mode).catch(() => {});
-    }
-  }
 
   function resolveTheme(id: string, all: Theme[]): Theme | undefined {
     return (
@@ -510,8 +500,12 @@
     height: 100%;
     padding: var(--shell-padding);
     gap: var(--shell-gap);
-    /* No background here — sidebar and main carry their own. With non-zero
-       shell-padding, the window's vibrancy shows through the gaps. */
+    background: var(--shell-bg, transparent);
+    /* Dark-mode skins leave --shell-bg unset so the window's vibrancy
+       shows through the gaps around floating panels. Light skins with
+       translucent surfaces must override it — the NSVisualEffectView is
+       pinned dark, so a transparent shell would otherwise frame each
+       panel with dark vibrancy. */
   }
 
   .main {

@@ -24,17 +24,21 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour:  &options.RGBA{R: 30, G: 30, B: 34, A: 255},
-		OnStartup:         app.startup,
-		Bind:              []interface{}{app},
+		BackgroundColour: &options.RGBA{R: 30, G: 30, B: 34, A: 255},
+		OnStartup:        app.startup,
+		Bind:             []interface{}{app},
 		Mac: &mac.Options{
-			TitleBar:             mac.TitleBarHiddenInset(),
+			TitleBar: mac.TitleBarHiddenInset(),
+			// Pin the window to the dark system appearance so the
+			// NSVisualEffectView behind translucent skins (Liquid Glass,
+			// Seriesly) renders on a dark frosted material. Wails v2.12's
+			// runtime theme setters are empty stubs on macOS, so this has
+			// to be decided at startup. Until live-switch is wired up,
+			// the app presents as dark-only regardless of the CSS
+			// Appearance preference.
+			Appearance:           mac.NSAppearanceNameDarkAqua,
 			WindowIsTranslucent:  true,
 			WebviewIsTransparent: true,
-			// NSAppearance is controlled at runtime via App.SetWindowAppearance
-			// so the window's vibrancy stays in sync with the user's light/dark
-			// preference. Leaving this unset means the window defaults to the
-			// system appearance before our startup logic applies.
 			About: &mac.AboutInfo{
 				Title:   "Seriesly",
 				Message: "A serial terminal for network devices.",
