@@ -785,6 +785,123 @@ var builtins = []Skin{
 		},
 	},
 	{
+		ID:            "windows-xp",
+		Name:          "Windows XP (Luna)",
+		Source:        "builtin",
+		Description:   "Windows XP Luna: Tahoma typography, the iconic gradient-blue sidebar, gray #ece9d8 surfaces, slight rounding on controls. Adapts to light (proper Luna) and dark (Luna-family approximation).",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			// Classic XP surfaces
+			"--bg-window":      "#ece9d8",
+			"--bg-sidebar":     "#d6dff7",
+			"--bg-main":        "#ffffff",
+			"--bg-panel":       "#ece9d8",
+			"--bg-hover":       "rgba(58, 119, 212, 0.18)",
+			// XP used a solid source-list blue with white text; it's
+			// iconic but can overwhelm. Using the Luna selection blue.
+			"--bg-active":      "#316ac5",
+			"--bg-input":       "#ffffff",
+			"--bg-input-focus": "#ffffcc",
+			"--bg-terminal":    "#000000",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#000000",
+			"--option-group-fg": "rgba(0, 0, 0, 0.6)",
+
+			"--fg-primary":   "#000000",
+			"--fg-secondary": "rgba(0, 0, 0, 0.72)",
+			"--fg-tertiary":  "rgba(0, 0, 0, 0.5)",
+
+			// XP's slightly-blueish 3D bevel borders (the "#7f9db9" color
+			// was everywhere in XP chrome)
+			"--border-subtle":     "rgba(0, 0, 0, 0.3)",
+			"--border-strong":     "rgba(0, 0, 0, 0.5)",
+			"--input-border-idle": "#7f9db9",
+			"--panel-border":      "1px solid #7f9db9",
+			"--sidebar-divider":   "1px solid #9eb3da",
+
+			// Darker XP blue for light-mode contrast against text
+			"--accent":       "#0752b7",
+			"--accent-hover": "#0a5dc8",
+			"--danger":       "#c42d20",
+			"--success":      "#4caf50",
+			"--warn":         "#f4b400",
+
+			"--shadow-panel":          "inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 1px 2px rgba(0, 0, 0, 0.12)",
+			"--scrollbar-thumb":       "#c7d4e8",
+			"--scrollbar-thumb-hover": "#98b5d9",
+		},
+		Vars: map[string]string{
+			// Tahoma was THE XP UI font. Consolas didn't ship until Vista;
+			// XP's mono was Courier New.
+			"--font-ui":   `Tahoma, Geneva, Verdana, "DejaVu Sans", system-ui, sans-serif`,
+			"--font-mono": `"Courier New", Consolas, Menlo, "Lucida Console", monospace`,
+
+			// XP UI was denser — 11-12px was typical
+			"--font-size-base":    "12px",
+			"--font-size-label":   "11px",
+			"--font-size-section": "14px",
+			"--font-size-h1":      "20px",
+
+			// XP didn't use small-caps for row labels — sentence case
+			"--label-transform":      "none",
+			"--label-letter-spacing": "0",
+			"--label-weight":         "400",
+
+			// Dark "XP family" — not official XP, but XP Silver-inspired
+			"--bg-window":      "#1a1e2d",
+			"--bg-sidebar":     "#14182a",
+			"--bg-main":        "#242a3d",
+			"--bg-panel":       "#2c3246",
+			"--bg-hover":       "rgba(58, 119, 212, 0.2)",
+			"--bg-active":      "#316ac5",
+			"--bg-input":       "#1a1e2d",
+			"--bg-input-focus": "#252a3d",
+			"--bg-terminal":    "#000000",
+
+			"--option-bg":       "#242a3d",
+			"--option-fg":       "#e0e0e0",
+			"--option-group-fg": "rgba(224, 224, 224, 0.6)",
+
+			"--fg-primary":   "#e0e0e0",
+			"--fg-secondary": "rgba(224, 224, 224, 0.72)",
+			"--fg-tertiary":  "rgba(224, 224, 224, 0.48)",
+
+			"--border-subtle":     "rgba(0, 0, 0, 0.5)",
+			"--border-strong":     "rgba(0, 0, 0, 0.7)",
+			"--input-border-idle": "rgba(0, 0, 0, 0.4)",
+			"--panel-border":      "1px solid rgba(0, 0, 0, 0.4)",
+			"--sidebar-divider":   "2px solid rgba(0, 0, 0, 0.5)",
+
+			"--accent":       "#3a77d4",
+			"--accent-hover": "#5b8fd9",
+			"--danger":       "#c42d20",
+			"--success":      "#4caf50",
+			"--warn":         "#f4b400",
+
+			// Slight rounding on controls — XP had gentle bevels, not the
+			// sharp corners of Windows 95/2000 and not the modern 8px+ radii
+			"--radius-sm": "2px",
+			"--radius-md": "3px",
+			"--radius-lg": "5px",
+
+			// XP's signature 3D bevel — an inset highlight on top of a
+			// subtle drop shadow — gives controls that "raised" look
+			"--shadow-panel":    "inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4)",
+			"--shadow-floating": "0 6px 20px rgba(0, 0, 0, 0.45)",
+			"--blur-strength":   "0px",
+
+			"--scrollbar-thumb":       "rgba(58, 119, 212, 0.4)",
+			"--scrollbar-thumb-hover": "rgba(58, 119, 212, 0.65)",
+
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "30px",
+		},
+	},
+	{
 		ID:          "crt",
 		Name:        "CRT (Green Phosphor)",
 		Source:      "builtin",
