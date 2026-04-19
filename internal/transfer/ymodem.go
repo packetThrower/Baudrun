@@ -79,7 +79,7 @@ func buildHeader(filename string, size int64) []byte {
 func awaitC(r Reader) error {
 	deadline := time.Now().Add(handshakeTimeout)
 	for time.Now().Before(deadline) {
-		b, err := r.ReadByte(time.Second)
+		b, err := r.NextByte(time.Second)
 		if err != nil {
 			continue
 		}

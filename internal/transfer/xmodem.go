@@ -57,7 +57,7 @@ func waitForHandshake(r Reader, variant XModemVariant) error {
 	}
 	deadline := time.Now().Add(handshakeTimeout)
 	for time.Now().Before(deadline) {
-		b, err := r.ReadByte(time.Second)
+		b, err := r.NextByte(time.Second)
 		if err != nil {
 			continue
 		}
@@ -101,7 +101,7 @@ func sendBlock(r Reader, w Writer, header, blockNum byte, chunk []byte, blockSiz
 		if _, err := w.Write(packet); err != nil {
 			return err
 		}
-		b, err := r.ReadByte(ackTimeout)
+		b, err := r.NextByte(ackTimeout)
 		if err != nil {
 			continue
 		}
@@ -126,7 +126,7 @@ func sendEOT(r Reader, w Writer) error {
 		if _, err := w.Write([]byte{EOT}); err != nil {
 			return err
 		}
-		b, err := r.ReadByte(ackTimeout)
+		b, err := r.NextByte(ackTimeout)
 		if err != nil {
 			continue
 		}
