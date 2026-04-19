@@ -76,6 +76,9 @@ network gear without the ritual of remembering baud rates, fiddling with
 - Per-profile theme override, with a global default that every profile
   inherits unless it sets its own.
 - Custom themes persisted to `~/Library/Application Support/Seriesly/themes/`.
+  See [docs/THEMES.md](docs/THEMES.md) for the JSON schema, the ANSI-slot
+  reference, and tips on picking `.itermcolors` files from the wider
+  ecosystem.
 
 ### Skins (app chrome)
 
