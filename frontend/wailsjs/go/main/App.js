@@ -6,6 +6,10 @@ export function ActiveProfileID() {
   return window['go']['main']['App']['ActiveProfileID']();
 }
 
+export function CancelTransfer() {
+  return window['go']['main']['App']['CancelTransfer']();
+}
+
 export function Connect(arg1) {
   return window['go']['main']['App']['Connect'](arg1);
 }
@@ -78,12 +82,20 @@ export function PickLogDirectory() {
   return window['go']['main']['App']['PickLogDirectory']();
 }
 
+export function PickSendFile() {
+  return window['go']['main']['App']['PickSendFile']();
+}
+
 export function Send(arg1) {
   return window['go']['main']['App']['Send'](arg1);
 }
 
 export function SendBreak() {
   return window['go']['main']['App']['SendBreak']();
+}
+
+export function SendFile(arg1, arg2) {
+  return window['go']['main']['App']['SendFile'](arg1, arg2);
 }
 
 export function SetDTR(arg1) {

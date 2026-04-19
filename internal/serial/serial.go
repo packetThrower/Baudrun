@@ -98,6 +98,11 @@ type Session struct {
 	// Optional sink for received bytes (session logging). Owned by the
 	// session; closed on Close.
 	logWriter io.WriteCloser
+	// transferRX, when set, diverts incoming bytes away from onRead.
+	// Used by file-transfer protocols that need raw byte access and
+	// don't want the normal event bus to also display the bytes.
+	transferMu sync.Mutex
+	transferRX func([]byte)
 }
 
 // SetLogWriter attaches a writer that will receive a copy of every byte
@@ -186,7 +191,12 @@ func (s *Session) readPump() {
 		if n > 0 {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
-			if s.onRead != nil {
+			s.transferMu.Lock()
+			transferHandler := s.transferRX
+			s.transferMu.Unlock()
+			if transferHandler != nil {
+				transferHandler(chunk)
+			} else if s.onRead != nil {
 				s.onRead(chunk)
 			}
 			if w := s.logWriter; w != nil {
@@ -248,6 +258,23 @@ func (s *Session) Break(d time.Duration) error {
 		return errors.New("session closed")
 	}
 	return s.port.Break(d)
+}
+
+// StartTransfer diverts incoming RX bytes to fn until EndTransfer is
+// called. Normal onRead delivery (to the frontend event bus) is
+// suspended during this period, so file-transfer protocols like
+// XMODEM/YMODEM can drive the port without noisy display side effects.
+func (s *Session) StartTransfer(fn func([]byte)) {
+	s.transferMu.Lock()
+	s.transferRX = fn
+	s.transferMu.Unlock()
+}
+
+// EndTransfer restores normal onRead delivery.
+func (s *Session) EndTransfer() {
+	s.transferMu.Lock()
+	s.transferRX = nil
+	s.transferMu.Unlock()
 }
 
 func (s *Session) Close() error {

@@ -4,7 +4,7 @@
   import ProfileForm from "./lib/ProfileForm.svelte";
   import Terminal from "./lib/Terminal.svelte";
   import Settings from "./lib/Settings.svelte";
-  import { api, type Profile, type Theme } from "./lib/api";
+  import { api, type Profile, type Theme, type TransferProtocol } from "./lib/api";
   import {
     profiles,
     selectedProfileID,
@@ -358,6 +358,76 @@
     }
   }
 
+  // File transfer (XMODEM / YMODEM) state.
+  type TransferState =
+    | { status: "picking" }
+    | { status: "sending"; filename: string; sent: number; total: number }
+    | { status: "done"; filename: string }
+    | { status: "error"; reason: string };
+
+  let transferOpen = false;
+  let transferProtocol: TransferProtocol = "ymodem";
+  let transferPath = "";
+  let transferState: TransferState = { status: "picking" };
+  let offTransferProgress: (() => void) | null = null;
+  let offTransferComplete: (() => void) | null = null;
+  let offTransferError: (() => void) | null = null;
+
+  function openTransfer() {
+    transferOpen = true;
+    transferState = { status: "picking" };
+    transferPath = "";
+  }
+
+  function closeTransfer() {
+    if (transferState.status === "sending") return; // block close mid-flight
+    transferOpen = false;
+  }
+
+  async function pickTransferFile() {
+    try {
+      const path = await api.pickSendFile();
+      if (path) transferPath = path;
+    } catch (e) {
+      transferState = { status: "error", reason: String(e) };
+    }
+  }
+
+  async function startTransfer() {
+    if (!transferPath) return;
+    const filename = transferPath.split(/[\\/]/).pop() || transferPath;
+    transferState = { status: "sending", filename, sent: 0, total: 0 };
+
+    offTransferProgress = api.onTransferProgress((p) => {
+      if (transferState.status === "sending") {
+        transferState = { ...transferState, sent: p.sent, total: p.total };
+      }
+    });
+    offTransferComplete = api.onTransferComplete((name) => {
+      transferState = { status: "done", filename: name };
+    });
+    offTransferError = api.onTransferError((reason) => {
+      transferState = { status: "error", reason };
+    });
+
+    try {
+      await api.sendFile(transferProtocol, transferPath);
+    } catch {
+      // Error already surfaced via onTransferError.
+    } finally {
+      offTransferProgress?.();
+      offTransferComplete?.();
+      offTransferError?.();
+      offTransferProgress = null;
+      offTransferComplete = null;
+      offTransferError = null;
+    }
+  }
+
+  function cancelTransfer() {
+    api.cancelTransfer().catch(() => {});
+  }
+
   async function handleDisconnect() {
     try {
       await api.disconnect();
@@ -612,6 +682,13 @@
             >
               Hex
             </button>
+            <button
+              on:click={openTransfer}
+              disabled={isReconnecting}
+              title="Send a file via XMODEM or YMODEM (firmware uploads, embedded bootloaders)"
+            >
+              Send File
+            </button>
             <button on:click={() => terminalRef?.clear()}>Clear</button>
             <button on:click={handleSuspend} title="Keep session alive; return to profile">
               Suspend
@@ -643,6 +720,99 @@
     </footer>
   </main>
 </div>
+
+{#if transferOpen}
+  <div
+    class="modal-backdrop"
+    on:click={closeTransfer}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
+    <div class="transfer-modal" on:click|stopPropagation role="presentation">
+      <header class="hex-header">
+        <strong>Send file</strong>
+        <button
+          on:click={closeTransfer}
+          disabled={transferState.status === "sending"}
+          aria-label="Close"
+        >×</button>
+      </header>
+
+      {#if transferState.status === "picking"}
+        <div class="field">
+          <label for="transfer-protocol">Protocol</label>
+          <select id="transfer-protocol" bind:value={transferProtocol}>
+            <option value="ymodem">YMODEM — 1024-byte blocks with filename + size</option>
+            <option value="xmodem-1k">XMODEM-1K — 1024-byte blocks, CRC-16</option>
+            <option value="xmodem-crc">XMODEM-CRC — 128-byte blocks, CRC-16</option>
+            <option value="xmodem">XMODEM — 128-byte blocks, 8-bit checksum (legacy)</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>File</label>
+          <div class="file-row">
+            <input
+              type="text"
+              readonly
+              value={transferPath || ""}
+              placeholder="No file selected"
+            />
+            <button on:click={pickTransferFile}>Choose…</button>
+          </div>
+        </div>
+
+        <p class="hex-hint">
+          Start the receiver on the target device first (<code>rx</code>,
+          <code>loady</code>, bootloader "Receive File" menu, etc.) before
+          clicking Send. The transfer waits up to 60 s for the receiver's
+          handshake before giving up.
+        </p>
+
+        <div class="hex-actions">
+          <button on:click={closeTransfer}>Cancel</button>
+          <button class="primary" on:click={startTransfer} disabled={!transferPath}>
+            Send
+          </button>
+        </div>
+      {:else if transferState.status === "sending"}
+        <div class="transfer-status">
+          <div class="transfer-filename">{transferState.filename}</div>
+          <div class="progress-track">
+            <div
+              class="progress-fill"
+              style="width: {transferState.total > 0
+                ? ((transferState.sent / transferState.total) * 100).toFixed(1)
+                : 0}%"
+            ></div>
+          </div>
+          <div class="transfer-bytes">
+            {transferState.sent.toLocaleString()} /
+            {transferState.total.toLocaleString()} bytes
+            {#if transferState.total > 0}
+              ({((transferState.sent / transferState.total) * 100).toFixed(0)}%)
+            {/if}
+          </div>
+        </div>
+        <div class="hex-actions">
+          <button on:click={cancelTransfer}>Cancel transfer</button>
+        </div>
+      {:else if transferState.status === "done"}
+        <p class="transfer-done">✓ Sent {transferState.filename}</p>
+        <div class="hex-actions">
+          <button class="primary" on:click={closeTransfer}>Close</button>
+        </div>
+      {:else if transferState.status === "error"}
+        <div class="hex-error">{transferState.reason}</div>
+        <div class="hex-actions">
+          <button on:click={() => (transferState = { status: "picking" })}>Try again</button>
+          <button class="primary" on:click={closeTransfer}>Close</button>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
 
 {#if hexSendOpen}
   <div
@@ -925,5 +1095,80 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  .transfer-modal {
+    background: var(--bg-main);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    width: 100%;
+    max-width: 560px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .transfer-modal .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .transfer-modal .field > label {
+    font-size: var(--font-size-label);
+    text-transform: var(--label-transform);
+    letter-spacing: var(--label-letter-spacing);
+    font-weight: var(--label-weight);
+    color: var(--fg-secondary);
+  }
+
+  .file-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .file-row input {
+    flex: 1;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .transfer-status {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .transfer-filename {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--fg-primary);
+  }
+
+  .progress-track {
+    height: 8px;
+    background: var(--bg-input);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.1s linear;
+  }
+
+  .transfer-bytes {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-tertiary);
+  }
+
+  .transfer-done {
+    font-size: 14px;
+    color: var(--success);
+    margin: 0;
   }
 </style>

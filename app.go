@@ -17,6 +17,7 @@ import (
 	"Seriesly/internal/settings"
 	"Seriesly/internal/skins"
 	"Seriesly/internal/themes"
+	"Seriesly/internal/transfer"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -26,10 +27,19 @@ const (
 	EventSerialDisconnect   = "serial:disconnect"
 	EventSerialReconnecting = "serial:reconnecting"
 	EventSerialReconnected  = "serial:reconnected"
+	EventTransferProgress   = "transfer:progress"
+	EventTransferComplete   = "transfer:complete"
+	EventTransferError      = "transfer:error"
 
 	reconnectInterval = 1 * time.Second
 	reconnectTimeout  = 30 * time.Second
 )
+
+// TransferProgress is the payload emitted on EventTransferProgress.
+type TransferProgress struct {
+	Sent  int64 `json:"sent"`
+	Total int64 `json:"total"`
+}
 
 type App struct {
 	ctx      context.Context
@@ -45,6 +55,10 @@ type App struct {
 	// the profile store again (user could have edited it mid-reconnect).
 	sessProfile     profiles.Profile
 	reconnectCancel context.CancelFunc
+	// transferCancel is non-nil while a SendFile call is running.
+	// Checked to block concurrent transfers and called by
+	// CancelTransfer to abort mid-flight.
+	transferCancel context.CancelFunc
 }
 
 func NewApp() *App {
@@ -493,6 +507,134 @@ func (a *App) SendBreak() error {
 		return errors.New("not connected")
 	}
 	return sess.Break(300 * time.Millisecond)
+}
+
+// File transfer API.
+//
+// The flow is driven from the frontend: a file picker, a protocol
+// picker, then SendFile blocks until the transfer completes or
+// fails. Progress is surfaced via transfer:progress events;
+// completion or error via transfer:complete / transfer:error.
+
+// PickSendFile opens a native file dialog and returns the selected
+// path, or empty string on cancel.
+func (a *App) PickSendFile() (string, error) {
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Choose a file to send",
+	})
+}
+
+// SendFile drives an XMODEM or YMODEM transfer over the active
+// session. Valid protocols: "xmodem", "xmodem-crc", "xmodem-1k",
+// "ymodem". Returns when the transfer completes, fails, or the
+// caller cancels via CancelTransfer.
+func (a *App) SendFile(protocol, path string) error {
+	a.sessMu.Lock()
+	sess := a.session
+	if a.transferCancel != nil {
+		a.sessMu.Unlock()
+		return errors.New("transfer already in progress")
+	}
+	if sess == nil {
+		a.sessMu.Unlock()
+		return errors.New("not connected")
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.transferCancel = cancel
+	a.sessMu.Unlock()
+
+	defer func() {
+		a.sessMu.Lock()
+		a.transferCancel = nil
+		a.sessMu.Unlock()
+	}()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		runtime.EventsEmit(a.ctx, EventTransferError, fmt.Sprintf("read file: %v", err))
+		return fmt.Errorf("read file: %w", err)
+	}
+
+	rx := make(chan byte, 8192)
+	sess.StartTransfer(func(chunk []byte) {
+		for _, b := range chunk {
+			select {
+			case rx <- b:
+			default:
+				// Drop on overflow. In practice the transfer
+				// state machine reads continuously, so the
+				// channel shouldn't fill.
+			}
+		}
+	})
+	defer sess.EndTransfer()
+
+	reader := &byteChanReader{ch: rx}
+	writer := sessionWriter{sess: sess}
+	opts := transfer.Options{
+		Cancel: ctx,
+		Progress: func(sent, total int64) {
+			runtime.EventsEmit(a.ctx, EventTransferProgress, TransferProgress{Sent: sent, Total: total})
+		},
+	}
+
+	switch protocol {
+	case "xmodem":
+		err = transfer.SendXModem(reader, writer, data, transfer.XModem, opts)
+	case "xmodem-crc":
+		err = transfer.SendXModem(reader, writer, data, transfer.XModemCRC, opts)
+	case "xmodem-1k":
+		err = transfer.SendXModem(reader, writer, data, transfer.XModem1K, opts)
+	case "ymodem":
+		err = transfer.SendYModem(reader, writer, filepath.Base(path), data, opts)
+	default:
+		err = fmt.Errorf("unknown protocol: %s", protocol)
+	}
+
+	if err != nil {
+		runtime.EventsEmit(a.ctx, EventTransferError, err.Error())
+		return err
+	}
+	runtime.EventsEmit(a.ctx, EventTransferComplete, filepath.Base(path))
+	return nil
+}
+
+// CancelTransfer aborts an in-flight transfer. No-op when no
+// transfer is running.
+func (a *App) CancelTransfer() {
+	a.sessMu.Lock()
+	cancel := a.transferCancel
+	a.sessMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// byteChanReader adapts a byte channel to the transfer.Reader
+// interface. Channel reads honor a per-call timeout so protocol
+// handshakes (which wait for a specific byte) can bound their wait.
+type byteChanReader struct {
+	ch <-chan byte
+}
+
+func (r *byteChanReader) ReadByte(timeout time.Duration) (byte, error) {
+	select {
+	case b := <-r.ch:
+		return b, nil
+	case <-time.After(timeout):
+		return 0, transfer.ErrTimeout
+	}
+}
+
+// sessionWriter adapts *sserial.Session to transfer.Writer.
+// Session.Write returns (int, error) with an `error` type; the
+// transfer package only needs the standard io.Writer shape.
+type sessionWriter struct {
+	sess *sserial.Session
+}
+
+func (w sessionWriter) Write(p []byte) (int, error) {
+	return w.sess.Write(p)
 }
 
 func (a *App) ActiveProfileID() string {
