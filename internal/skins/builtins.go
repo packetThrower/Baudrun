@@ -1247,6 +1247,96 @@ var builtins = []Skin{
 		},
 	},
 	{
+		ID:          "cyberpunk",
+		Name:        "Cyberpunk (Synthwave)",
+		Source:      "builtin",
+		Description: "80s retrofuture / synthwave: deep purple surfaces, neon magenta and cyan accents, text with a soft pink glow, a subtle grid overlay. Dark-only — the aesthetic depends on neon on darkness.",
+		Vars: map[string]string{
+			// Tight techy sans with monospace-leaning fallbacks. Rajdhani and
+			// Chakra Petch are Google Fonts commonly used in cyberpunk /
+			// synthwave design; not installed on most systems but the stack
+			// falls through to clean defaults.
+			"--font-ui":   `"Rajdhani", "Chakra Petch", "Orbitron", "Inter", "SF Pro Display", system-ui, sans-serif`,
+			"--font-mono": `"Share Tech Mono", "IBM Plex Mono", "Fira Code", "JetBrains Mono", Menlo, ui-monospace, monospace`,
+
+			"--font-size-base":    "13px",
+			"--font-size-label":   "11px",
+			"--font-size-section": "15px",
+			"--font-size-h1":      "24px",
+
+			// All-caps labels with wide spacing — the techy / arcade feel
+			"--label-transform":      "uppercase",
+			"--label-letter-spacing": "0.12em",
+			"--label-weight":         "600",
+
+			// Deep-purple surfaces, the synthwave baseline
+			"--bg-window":      "#120522",
+			"--bg-sidebar":     "#0a0317",
+			"--bg-main":        "#1a0d2e",
+			"--bg-panel":       "#2a1a4a",
+			"--bg-hover":       "rgba(255, 0, 110, 0.10)",
+			"--bg-active":      "rgba(255, 0, 110, 0.22)",
+			"--bg-input":       "#0a0317",
+			"--bg-input-focus": "#1a0d2e",
+			"--bg-terminal":    "#0a0317",
+
+			"--option-bg":       "#0a0317",
+			"--option-fg":       "#f0e6ff",
+			"--option-group-fg": "rgba(255, 0, 110, 0.7)",
+
+			// Slightly pink-tinted white — adds to the neon aftermath feel
+			"--fg-primary":   "#f0e6ff",
+			"--fg-secondary": "rgba(240, 230, 255, 0.72)",
+			"--fg-tertiary":  "rgba(240, 230, 255, 0.45)",
+
+			// Magenta-glow borders on surfaces, cyan-glow on inputs —
+			// deliberate color split to evoke the synthwave pink+cyan pairing
+			"--border-subtle":     "rgba(255, 0, 110, 0.22)",
+			"--border-strong":     "rgba(255, 0, 110, 0.42)",
+			"--input-border-idle": "rgba(0, 240, 255, 0.30)",
+			"--panel-border":      "1px solid rgba(255, 0, 110, 0.25)",
+			"--sidebar-divider":   "1px solid rgba(255, 0, 110, 0.38)",
+
+			// Neon accents — hot pink primary, electric status colors
+			"--accent":       "#ff006e",
+			"--accent-hover": "#ff3393",
+			"--danger":       "#ff4500",
+			"--success":      "#39ff14",
+			"--warn":         "#ffe600",
+
+			// Sharp geometry
+			"--radius-sm": "2px",
+			"--radius-md": "3px",
+			"--radius-lg": "4px",
+
+			// Neon glows instead of drop shadows. Panels get a magenta aura,
+			// floating elements get a bigger pink halo.
+			"--shadow-panel":    "0 0 0 1px rgba(255, 0, 110, 0.22), 0 4px 24px rgba(255, 0, 110, 0.15)",
+			"--shadow-floating": "0 12px 48px rgba(255, 0, 110, 0.35), 0 0 0 1px rgba(0, 240, 255, 0.2)",
+			"--blur-strength":   "0px",
+
+			// Scrollbar is a hot-pink glow strip
+			"--scrollbar-thumb":       "rgba(255, 0, 110, 0.4)",
+			"--scrollbar-thumb-hover": "rgba(255, 0, 110, 0.7)",
+
+			// Flush layout; don't float — sharper geometry reads better edge-
+			// to-edge for synthwave
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "32px",
+
+			// Subtle pink glow on every character — the neon-text signature
+			"--text-shadow": "0 0 4px rgba(255, 0, 110, 0.28)",
+
+			// A very subtle crossing grid of pink+cyan lines across the
+			// window, 40px cell size at 3-4% opacity. Reads as "synthwave
+			// backdrop grid" without fighting content legibility.
+			"--overlay": `repeating-linear-gradient(0deg, transparent 0 39px, rgba(255, 0, 110, 0.04) 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, rgba(0, 240, 255, 0.04) 39px 40px)`,
+		},
+	},
+	{
 		ID:          "crt",
 		Name:        "CRT (Green Phosphor)",
 		Source:      "builtin",
