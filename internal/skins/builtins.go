@@ -1337,6 +1337,133 @@ var builtins = []Skin{
 		},
 	},
 	{
+		ID:            "blueprint",
+		Name:          "Blueprint",
+		Source:        "builtin",
+		Description:   "Engineering-drawing aesthetic: deep blueprint blue with a crisp white grid (dark mode) / white drafting paper with blue-ink grid (light mode). Technical monospace typography, sharp edges, all-caps labels.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			// White drafting paper
+			"--bg-window":      "#fafafa",
+			"--bg-sidebar":     "#f0f0f0",
+			"--bg-main":        "#ffffff",
+			"--bg-panel":       "#fafafa",
+			"--bg-hover":       "rgba(0, 61, 115, 0.05)",
+			"--bg-active":      "rgba(0, 61, 115, 0.16)",
+			"--bg-input":       "#ffffff",
+			"--bg-input-focus": "#fafbff",
+			"--bg-terminal":    "#0a1e33",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#0a2747",
+			"--option-group-fg": "rgba(10, 39, 71, 0.6)",
+
+			// Blueprint ink-blue text on white paper
+			"--fg-primary":   "#0a2747",
+			"--fg-secondary": "rgba(10, 39, 71, 0.72)",
+			"--fg-tertiary":  "rgba(10, 39, 71, 0.5)",
+
+			"--border-subtle":     "rgba(0, 61, 115, 0.15)",
+			"--border-strong":     "rgba(0, 61, 115, 0.3)",
+			"--input-border-idle": "rgba(0, 61, 115, 0.25)",
+			"--panel-border":      "1px solid rgba(0, 61, 115, 0.12)",
+			"--sidebar-divider":   "1px solid rgba(0, 61, 115, 0.18)",
+
+			"--accent":       "#003d73",
+			"--accent-hover": "#0052a3",
+			"--danger":       "#b00020",
+			"--success":      "#2d7a2d",
+			"--warn":         "#b88600",
+
+			"--shadow-panel":          "0 0 0 1px rgba(0, 61, 115, 0.08), 0 1px 3px rgba(0, 0, 0, 0.05)",
+			"--scrollbar-thumb":       "rgba(0, 61, 115, 0.22)",
+			"--scrollbar-thumb-hover": "rgba(0, 61, 115, 0.42)",
+
+			// Blue grid on white paper — major lines every 40px, minor
+			// subdivisions every 8px. Reads as drafting paper.
+			"--overlay": `repeating-linear-gradient(0deg, transparent 0 39px, rgba(0, 61, 115, 0.06) 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, rgba(0, 61, 115, 0.06) 39px 40px), repeating-linear-gradient(0deg, transparent 0 7px, rgba(0, 61, 115, 0.025) 7px 8px), repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 61, 115, 0.025) 7px 8px)`,
+		},
+		Vars: map[string]string{
+			// Technical monospace-forward typography — drafting-table feel.
+			// Space Mono is a beautiful drafting-style mono from Google Fonts;
+			// IBM Plex Mono is a cleaner fallback; final fallbacks are the
+			// usual dev monospaces.
+			"--font-ui":   `"Space Mono", "IBM Plex Mono", "JetBrains Mono", "Fira Code", Menlo, ui-monospace, monospace`,
+			"--font-mono": `"Space Mono", "IBM Plex Mono", "JetBrains Mono", "Fira Code", Menlo, ui-monospace, monospace`,
+
+			"--font-size-base":    "13px",
+			"--font-size-label":   "11px",
+			"--font-size-section": "14px",
+			"--font-size-h1":      "22px",
+
+			// All-caps labels — blueprints use them for callouts and titles
+			"--label-transform":      "uppercase",
+			"--label-letter-spacing": "0.08em",
+			"--label-weight":         "400",
+
+			// Deep blueprint blue surfaces — saturated enough to read as
+			// "blueprint" at a glance, not just "dark blue"
+			"--bg-window":      "#0a1e33",
+			"--bg-sidebar":     "#081829",
+			"--bg-main":        "#0c2340",
+			"--bg-panel":       "#143050",
+			"--bg-hover":       "rgba(255, 255, 255, 0.07)",
+			"--bg-active":      "rgba(255, 255, 255, 0.16)",
+			"--bg-input":       "#081829",
+			"--bg-input-focus": "#0c2340",
+			"--bg-terminal":    "#0a1e33",
+
+			"--option-bg":       "#081829",
+			"--option-fg":       "#e0f0ff",
+			"--option-group-fg": "rgba(224, 240, 255, 0.55)",
+
+			// Pale blue-white text — the classic blueprint "white ink" feel
+			"--fg-primary":   "#e0f0ff",
+			"--fg-secondary": "rgba(224, 240, 255, 0.72)",
+			"--fg-tertiary":  "rgba(224, 240, 255, 0.48)",
+
+			// Crisp hairline borders — drafting uses ruled lines everywhere
+			"--border-subtle":     "rgba(255, 255, 255, 0.16)",
+			"--border-strong":     "rgba(255, 255, 255, 0.32)",
+			"--input-border-idle": "rgba(255, 255, 255, 0.25)",
+			"--panel-border":      "1px solid rgba(255, 255, 255, 0.18)",
+			"--sidebar-divider":   "1px solid rgba(255, 255, 255, 0.22)",
+
+			// Bright cyan accent (like detail callout ink); status colors
+			// softened to read as diagrammatic rather than warning
+			"--accent":       "#00bfff",
+			"--accent-hover": "#5dd5ff",
+			"--danger":       "#ff7a7a",
+			"--success":      "#7affb5",
+			"--warn":         "#ffe066",
+
+			// Sharp drafting-table geometry
+			"--radius-sm": "2px",
+			"--radius-md": "3px",
+			"--radius-lg": "4px",
+
+			// Crisp 1px outline rather than atmospheric shadow — blueprints
+			// don't do elevation
+			"--shadow-panel":    "0 0 0 1px rgba(255, 255, 255, 0.1)",
+			"--shadow-floating": "0 10px 30px rgba(0, 0, 0, 0.5)",
+			"--blur-strength":   "0px",
+
+			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.25)",
+			"--scrollbar-thumb-hover": "rgba(255, 255, 255, 0.42)",
+
+			// Flush layout
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "34px",
+
+			// Two-scale grid — major lines every 40px, minor subdivisions
+			// every 8px. Reads as classic engineering-drawing paper.
+			"--overlay": `repeating-linear-gradient(0deg, transparent 0 39px, rgba(255, 255, 255, 0.07) 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, rgba(255, 255, 255, 0.07) 39px 40px), repeating-linear-gradient(0deg, transparent 0 7px, rgba(255, 255, 255, 0.025) 7px 8px), repeating-linear-gradient(90deg, transparent 0 7px, rgba(255, 255, 255, 0.025) 7px 8px)`,
+		},
+	},
+	{
 		ID:          "crt",
 		Name:        "CRT (Green Phosphor)",
 		Source:      "builtin",
