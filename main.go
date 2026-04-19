@@ -8,6 +8,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed all:frontend/dist
@@ -31,6 +32,17 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 30, G: 30, B: 34, A: 255},
 		OnStartup:        app.startup,
 		Bind:             []interface{}{app},
+		// Hardware access doesn't coordinate between processes — two
+		// Seriesly instances trying to open the same /dev/cu.* or COM
+		// would fight over the port. Single-instance lock makes the
+		// second launch surface the existing window instead.
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId: "seriesly",
+			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
+				runtime.WindowUnminimise(app.ctx)
+				runtime.WindowShow(app.ctx)
+			},
+		},
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
 			// Pin the window to the dark system appearance so the
