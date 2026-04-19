@@ -42,25 +42,38 @@ type Profile struct {
 	// VT100/xterm default) or "bs" (0x08, what some older Cisco IOS /
 	// Foundry builds expect). Empty is treated as "del".
 	BackspaceKey     string    `json:"backspaceKey"`
+	// PasteWarnMultiline prompts the user to confirm before sending a
+	// paste that contains line breaks. Catches the "I pasted ten
+	// commands into the wrong window" class of mistake.
+	PasteWarnMultiline bool `json:"pasteWarnMultiline"`
+	// PasteSlow sends pasted text one character at a time with a gap
+	// between each. UARTs on microcontrollers and older network gear
+	// silently corrupt fast pastes at 115200 without this.
+	PasteSlow          bool `json:"pasteSlow"`
+	// PasteCharDelayMs is the inter-character gap used by PasteSlow.
+	// Zero (or missing) defaults to 10ms, which clears most real-world
+	// UART buffer issues without being perceptibly slow.
+	PasteCharDelayMs   int  `json:"pasteCharDelayMs,omitempty"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 func Defaults() Profile {
 	return Profile{
-		BaudRate:        9600,
-		DataBits:        8,
-		Parity:          "none",
-		StopBits:        "1",
-		FlowControl:     "none",
-		LineEnding:      "cr",
-		LocalEcho:       false,
-		Highlight:       true,
-		DTROnConnect:    "default",
-		RTSOnConnect:    "default",
-		DTROnDisconnect: "default",
-		RTSOnDisconnect: "default",
-		BackspaceKey:    "del",
+		BaudRate:         9600,
+		DataBits:         8,
+		Parity:           "none",
+		StopBits:         "1",
+		FlowControl:      "none",
+		LineEnding:       "cr",
+		LocalEcho:        false,
+		Highlight:        true,
+		DTROnConnect:     "default",
+		RTSOnConnect:     "default",
+		DTROnDisconnect:  "default",
+		RTSOnDisconnect:  "default",
+		BackspaceKey:     "del",
+		PasteCharDelayMs: 10,
 	}
 }
 

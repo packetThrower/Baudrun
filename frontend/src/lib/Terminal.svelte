@@ -20,6 +20,13 @@
   // IOS releases, Foundry) wants; wrong setting shows as ^H echoed on screen.
   export let backspaceKey: "bs" | "del" = "del";
   export let copyOnSelect: boolean = false;
+  // Paste safety.
+  // pasteWarnMultiline prompts before sending text that crosses a line.
+  // pasteSlow inserts pasteCharDelayMs between characters so UART
+  // buffers on underpowered devices can drain.
+  export let pasteWarnMultiline: boolean = false;
+  export let pasteSlow: boolean = false;
+  export let pasteCharDelayMs: number = 10;
   export let onStatus: (msg: string) => void = () => {};
 
   let hostEl: HTMLDivElement;
@@ -47,12 +54,59 @@
     }
   }
 
+  // Anything longer than this arriving as a single onData callback is
+  // treated as a paste, not typed input. Fast typists top out around
+  // 10 chars/burst on good keyboards; 20 is comfortably above that.
+  const PASTE_THRESHOLD = 20;
+
+  function isPaste(data: string): boolean {
+    return data.length >= PASTE_THRESHOLD || /[\r\n]/.test(data);
+  }
+
+  function sendByte(byte: number) {
+    api.sendBytes(new Uint8Array([byte])).catch((e) => onStatus(`send failed: ${e}`));
+  }
+
+  async function sendSlow(data: string) {
+    const bytes = new TextEncoder().encode(data);
+    for (const b of bytes) {
+      sendByte(b);
+      if (localEcho && term) {
+        term.write(String.fromCharCode(b));
+      }
+      if (pasteCharDelayMs > 0) {
+        await new Promise((r) => setTimeout(r, pasteCharDelayMs));
+      }
+    }
+  }
+
   function handleInput(data: string) {
     // xterm emits 0x7f for the Backspace key. Swap to 0x08 when the
     // profile asks for BS-style backspace so devices wanting that
     // don't see ^H echoed back at them.
     if (data === "\x7f" && backspaceKey === "bs") {
       data = "\x08";
+    }
+
+    // Paste handling: detect a paste-shaped input, confirm if the
+    // user asked for a multi-line warning, then either slow-paste or
+    // fall through to the normal path.
+    if (isPaste(data)) {
+      const multiline = /[\r\n]/.test(data);
+      if (pasteWarnMultiline && multiline) {
+        const lines = data.split(/\r\n|\r|\n/).length;
+        const ok = window.confirm(
+          `Send ${lines} lines to the session?\n\nFirst line: ${data.split(/\r\n|\r|\n/)[0].slice(0, 80)}`,
+        );
+        if (!ok) {
+          onStatus("Paste cancelled");
+          return;
+        }
+      }
+      if (pasteSlow) {
+        void sendSlow(data);
+        return;
+      }
     }
 
     const encoder = new TextEncoder();
