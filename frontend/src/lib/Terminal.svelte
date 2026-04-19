@@ -19,6 +19,7 @@
   // devices expect. "bs" (0x08) is what some older gear (e.g. some Cisco
   // IOS releases, Foundry) wants; wrong setting shows as ^H echoed on screen.
   export let backspaceKey: "bs" | "del" = "del";
+  export let copyOnSelect: boolean = false;
   export let onStatus: (msg: string) => void = () => {};
 
   let hostEl: HTMLDivElement;
@@ -117,6 +118,18 @@
     term.focus();
 
     term.onData(handleInput);
+
+    // PuTTY-style copy-on-select. xterm fires onSelectionChange during
+    // the drag and once more at release; we write on every change so
+    // the clipboard reflects the live selection. Empty strings are
+    // ignored to avoid clobbering the clipboard when the user clicks
+    // into the terminal without dragging.
+    term.onSelectionChange(() => {
+      if (!copyOnSelect || !term) return;
+      const sel = term.getSelection();
+      if (sel.length === 0) return;
+      navigator.clipboard?.writeText(sel).catch(() => {});
+    });
 
     highlighter = new TerminalHighlighter((text) => {
       if (term) term.write(text);

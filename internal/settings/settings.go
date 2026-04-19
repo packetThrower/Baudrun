@@ -18,6 +18,9 @@ type Settings struct {
 	// Appearance: "auto" (follow system), "light", or "dark".
 	// Empty / missing is treated as "auto".
 	Appearance string `json:"appearance,omitempty"`
+	// CopyOnSelect copies the xterm selection to the clipboard
+	// automatically when the user releases the mouse, PuTTY-style.
+	CopyOnSelect bool `json:"copyOnSelect,omitempty"`
 }
 
 type Store struct {
