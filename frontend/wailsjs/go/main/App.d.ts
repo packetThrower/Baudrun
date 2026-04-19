@@ -9,6 +9,8 @@ import {serial} from '../models';
 
 export function ActiveProfileID():Promise<string>;
 
+export function CancelTransfer():Promise<void>;
+
 export function Connect(arg1:string):Promise<void>;
 
 export function CreateProfile(arg1:profiles.Profile):Promise<profiles.Profile>;
@@ -45,9 +47,13 @@ export function ListThemes():Promise<Array<themes.Theme>>;
 
 export function PickLogDirectory():Promise<string>;
 
+export function PickSendFile():Promise<string>;
+
 export function Send(arg1:string):Promise<void>;
 
 export function SendBreak():Promise<void>;
+
+export function SendFile(arg1:string,arg2:string):Promise<void>;
 
 export function SetDTR(arg1:boolean):Promise<void>;
 

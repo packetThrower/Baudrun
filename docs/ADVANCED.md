@@ -56,6 +56,50 @@ see [PROFILES.md](PROFILES.md).
   supporting a sequence of sends without repeated button clicks.
 - Bytes go through the same `api.sendBytes` path as typed input.
 
+## File transfer (XMODEM / YMODEM)
+
+- Session-header **Send File** button opens a modal.
+- Protocol options:
+  - **YMODEM** — 1024-byte blocks with CRC-16 and a header block
+    carrying filename and size. Receivers that speak `rb`, `loady`
+    on U-Boot, or most modern MCU bootloader "Receive YMODEM" menus.
+  - **XMODEM-1K** — 1024-byte blocks with CRC-16, no filename
+    metadata. Sometimes called XMODEM-CRC with 1K blocks or YAM.
+  - **XMODEM-CRC** — 128-byte blocks with CRC-16. Receiver
+    initiates with `C`.
+  - **XMODEM** — 128-byte blocks with an 8-bit checksum. Receiver
+    initiates with `NAK`. Legacy; present in some older ROMs and
+    boot loaders.
+- The transfer runs entirely in the Go backend. While in progress,
+  the Session's RX dispatch is redirected to the protocol state
+  machine, so incoming bytes don't appear in the terminal viewport
+  or trigger syntax highlighting.
+- Progress events stream to the frontend after each block ACK and
+  drive a live progress bar in the modal.
+- **Cancel** aborts the transfer mid-flight by sending `CAN CAN CAN
+  CAN CAN` to the receiver, which every XMODEM-family receiver
+  honors as "stop now."
+- **Timeout behavior:** the initial handshake waits up to 60 s for
+  the receiver to send `C` or `NAK`. Per-block ACK waits are 10 s
+  with up to 10 retries per block. A stuck receiver eventually
+  surfaces as a retry-exhaustion error rather than a hang.
+- **ZMODEM is not implemented** — its state machine is an order of
+  magnitude larger than XMODEM/YMODEM and most embedded bootloader
+  targets don't speak it. Add-on request.
+
+**Sequence for a typical firmware upload:**
+
+1. Interrupt the target's boot loader so it's at a prompt.
+2. Tell the boot loader to start its receiver (`loady`, `rx`, menu
+   selection, etc.). It starts sending `C` (or `NAK` for plain
+   XMODEM) to the serial line.
+3. Open Send File in Seriesly, pick the matching protocol, choose
+   the binary.
+4. Click Send. The modal shows progress; the boot loader's status
+   updates on the terminal are suspended during the transfer.
+5. On completion, use the boot loader's flash/write command to
+   commit the uploaded payload to non-volatile storage.
+
 ## Line timestamps
 
 - Per-profile toggle.

@@ -21,6 +21,12 @@ export const EVT_DATA = "serial:data";
 export const EVT_DISCONNECT = "serial:disconnect";
 export const EVT_RECONNECTING = "serial:reconnecting";
 export const EVT_RECONNECTED = "serial:reconnected";
+export const EVT_TRANSFER_PROGRESS = "transfer:progress";
+export const EVT_TRANSFER_COMPLETE = "transfer:complete";
+export const EVT_TRANSFER_ERROR = "transfer:error";
+
+export type TransferProgress = { sent: number; total: number };
+export type TransferProtocol = "xmodem" | "xmodem-crc" | "xmodem-1k" | "ymodem";
 
 export const api = {
   listProfiles: App.ListProfiles,
@@ -37,6 +43,9 @@ export const api = {
   setRTS: App.SetRTS,
   setDTR: App.SetDTR,
   sendBreak: App.SendBreak,
+  pickSendFile: App.PickSendFile,
+  sendFile: App.SendFile,
+  cancelTransfer: App.CancelTransfer,
 
   listThemes: App.ListThemes,
   importTheme: App.ImportTheme,
@@ -80,6 +89,21 @@ export const api = {
   onReconnected(handler: (profileID: string) => void): () => void {
     EventsOn(EVT_RECONNECTED, handler);
     return () => EventsOff(EVT_RECONNECTED);
+  },
+
+  onTransferProgress(handler: (p: TransferProgress) => void): () => void {
+    EventsOn(EVT_TRANSFER_PROGRESS, handler);
+    return () => EventsOff(EVT_TRANSFER_PROGRESS);
+  },
+
+  onTransferComplete(handler: (filename: string) => void): () => void {
+    EventsOn(EVT_TRANSFER_COMPLETE, handler);
+    return () => EventsOff(EVT_TRANSFER_COMPLETE);
+  },
+
+  onTransferError(handler: (reason: string) => void): () => void {
+    EventsOn(EVT_TRANSFER_ERROR, handler);
+    return () => EventsOff(EVT_TRANSFER_ERROR);
   },
 };
 

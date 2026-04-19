@@ -41,11 +41,19 @@ high-effort or niche enough that priority tracks real demand.
       repeated commands; risk is bloating the session header or
       profile form. Wait until someone asks so the UI shape is
       informed by a real workflow.
-- [ ] **File transfer (XMODEM/YMODEM/ZMODEM).** **[on request]**
-      Firmware uploads to embedded devices. Big implementation — each
-      protocol is a state machine with CRC checks, NAK handling,
-      and strict block timing. Worth building if courting embedded
-      devs becomes a priority; skip until that audience shows up.
+- [x] **File transfer (XMODEM/YMODEM).** Session-header "Send File"
+      button opens a modal with protocol picker (XMODEM, XMODEM-CRC,
+      XMODEM-1K, YMODEM) and native file dialog. Transfer runs in
+      the Go backend; Session's RX dispatch is redirected to the
+      protocol state machine during the send. Progress events stream
+      to the frontend for a live progress bar. Cancellable mid-
+      transfer (CAN CAN to the receiver).
+- [ ] **ZMODEM file transfer.** **[on request]** ZMODEM is a much
+      larger state machine than XMODEM/YMODEM — frame negotiation,
+      ZDL escape encoding, crash recovery, variable block sizes.
+      Not implemented in the first cut; XMODEM/YMODEM cover the
+      vast majority of embedded bootloader use cases. Add if a
+      specific use case surfaces.
 
 ## Accessibility
 
