@@ -18,6 +18,35 @@ Non-goals: character-set translation (UTF-8 is universal on modern
 network gear), answerback strings (legacy VT-terminal feature, no
 real use for serial consoles).
 
+## Serial features (next tranche)
+
+Candidates beyond the PuTTY carryovers. Items marked **[on request]**
+are deferred until someone actually asks — they're useful but either
+high-effort or niche enough that priority tracks real demand.
+
+- [ ] **Paste safety.** Two profile toggles: a confirm prompt when
+      pasting multi-line content (avoids the "I pasted into the wrong
+      window" disaster) and an optional per-character delay for
+      devices that can't buffer at line rate. UARTs on microcontrollers
+      and older switches silently corrupt a fast 115200 paste; slow
+      paste fixes that. High value for both network and embedded users.
+- [ ] **Hex send.** Input field that parses space-separated hex
+      (`02 FF AA 55`) and writes the raw bytes. Counterpart to the
+      existing hex view on RX. Useful for Modbus RTU, firmware
+      bootloaders, custom binary protocols.
+- [ ] **Macros / quick-send buttons.** **[on request]** Profile-level
+      canned strings bound to session-header buttons — `show
+      running-config`, `AT+RST`, vendor-specific reboot commands,
+      whatever the user wants one-click access to. Saves typing for
+      repeated commands; risk is bloating the session header or
+      profile form. Wait until someone asks so the UI shape is
+      informed by a real workflow.
+- [ ] **File transfer (XMODEM/YMODEM/ZMODEM).** **[on request]**
+      Firmware uploads to embedded devices. Big implementation — each
+      protocol is a state machine with CRC checks, NAK handling,
+      and strict block timing. Worth building if courting embedded
+      devs becomes a priority; skip until that audience shows up.
+
 ## Distribution
 
 - [ ] **Code sign + notarize macOS binary.** Requires enrollment in the
