@@ -287,6 +287,62 @@
     }
   }
 
+  let hexSendOpen = false;
+  let hexInput = "";
+  let hexError = "";
+
+  function openHexSend() {
+    hexSendOpen = true;
+    hexError = "";
+  }
+
+  function closeHexSend() {
+    hexSendOpen = false;
+    hexError = "";
+  }
+
+  // Accept "02 FF AA", "02FFAA", "0x02 0xFF", or any mix. Whitespace,
+  // commas, and 0x prefixes are stripped; what's left must be an even
+  // number of hex digits.
+  function parseHex(input: string): Uint8Array | string {
+    const cleaned = input
+      .trim()
+      .replace(/0x/gi, "")
+      .replace(/[\s,]+/g, "");
+    if (cleaned.length === 0) return "empty";
+    if (cleaned.length % 2 !== 0) return "odd number of hex digits";
+    if (!/^[0-9a-fA-F]+$/.test(cleaned)) return "non-hex characters";
+    const bytes = new Uint8Array(cleaned.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = parseInt(cleaned.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+  }
+
+  async function submitHex() {
+    const parsed = parseHex(hexInput);
+    if (typeof parsed === "string") {
+      hexError = parsed;
+      return;
+    }
+    try {
+      await api.sendBytes(parsed);
+      statusMsg = `Sent ${parsed.length} byte${parsed.length === 1 ? "" : "s"}`;
+      hexInput = "";
+      hexError = "";
+    } catch (e) {
+      hexError = String(e);
+    }
+  }
+
+  function onHexKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") closeHexSend();
+    else if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void submitHex();
+    }
+  }
+
   async function handleDisconnect() {
     try {
       await api.disconnect();
@@ -534,6 +590,13 @@
             >
               Break
             </button>
+            <button
+              on:click={openHexSend}
+              disabled={isReconnecting}
+              title="Send raw bytes as hex (Modbus, firmware bootloaders, binary protocols)"
+            >
+              Hex
+            </button>
             <button on:click={() => terminalRef?.clear()}>Clear</button>
             <button on:click={handleSuspend} title="Keep session alive; return to profile">
               Suspend
@@ -565,6 +628,48 @@
     </footer>
   </main>
 </div>
+
+{#if hexSendOpen}
+  <div
+    class="modal-backdrop"
+    on:click={closeHexSend}
+    on:keydown={onHexKeydown}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
+    <div
+      class="hex-modal"
+      on:click|stopPropagation
+      on:keydown|stopPropagation={onHexKeydown}
+      role="presentation"
+    >
+      <header class="hex-header">
+        <strong>Send hex bytes</strong>
+        <button on:click={closeHexSend} aria-label="Close">×</button>
+      </header>
+      <p class="hex-hint">
+        Space-separated, compact, or 0x-prefixed — all equivalent:
+        <code>02 FF AA 55</code>, <code>02FFAA55</code>, <code>0x02 0xFF 0xAA 0x55</code>.
+      </p>
+      <!-- svelte-ignore a11y-autofocus -->
+      <input
+        type="text"
+        class="hex-input"
+        bind:value={hexInput}
+        placeholder="02 FF AA 55"
+        autofocus
+      />
+      {#if hexError}
+        <div class="hex-error">Invalid: {hexError}</div>
+      {/if}
+      <div class="hex-actions">
+        <button on:click={closeHexSend}>Cancel</button>
+        <button class="primary" on:click={submitHex}>Send</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .shell {
@@ -726,5 +831,84 @@
     background: var(--success);
     border-color: var(--success);
     box-shadow: 0 0 5px rgba(50, 215, 75, 0.6);
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 24px;
+  }
+
+  .hex-modal {
+    background: var(--bg-main);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    width: 100%;
+    max-width: 520px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .hex-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .hex-header strong {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .hex-header button {
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 10px;
+  }
+
+  .hex-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--fg-secondary);
+    line-height: 1.5;
+  }
+
+  .hex-hint code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: var(--bg-input);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  .hex-input {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    padding: 8px 10px;
+  }
+
+  .hex-error {
+    padding: 8px 12px;
+    background: rgba(255, 69, 58, 0.12);
+    color: var(--danger);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+  }
+
+  .hex-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
 </style>
