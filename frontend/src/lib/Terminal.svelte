@@ -4,6 +4,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import "@xterm/xterm/css/xterm.css";
+  import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
   import { api, themeToXterm, type Theme } from "./api";
   import { TerminalHighlighter } from "./highlight";
   import { HexFormatter } from "./hexdump";
@@ -166,7 +167,15 @@
 
     fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new WebLinksAddon());
+    // WebLinksAddon's default click handler is window.open, which in a
+    // Wails webview either does nothing or opens the URL inside the
+    // app. Route through BrowserOpenURL so clicks go to the system
+    // browser like users expect.
+    term.loadAddon(
+      new WebLinksAddon((_event, uri) => {
+        BrowserOpenURL(uri);
+      }),
+    );
     term.open(hostEl);
     fit.fit();
     term.focus();
