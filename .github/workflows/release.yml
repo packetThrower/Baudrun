@@ -62,7 +62,15 @@ jobs:
 
   build-windows:
     needs: [ci]
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: amd64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
@@ -95,18 +103,19 @@ jobs:
         run: npm ci
 
       - name: Build
-        run: wails build -platform windows/amd64
+        run: wails build -platform windows/${{ matrix.arch }}
 
       - name: Package
         shell: powershell
         run: |
           $version = "${{ github.ref_name }}"
-          Compress-Archive -Path build\bin\Seriesly.exe -DestinationPath "Seriesly-Windows-${version}.zip"
+          $arch = "${{ matrix.arch }}"
+          Compress-Archive -Path build\bin\Seriesly.exe -DestinationPath "Seriesly-Windows-$arch-$version.zip"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: windows-package
+          name: windows-${{ matrix.arch }}-package
           path: Seriesly-Windows-*.zip
 
   build-linux:
@@ -270,7 +279,8 @@ jobs:
         with:
           files: |
             artifacts/macos-package/*
-            artifacts/windows-package/*
+            artifacts/windows-amd64-package/*
+            artifacts/windows-arm64-package/*
             artifacts/linux-amd64-package/*
             artifacts/linux-arm64-package/*
           generate_release_notes: true
