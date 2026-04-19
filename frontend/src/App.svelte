@@ -117,6 +117,21 @@
   let defaultLogDir = "";
 
   onMount(async () => {
+    // Svelte has no formal error boundaries; without these two
+    // listeners an unhandled promise rejection or a runtime error
+    // silently blanks the UI with no indication of what went wrong.
+    // Routing them to the status bar at least surfaces *something*
+    // the user can report.
+    window.addEventListener("error", (e) => {
+      statusMsg = `Error: ${e.message}`;
+      console.error(e);
+    });
+    window.addEventListener("unhandledrejection", (e) => {
+      const reason = (e.reason && (e.reason.message || e.reason)) || "unknown";
+      statusMsg = `Unhandled: ${reason}`;
+      console.error(e.reason);
+    });
+
     await Promise.all([
       loadProfiles(),
       loadThemes(),

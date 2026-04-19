@@ -32,6 +32,12 @@ func main() {
 		BackgroundColour: &options.RGBA{R: 30, G: 30, B: 34, A: 255},
 		OnStartup:        app.startup,
 		Bind:             []interface{}{app},
+		// The embedded asset server is strictly local and serves our
+		// own frontend. Webview "fraudulent website" heuristics were
+		// designed for real-world web browsing and occasionally false-
+		// positive on this pattern; turn it off explicitly so no one
+		// wonders why they're seeing a warning on their own app.
+		EnableFraudulentWebsiteDetection: false,
 		// Hardware access doesn't coordinate between processes — two
 		// Seriesly instances trying to open the same /dev/cu.* or COM
 		// would fight over the port. Single-instance lock makes the
