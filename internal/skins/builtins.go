@@ -672,7 +672,11 @@ var builtins = []Skin{
 			"--bg-main":        "#ffffff",
 			"--bg-panel":       "#f5f5f7",
 			"--bg-hover":       "rgba(0, 0, 0, 0.06)",
-			"--bg-active":      "#1a5cb4",
+			// Subtle blue tint for selection. Solid saturated blue reads as
+			// electric on a pale sidebar; modern light-mode macOS uses a low-
+			// opacity tint with normal text color instead of inverting to
+			// white-on-blue.
+			"--bg-active":      "rgba(0, 96, 223, 0.18)",
 			"--bg-input":       "#ffffff",
 			"--bg-input-focus": "#f5f5f5",
 			"--bg-terminal":    "#f5f5f7",
