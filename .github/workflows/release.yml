@@ -117,8 +117,10 @@ jobs:
         include:
           - runner: ubuntu-latest
             arch: amd64
+            appimage_arch: x86_64
           - runner: ubuntu-24.04-arm
             arch: arm64
+            appimage_arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -137,11 +139,17 @@ jobs:
 
       # Wails' Linux backend links against GTK3 + WebKit2GTK at cgo time.
       # libwebkit2gtk-4.1-dev is the right flavor on Ubuntu 24.04 (the
-      # 4.0 series was deprecated upstream in 2024).
-      - name: Install Linux webview deps
+      # 4.0 series was deprecated upstream in 2024). file + fuse3 are
+      # needed downstream by appimagetool.
+      - name: Install Linux build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config \
+            ruby-dev build-essential file libfuse2t64 rpm
+
+      - name: Install fpm (drives both .deb and .rpm packaging)
+        run: sudo gem install --no-document fpm
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
@@ -162,17 +170,91 @@ jobs:
       - name: Build
         run: wails build -platform linux/${{ matrix.arch }} -tags webkit2_41
 
-      - name: Package
+      # Construct a FHS-style staging tree that both packagers consume.
+      # The binary lives at /usr/bin/seriesly (lowercase — debian
+      # convention); the .desktop + icon go to their standard
+      # freedesktop locations so the installed app shows up in
+      # application launchers and gets a proper icon.
+      - name: Stage install tree
+        run: |
+          mkdir -p pkg/usr/bin
+          mkdir -p pkg/usr/share/applications
+          mkdir -p pkg/usr/share/icons/hicolor/256x256/apps
+          install -m 755 build/bin/Seriesly pkg/usr/bin/seriesly
+          install -m 644 build/linux/seriesly.desktop pkg/usr/share/applications/seriesly.desktop
+          install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/seriesly.png
+
+      - name: Build .deb
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          cd build/bin
-          tar czf "../../Seriesly-Linux-${{ matrix.arch }}-${VERSION}.tar.gz" Seriesly
+          fpm -s dir -t deb \
+            --name seriesly \
+            --version "${VERSION}" \
+            --architecture "${{ matrix.arch }}" \
+            --depends "libgtk-3-0 | libgtk-3-0t64" \
+            --depends "libwebkit2gtk-4.1-0" \
+            --description "A serial terminal for network devices" \
+            --url "https://github.com/otec-it/Seriesly" \
+            --maintainer "Will Lehnertz <wlehnertz@otec.coop>" \
+            --deb-no-default-config-files \
+            -C pkg \
+            --package "seriesly_${VERSION}_${{ matrix.arch }}.deb" \
+            .
+
+      # RPM's Version field forbids hyphens, so split the CalVer tag:
+      # "2026.04.18-3" → Version 2026.04.18, Release 3. Fedora 40+
+      # package names for the GTK/WebKit deps differ from Debian's.
+      - name: Build .rpm
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          RPM_VERSION="${VERSION%-*}"
+          RPM_RELEASE="${VERSION##*-}"
+          fpm -s dir -t rpm \
+            --name seriesly \
+            --version "${RPM_VERSION}" \
+            --iteration "${RPM_RELEASE}" \
+            --architecture "${{ matrix.appimage_arch }}" \
+            --depends "gtk3" \
+            --depends "webkit2gtk4.1" \
+            --description "A serial terminal for network devices" \
+            --url "https://github.com/otec-it/Seriesly" \
+            --maintainer "Will Lehnertz <wlehnertz@otec.coop>" \
+            -C pkg \
+            --package "seriesly-${RPM_VERSION}-${RPM_RELEASE}.${{ matrix.appimage_arch }}.rpm" \
+            .
+
+      # AppImage is a self-contained bundle; reuses the same staging
+      # tree under AppDir/. AppRun is the entrypoint the runtime
+      # invokes; the top-level .desktop + .DirIcon are required by
+      # appimagetool's validator.
+      - name: Build AppImage
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p AppDir
+          cp -r pkg/usr AppDir/
+          cp build/linux/seriesly.desktop AppDir/seriesly.desktop
+          cp build/appicon.png AppDir/seriesly.png
+          ln -sf seriesly.png AppDir/.DirIcon
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          exec "${HERE}/usr/bin/seriesly" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          wget -q -O appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.appimage_arch }}.AppImage"
+          chmod +x appimagetool
+          ./appimagetool --appimage-extract-and-run AppDir \
+            "Seriesly-${VERSION}-${{ matrix.appimage_arch }}.AppImage"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}-package
-          path: Seriesly-Linux-*.tar.gz
+          path: |
+            seriesly_*.deb
+            seriesly-*.rpm
+            Seriesly-*.AppImage
 
   release:
     needs: [build-macos, build-windows, build-linux]
