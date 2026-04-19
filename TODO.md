@@ -1,5 +1,24 @@
 # TODO
 
+## Serial features (PuTTY carryovers)
+
+- [ ] **Send Break.** Ctrl+B shortcut + session-header button. Essential
+      for Cisco ROMMON access, Juniper diagnostic mode, password
+      recovery. `go.bug.st/serial` exposes `Port.Break(duration)`.
+- [ ] **Auto-reconnect.** Opt-in per profile. When a connected session
+      drops with "port disappeared" (common with USB-serial adapters
+      that re-enumerate), poll for the port reappearing and reopen
+      transparently. Preserve xterm backlog across the gap.
+- [ ] **Backspace/Delete key mapping.** Profile-level setting: does
+      Backspace send 0x08 (BS) or 0x7F (DEL)? Default differs per
+      vendor; wrong mapping surfaces as `^H` echoed on screen.
+- [ ] **Copy-on-select.** Cheap xterm.js option flip. PuTTY-style
+      selection → clipboard without needing Cmd/Ctrl+C.
+
+Non-goals: character-set translation (UTF-8 is universal on modern
+network gear), answerback strings (legacy VT-terminal feature, no
+real use for serial consoles).
+
 ## Distribution
 
 - [ ] **Code sign + notarize macOS binary.** Requires enrollment in the
