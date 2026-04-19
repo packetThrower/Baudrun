@@ -66,6 +66,12 @@
     const block = SAMPLE.join("\r\n") + "\r\n";
     term.write(highlightLines(block, false));
 
+    // xterm renders a hollow outlined cursor when the terminal isn't
+    // focused and a filled block when focused. Preview should show the
+    // filled cursor from the start so users see exactly what the real
+    // terminal looks like, without having to click into the modal first.
+    term.focus();
+
     ro = new ResizeObserver(() => {
       try {
         fit?.fit();
