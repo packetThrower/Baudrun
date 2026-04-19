@@ -215,3 +215,43 @@ label {
   background-clip: padding-box;
   border: 2px solid transparent;
 }
+
+/* -------------------------------------------------------------------
+   Skin-specific element styling
+   -------------------------------------------------------------------
+   Skins set document.documentElement.dataset.skin and .mode when the
+   applier runs. Most skins need only CSS-variable swaps — handled
+   via the ones in :root above. Skins that want bespoke element
+   treatment can target them here via [data-skin="..."] selectors.
+   ------------------------------------------------------------------- */
+
+/* --- Windows XP (Luna): Start-button-style Settings footer --- */
+[data-skin="windows-xp"] .footer-btn {
+  background: linear-gradient(180deg, #6fc85c 0%, #3a7a2d 100%);
+  border: 1px solid #2d5f23;
+  border-radius: 14px;
+  color: #ffffff;
+  font-weight: bold;
+  font-style: italic;
+  padding: 6px 14px 6px 12px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.25);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s;
+}
+[data-skin="windows-xp"] .footer-btn:hover {
+  background: linear-gradient(180deg, #7ed26a 0%, #478c3a 100%);
+}
+[data-skin="windows-xp"] .footer-btn.active {
+  background: linear-gradient(180deg, #5ab848 0%, #2d6522 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    0 1px 0 rgba(255, 255, 255, 0.3);
+}
+[data-skin="windows-xp"] .footer-btn svg {
+  /* Make the Settings gear icon white on the green button */
+  color: #ffffff;
+}
+
