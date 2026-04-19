@@ -82,6 +82,10 @@ export function Send(arg1) {
   return window['go']['main']['App']['Send'](arg1);
 }
 
+export function SendBreak() {
+  return window['go']['main']['App']['SendBreak']();
+}
+
 export function SetDTR(arg1) {
   return window['go']['main']['App']['SetDTR'](arg1);
 }
