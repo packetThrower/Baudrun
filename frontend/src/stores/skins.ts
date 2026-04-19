@@ -49,11 +49,21 @@ export function applySkin(
   for (const k of managedProps) root.removeProperty(k);
   managedProps = new Set();
 
-  if (!skin) return;
+  if (!skin) {
+    delete document.documentElement.dataset.skin;
+    delete document.documentElement.dataset.mode;
+    return;
+  }
 
   // Dark-only skins (CRT, potentially Matrix/Synthwave later) ignore the
   // global appearance preference and always render in their dark palette.
   const mode = skin.supportsLight ? effectiveMode(pref, isDark) : "dark";
+
+  // Expose skin ID and mode as DOM attributes so per-skin CSS selectors
+  // can target element-level styling that goes beyond palette swaps
+  // (e.g., an XP Luna Start-button look on the Settings footer button).
+  document.documentElement.dataset.skin = skin.id;
+  document.documentElement.dataset.mode = mode;
 
   const write = (map: Record<string, string> | undefined) => {
     if (!map) return;
