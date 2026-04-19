@@ -1,240 +1,248 @@
 # Advanced features
 
-A task-oriented tour of the features that don't fit into "open a port
-and type." For the full schema behind each profile field referenced
-below, see [PROFILES.md](PROFILES.md).
+Reference for the features beyond basic connect-and-type. Each section
+describes what the feature does, where it's configured, and notable
+behavior. For the full JSON schema of every profile field referenced,
+see [PROFILES.md](PROFILES.md).
 
-## Getting a device into ROMMON / bootloader
+## Send Break
 
-The serial "break" signal is how most network gear, MCUs, and boot
-loaders drop into their low-level prompts.
+- Session-header **Break** button.
+- Sends a 300 ms break condition (TX line held low).
+- Implemented via `go.bug.st/serial`'s `Port.Break(duration)` —
+  `tcsendbreak` on Unix, `SetCommBreak` / `ClearCommBreak` on
+  Windows.
+- Disabled while the session is in the reconnecting state.
+- No keyboard shortcut: common modifier combinations collide with
+  real terminal control characters.
 
-**Steps:**
-1. Open a session with your normal profile.
-2. Reboot the target device (power cycle, `reload`, reset button).
-3. During early boot, click **Break** in the session header — sends
-   a 300 ms break pulse.
-4. The device drops into its low-level prompt (`rommon 1>`,
-   `loader>`, `=>`, etc.).
+## Control-line policies (DTR / RTS)
 
-**Break windows by vendor:**
+- Four profile fields: `dtrOnConnect`, `rtsOnConnect`,
+  `dtrOnDisconnect`, `rtsOnDisconnect`.
+- Valid values: `default` (leave the OS default state alone),
+  `assert` (line high), `deassert` (line low). Empty string is
+  treated as `default`.
+- On-connect policies apply immediately after port open. On-
+  disconnect policies apply immediately before port close.
+- Live mid-session control: **DTR** and **RTS** pills in the session
+  header flip the line and reflect the current state via the pill
+  highlight.
 
-| Device / boot stage          | When to send Break                                                |
-| ---------------------------- | ----------------------------------------------------------------- |
-| Cisco IOS (ROMMON)           | Within ~60 s of reload. Fine to tap Break repeatedly.             |
-| Juniper JunOS                | 2-3 s into boot, around the "Hit [Enter] to boot immediately" line. |
-| U-Boot / ARM boot loaders    | "Press any key to stop autoboot" window — Break works, Enter too. |
-| MCU bootloaders (SAM-BA etc.) | Often combined with specific DTR/RTS sequences; see below.        |
+## Hex view (RX)
 
-Some MCU bootloaders also require DTR or RTS in a specific state
-before they accept input. Either set the profile's **DTR/RTS on
-connect** policy to `assert` or `deassert`, or flip the live DTR/RTS
-pills in the session header mid-session.
+- Per-profile toggle.
+- Renders incoming bytes as a 16-byte-per-line hex dump with an
+  ASCII sidebar.
+- Mutually exclusive with the syntax highlighter — toggling either
+  mode resets the other's buffer.
+- Scrollback is not shared with plain view; switching modes mid-
+  session clears the viewport.
 
-## Password recovery
+## Hex send (TX)
 
-Textbook Cisco password recovery leans on Break + the config-register:
+- Session-header **Hex** button opens a modal input.
+- Parser accepts any of, or a mix of:
+  - Space-separated: `02 FF AA 55`
+  - Compact: `02FFAA55`
+  - `0x`-prefixed: `0x02 0xFF 0xAA 0x55`
+  - Comma-separated: `02,FF,AA,55`
+- Post-normalization (whitespace, commas, and `0x` prefixes
+  stripped), length must be even and content must be pure hex
+  `[0-9a-fA-F]`. Validation failures render an inline error and
+  leave the modal open.
+- **Enter** submits; **Escape** or a backdrop click cancels.
+- On successful send the input clears but the modal stays open,
+  supporting a sequence of sends without repeated button clicks.
+- Bytes go through the same `api.sendBytes` path as typed input.
 
-1. Session → **Break** during boot → `rommon 1>` prompt.
-2. `confreg 0x2142` at ROMMON — tells IOS to ignore the startup-config.
-3. `reset` — device reboots.
-4. Device comes up with no config. `enable` gets you to privileged
-   mode without a password.
-5. `copy startup-config running-config` — load the real config in
-   without it being active yet.
-6. `configure terminal` → `enable secret <new-password>` → `exit`.
-7. `config-register 0x2102` (restore normal boot behavior).
-8. `write memory` to save.
+## Line timestamps
 
-Same pattern with different keywords on other vendors; the Break tool
-is what unlocks step 1.
+- Per-profile toggle.
+- Prefixes each newly committed line with `[HH:MM:SS.mmm]`.
+- Applied at line commit time; enabling mid-session does not
+  retroactively timestamp existing scrollback.
+- Only visible in plain view — hex view has no per-line concept to
+  prefix.
 
-## Debugging binary protocols
+## Session logging
 
-Modbus RTU, firmware bootloader handshakes, custom embedded protocols
-— anything non-ASCII needs both directions visible in hex to
-interpret.
+- Per-profile toggle (`logEnabled`).
+- Destination:
+  `<logdir>/<profile-slug>_<YYYY-MM-DD_HHMMSS>.log`.
+- Default `<logdir>` is `<support>/logs/`; overridable in
+  Settings → Advanced → Session Log Directory.
+- One file per session. No built-in rotation or rollover.
+- Writes raw incoming bytes only — no framing, no timestamps, no
+  captured keystrokes. Device echo of user input appears if the
+  device itself echoes.
+- The writer is closed cleanly on disconnect.
 
-**Setup:**
-1. Enable **Hex view** (profile → Advanced). Incoming bytes render as
-   a 16-per-line hex dump with an ASCII sidebar.
-2. Enable **Line timestamps** (profile → Advanced). Binary protocols
-   are timing-sensitive; timestamps surface inter-packet gaps.
-3. Use the **Hex** session-header button to send raw bytes. The
-   parser is forgiving: `02 FF AA 55`, `02FFAA55`, and `0x02 0xFF 0xAA 0x55`
-   all produce the same four bytes.
+## Auto-reconnect
 
-**Tips:**
-- Enable **Session logging** too so the full raw stream is on disk
-  for post-mortem scripting.
-- Pair with a terminal **theme** that has a distinct background so
-  the hex dump doesn't blur into the app chrome — Solarized Dark,
-  Dracula, or Monokai all work.
-- For Modbus: function code is byte 2 of the payload; CRC is the last
-  two bytes (little-endian). Timestamps help confirm the 3.5-char
-  inter-frame gap is present.
+- Per-profile toggle (`autoReconnect`).
+- Triggered when the session's read pump exits with an error —
+  typically "port disappeared" after a USB-serial adapter
+  re-enumerates.
+- Poll interval: 1 s. Timeout: 30 s.
+- Reopens with the config snapshotted at Connect time, not the
+  current profile state. Edits to the profile during reconnect
+  don't retarget the next attempt.
+- The `<Terminal>` component stays mounted across the gap, so
+  scrollback survives.
+- Session state gains a `reconnecting` status between `connected`
+  and `idle`. Session-header dot pulses amber; sub-label shows
+  `reconnecting…`.
+- Break, DTR, and RTS buttons are disabled while reconnecting.
+- User-clicked Disconnect cancels the retry loop before closing.
+- Timeout without a successful reopen emits a standard disconnect
+  event with `reason: "reconnect timeout"`.
 
-## Pasting config safely
+## Paste safety
 
-Pasting a config blob into the wrong session is a classic incident.
-Two profile-level tools:
+Two profile-level flags that alter behavior when an `onData`
+callback is detected as a paste rather than typed input.
 
-**Confirm multi-line pastes** — prompts with line count + first-line
-preview before sending anything that contains a line break. Typed
-input never triggers it (typing can't cross lines in a single burst).
+**Paste detection heuristic:** input is treated as a paste if it is
+at least 20 characters long OR contains `\r` / `\n`. Typed input
+never crosses lines in a single callback and typing bursts top out
+well below 20 characters.
 
-**Slow paste** — sends pasted bytes one at a time with a configurable
-delay (default 10 ms, tunable 0-500 ms). Mandatory for:
-- MCUs with small UART FIFOs (8/16-byte buffers drop anything fast).
-- Older Cisco IOS trains on slow CPUs.
-- Any device at 115200 without flow control.
+**`pasteWarnMultiline`** (profile field, default `false`)
 
-Rule of thumb: if your `conf t` paste has ever produced garbled
-output, you needed slow paste.
+- Only applies to pastes that contain a line break.
+- Prompts via `window.confirm` with the line count plus a truncated
+  (80-char) preview of the first line.
+- On cancel, the paste is discarded and a "Paste cancelled" status
+  message is shown.
 
-## Keeping a session alive across adapter drops
+**`pasteSlow`** (profile field, default `false`) + **`pasteCharDelayMs`** (profile field, default `10`, valid range 0-500)
 
-Cheap USB-serial adapters (CH340, CP210x clones) re-enumerate under
-EMI, bad cables, or sleepy hubs. Enable **Auto-reconnect** on the
-profile. Behavior:
+- When enabled, pasted bytes are sent one at a time with
+  `pasteCharDelayMs` between each.
+- Local echo (if the profile has it on) is applied per-byte.
+- The flag composes with `pasteWarnMultiline`: the confirmation
+  runs first, then the slow send begins on approval.
 
-- On disconnect, the app polls for the port name to reappear (1 s
-  interval, 30 s timeout).
-- xterm stays mounted, so scrollback survives the gap.
-- Session header dot pulses amber with a "reconnecting…" label.
-- As soon as the port reappears, the app reopens with the same
-  config — including your DTR/RTS policies.
-- User-clicked Disconnect cancels the retry cleanly.
+## Backspace key mapping
 
-Combine with **Session logging** for unattended captures: an
-overnight RS-485 bus tap records continuously even if the adapter
-blips every few hours.
+- Profile field `backspaceKey`: `"del"` (0x7F) or `"bs"` (0x08).
+  Empty string is treated as `"del"`.
+- Default `"del"` matches VT100 / xterm / every modern OS; wrong
+  value typically surfaces as `^H` echoed on screen when Backspace
+  is pressed.
+- xterm always emits 0x7F from the Backspace key. The swap happens
+  in the Terminal component's input handler before `sendBytes`.
 
-## Navigating away without losing the session
+## Copy on select
 
-**Suspend** (session header) keeps the serial port open and xterm
-running but returns you to the profile list. Useful for:
-- Comparing config between two switches (switch A suspended, open B).
-- Checking settings without tearing down the session.
-- Editing the current profile's theme or auto-reconnect setting
-  mid-conversation.
+- Global setting (Settings → Advanced), default `false`.
+- Hooks xterm's `onSelectionChange` event. On every selection
+  update, the current selection text is written to the clipboard
+  via `navigator.clipboard.writeText`.
+- Empty selections (plain clicks) are skipped so clicking into the
+  terminal doesn't clobber the clipboard.
+- Because the event fires continuously during a drag, the clipboard
+  always reflects the live selection.
 
-**Resume** by clicking back into the suspended profile. The
-`<Terminal>` component never unmounts, so the full backlog and
-cursor position are still there.
+## Session suspend / resume
 
-Auto-disconnect kicks in if you navigate away *without* suspending
-(new profile, Settings button) — an explicit Suspend is the opt-in
-to stay connected.
+- **Suspend** session-header button: leaves the port open and the
+  `<Terminal>` component mounted, and routes the UI back to the
+  profile view.
+- **Resume** is triggered by returning to the suspended profile's
+  terminal view. A `refit()` call on the xterm instance re-syncs
+  the viewport to current dimensions.
+- Because the component never unmounts, scrollback and cursor
+  position are preserved across suspend.
+- Navigating away *without* suspending (clicking another profile,
+  opening Settings, or creating a new profile) triggers an automatic
+  Disconnect.
 
-## RS-485 direction and odd control-line needs
+## Light / dark appearance
 
-RS-485 half-duplex uses RTS (or sometimes DTR) to toggle between TX
-and RX mode. Profile policies handle the common shapes:
+- Global setting (`appearance`): `auto` / `light` / `dark`.
+- `auto` follows the OS preference via
+  `matchMedia('(prefers-color-scheme: dark)')` and updates live when
+  the OS flips.
+- Only swaps the CSS palette. The window's own
+  `NSVisualEffectView` material on macOS is pinned to the dark
+  system appearance at startup — Wails v2.12's runtime theme
+  setters are no-ops on macOS, so the vibrancy material cannot
+  change after launch.
+- Dark-only skins (CRT, Cyberpunk) ignore the preference and pin
+  their palette to dark.
 
-- Always-asserted RX (typical for a bus monitor): `rtsOnConnect:
-  "assert"`, `rtsOnDisconnect: "deassert"`.
-- TX-only controller: `rtsOnConnect: "assert"` to hold the driver
-  enable while sending.
-- Live bus work: use the live DTR/RTS pills in the session header to
-  flip direction mid-session.
+## Syntax highlighting
 
-Some MCU dev boards tie their reset line to DTR. To avoid auto-reset
-on connect: `dtrOnConnect: "deassert"`. Common for Arduino Uno R3
-and clones when you want to attach a serial monitor without losing
-state.
+- Per-profile toggle (`highlight`, default `true`).
+- Line-buffered regex colorizer applied to incoming text. Active
+  pattern set:
 
-## Session logging for post-mortem work
+  | Color    | Matches                                                       |
+  | -------- | ------------------------------------------------------------- |
+  | Cyan     | IPv4 (with optional CIDR), IPv6                               |
+  | Magenta  | MAC addresses (colon, dash, or Cisco-dotted)                  |
+  | Blue     | Interface names — `GigabitEthernet0/1`, `Gi1/0/24`, `ge-0/0/1`, `Vlan100` |
+  | Green    | `up`, `online`, `active`, `established`, `enabled`, `OK`, `FULL` |
+  | Red      | `down`, `failed`, `err-disabled`, `error`, `denied`, `timeout`, `critical` |
+  | Yellow   | `warning`, `degraded`, `init`, `learning`, `blocking`         |
+  | Dim gray | `HH:MM:SS` timestamps, `YYYY-MM-DD` dates                     |
 
-**Enable:** profile → Advanced → "Record session to file."
+- Mutually exclusive with hex view — toggling either mode resets
+  the other's line buffer.
+- Device-supplied ANSI CSI colors pass through unchanged. The
+  highlighter only applies color to text that arrived uncolored.
 
-**Location:** `<support>/logs/<profile-slug>_<YYYY-MM-DD_HHMMSS>.log`
-by default. Override via Settings → Advanced → Session Log Directory.
+## Theme preview
 
-**Format:** raw bytes, no timestamps or framing. Makes post-mortem
-grep trivial; pair with the terminal's own timestamp prefix if you
-want timing info in the log.
+- Settings → Installed Themes → each row has a **Preview** button.
+- Opens a modal containing a read-only xterm instance that renders
+  a canned RuggedCom-style output sample (prompts, interface
+  status, MAC addresses, IPs, timestamps, warnings, errors).
+- The sample is passed through the highlighter, so the preview
+  shows the combined palette + highlighter behavior, not just the
+  raw theme colors.
+- The preview terminal focuses itself after the initial write so
+  the cursor renders filled rather than the unfocused outline
+  state.
 
-**Rotation:** none — each session produces one file. Rotate manually
-or with your existing log tooling if you're recording 24/7.
+## USB-serial driver detection
 
-**What's recorded:** incoming bytes only. Your keystrokes aren't in
-the log. If you need a full transcript, combine with local echo so
-your input appears on the RX stream as the device echoes it back.
+- Global setting (Settings → Advanced): "Detect un-drivered USB
+  adapters." Default on.
+- Shows a yellow banner above the port dropdown when a USB-serial
+  chipset is plugged in but no corresponding serial port is
+  enumerated by the OS.
+- Banner includes a link to the vendor driver download and a
+  Refresh action.
+- Dismissal via × is session-scoped; the banner re-shows on the
+  next app launch for the same adapter.
 
-## USB-serial driver troubleshooting
+**Chipset coverage:** CP210x (SiLabs), FTDI, Prolific PL2303, WCH
+CH340 / CH341, Microchip MCP2221, Cypress, ATEN, ARM mbed CDC-ACM,
+MosChip / ASIX, Magic Control, Moxa UPort, Brainboxes.
 
-Seriesly shows a yellow banner above the port dropdown when it
-detects a known USB-serial chipset plugged in but without its vendor
-driver available to the OS.
+**Special cases:**
 
-**Detected chipsets:** CP210x (SiLabs), FTDI, Prolific PL2303, WCH
-CH340/341, Microchip MCP2221, Cypress, ATEN, ARM mbed CDC-ACM,
-MosChip/ASIX, Magic Control, Moxa UPort, Brainboxes. Plus special
-cases: Siemens RUGGEDCOM RST2228 (CP210x with Siemens VID) and
-counterfeit-Prolific detection (genuine old chips that Prolific's
-modern driver refuses; TRENDnet TU-S9 is the classic).
+- **Siemens RUGGEDCOM RST2228** — CP210x reprogrammed with Siemens
+  VID:PID (`0908:01FF`). Mapped via a known-rebrand table back to
+  the SiLabs driver.
+- **Counterfeit-Prolific** — older genuine Prolific PL2303 chips
+  that Prolific's current driver refuses as counterfeit (TRENDnet
+  TU-S9 is the canonical example). Detected via manufacturer-string
+  heuristic; banner points at the legacy Prolific driver.
 
-**Banner flow:** click the driver-URL link to open the vendor
-download page. Install, reboot if asked, unplug/replug the adapter,
-click **Refresh**. Banner goes away when the driver shows up.
+**Platform detection mechanism:**
 
-**Dismissing:** × button on the banner dismisses for the current
-session. Globally disable via Settings → Advanced → "Detect
-un-drivered USB adapters" if you've manually installed a driver the
-detector doesn't recognize.
+| Platform | Source                                                  |
+| -------- | ------------------------------------------------------- |
+| macOS    | IOKit registry via `ioreg -p IOUSB -l -w 0`             |
+| Windows  | `Get-PnpDevice` invoked through PowerShell              |
+| Linux    | No-op. Kernel modules for all listed chipsets are built in, so an adapter either shows up as a tty or doesn't. |
 
-**Platform details:**
-- macOS reads the IOKit registry via `ioreg -p IOUSB -l`. More
-  reliable than `system_profiler` on recent macOS releases.
-- Windows queries `Get-PnpDevice` through PowerShell.
-- Linux: detection is a no-op (kernel drivers are built-in; if
-  the port shows up it works).
+## Skin and theme systems
 
-## Copy-on-select for quick clipboard capture
-
-Settings → Advanced → "Copy terminal selection to clipboard
-automatically." PuTTY-style: drag-select and release → selection is
-on the clipboard. No Cmd/Ctrl+C needed.
-
-Off by default so users don't get surprise clipboard writes.
-Empty selections (plain clicks) are ignored.
-
-## Backspace / Delete mapping
-
-Older Cisco IOS trains, some Foundry switches, and a handful of
-industrial gear expect Backspace to send BS (0x08) instead of the
-VT100/xterm default DEL (0x7f). Wrong setting shows as `^H` echoed
-on screen when you hit Backspace.
-
-Profile → "Backspace sends" → pick DEL or BS. Default is DEL, which
-matches every modern OS and router.
-
-## Window / view management
-
-- **Clear** (session header) — clears the terminal viewport. Scrollback
-  is preserved.
-- **Hex view** and **plain view** don't share scrollback — toggling
-  clears what's on screen.
-- **Line timestamps** are prefixed at line commit time, so enabling
-  mid-session timestamps only future lines, not backlog.
-- **Suspend** — see [Navigating away without losing the session](#navigating-away-without-losing-the-session).
-
-## Seeing what the device is sending (syntax highlighting)
-
-Seriesly auto-colors common network-gear patterns on incoming text:
-
-| Color       | Pattern                                                         |
-| ----------- | --------------------------------------------------------------- |
-| Cyan        | IPv4 (with/without CIDR), IPv6                                  |
-| Magenta     | MAC addresses (colon, dash, or Cisco-dotted)                    |
-| Blue        | Interface names (`GigabitEthernet0/1`, `Gi1/0/24`, `ge-0/0/1`, `Vlan100`) |
-| Green       | `up`, `online`, `active`, `established`, `enabled`, `OK`, `FULL` |
-| Red         | `down`, `failed`, `err-disabled`, `error`, `denied`, `timeout`, `critical` |
-| Yellow      | `warning`, `degraded`, `init`, `learning`, `blocking`           |
-| Dim gray    | Timestamps and dates                                            |
-
-Device-supplied ANSI colors (Aruba CX, Junos, etc.) pass through
-unchanged — the highlighter only fills in text the device left
-uncolored. Toggle per profile if you're on a device whose output
-collides with a pattern.
+App chrome (skins) and terminal color scheme (themes) are separate
+systems that can be mixed freely. See [SKINS.md](SKINS.md) and
+[THEMES.md](THEMES.md) for the reference.
