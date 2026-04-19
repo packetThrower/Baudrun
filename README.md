@@ -1,6 +1,6 @@
 # Seriesly
 
-A cross-platform (macOS + Windows) serial terminal for network devices —
+A cross-platform (macOS + Windows + Linux) serial terminal for network devices —
 profile-based like SSH, with a built-in xterm terminal and native-feeling UI.
 
 Built for connecting to switch consoles, router CLIs, and other serial-attached
@@ -142,15 +142,26 @@ Required when using an adapter rather than a device's built-in USB console:
 Seriesly will detect known chipsets and point you at the right download when
 a driver is missing.
 
-## Running
+## Releases
 
-Download the latest `.app` bundle (macOS) or `.exe` (Windows) from the
-releases page, or build from source. On macOS, drag `Seriesly.app` into
-`/Applications`.
+Tagged pushes (CalVer `YYYY.MM.DD-patch`) produce a GitHub Release with
+artifacts for four targets:
 
-The app is currently unsigned on both platforms. First-launch friction:
+| Platform | Artifact | Notes |
+|---|---|---|
+| **macOS** | `Seriesly-macOS-<version>.zip` (contains `.app`) | **Universal binary** — one `.app` with both Intel (x86_64) and Apple Silicon (arm64) slices fused via `lipo`. macOS picks the matching slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. Trade-off is roughly 2× the download size of a single-arch build. |
+| **Windows** | `Seriesly-Windows-<version>.zip` (contains `.exe`) | x86_64 only. Windows ARM is future work. |
+| **Linux amd64** | `Seriesly-Linux-amd64-<version>.tar.gz` | Standard desktop Linux on 64-bit x86. |
+| **Linux arm64** | `Seriesly-Linux-arm64-<version>.tar.gz` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
+
+Download, unpack, and run. On macOS, drag `Seriesly.app` into `/Applications`.
+
+The app is currently unsigned on all platforms. First-launch friction:
 - **macOS**: right-click → Open to bypass Gatekeeper.
 - **Windows**: SmartScreen will warn; click "More info" → "Run anyway".
+- **Linux**: `chmod +x Seriesly && ./Seriesly`. You'll need `libwebkit2gtk-4.1`
+  and `libgtk-3` installed (default on Ubuntu 24.04+, Fedora 40+, and recent
+  Debian).
 
 Code signing and notarization are planned — see `TODO.md`.
 
@@ -171,10 +182,16 @@ wails build -platform darwin/universal    # universal macOS binary
 wails dev                                 # hot-reload dev mode
 ```
 
-CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-latest` and
-`windows-latest` on each push to `main`. Tagged pushes matching CalVer
-`20*.*.*-*` fire `.github/workflows/release.yml`, which produces a GitHub
-Release with both platform binaries attached.
+Cross-compiling to Linux from macOS is **not** supported by Wails — Linux
+builds have to run on Linux (or in CI). On a Linux host, install
+`libgtk-3-dev` + `libwebkit2gtk-4.1-dev` + `pkg-config` first, then
+`wails build -platform linux/amd64` (or `linux/arm64`).
+
+CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-latest`,
+`windows-latest`, `ubuntu-latest`, and `ubuntu-24.04-arm` on each push to
+`main`. Tagged pushes matching CalVer `20*.*.*-*` fire
+`.github/workflows/release.yml`, which produces a GitHub Release with all
+four platform artifacts attached.
 
 ## Architecture
 
