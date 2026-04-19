@@ -112,7 +112,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 14px 10px 14px;
+    padding: 14px 14px 10px 14px;
   }
 
   .title {
