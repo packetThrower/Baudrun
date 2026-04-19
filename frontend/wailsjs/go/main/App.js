@@ -90,6 +90,10 @@ export function SetRTS(arg1) {
   return window['go']['main']['App']['SetRTS'](arg1);
 }
 
+export function SetWindowAppearance(arg1) {
+  return window['go']['main']['App']['SetWindowAppearance'](arg1);
+}
+
 export function UpdateProfile(arg1) {
   return window['go']['main']['App']['UpdateProfile'](arg1);
 }

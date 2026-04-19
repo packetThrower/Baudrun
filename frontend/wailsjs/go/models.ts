@@ -157,6 +157,7 @@ export namespace settings {
 	    logDir?: string;
 	    disableDriverDetection?: boolean;
 	    skinId?: string;
+	    appearance?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -169,6 +170,7 @@ export namespace settings {
 	        this.logDir = source["logDir"];
 	        this.disableDriverDetection = source["disableDriverDetection"];
 	        this.skinId = source["skinId"];
+	        this.appearance = source["appearance"];
 	    }
 	}
 
@@ -182,6 +184,9 @@ export namespace skins {
 	    source: string;
 	    description?: string;
 	    vars: Record<string, string>;
+	    darkVars?: Record<string, string>;
+	    lightVars?: Record<string, string>;
+	    supportsLight: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Skin(source);
@@ -194,6 +199,9 @@ export namespace skins {
 	        this.source = source["source"];
 	        this.description = source["description"];
 	        this.vars = source["vars"];
+	        this.darkVars = source["darkVars"];
+	        this.lightVars = source["lightVars"];
+	        this.supportsLight = source["supportsLight"];
 	    }
 	}
 

@@ -6,10 +6,37 @@ package skins
 // unset variables fall back to the seriesly defaults via the cascade.
 var builtins = []Skin{
 	{
-		ID:          "seriesly",
-		Name:        "Seriesly",
-		Source:      "builtin",
-		Description: "The default dark look with translucent panels and compact iOS-style labels.",
+		ID:            "seriesly",
+		Name:          "Seriesly",
+		Source:        "builtin",
+		Description:   "The default look with translucent panels and compact iOS-style labels. Adapts to system light/dark.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-window":             "rgba(245, 245, 247, 0)",
+			"--bg-sidebar":            "rgba(0, 0, 0, 0.04)",
+			"--bg-main":                "rgba(245, 245, 247, 0.85)",
+			"--bg-panel":               "rgba(0, 0, 0, 0.05)",
+			"--bg-hover":               "rgba(0, 0, 0, 0.06)",
+			"--bg-active":              "rgba(0, 113, 227, 0.18)",
+			"--bg-input":               "rgba(0, 0, 0, 0.06)",
+			"--bg-input-focus":         "rgba(0, 0, 0, 0.10)",
+			"--option-bg":              "#ffffff",
+			"--option-fg":              "#1d1d1f",
+			"--option-group-fg":        "rgba(0, 0, 0, 0.55)",
+			"--fg-primary":             "rgba(0, 0, 0, 0.88)",
+			"--fg-secondary":           "rgba(0, 0, 0, 0.6)",
+			"--fg-tertiary":            "rgba(0, 0, 0, 0.4)",
+			"--border-subtle":          "rgba(0, 0, 0, 0.08)",
+			"--border-strong":          "rgba(0, 0, 0, 0.16)",
+			"--sidebar-divider":        "1px solid rgba(0, 0, 0, 0.1)",
+			"--accent":                 "#0071e3",
+			"--accent-hover":           "#0a7aee",
+			"--danger":                 "#d70015",
+			"--success":                "#248a3d",
+			"--warn":                   "#b25000",
+			"--scrollbar-thumb":        "rgba(0, 0, 0, 0.22)",
+			"--scrollbar-thumb-hover":  "rgba(0, 0, 0, 0.35)",
+		},
 		Vars: map[string]string{
 			// Typography
 			"--font-ui":           `-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", system-ui, sans-serif`,
@@ -86,10 +113,38 @@ var builtins = []Skin{
 		},
 	},
 	{
-		ID:          "macos-26",
-		Name:        "macOS 26 (Liquid Glass)",
-		Source:      "builtin",
-		Description: "Frosted surfaces, larger squircle radii, sentence-case labels, brighter accents. Evokes the Liquid Glass design language.",
+		ID:            "macos-26",
+		Name:          "macOS 26 (Liquid Glass)",
+		Source:        "builtin",
+		Description:   "Frosted surfaces, larger squircle radii, sentence-case labels, brighter accents. Evokes the Liquid Glass design language.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-sidebar":     "rgba(0, 0, 0, 0.04)",
+			"--bg-main":        "rgba(255, 255, 255, 0.45)",
+			"--bg-panel":       "rgba(255, 255, 255, 0.7)",
+			"--bg-hover":       "rgba(0, 0, 0, 0.06)",
+			"--bg-active":      "rgba(0, 122, 255, 0.22)",
+			"--bg-input":       "rgba(0, 0, 0, 0.06)",
+			"--bg-input-focus": "rgba(0, 0, 0, 0.10)",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#1d1d1f",
+			"--option-group-fg": "rgba(0, 0, 0, 0.55)",
+
+			"--fg-primary":   "rgba(0, 0, 0, 0.9)",
+			"--fg-secondary": "rgba(0, 0, 0, 0.65)",
+			"--fg-tertiary":  "rgba(0, 0, 0, 0.42)",
+
+			"--border-subtle": "rgba(0, 0, 0, 0.1)",
+			"--border-strong": "rgba(0, 0, 0, 0.18)",
+
+			"--accent":       "#007aff",
+			"--accent-hover": "#2a93ff",
+
+			"--panel-shadow":          "0 10px 40px rgba(0, 0, 0, 0.12), 0 1px 0 rgba(255, 255, 255, 0.6) inset",
+			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.22)",
+			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.35)",
+		},
 		Vars: map[string]string{
 			// Same type scale but slightly larger surfaces
 			"--font-size-section": "16px",
@@ -155,10 +210,44 @@ var builtins = []Skin{
 		},
 	},
 	{
-		ID:          "high-contrast",
-		Name:        "High Contrast",
-		Source:      "builtin",
-		Description: "Accessibility-focused: solid black background, pure white foreground, strong borders everywhere, bright accent colors. No translucency, no blur, no soft shadows.",
+		ID:            "high-contrast",
+		Name:          "High Contrast",
+		Source:        "builtin",
+		Description:   "Accessibility-focused: solid surfaces, maximum contrast, bright accents, visible borders on every control. Available in both dark (black/white) and light (white/black) variants.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-window":      "#ffffff",
+			"--bg-sidebar":     "#ffffff",
+			"--bg-main":        "#ffffff",
+			"--bg-panel":       "#f5f5f5",
+			"--bg-hover":       "#e0e0e0",
+			"--bg-active":      "#cfe0f5",
+			"--bg-input":       "#ffffff",
+			"--bg-input-focus": "#f0f0f0",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#000000",
+			"--option-group-fg": "#333333",
+
+			"--fg-primary":   "#000000",
+			"--fg-secondary": "#1a1a1a",
+			"--fg-tertiary":  "#3a3a3a",
+
+			"--border-subtle":     "#000000",
+			"--border-strong":     "#000000",
+			"--input-border-idle": "#000000",
+			"--panel-border":      "1px solid #000000",
+			"--sidebar-divider":   "2px solid #000000",
+
+			"--accent":       "#0040a8",
+			"--accent-hover": "#002a70",
+			"--danger":       "#b00020",
+			"--success":      "#006b1d",
+			"--warn":         "#8a5a00",
+
+			"--scrollbar-thumb":       "#000000",
+			"--scrollbar-thumb-hover": "#333333",
+		},
 		Vars: map[string]string{
 			// Bigger type for readability
 			"--font-size-base":    "14px",
@@ -225,10 +314,48 @@ var builtins = []Skin{
 		},
 	},
 	{
-		ID:          "windows-11",
-		Name:        "Windows 11 (Fluent)",
-		Source:      "builtin",
-		Description: "Windows 11 Fluent / Mica-inspired: Segoe UI, Cascadia Code for mono, sentence-case labels, solid dark surfaces with stroke borders, 4/8px radii, Fluent accent blue.",
+		ID:            "windows-11",
+		Name:          "Windows 11 (Fluent)",
+		Source:        "builtin",
+		Description:   "Windows 11 Fluent / Mica-inspired: Segoe UI, Cascadia Code for mono, sentence-case labels, stroke borders, 4/8px radii, Fluent accent blue. Adapts to system light/dark.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-window":      "#f3f3f3",
+			"--bg-sidebar":     "#ebebeb",
+			"--bg-main":        "#f9f9f9",
+			"--bg-panel":       "#ffffff",
+			"--bg-hover":       "rgba(0, 0, 0, 0.04)",
+			"--bg-active":      "rgba(0, 120, 212, 0.2)",
+			"--bg-input":       "#ffffff",
+			"--bg-input-focus": "#f0f0f0",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#1f1f1f",
+			"--option-group-fg": "rgba(0, 0, 0, 0.6)",
+
+			"--fg-primary":   "#1f1f1f",
+			"--fg-secondary": "rgba(0, 0, 0, 0.75)",
+			"--fg-tertiary":  "rgba(0, 0, 0, 0.5)",
+
+			"--border-subtle":     "rgba(0, 0, 0, 0.08)",
+			"--border-strong":     "rgba(0, 0, 0, 0.14)",
+			"--input-border-idle": "rgba(0, 0, 0, 0.10)",
+			"--panel-border":      "1px solid rgba(0, 0, 0, 0.08)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.08)",
+
+			// Fluent light-mode accent — darker blue for contrast vs dark
+			// mode's #60cdff
+			"--accent":       "#0078d4",
+			"--accent-hover": "#106ebe",
+			"--danger":       "#c42b1c",
+			"--success":      "#107c10",
+			"--warn":         "#9d5d00",
+
+			"--shadow-panel":          "0 2px 4px rgba(0, 0, 0, 0.08)",
+			"--shadow-floating":       "0 8px 16px rgba(0, 0, 0, 0.14)",
+			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.22)",
+			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.35)",
+		},
 		Vars: map[string]string{
 			// Segoe UI Variable on Windows falls through to the next available
 			// family on macOS (no Segoe pre-installed). Cascadia Code is the
@@ -302,10 +429,45 @@ var builtins = []Skin{
 		},
 	},
 	{
-		ID:          "gnome-adwaita",
-		Name:        "GNOME (Adwaita Dark)",
-		Source:      "builtin",
-		Description: "GNOME / Adwaita Dark: Cantarell typography, bigger rounded corners, sentence-case labels, GNOME's blue accent and destructive-coral palette, generous whitespace.",
+		ID:            "gnome-adwaita",
+		Name:          "GNOME (Adwaita)",
+		Source:        "builtin",
+		Description:   "GNOME / libadwaita: Cantarell typography, bigger rounded corners, sentence-case labels, GNOME's blue accent and destructive-coral palette, generous whitespace. Adapts to system light/dark.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-window":      "#fafafa",
+			"--bg-sidebar":     "#ebebeb",
+			"--bg-main":        "#fafafa",
+			"--bg-panel":       "#ffffff",
+			"--bg-hover":       "rgba(0, 0, 0, 0.05)",
+			"--bg-active":      "rgba(53, 132, 228, 0.22)",
+			"--bg-input":       "rgba(0, 0, 0, 0.05)",
+			"--bg-input-focus": "#ffffff",
+			"--bg-terminal":    "#ffffff",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "rgba(0, 0, 0, 0.88)",
+			"--option-group-fg": "rgba(0, 0, 0, 0.55)",
+
+			"--fg-primary":   "rgba(0, 0, 0, 0.88)",
+			"--fg-secondary": "rgba(0, 0, 0, 0.65)",
+			"--fg-tertiary":  "rgba(0, 0, 0, 0.45)",
+
+			"--border-subtle":   "rgba(0, 0, 0, 0.08)",
+			"--border-strong":   "rgba(0, 0, 0, 0.14)",
+			"--sidebar-divider": "1px solid rgba(0, 0, 0, 0.08)",
+
+			// Adwaita light uses the same blue, with different destructive red
+			"--accent":       "#3584e4",
+			"--accent-hover": "#2779d5",
+			"--danger":       "#c01c28",
+			"--success":      "#26a269",
+			"--warn":         "#e5a50a",
+
+			"--shadow-panel":          "0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08)",
+			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.18)",
+			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.32)",
+		},
 		Vars: map[string]string{
 			// Cantarell is GNOME's default; not present on macOS/Windows so
 			// fall through to the next sensible sans. Source Code Pro is
@@ -385,10 +547,44 @@ var builtins = []Skin{
 		},
 	},
 	{
-		ID:          "kde-breeze",
-		Name:        "KDE (Breeze Dark)",
-		Source:      "builtin",
-		Description: "KDE Plasma Breeze Dark: cool blue-gray surfaces, thin subtle borders, the iconic KDE sky-blue accent, slightly more angular radii than Fluent/Adwaita.",
+		ID:            "kde-breeze",
+		Name:          "KDE (Breeze)",
+		Source:        "builtin",
+		Description:   "KDE Plasma Breeze: cool blue-gray surfaces, thin subtle borders, the iconic KDE sky-blue accent, slightly more angular radii than Fluent/Adwaita. Adapts to system light/dark.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-window":      "#eff0f1",
+			"--bg-sidebar":     "#e5e5e5",
+			"--bg-main":        "#fcfcfc",
+			"--bg-panel":       "#ffffff",
+			"--bg-hover":       "rgba(61, 174, 233, 0.12)",
+			"--bg-active":      "rgba(61, 174, 233, 0.3)",
+			"--bg-input":       "#ffffff",
+			"--bg-input-focus": "#f6f6f6",
+			"--bg-terminal":    "#ffffff",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#232629",
+			"--option-group-fg": "rgba(35, 38, 41, 0.55)",
+
+			"--fg-primary":   "#232629",
+			"--fg-secondary": "rgba(35, 38, 41, 0.7)",
+			"--fg-tertiary":  "rgba(35, 38, 41, 0.45)",
+
+			"--border-subtle":     "rgba(0, 0, 0, 0.08)",
+			"--border-strong":     "rgba(0, 0, 0, 0.14)",
+			"--input-border-idle": "rgba(0, 0, 0, 0.08)",
+			"--panel-border":      "1px solid rgba(0, 0, 0, 0.06)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.1)",
+
+			// Breeze light uses the same sky-blue; status palette stays
+			"--accent":       "#3daee9",
+			"--accent-hover": "#2996c9",
+
+			"--shadow-panel":          "0 2px 6px rgba(0, 0, 0, 0.08)",
+			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.18)",
+			"--scrollbar-thumb-hover": "rgba(61, 174, 233, 0.5)",
+		},
 		Vars: map[string]string{
 			// KDE Plasma ships Noto Sans by default. Oxygen (the older
 			// default) is still common on KDE systems. Hack is the Plasma
@@ -465,10 +661,46 @@ var builtins = []Skin{
 		},
 	},
 	{
-		ID:          "macos-classic",
-		Name:        "macOS Classic (Mojave Dark)",
-		Source:      "builtin",
-		Description: "Pre-Big Sur macOS dark mode: Lucida Grande / Helvetica Neue, 12px baseline, sharp 3-4px radii, classic source-list selection blue, subtle inset bevels, visible edges. No vibrancy.",
+		ID:            "macos-classic",
+		Name:          "macOS Classic",
+		Source:        "builtin",
+		Description:   "Pre-Big Sur macOS: Lucida Grande / Helvetica Neue, 12px baseline, sharp 3-4px radii, classic source-list selection blue, subtle inset bevels, visible edges. Adapts to light (Aqua/Sierra-era) and dark (Mojave-era).",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-window":      "#eceff1",
+			"--bg-sidebar":     "#dddfe1",
+			"--bg-main":        "#ffffff",
+			"--bg-panel":       "#f5f5f7",
+			"--bg-hover":       "rgba(0, 0, 0, 0.06)",
+			"--bg-active":      "#1a5cb4",
+			"--bg-input":       "#ffffff",
+			"--bg-input-focus": "#f5f5f5",
+			"--bg-terminal":    "#f5f5f7",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#1d1d1f",
+			"--option-group-fg": "rgba(0, 0, 0, 0.55)",
+
+			"--fg-primary":   "rgba(0, 0, 0, 0.9)",
+			"--fg-secondary": "rgba(0, 0, 0, 0.65)",
+			"--fg-tertiary":  "rgba(0, 0, 0, 0.45)",
+
+			"--border-subtle":     "rgba(0, 0, 0, 0.15)",
+			"--border-strong":     "rgba(0, 0, 0, 0.25)",
+			"--input-border-idle": "rgba(0, 0, 0, 0.18)",
+			"--panel-border":      "1px solid rgba(0, 0, 0, 0.14)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.15)",
+
+			"--accent":       "#0060df",
+			"--accent-hover": "#0070e8",
+
+			// Flip inset highlight direction (was bright inset on dark; now
+			// dark inset on light to read as a classic bevel)
+			"--shadow-panel":          "inset 0 1px 0 rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.08)",
+			"--shadow-floating":       "0 6px 18px rgba(0, 0, 0, 0.15)",
+			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.25)",
+			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.4)",
+		},
 		Vars: map[string]string{
 			// Pre-SF Pro era fonts. SF was introduced in 10.11 but Mojave's
 			// dark mode UI still felt Lucida/Helvetica-y; system-ui falls back
