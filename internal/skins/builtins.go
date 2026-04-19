@@ -464,4 +464,88 @@ var builtins = []Skin{
 			"--titlebar-height": "36px",
 		},
 	},
+	{
+		ID:          "macos-classic",
+		Name:        "macOS Classic (Mojave Dark)",
+		Source:      "builtin",
+		Description: "Pre-Big Sur macOS dark mode: Lucida Grande / Helvetica Neue, 12px baseline, sharp 3-4px radii, classic source-list selection blue, subtle inset bevels, visible edges. No vibrancy.",
+		Vars: map[string]string{
+			// Pre-SF Pro era fonts. SF was introduced in 10.11 but Mojave's
+			// dark mode UI still felt Lucida/Helvetica-y; system-ui falls back
+			// to whatever the OS picks.
+			"--font-ui":   `"Lucida Grande", "Helvetica Neue", Helvetica, Arial, sans-serif`,
+			"--font-mono": `Menlo, Monaco, "Courier New", ui-monospace, monospace`,
+
+			// Smaller, tighter typography — classic macOS chrome was denser
+			"--font-size-base":    "12px",
+			"--font-size-label":   "10px",
+			"--font-size-section": "13px",
+			"--font-size-h1":      "20px",
+
+			// Small-caps row labels were the classic macOS convention
+			"--label-transform":      "uppercase",
+			"--label-letter-spacing": "0.06em",
+			"--label-weight":         "500",
+
+			// Mojave-era surfaces: solid opaque grays, no vibrancy
+			"--bg-window":      "#323232",
+			"--bg-sidebar":     "#3a3a3a",
+			"--bg-main":        "#2d2d2d",
+			"--bg-panel":       "#3d3d3d",
+			"--bg-hover":       "rgba(255, 255, 255, 0.07)",
+			// Classic source-list selection: a saturated deep blue, not the
+			// bright system accent. Very recognizably "old macOS Finder".
+			"--bg-active":      "#1a5cb4",
+			"--bg-input":       "#414141",
+			"--bg-input-focus": "#4a4a4a",
+			"--bg-terminal":    "#1d1d1d",
+
+			// Native popups
+			"--option-bg":       "#2d2d2d",
+			"--option-fg":       "#f0f0f0",
+			"--option-group-fg": "rgba(240, 240, 240, 0.6)",
+
+			// Foreground — off-white, slightly warm
+			"--fg-primary":   "#f0f0f0",
+			"--fg-secondary": "rgba(240, 240, 240, 0.72)",
+			"--fg-tertiary":  "rgba(240, 240, 240, 0.45)",
+
+			// Classic macOS used dark borders for hairlines between controls,
+			// not the bright-white 8%-opacity approach of modern macOS.
+			"--border-subtle":     "rgba(0, 0, 0, 0.4)",
+			"--border-strong":     "rgba(0, 0, 0, 0.6)",
+			"--input-border-idle": "rgba(0, 0, 0, 0.4)",
+			"--panel-border":      "1px solid rgba(0, 0, 0, 0.35)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.5)",
+
+			// Mojave system blue + classic iOS-palette status colors
+			"--accent":       "#0071ea",
+			"--accent-hover": "#1a87f4",
+			"--danger":       "#ff3b30",
+			"--success":      "#28cd41",
+			"--warn":         "#ffcc00",
+
+			// Sharp pre-Big Sur corners
+			"--radius-sm": "3px",
+			"--radius-md": "4px",
+			"--radius-lg": "6px",
+
+			// Subtle inset highlight + drop shadow — the classic bevel feel
+			"--shadow-panel":    "inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4)",
+			"--shadow-floating": "0 6px 18px rgba(0, 0, 0, 0.5)",
+			"--blur-strength":   "0px",
+
+			// Classic macOS scrollbars were thicker and more visible
+			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.25)",
+			"--scrollbar-thumb-hover": "rgba(255, 255, 255, 0.4)",
+
+			// Flush layout; classic macOS never floated panels
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			// Thinner classic titlebar (Big Sur bulked these up)
+			"--titlebar-height": "24px",
+		},
+	},
 }
