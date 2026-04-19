@@ -384,4 +384,84 @@ var builtins = []Skin{
 			"--titlebar-height": "46px",
 		},
 	},
+	{
+		ID:          "kde-breeze",
+		Name:        "KDE (Breeze Dark)",
+		Source:      "builtin",
+		Description: "KDE Plasma Breeze Dark: cool blue-gray surfaces, thin subtle borders, the iconic KDE sky-blue accent, slightly more angular radii than Fluent/Adwaita.",
+		Vars: map[string]string{
+			// KDE Plasma ships Noto Sans by default. Oxygen (the older
+			// default) is still common on KDE systems. Hack is the Plasma
+			// developer-terminal default; falls through to other monos.
+			"--font-ui":   `"Noto Sans", "Oxygen", "Cantarell", "Inter", system-ui, -apple-system, sans-serif`,
+			"--font-mono": `"Hack", "Fira Code", "Source Code Pro", "JetBrains Mono", Consolas, ui-monospace, monospace`,
+
+			// Sentence-case labels, medium weight
+			"--label-transform":      "none",
+			"--label-letter-spacing": "0",
+			"--label-weight":         "500",
+			"--font-size-base":       "13px",
+			"--font-size-label":      "12px",
+			"--font-size-section":    "15px",
+			"--font-size-h1":         "23px",
+
+			// Breeze Dark surfaces — blue-gray rather than neutral gray.
+			// The cool tint is the visual fingerprint of Breeze vs Adwaita.
+			"--bg-window":      "#1d2025",
+			"--bg-sidebar":     "#1a1c21",
+			"--bg-main":        "#232629",
+			"--bg-panel":       "#31363b",
+			"--bg-hover":       "rgba(61, 174, 233, 0.10)",
+			"--bg-active":      "rgba(61, 174, 233, 0.25)",
+			"--bg-input":       "#1b1e21",
+			"--bg-input-focus": "#222529",
+			"--bg-terminal":    "#232629",
+
+			// Native popups
+			"--option-bg":       "#31363b",
+			"--option-fg":       "#eff0f1",
+			"--option-group-fg": "rgba(239, 240, 241, 0.6)",
+
+			// Foreground — Breeze uses a slightly cool white
+			"--fg-primary":   "#eff0f1",
+			"--fg-secondary": "rgba(239, 240, 241, 0.70)",
+			"--fg-tertiary":  "rgba(239, 240, 241, 0.45)",
+
+			// Thin subtle borders — Breeze's stroke presence is between
+			// Fluent (loud) and Adwaita (absent)
+			"--border-subtle":     "rgba(255, 255, 255, 0.08)",
+			"--border-strong":     "rgba(255, 255, 255, 0.14)",
+			"--input-border-idle": "rgba(255, 255, 255, 0.08)",
+			"--panel-border":      "1px solid rgba(255, 255, 255, 0.06)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.35)",
+
+			// Iconic KDE sky-blue accent + Breeze status palette
+			"--accent":       "#3daee9",
+			"--accent-hover": "#5fbdf0",
+			"--danger":       "#da4453",
+			"--success":      "#27ae60",
+			"--warn":         "#f67400",
+
+			// Breeze is slightly more angular than GNOME or Fluent
+			"--radius-sm": "2px",
+			"--radius-md": "3px",
+			"--radius-lg": "5px",
+
+			// Flat, single-layer elevation
+			"--shadow-panel":    "0 2px 6px rgba(0, 0, 0, 0.25)",
+			"--shadow-floating": "0 8px 24px rgba(0, 0, 0, 0.35)",
+			"--blur-strength":   "0px",
+
+			// Scrollbars — Breeze uses a visible but slim style
+			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.18)",
+			"--scrollbar-thumb-hover": "rgba(61, 174, 233, 0.5)",
+
+			// Flush layout
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "36px",
+		},
+	},
 }
