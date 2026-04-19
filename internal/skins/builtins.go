@@ -301,4 +301,87 @@ var builtins = []Skin{
 			"--titlebar-height": "32px",
 		},
 	},
+	{
+		ID:          "gnome-adwaita",
+		Name:        "GNOME (Adwaita Dark)",
+		Source:      "builtin",
+		Description: "GNOME / Adwaita Dark: Cantarell typography, bigger rounded corners, sentence-case labels, GNOME's blue accent and destructive-coral palette, generous whitespace.",
+		Vars: map[string]string{
+			// Cantarell is GNOME's default; not present on macOS/Windows so
+			// fall through to the next sensible sans. Source Code Pro is
+			// shipped with GNOME Terminal; solid monospace fallbacks follow.
+			"--font-ui":   `Cantarell, "Inter", "Helvetica Neue", -apple-system, system-ui, sans-serif`,
+			"--font-mono": `"Source Code Pro", "DejaVu Sans Mono", "Cascadia Code", Menlo, ui-monospace, monospace`,
+
+			// Sentence-case, slightly bigger body type (GNOME tends to use 14px
+			// for readability; labels remain medium weight rather than semi-bold)
+			"--label-transform":      "none",
+			"--label-letter-spacing": "0",
+			"--label-weight":         "500",
+			"--font-size-base":       "14px",
+			"--font-size-label":      "12px",
+			"--font-size-section":    "16px",
+			"--font-size-h1":         "24px",
+
+			// Adwaita Dark surfaces. Sidebar sits a touch darker than content
+			// (GNOME's navigation-pane convention — opposite of Win 11's
+			// lighter nav pane).
+			"--bg-window":      "#242424",
+			"--bg-sidebar":     "#1e1e1e",
+			"--bg-main":        "#242424",
+			"--bg-panel":       "#303030",
+			"--bg-hover":       "rgba(255, 255, 255, 0.07)",
+			"--bg-active":      "rgba(53, 132, 228, 0.22)",
+			"--bg-input":       "rgba(255, 255, 255, 0.08)",
+			"--bg-input-focus": "rgba(255, 255, 255, 0.12)",
+			"--bg-terminal":    "#1e1e1e",
+
+			// Native popups
+			"--option-bg":       "#303030",
+			"--option-fg":       "rgba(255, 255, 255, 0.9)",
+			"--option-group-fg": "rgba(255, 255, 255, 0.55)",
+
+			// Foreground
+			"--fg-primary":   "rgba(255, 255, 255, 0.90)",
+			"--fg-secondary": "rgba(255, 255, 255, 0.65)",
+			"--fg-tertiary":  "rgba(255, 255, 255, 0.45)",
+
+			// Borders minimal — GNOME separates by color and spacing, not strokes
+			"--border-subtle":     "rgba(255, 255, 255, 0.06)",
+			"--border-strong":     "rgba(255, 255, 255, 0.12)",
+			"--input-border-idle": "transparent",
+			"--panel-border":      "none",
+			// The sidebar divider mimics GNOME's tiny shadow between nav pane
+			// and content (done here as a dark line rather than a shadow).
+			"--sidebar-divider": "1px solid rgba(0, 0, 0, 0.5)",
+
+			// GNOME palette
+			"--accent":       "#3584e4",
+			"--accent-hover": "#4a90e8",
+			"--danger":       "#ff7b63",
+			"--success":      "#33d17a",
+			"--warn":         "#f5c211",
+
+			// Rounder corners, typical of libadwaita since GNOME 40
+			"--radius-sm": "6px",
+			"--radius-md": "8px",
+			"--radius-lg": "12px",
+
+			// Soft double-shadow elevation (Adwaita's pattern)
+			"--shadow-panel":    "0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.22)",
+			"--shadow-floating": "0 10px 30px rgba(0, 0, 0, 0.4)",
+			"--blur-strength":   "0px",
+
+			// Thin scrollbars, GNOME style
+			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.15)",
+			"--scrollbar-thumb-hover": "rgba(255, 255, 255, 0.28)",
+
+			// Flush sidebar; GNOME doesn't float panels the way Liquid Glass does
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "46px",
+		},
+	},
 }
