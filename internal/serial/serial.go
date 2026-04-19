@@ -236,6 +236,20 @@ func (s *Session) ControlLines() (dtr, rts bool) {
 	return s.dtrState.Load(), s.rtsState.Load()
 }
 
+// Break holds the serial break condition (TX line low) for the given
+// duration, then releases it. Used to drop into ROMMON on Cisco gear,
+// the Juniper diagnostic prompt, or to break out of a boot loader.
+// 300ms matches PuTTY's default and is long enough for every device
+// I've seen without stalling the session noticeably.
+func (s *Session) Break(d time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed.Load() {
+		return errors.New("session closed")
+	}
+	return s.port.Break(d)
+}
+
 func (s *Session) Close() error {
 	if !s.closed.CompareAndSwap(false, true) {
 		return nil

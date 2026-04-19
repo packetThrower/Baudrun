@@ -34,6 +34,7 @@ export const api = {
   activeProfileID: App.ActiveProfileID,
   setRTS: App.SetRTS,
   setDTR: App.SetDTR,
+  sendBreak: App.SendBreak,
 
   listThemes: App.ListThemes,
   importTheme: App.ImportTheme,

@@ -238,6 +238,15 @@
     }
   }
 
+  async function sendBreak() {
+    try {
+      await api.sendBreak();
+      statusMsg = "Break sent";
+    } catch (e) {
+      statusMsg = `Break failed: ${e}`;
+    }
+  }
+
   async function handleDisconnect() {
     try {
       await api.disconnect();
@@ -464,6 +473,12 @@
               title="Toggle RTS line ({ctrlRTS ? 'asserted' : 'deasserted'})"
             >
               <span class="line-dot"></span>RTS
+            </button>
+            <button
+              on:click={sendBreak}
+              title="Send a ~300ms serial break (Cisco ROMMON, Juniper diag mode, boot-loader interrupt)"
+            >
+              Break
             </button>
             <button on:click={() => terminalRef?.clear()}>Clear</button>
             <button on:click={handleSuspend} title="Keep session alive; return to profile">

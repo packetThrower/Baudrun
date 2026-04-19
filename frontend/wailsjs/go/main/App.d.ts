@@ -47,6 +47,8 @@ export function PickLogDirectory():Promise<string>;
 
 export function Send(arg1:string):Promise<void>;
 
+export function SendBreak():Promise<void>;
+
 export function SetDTR(arg1:boolean):Promise<void>;
 
 export function SetRTS(arg1:boolean):Promise<void>;

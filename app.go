@@ -378,6 +378,19 @@ func (a *App) SetDTR(v bool) error {
 	return sess.SetDTR(v)
 }
 
+// SendBreak holds the TX line low for ~300ms — the signal Cisco gear
+// reads as "drop into ROMMON", Juniper as "enter diagnostic mode", and
+// many boot loaders as "interrupt autoboot".
+func (a *App) SendBreak() error {
+	a.sessMu.Lock()
+	sess := a.session
+	a.sessMu.Unlock()
+	if sess == nil {
+		return errors.New("not connected")
+	}
+	return sess.Break(300 * time.Millisecond)
+}
+
 func (a *App) ActiveProfileID() string {
 	a.sessMu.Lock()
 	defer a.sessMu.Unlock()
