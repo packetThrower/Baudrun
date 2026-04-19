@@ -2,18 +2,17 @@
 
 ## Serial features (PuTTY carryovers)
 
-- [ ] **Send Break.** Ctrl+B shortcut + session-header button. Essential
-      for Cisco ROMMON access, Juniper diagnostic mode, password
-      recovery. `go.bug.st/serial` exposes `Port.Break(duration)`.
-- [ ] **Auto-reconnect.** Opt-in per profile. When a connected session
-      drops with "port disappeared" (common with USB-serial adapters
-      that re-enumerate), poll for the port reappearing and reopen
-      transparently. Preserve xterm backlog across the gap.
-- [ ] **Backspace/Delete key mapping.** Profile-level setting: does
-      Backspace send 0x08 (BS) or 0x7F (DEL)? Default differs per
-      vendor; wrong mapping surfaces as `^H` echoed on screen.
-- [ ] **Copy-on-select.** Cheap xterm.js option flip. PuTTY-style
-      selection → clipboard without needing Cmd/Ctrl+C.
+- [x] **Send Break.** Session-header button; 300ms break pulse via
+      go.bug.st/serial's Port.Break. No keyboard shortcut (Ctrl+B is
+      a real terminal character; modern Macs have no Break key).
+- [x] **Auto-reconnect.** Opt-in per profile. Polls for the port to
+      reappear (1s interval, 30s timeout) and reopens with the same
+      config. xterm stays mounted so scrollback survives the gap;
+      session shows an amber pulsing dot + "reconnecting…" label.
+- [x] **Backspace/Delete key mapping.** Profile-level dropdown —
+      DEL (0x7f, default) or BS (0x08).
+- [x] **Copy-on-select.** Global setting in Settings → Advanced.
+      Writes to the clipboard on xterm's onSelectionChange.
 
 Non-goals: character-set translation (UTF-8 is universal on modern
 network gear), answerback strings (legacy VT-terminal feature, no

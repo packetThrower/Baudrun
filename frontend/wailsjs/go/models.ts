@@ -162,6 +162,7 @@ export namespace settings {
 	    disableDriverDetection?: boolean;
 	    skinId?: string;
 	    appearance?: string;
+	    copyOnSelect?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -175,6 +176,7 @@ export namespace settings {
 	        this.disableDriverDetection = source["disableDriverDetection"];
 	        this.skinId = source["skinId"];
 	        this.appearance = source["appearance"];
+	        this.copyOnSelect = source["copyOnSelect"];
 	    }
 	}
 

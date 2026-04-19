@@ -82,6 +82,7 @@
   $: termTimestamps = activeProfile?.timestamps ?? currentProfile?.timestamps ?? false;
   $: termBackspaceKey = ((activeProfile?.backspaceKey || currentProfile?.backspaceKey) ||
     "del") as "bs" | "del";
+  $: termCopyOnSelect = $settings.copyOnSelect ?? false;
 
   $: effectiveThemeID =
     (activeProfile?.themeId || currentProfile?.themeId) ||
@@ -371,6 +372,15 @@
     }
   }
 
+  async function handleSetCopyOnSelect(enabled: boolean) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, copyOnSelect: enabled });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Setting update failed: ${e}`;
+    }
+  }
+
   async function handleSetSkin(id: string) {
     try {
       const updated = await api.updateSettings({ ...$settings, skinId: id });
@@ -439,6 +449,7 @@
           on:setLogDir={(e) => handleSetLogDir(e.detail)}
           on:pickLogDir={handlePickLogDir}
           on:setDetectDrivers={(e) => handleSetDetectDrivers(e.detail)}
+          on:setCopyOnSelect={(e) => handleSetCopyOnSelect(e.detail)}
           on:setSkin={(e) => handleSetSkin(e.detail)}
           on:importSkin={handleImportSkin}
           on:deleteSkin={(e) => handleDeleteSkin(e.detail)}
@@ -535,6 +546,7 @@
           hexView={termHexView}
           timestamps={termTimestamps}
           backspaceKey={termBackspaceKey}
+          copyOnSelect={termCopyOnSelect}
           onStatus={(m) => (statusMsg = m)}
         />
       </div>

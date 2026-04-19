@@ -29,6 +29,7 @@
     setLogDir: string;
     pickLogDir: void;
     setDetectDrivers: boolean;
+    setCopyOnSelect: boolean;
     setSkin: string;
     importSkin: void;
     deleteSkin: string;
@@ -64,6 +65,10 @@
 
   function onDetectDriversChange(e: Event) {
     dispatch("setDetectDrivers", (e.target as HTMLInputElement).checked);
+  }
+
+  function onCopyOnSelectChange(e: Event) {
+    dispatch("setCopyOnSelect", (e.target as HTMLInputElement).checked);
   }
 
   function onSkinChange(e: Event) {
@@ -278,6 +283,23 @@
             on:change={onDetectDriversChange}
           />
           Detect un-drivered USB adapters
+        </label>
+      </div>
+
+      <div class="sub">
+        <h4>Copy on Select</h4>
+        <p class="section-hint">
+          PuTTY-style — copy the terminal selection to the clipboard
+          automatically when the mouse is released. Avoids having to
+          press Cmd/Ctrl+C for every snippet.
+        </p>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={settings.copyOnSelect ?? false}
+            on:change={onCopyOnSelectChange}
+          />
+          Copy terminal selection to clipboard automatically
         </label>
       </div>
     </details>
