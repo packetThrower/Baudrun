@@ -14,7 +14,9 @@ network gear without the ritual of remembering baud rates, fiddling with
   bits, flow control, line ending, local echo.
 - Persisted as JSON at `~/Library/Application Support/Seriesly/profiles.json`
   (macOS) or `%APPDATA%\Seriesly\profiles.json` (Windows) — hand-editable,
-  iCloud-syncable, diff-friendly.
+  iCloud-syncable, diff-friendly. See [docs/PROFILES.md](docs/PROFILES.md)
+  for the full schema, control-line policy reference, and examples of
+  bulk-provisioning from CSV inventory.
 - Sensible defaults for network gear (CR line ending, 9600 8N1).
 
 ### Serial I/O
