@@ -1017,6 +1017,126 @@ var builtins = []Skin{
 		},
 	},
 	{
+		ID:            "e-ink",
+		Name:          "E-Ink (Paper)",
+		Source:        "builtin",
+		Description:   "Monochrome e-reader aesthetic: warm cream paper surfaces, deep ink text, serif typography, hairline borders, no shadows or translucency. Adapts to dark (sepia night mode) and light (cream paper).",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			// Warm paper-cream surfaces, not pure white — matches what Kindle
+			// shows in Sepia / Paperwhite modes
+			"--bg-window":      "#f4ece0",
+			"--bg-sidebar":     "#ebe3d6",
+			"--bg-main":        "#f8f1e5",
+			"--bg-panel":       "#ebe3d6",
+			"--bg-hover":       "rgba(0, 0, 0, 0.05)",
+			"--bg-active":      "rgba(0, 0, 0, 0.13)",
+			"--bg-input":       "#fcf6eb",
+			"--bg-input-focus": "#ffffff",
+			"--bg-terminal":    "#f4ece0",
+
+			"--option-bg":       "#f8f1e5",
+			"--option-fg":       "#1a1a1a",
+			"--option-group-fg": "#7a7468",
+
+			// Deep-ink foreground, not pure #000 (softer on the eye, matches
+			// how actual printed text reads)
+			"--fg-primary":   "#1a1a1a",
+			"--fg-secondary": "#4a4538",
+			"--fg-tertiary":  "#7a7468",
+
+			// Hairline borders — books show structure via ink lines
+			"--border-subtle":     "rgba(26, 26, 26, 0.18)",
+			"--border-strong":     "rgba(26, 26, 26, 0.35)",
+			"--input-border-idle": "rgba(26, 26, 26, 0.25)",
+			"--panel-border":      "1px solid rgba(26, 26, 26, 0.15)",
+			"--sidebar-divider":   "1px solid rgba(26, 26, 26, 0.18)",
+
+			// Monochrome accent (ink); primary buttons become black with white
+			// text — very clean, very e-reader
+			"--accent":       "#1a1a1a",
+			"--accent-hover": "#3a3a3a",
+			"--danger":       "#5a1a1a",
+			"--success":      "#2a4a2a",
+			"--warn":         "#5a4a1a",
+
+			"--scrollbar-thumb":       "rgba(26, 26, 26, 0.25)",
+			"--scrollbar-thumb-hover": "rgba(26, 26, 26, 0.45)",
+		},
+		Vars: map[string]string{
+			// Serif UI stack — genuinely commits to the paper-book feel.
+			// Iowan Old Style ships on macOS; Georgia is everywhere; fallbacks
+			// cover Linux and Windows.
+			"--font-ui":   `"Iowan Old Style", "Palatino Linotype", Palatino, "Bookman Old Style", Georgia, "Source Serif Pro", serif`,
+			"--font-mono": `"Courier Prime", "Courier Prime Code", "Courier New", Courier, monospace`,
+
+			// Slightly larger type — e-readers optimize for readability
+			"--font-size-base":    "14px",
+			"--font-size-label":   "12px",
+			"--font-size-section": "17px",
+			"--font-size-h1":      "26px",
+
+			// Sentence case labels (books don't use small-caps for body
+			// section headers; they use italics or light weight, which we
+			// emulate via weight)
+			"--label-transform":      "none",
+			"--label-letter-spacing": "0",
+			"--label-weight":         "400",
+
+			// Dark mode = Kindle "Dark" / sepia-night. Warm dark gray surface
+			// with off-cream text — less blueish than a typical dark theme.
+			"--bg-window":      "#1a1a1a",
+			"--bg-sidebar":     "#1f1f1f",
+			"--bg-main":        "#1a1a1a",
+			"--bg-panel":       "#252525",
+			"--bg-hover":       "rgba(208, 201, 187, 0.06)",
+			"--bg-active":      "rgba(208, 201, 187, 0.12)",
+			"--bg-input":       "#252525",
+			"--bg-input-focus": "#2d2d2d",
+			"--bg-terminal":    "#1a1a1a",
+
+			"--option-bg":       "#252525",
+			"--option-fg":       "#d0c9bb",
+			"--option-group-fg": "rgba(208, 201, 187, 0.55)",
+
+			"--fg-primary":   "#d0c9bb",
+			"--fg-secondary": "rgba(208, 201, 187, 0.72)",
+			"--fg-tertiary":  "rgba(208, 201, 187, 0.48)",
+
+			"--border-subtle":     "rgba(208, 201, 187, 0.15)",
+			"--border-strong":     "rgba(208, 201, 187, 0.3)",
+			"--input-border-idle": "rgba(208, 201, 187, 0.2)",
+			"--panel-border":      "1px solid rgba(208, 201, 187, 0.15)",
+			"--sidebar-divider":   "1px solid rgba(208, 201, 187, 0.2)",
+
+			// Muted warm accent — readable against white button text
+			"--accent":       "#4a4538",
+			"--accent-hover": "#6a6458",
+			"--danger":       "#a87258",
+			"--success":      "#7a9070",
+			"--warn":         "#c0a060",
+
+			// Sharp edges — books and e-readers aren't rounded UI
+			"--radius-sm": "2px",
+			"--radius-md": "3px",
+			"--radius-lg": "4px",
+
+			// No shadows, no blur — e-ink has no depth
+			"--shadow-panel":    "none",
+			"--shadow-floating": "0 4px 16px rgba(0, 0, 0, 0.3)",
+			"--blur-strength":   "0px",
+
+			"--scrollbar-thumb":       "rgba(208, 201, 187, 0.18)",
+			"--scrollbar-thumb-hover": "rgba(208, 201, 187, 0.35)",
+
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "38px",
+		},
+	},
+	{
 		ID:          "crt",
 		Name:        "CRT (Green Phosphor)",
 		Source:      "builtin",
