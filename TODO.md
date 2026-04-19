@@ -24,16 +24,16 @@ Candidates beyond the PuTTY carryovers. Items marked **[on request]**
 are deferred until someone actually asks — they're useful but either
 high-effort or niche enough that priority tracks real demand.
 
-- [ ] **Paste safety.** Two profile toggles: a confirm prompt when
-      pasting multi-line content (avoids the "I pasted into the wrong
-      window" disaster) and an optional per-character delay for
-      devices that can't buffer at line rate. UARTs on microcontrollers
-      and older switches silently corrupt a fast 115200 paste; slow
-      paste fixes that. High value for both network and embedded users.
-- [ ] **Hex send.** Input field that parses space-separated hex
-      (`02 FF AA 55`) and writes the raw bytes. Counterpart to the
-      existing hex view on RX. Useful for Modbus RTU, firmware
-      bootloaders, custom binary protocols.
+- [x] **Paste safety.** Profile toggles for multi-line paste
+      confirmation (lines count + first-line preview) and slow paste
+      (configurable 0-500ms inter-character delay). Heuristic detects
+      paste vs. typed input by length threshold + line-break presence.
+- [x] **Hex send.** Session-header "Hex" button opens a modal with
+      a flexible parser (space-separated, compact, or 0x-prefixed
+      hex; `02 FF AA 55` / `02FFAA55` / `0x02 0xFF 0xAA 0x55` all
+      equivalent). Writes the raw bytes via the existing sendBytes
+      path. Useful for Modbus RTU, firmware bootloaders, custom
+      binary protocols.
 - [ ] **Macros / quick-send buttons.** **[on request]** Profile-level
       canned strings bound to session-header buttons — `show
       running-config`, `AT+RST`, vendor-specific reboot commands,
