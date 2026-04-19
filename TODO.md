@@ -47,6 +47,36 @@ high-effort or niche enough that priority tracks real demand.
       and strict block timing. Worth building if courting embedded
       devs becomes a priority; skip until that audience shows up.
 
+## Accessibility
+
+- [ ] **xterm screenReaderMode toggle.** Flip xterm's
+      `screenReaderMode: true` behind a Settings → Accessibility
+      toggle. Exposes incoming output to screen readers via a live
+      region — critical for blind users. Default off (small perf
+      cost on heavy output).
+- [ ] **Respect `prefers-reduced-motion`.** The reconnecting pulse
+      animation and any future skin-level overlays (CRT scanlines,
+      blueprint grid shimmer) should disable when the OS reports a
+      reduced-motion preference. Pulse stays visible as a static
+      amber dot. `@media (prefers-reduced-motion: reduce) { ... }`
+      wrapper in style.css.
+- [ ] **ARIA-label audit.** Pass over icon-only / text-light
+      controls: DTR/RTS pills, driver-install banner × button, theme
+      swatch rows, the sidebar settings button. Add explicit
+      `aria-label` where the visible text doesn't stand on its own.
+- [ ] **Ctrl/Cmd +/- terminal zoom.** Standard in every other
+      terminal (iTerm2, Windows Terminal, VS Code). Easier for
+      low-vision users than the Settings → Font size dropdown.
+      Re-uses the existing fontSize setting; shortcut clamps to
+      8-28px.
+- [ ] **Keyboard shortcuts for Break / Clear / Suspend.** **[on request]**
+      Session-header buttons are currently mouse-only, which blocks
+      keyboard-only users from sending Break. Cmd/Ctrl+Shift+B is
+      the obvious default, but needs a scheme decision — some
+      modifier combinations collide with common control sequences
+      serial devices care about. Wait until someone asks so the
+      chosen shortcuts don't surprise the terminal-power-user crowd.
+
 ## Distribution
 
 - [ ] **Code sign + notarize macOS binary.** Requires enrollment in the
