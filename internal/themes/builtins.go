@@ -108,4 +108,33 @@ var builtins = []Theme{
 		BrightBlack: "#666666", BrightRed: "#f08a3e", BrightGreen: "#33c49f", BrightYellow: "#f8f070",
 		BrightBlue:  "#3e9dd8", BrightMagenta: "#e0a4c3", BrightCyan: "#85ccf1", BrightWhite: "#ffffff",
 	},
+	// Monochrome green phosphor — the pure VT100 / IBM 3270 look. Every
+	// ANSI slot maps to a shade of green so output stays single-hue.
+	// Bright phosphor = active ("up", "ok"); dim green = inactive/failed;
+	// the effect is that status distinctions come across as luminance rather
+	// than color, exactly like a real green CRT. Pairs with the CRT skin.
+	{
+		ID: "crt-phosphor", Name: "CRT Phosphor (Green)", Source: "builtin",
+		Background: "#000000", Foreground: "#33ff33",
+		Cursor: "#33ff33", CursorAccent: "#000000",
+		Selection: "#1a3a1a",
+		Black:       "#000000", Red: "#1a4a1a", Green: "#33ff33", Yellow: "#88ff88",
+		Blue:        "#2e5e2e", Magenta: "#5aaa5a", Cyan: "#aaffaa", White: "#33ff33",
+		BrightBlack: "#4a5a4a", BrightRed: "#2a6a2a", BrightGreen: "#77ff77", BrightYellow: "#bbffbb",
+		BrightBlue:  "#4a8a4a", BrightMagenta: "#77bb77", BrightCyan: "#ddffdd", BrightWhite: "#ffffff",
+	},
+	// 80s retrofuture / synthwave palette: deep purple backdrop, hot-pink
+	// magenta, electric cyan, neon green, acid yellow. Status colors hit
+	// hard — "down" is neon orange, "up" is bright lime. Pairs with the
+	// Cyberpunk skin for a matched look but lives fine on any dark skin.
+	{
+		ID: "synthwave", Name: "Synthwave", Source: "builtin",
+		Background: "#120522", Foreground: "#f0e6ff",
+		Cursor: "#ff006e", CursorAccent: "#120522",
+		Selection: "#3a1a5a",
+		Black:       "#0a0317", Red: "#ff4500", Green: "#39ff14", Yellow: "#ffe600",
+		Blue:        "#00f0ff", Magenta: "#ff006e", Cyan: "#a0ffff", White: "#f0e6ff",
+		BrightBlack: "#4a3a5a", BrightRed: "#ff6533", BrightGreen: "#7dff5a", BrightYellow: "#ffff33",
+		BrightBlue:  "#55ffff", BrightMagenta: "#ff33a0", BrightCyan: "#c0ffff", BrightWhite: "#ffffff",
+	},
 }
