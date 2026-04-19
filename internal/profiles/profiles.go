@@ -38,6 +38,10 @@ type Profile struct {
 	// for the port name to reappear and reopening transparently. Common
 	// with cheap USB-serial adapters that re-enumerate under load.
 	AutoReconnect    bool      `json:"autoReconnect"`
+	// BackspaceKey picks the byte the Backspace key sends — "del" (0x7f,
+	// VT100/xterm default) or "bs" (0x08, what some older Cisco IOS /
+	// Foundry builds expect). Empty is treated as "del".
+	BackspaceKey     string    `json:"backspaceKey"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 }
@@ -56,6 +60,7 @@ func Defaults() Profile {
 		RTSOnConnect:    "default",
 		DTROnDisconnect: "default",
 		RTSOnDisconnect: "default",
+		BackspaceKey:    "del",
 	}
 }
 
@@ -233,6 +238,11 @@ func validate(p Profile) error {
 		default:
 			return fmt.Errorf("invalid %s: %s", f.name, f.value)
 		}
+	}
+	switch p.BackspaceKey {
+	case "", "del", "bs":
+	default:
+		return fmt.Errorf("invalid backspaceKey: %s", p.BackspaceKey)
 	}
 	return nil
 }

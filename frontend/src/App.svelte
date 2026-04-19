@@ -80,6 +80,8 @@
   $: termHighlight = activeProfile?.highlight ?? currentProfile?.highlight ?? true;
   $: termHexView = activeProfile?.hexView ?? currentProfile?.hexView ?? false;
   $: termTimestamps = activeProfile?.timestamps ?? currentProfile?.timestamps ?? false;
+  $: termBackspaceKey = ((activeProfile?.backspaceKey || currentProfile?.backspaceKey) ||
+    "del") as "bs" | "del";
 
   $: effectiveThemeID =
     (activeProfile?.themeId || currentProfile?.themeId) ||
@@ -532,6 +534,7 @@
           highlight={termHighlight}
           hexView={termHexView}
           timestamps={termTimestamps}
+          backspaceKey={termBackspaceKey}
           onStatus={(m) => (statusMsg = m)}
         />
       </div>

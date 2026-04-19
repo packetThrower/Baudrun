@@ -40,6 +40,7 @@ export namespace profiles {
 	    timestamps: boolean;
 	    logEnabled: boolean;
 	    autoReconnect: boolean;
+	    backspaceKey: string;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -71,6 +72,7 @@ export namespace profiles {
 	        this.timestamps = source["timestamps"];
 	        this.logEnabled = source["logEnabled"];
 	        this.autoReconnect = source["autoReconnect"];
+	        this.backspaceKey = source["backspaceKey"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }
