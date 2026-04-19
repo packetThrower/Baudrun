@@ -6,11 +6,15 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 func main() {
 	app := NewApp()
@@ -43,6 +47,11 @@ func main() {
 				Title:   "Seriesly",
 				Message: "A serial terminal for network devices.",
 			},
+		},
+		Linux: &linux.Options{
+			Icon:             appIcon,
+			ProgramName:      "Seriesly",
+			WebviewGpuPolicy: linux.WebviewGpuPolicyOnDemand,
 		},
 	})
 

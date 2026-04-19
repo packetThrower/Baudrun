@@ -109,8 +109,71 @@ jobs:
           name: windows-package
           path: Seriesly-Windows-*.zip
 
+  build-linux:
+    needs: [ci]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.23"
+
+      # Wails' Linux backend links against GTK3 + WebKit2GTK at cgo time.
+      # libwebkit2gtk-4.1-dev is the right flavor on Ubuntu 24.04 (the
+      # 4.0 series was deprecated upstream in 2024).
+      - name: Install Linux webview deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Patch productVersion from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp
+          mv wails.json.tmp wails.json
+          echo "Using version: $VERSION"
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        run: wails build -platform linux/${{ matrix.arch }}
+
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          cd build/bin
+          tar czf "../../Seriesly-Linux-${{ matrix.arch }}-${VERSION}.tar.gz" Seriesly
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}-package
+          path: Seriesly-Linux-*.tar.gz
+
   release:
-    needs: [build-macos, build-windows]
+    needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
@@ -119,11 +182,13 @@ jobs:
           path: artifacts
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             artifacts/macos-package/*
             artifacts/windows-package/*
+            artifacts/linux-amd64-package/*
+            artifacts/linux-arm64-package/*
           generate_release_notes: true
           draft: false
           prerelease: false
