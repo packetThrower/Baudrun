@@ -150,9 +150,10 @@ artifacts for four targets:
 | Platform | Artifact | Notes |
 |---|---|---|
 | **macOS** | `Seriesly-macOS-<version>.zip` (contains `.app`) | **Universal binary** — one `.app` with both Intel (x86_64) and Apple Silicon (arm64) slices fused via `lipo`. macOS picks the matching slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. Trade-off is roughly 2× the download size of a single-arch build. |
-| **Windows** | `Seriesly-Windows-<version>.zip` (contains `.exe`) | x86_64 only. Windows ARM is future work. |
-| **Linux amd64** | `Seriesly-Linux-amd64-<version>.tar.gz` | Standard desktop Linux on 64-bit x86. |
-| **Linux arm64** | `Seriesly-Linux-arm64-<version>.tar.gz` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
+| **Windows amd64** | `Seriesly-Windows-amd64-<version>.zip` (contains `.exe`) | Standard 64-bit x86 Windows 10/11. |
+| **Windows arm64** | `Seriesly-Windows-arm64-<version>.zip` (contains `.exe`) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
+| **Linux amd64** | `seriesly_<version>_amd64.deb`, `seriesly-<version>.x86_64.rpm`, `Seriesly-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. |
+| **Linux arm64** | `seriesly_<version>_arm64.deb`, `seriesly-<version>.aarch64.rpm`, `Seriesly-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
 
 Download, unpack, and run. On macOS, drag `Seriesly.app` into `/Applications`.
 
@@ -188,10 +189,10 @@ builds have to run on Linux (or in CI). On a Linux host, install
 `wails build -platform linux/amd64` (or `linux/arm64`).
 
 CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-latest`,
-`windows-latest`, `ubuntu-latest`, and `ubuntu-24.04-arm` on each push to
-`main`. Tagged pushes matching CalVer `20*.*.*-*` fire
+`windows-latest`, `windows-11-arm`, `ubuntu-latest`, and `ubuntu-24.04-arm`
+on each push to `main`. Tagged pushes matching CalVer `20*.*.*-*` fire
 `.github/workflows/release.yml`, which produces a GitHub Release with all
-four platform artifacts attached.
+five platform artifacts attached.
 
 ## Architecture
 
