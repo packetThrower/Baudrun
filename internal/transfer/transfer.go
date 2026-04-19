@@ -34,9 +34,10 @@ var ErrTimeout = errors.New("transfer timeout")
 // Reader delivers incoming bytes one at a time with a timeout. The
 // transfer protocol state machines need byte-granularity reads to
 // distinguish ACK/NAK/CAN, which the usual io.Reader chunk API
-// doesn't give cleanly.
+// doesn't give cleanly. (Method is NextByte rather than ReadByte
+// to avoid shadowing io.ByteReader's parameterless signature.)
 type Reader interface {
-	ReadByte(timeout time.Duration) (byte, error)
+	NextByte(timeout time.Duration) (byte, error)
 }
 
 // Writer sends bytes out — typically to the serial port.
@@ -109,6 +110,6 @@ func abort(w Writer) {
 // drainCAN is used after seeing a single CAN — a lone CAN can be
 // line noise, but CAN CAN is the receiver signalling abort.
 func drainCAN(r Reader) bool {
-	b, err := r.ReadByte(500 * time.Millisecond)
+	b, err := r.NextByte(500 * time.Millisecond)
 	return err == nil && b == CAN
 }

@@ -617,7 +617,7 @@ type byteChanReader struct {
 	ch <-chan byte
 }
 
-func (r *byteChanReader) ReadByte(timeout time.Duration) (byte, error) {
+func (r *byteChanReader) NextByte(timeout time.Duration) (byte, error) {
 	select {
 	case b := <-r.ch:
 		return b, nil
