@@ -272,12 +272,15 @@ Seriesly/
 │       │   └── api.ts             # thin Wails bindings wrapper
 │       └── stores/                # Svelte stores (profiles, themes, skins,
 │                                  # settings, session, appearance, dismissed-drivers)
-├── build/
+├── build/                         # Wails build inputs (read at wails build)
 │   ├── appicon.png                # source icon (Wails generates .icns)
 │   ├── make-icon.sh               # ImageMagick script — regenerates the
 │   │                              # .png + a multi-resolution Windows .ico
-│   ├── windows/icon.ico           # hand-managed .ico (make-icon.sh regenerates)
-│   └── linux/seriesly.desktop     # freedesktop entry shipped inside .deb/.rpm/AppImage
+│   ├── darwin/Info.plist          # macOS bundle metadata
+│   └── windows/                   # Windows .ico + manifest + installer
+├── packaging/                     # downstream packaging metadata
+│   ├── linux/seriesly.desktop     # freedesktop entry shipped inside .deb/.rpm/AppImage
+│   └── arch/                      # AUR PKGBUILD for seriesly-bin
 └── .github/workflows/
     ├── ci.yml                     # native Go + frontend checks across
     │                              # macOS, Windows (amd64/arm64), Linux (amd64/arm64)

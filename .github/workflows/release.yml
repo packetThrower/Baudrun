@@ -190,7 +190,7 @@ jobs:
           mkdir -p pkg/usr/share/applications
           mkdir -p pkg/usr/share/icons/hicolor/256x256/apps
           install -m 755 build/bin/Seriesly pkg/usr/bin/seriesly
-          install -m 644 build/linux/seriesly.desktop pkg/usr/share/applications/seriesly.desktop
+          install -m 644 packaging/linux/seriesly.desktop pkg/usr/share/applications/seriesly.desktop
           install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/seriesly.png
 
       - name: Build .deb
@@ -241,7 +241,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME}"
           mkdir -p AppDir
           cp -r pkg/usr AppDir/
-          cp build/linux/seriesly.desktop AppDir/seriesly.desktop
+          cp packaging/linux/seriesly.desktop AppDir/seriesly.desktop
           cp build/appicon.png AppDir/seriesly.png
           ln -sf seriesly.png AppDir/.DirIcon
           cat > AppDir/AppRun <<'EOF'
