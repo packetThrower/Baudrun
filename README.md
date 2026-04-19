@@ -57,12 +57,20 @@ network gear without the ritual of remembering baud rates, fiddling with
   (configurable directory).
 
 ### Themes (terminal colors)
-- Ten built-in themes: Seriesly, Dracula, Solarized Dark/Light, Nord,
-  One Dark, Monokai, Gruvbox Dark, Tomorrow Night, **Colorblind Safe**.
+- Twelve built-in themes: Seriesly, Dracula, Solarized Dark/Light, Nord,
+  One Dark, Monokai, Gruvbox Dark, Tomorrow Night, **Colorblind Safe**,
+  **CRT Phosphor (Green)**, **Synthwave**.
 - The Colorblind Safe theme uses Bang Wong's palette (Nature Methods, 2011)
   — red and green slots are vermillion and bluish-green, perpendicular to
   the protan/deutan confusion axis, so `up` vs `down` output stays
   distinguishable for ~6% of men with red-green colorblindness.
+- CRT Phosphor is a monochrome-green VT100/IBM-3270 palette (pairs with
+  the CRT skin). Synthwave is a neon palette on deep purple (pairs with
+  Cyberpunk).
+- **Theme preview** — each theme has a Preview button in Settings that
+  opens a modal with a canned RuggedCom-style output sample showing the
+  palette + highlighter against real network-gear text. See how a theme
+  looks without having to switch.
 - Import any `.itermcolors` file from iTerm2's color scheme ecosystem
   ([iterm2colorschemes.com](https://iterm2colorschemes.com/) has hundreds).
 - Per-profile theme override, with a global default that every profile
@@ -70,24 +78,34 @@ network gear without the ritual of remembering baud rates, fiddling with
 - Custom themes persisted to `~/Library/Application Support/Seriesly/themes/`.
 
 ### Skins (app chrome)
-- Three built-in skins change the whole app's look:
-  - **Seriesly** — translucent sidebar, flush-edge layout, uppercase iOS-style
-    row labels (the default).
-  - **macOS 26 (Liquid Glass)** — sidebar and main panel become floating
-    rounded bubbles with backdrop blur, sentence-case labels, brighter
-    accents, bigger continuous radii.
-  - **High Contrast** — accessibility-focused: solid black surfaces, pure
-    white foreground, bright visible borders on every input / panel /
-    divider, WCAG-AAA accent colors, no translucency or blur.
+
+Fourteen built-in skins swap the whole app's chrome — colors, typography,
+radii, elevation, layout shape. Grouped by inspiration:
+
+| Category | Skins |
+|---|---|
+| Default | **Seriesly** — translucent sidebar, flush-edge layout, uppercase iOS-style row labels. |
+| Modern OS | **macOS 26 (Liquid Glass)** — floating rounded bubbles with backdrop blur. **Windows 11 (Fluent)** — Segoe UI Variable, Mica surfaces, stroke borders. **GNOME (Adwaita)** — Cantarell font, flat surfaces, GNOME blue accent. **KDE (Breeze)** — Breeze palette, tighter type. **elementary (Pantheon)** — rounded everything, strataverse blue. **Xfce (Greybird)** — neutral grey, thin borders. |
+| Retro OS | **macOS Classic** — Sierra-era Aqua. **Windows XP (Luna)** — blue start-button and bevels. |
+| Aesthetic | **CRT (Green Phosphor)** — green-on-black VT100 look with scanline overlay. **Cyberpunk (Synthwave)** — neon magenta/cyan on deep purple. **Blueprint** — engineering-drawing grid on blue paper. **E-Ink (Paper)** — warm paper-white, low saturation. |
+| Accessibility | **High Contrast** — solid black surfaces, pure white foreground, visible borders on every control, WCAG-AAA accents. |
+
+- **Light/Dark appearance** — every skin except CRT and Cyberpunk
+  supports both modes. The app's CSS palette flips per-skin based on a
+  Settings dropdown (Auto / Light / Dark).
 - Import custom skin JSON files (flat map of `--css-var: value` pairs).
   Persisted to `~/Library/Application Support/Seriesly/skins/`.
 - Skins are distinct from themes — themes recolor the terminal viewport;
-  skins change the app chrome surrounding it. You can mix (e.g. Liquid Glass
-  skin + Solarized Dark theme).
+  skins change the app chrome surrounding it. Mix freely (e.g. Liquid
+  Glass skin + Solarized Dark theme, or CRT skin + CRT Phosphor theme).
 
 **Caveats:** native `<select>` popups always render in the OS's native
-style (Chromium delegates that); window chrome and vibrancy are set at
-app launch and don't swap live.
+style (Chromium delegates popup rendering to the OS). The window's own
+NSVisualEffectView on macOS is pinned to the dark system appearance —
+Wails v2.12's runtime theme setters are empty stubs on macOS, so the
+vibrancy material can't flip live. Light mode works in the CSS layer;
+translucent light skins layer over dark vibrancy only when the CSS is
+opaque enough to hide it.
 
 ### Syntax highlighting
 Universal pattern-based colorization applied to incoming text. Toggle per
@@ -119,13 +137,23 @@ highlighting only fills in uncolored text.
 ## Requirements
 
 ### macOS
-- macOS 11 or later.
+- macOS 11 or later. Universal binary; runs natively on both Intel and
+  Apple Silicon.
 
 ### Windows
 - Windows 10 21H2+ or Windows 11.
+- amd64 (x86_64) and arm64 (Snapdragon X / Surface Pro X / Copilot+ PCs)
+  builds shipped; pick the matching artifact for your hardware.
 - [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
   — already installed on Windows 11 and recent Windows 10. The app will
   complain if it's missing.
+
+### Linux
+- `libgtk-3-0` and `libwebkit2gtk-4.1-0` at runtime (default on Ubuntu
+  24.04+, Fedora 40+, recent Debian; the `.deb` and `.rpm` declare them
+  as dependencies so `apt install` / `dnf install` pulls them in).
+- amd64 and arm64 builds shipped. `.deb`, `.rpm`, and `.AppImage`
+  formats available per arch.
 
 ### USB-to-serial adapter drivers
 
@@ -145,7 +173,7 @@ a driver is missing.
 ## Releases
 
 Tagged pushes (CalVer `YYYY.MM.DD-patch`) produce a GitHub Release with
-artifacts for four targets:
+artifacts for five targets:
 
 | Platform | Artifact | Notes |
 |---|---|---|
@@ -198,7 +226,7 @@ five platform artifacts attached.
 
 ```
 Seriesly/
-├── main.go                        # Wails entrypoint, macOS window options
+├── main.go                        # Wails entrypoint + per-OS window options
 ├── app.go                         # Wails-bound App struct (API surface)
 ├── internal/
 │   ├── appdata/                   # per-OS app-data directory helper
@@ -206,7 +234,7 @@ Seriesly/
 │   ├── serial/                    # go.bug.st/serial wrapper, read pump,
 │   │                              # chipset detection (ioreg / Get-PnpDevice)
 │   ├── settings/                  # global settings (default theme, skin,
-│   │                              # font size, log dir, driver-detect toggle)
+│   │                              # appearance, font size, log dir, toggles)
 │   ├── skins/                     # app-chrome skins (CSS-var JSON)
 │   └── themes/                    # terminal themes + .itermcolors parser
 ├── frontend/
@@ -217,18 +245,27 @@ Seriesly/
 │       │   ├── Sidebar.svelte     # profile list + settings button
 │       │   ├── ProfileForm.svelte # profile editor + connect/suspend flow
 │       │   ├── Terminal.svelte    # xterm.js wrapper, stays mounted per-session
-│       │   ├── Settings.svelte    # skins, default theme, log dir, detection toggle
+│       │   ├── PreviewTerminal.svelte # read-only xterm for theme previews
+│       │   ├── Settings.svelte    # skin picker, appearance, default theme,
+│       │   │                      # theme preview modal, log dir, toggles
 │       │   ├── highlight.ts       # line-buffered ANSI-aware colorizer
 │       │   ├── hexdump.ts         # 16-byte-per-line hex+ASCII formatter
 │       │   └── api.ts             # thin Wails bindings wrapper
 │       └── stores/                # Svelte stores (profiles, themes, skins,
-│                                  # settings, session, dismissed-drivers)
+│                                  # settings, session, appearance, dismissed-drivers)
 ├── build/
-│   ├── appicon.png                # source icon (Wails generates .icns/.ico)
-│   └── make-icon.sh               # ImageMagick script to regenerate
+│   ├── appicon.png                # source icon (Wails generates .icns)
+│   ├── make-icon.sh               # ImageMagick script — regenerates the
+│   │                              # .png + a multi-resolution Windows .ico
+│   ├── windows/icon.ico           # hand-managed .ico (make-icon.sh regenerates)
+│   └── linux/seriesly.desktop     # freedesktop entry shipped inside .deb/.rpm/AppImage
 └── .github/workflows/
-    ├── ci.yml                     # native Go + frontend checks
-    └── release.yml                # tag-triggered macOS + Windows release
+    ├── ci.yml                     # native Go + frontend checks across
+    │                              # macOS, Windows (amd64/arm64), Linux (amd64/arm64)
+    └── release.yml                # tag-triggered build + GitHub Release;
+                                   # emits .app (macOS universal), .exe .zip
+                                   # per Windows arch, and .deb/.rpm/.AppImage
+                                   # per Linux arch
 ```
 
 **Data flow.** Bytes from the serial port flow as base64-encoded Wails events
