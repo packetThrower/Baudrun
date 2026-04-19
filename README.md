@@ -198,6 +198,10 @@ artifacts for five targets:
 | **Linux amd64** | `seriesly_<version>_amd64.deb`, `seriesly-<version>.x86_64.rpm`, `Seriesly-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. |
 | **Linux arm64** | `seriesly_<version>_arm64.deb`, `seriesly-<version>.aarch64.rpm`, `Seriesly-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
 
+An Arch Linux package (`seriesly-bin`) pulls the same `.deb` in AUR
+form — see [packaging/arch/](packaging/arch/) for the PKGBUILD and
+submission notes.
+
 Download, unpack, and run. On macOS, drag `Seriesly.app` into `/Applications`.
 
 The app is currently unsigned on all platforms. First-launch friction:
