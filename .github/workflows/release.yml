@@ -157,8 +157,10 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # webkit2_41 flips Wails' pkg-config to webkit2gtk-4.1 (Ubuntu
+      # 24.04 default) instead of the long-deprecated 4.0.
       - name: Build
-        run: wails build -platform linux/${{ matrix.arch }}
+        run: wails build -platform linux/${{ matrix.arch }} -tags webkit2_41
 
       - name: Package
         run: |
