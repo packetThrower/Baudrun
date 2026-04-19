@@ -1137,6 +1137,116 @@ var builtins = []Skin{
 		},
 	},
 	{
+		ID:            "xfce-greybird",
+		Name:          "Xfce (Greybird)",
+		Source:        "builtin",
+		Description:   "Xfce / Greybird: utilitarian cool-gray surfaces, classic Xfce blue accent, Ubuntu/Droid Sans typography, small radii, thin borders. Adapts to system light/dark.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			// The iconic Greybird warm-gray (#dcdad5) — instantly recognizable
+			// as Xfce to anyone who's run Xubuntu
+			"--bg-window":      "#dcdad5",
+			"--bg-sidebar":     "#d3d0cc",
+			"--bg-main":        "#ebe8e6",
+			"--bg-panel":       "#f2f0ed",
+			"--bg-hover":       "rgba(0, 0, 0, 0.05)",
+			"--bg-active":      "rgba(52, 101, 164, 0.22)",
+			"--bg-input":       "#ffffff",
+			"--bg-input-focus": "#fafafa",
+			"--bg-terminal":    "#1d1d1d",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "#1e1e1e",
+			"--option-group-fg": "rgba(0, 0, 0, 0.55)",
+
+			"--fg-primary":   "#1e1e1e",
+			"--fg-secondary": "rgba(30, 30, 30, 0.72)",
+			"--fg-tertiary":  "rgba(30, 30, 30, 0.48)",
+
+			"--border-subtle":     "rgba(0, 0, 0, 0.10)",
+			"--border-strong":     "rgba(0, 0, 0, 0.18)",
+			"--input-border-idle": "rgba(0, 0, 0, 0.15)",
+			"--panel-border":      "1px solid rgba(0, 0, 0, 0.08)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.12)",
+
+			// Classic Xfce deeper blue (from the original Xfce logo era)
+			"--accent":       "#3465a4",
+			"--accent-hover": "#4175b9",
+
+			"--shadow-panel":          "0 1px 3px rgba(0, 0, 0, 0.08)",
+			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.2)",
+			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.35)",
+		},
+		Vars: map[string]string{
+			// Ubuntu font is visually distinctive — tailed Q, single-story a.
+			// DejaVu Sans is the reliable Linux fallback. Both likely absent
+			// on macOS but system-ui picks up Inter / SF.
+			"--font-ui":   `"Ubuntu", "Droid Sans", "DejaVu Sans", "Noto Sans", system-ui, -apple-system, sans-serif`,
+			"--font-mono": `"Ubuntu Mono", "DejaVu Sans Mono", "Source Code Pro", Consolas, ui-monospace, monospace`,
+
+			// Sentence case, normal letter-spacing — Xfce is not iOS-small-caps
+			"--label-transform":      "none",
+			"--label-letter-spacing": "0",
+			"--label-weight":         "500",
+			"--font-size-base":       "13px",
+			"--font-size-label":      "12px",
+			"--font-size-section":    "15px",
+			"--font-size-h1":         "22px",
+
+			// Cool blue-gray surfaces — that's the Xfce look (more blueish
+			// than Breeze, cooler than Adwaita)
+			"--bg-window":      "#282a35",
+			"--bg-sidebar":     "#20222b",
+			"--bg-main":        "#2e3038",
+			"--bg-panel":       "#363842",
+			"--bg-hover":       "rgba(255, 255, 255, 0.06)",
+			"--bg-active":      "rgba(74, 144, 217, 0.25)",
+			"--bg-input":       "rgba(0, 0, 0, 0.22)",
+			"--bg-input-focus": "rgba(0, 0, 0, 0.35)",
+			"--bg-terminal":    "#1a1c23",
+
+			"--option-bg":       "#363842",
+			"--option-fg":       "#e8e8e8",
+			"--option-group-fg": "rgba(232, 232, 232, 0.55)",
+
+			"--fg-primary":   "#e8e8e8",
+			"--fg-secondary": "rgba(232, 232, 232, 0.72)",
+			"--fg-tertiary":  "rgba(232, 232, 232, 0.48)",
+
+			"--border-subtle":     "rgba(255, 255, 255, 0.08)",
+			"--border-strong":     "rgba(255, 255, 255, 0.14)",
+			"--input-border-idle": "rgba(255, 255, 255, 0.10)",
+			"--panel-border":      "1px solid rgba(255, 255, 255, 0.06)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.4)",
+
+			// Brighter dark-mode variant of the Xfce blue
+			"--accent":       "#4a90d9",
+			"--accent-hover": "#5fa0e3",
+			"--danger":       "#d03030",
+			"--success":      "#6eb04b",
+			"--warn":         "#f0b030",
+
+			// Small, utilitarian radii — Xfce is not a rounded environment
+			"--radius-sm": "2px",
+			"--radius-md": "3px",
+			"--radius-lg": "4px",
+
+			"--shadow-panel":    "0 1px 3px rgba(0, 0, 0, 0.3)",
+			"--shadow-floating": "0 6px 18px rgba(0, 0, 0, 0.4)",
+			"--blur-strength":   "0px",
+
+			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.2)",
+			"--scrollbar-thumb-hover": "rgba(255, 255, 255, 0.35)",
+
+			// Flush layout
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "32px",
+		},
+	},
+	{
 		ID:          "crt",
 		Name:        "CRT (Green Phosphor)",
 		Source:      "builtin",
