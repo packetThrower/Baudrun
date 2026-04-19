@@ -1,10 +1,25 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import type { Theme, Settings, Skin } from "./api";
+  import PreviewTerminal from "./PreviewTerminal.svelte";
 
   export let themes: Theme[] = [];
   export let skins: Skin[] = [];
   export let settings: Settings;
+
+  let previewTheme: Theme | null = null;
+
+  function openPreview(t: Theme) {
+    previewTheme = t;
+  }
+
+  function closePreview() {
+    previewTheme = null;
+  }
+
+  function onPreviewKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") closePreview();
+  }
 
   const dispatch = createEventDispatcher<{
     setDefault: string;
@@ -198,6 +213,14 @@
             <span class="theme-name">{t.name}</span>
             <span class="theme-source">{t.source === "builtin" ? "Built-in" : "Custom"}</span>
           </div>
+          <button
+            class="small"
+            on:click={() => openPreview(t)}
+            title="Preview theme"
+            aria-label="Preview theme"
+          >
+            Preview
+          </button>
           {#if t.source === "user"}
             <button
               class="danger small"
@@ -261,6 +284,30 @@
   </section>
   </div>
 </div>
+
+{#if previewTheme}
+  <div
+    class="modal-backdrop"
+    on:click={closePreview}
+    on:keydown={onPreviewKeydown}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
+    <div class="modal" on:click|stopPropagation on:keydown|stopPropagation role="presentation">
+      <header class="modal-header">
+        <div class="modal-title">
+          <strong>{previewTheme.name}</strong>
+          <span class="modal-subtitle">
+            {previewTheme.source === "builtin" ? "Built-in theme" : "Custom theme"} · sample network-gear output
+          </span>
+        </div>
+        <button on:click={closePreview}>Close</button>
+      </header>
+      <PreviewTerminal theme={previewTheme} />
+    </div>
+  </div>
+{/if}
 
 <style>
   .settings {
@@ -500,5 +547,56 @@
   .toggle input {
     width: auto;
     accent-color: var(--accent);
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    padding: 24px;
+  }
+
+  .modal {
+    background: var(--bg-main);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    width: 100%;
+    max-width: 720px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    gap: 16px;
+  }
+
+  .modal-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .modal-title strong {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .modal-subtitle {
+    font-size: 12px;
+    color: var(--fg-tertiary);
   }
 </style>
