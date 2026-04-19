@@ -15,6 +15,10 @@
   export let highlight: boolean = true;
   export let hexView: boolean = false;
   export let timestamps: boolean = false;
+  // "del" (0x7f) matches VT100 / xterm convention and is what most modern
+  // devices expect. "bs" (0x08) is what some older gear (e.g. some Cisco
+  // IOS releases, Foundry) wants; wrong setting shows as ^H echoed on screen.
+  export let backspaceKey: "bs" | "del" = "del";
   export let onStatus: (msg: string) => void = () => {};
 
   let hostEl: HTMLDivElement;
@@ -43,6 +47,13 @@
   }
 
   function handleInput(data: string) {
+    // xterm emits 0x7f for the Backspace key. Swap to 0x08 when the
+    // profile asks for BS-style backspace so devices wanting that
+    // don't see ^H echoed back at them.
+    if (data === "\x7f" && backspaceKey === "bs") {
+      data = "\x08";
+    }
+
     const encoder = new TextEncoder();
     let out: Uint8Array;
 

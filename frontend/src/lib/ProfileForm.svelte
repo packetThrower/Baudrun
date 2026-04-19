@@ -381,6 +381,19 @@
         </select>
       </div>
 
+      <div class="field">
+        <label for="backspace">Backspace sends</label>
+        <select
+          id="backspace"
+          bind:value={draft.backspaceKey}
+          on:change={markDirty}
+          disabled={locked}
+        >
+          <option value="del">DEL (0x7F) — VT100 / xterm / most modern</option>
+          <option value="bs">BS (0x08) — some older Cisco / Foundry gear</option>
+        </select>
+      </div>
+
       <div class="field checkbox">
         <label>
           <input
