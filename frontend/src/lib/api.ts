@@ -19,6 +19,8 @@ export type Skin = skins.Skin;
 
 export const EVT_DATA = "serial:data";
 export const EVT_DISCONNECT = "serial:disconnect";
+export const EVT_RECONNECTING = "serial:reconnecting";
+export const EVT_RECONNECTED = "serial:reconnected";
 
 export const api = {
   listProfiles: App.ListProfiles,
@@ -68,6 +70,16 @@ export const api = {
   onDisconnect(handler: (reason: string) => void): () => void {
     EventsOn(EVT_DISCONNECT, handler);
     return () => EventsOff(EVT_DISCONNECT);
+  },
+
+  onReconnecting(handler: (portName: string) => void): () => void {
+    EventsOn(EVT_RECONNECTING, handler);
+    return () => EventsOff(EVT_RECONNECTING);
+  },
+
+  onReconnected(handler: (profileID: string) => void): () => void {
+    EventsOn(EVT_RECONNECTED, handler);
+    return () => EventsOff(EVT_RECONNECTED);
   },
 };
 

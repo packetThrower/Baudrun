@@ -34,6 +34,10 @@ type Profile struct {
 	HexView          bool      `json:"hexView"`
 	Timestamps       bool      `json:"timestamps"`
 	LogEnabled       bool      `json:"logEnabled"`
+	// AutoReconnect keeps the session alive across adapter drops by polling
+	// for the port name to reappear and reopening transparently. Common
+	// with cheap USB-serial adapters that re-enumerate under load.
+	AutoReconnect    bool      `json:"autoReconnect"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
 }
