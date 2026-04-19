@@ -548,4 +548,92 @@ var builtins = []Skin{
 			"--titlebar-height": "24px",
 		},
 	},
+	{
+		ID:          "crt",
+		Name:        "CRT (Green Phosphor)",
+		Source:      "builtin",
+		Description: "Vintage VT100 / green phosphor CRT: pure black surfaces, phosphor-green foreground, monospace everywhere, all-caps widely-spaced labels, scan-line overlay, and a subtle glow around every character.",
+		Vars: map[string]string{
+			// Monospace everywhere — UI text included. The UI font stack
+			// intentionally uses monos so the whole app reads as terminal.
+			"--font-ui":   `"VT323", "IBM Plex Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace`,
+			"--font-mono": `"VT323", "IBM Plex Mono", "Fira Code", Menlo, Monaco, "Courier New", monospace`,
+
+			"--font-size-base":    "14px",
+			"--font-size-label":   "11px",
+			"--font-size-section": "15px",
+			"--font-size-h1":      "22px",
+
+			// Wide letter spacing + all-caps for that teletype feel
+			"--label-transform":      "uppercase",
+			"--label-letter-spacing": "0.12em",
+			"--label-weight":         "normal",
+
+			// Pure-black surfaces. Sidebar, main, panels are all effectively
+			// the same shade — the UI reads as one continuous terminal rather
+			// than distinct cards.
+			"--bg-window":      "#000000",
+			"--bg-sidebar":     "#000000",
+			"--bg-main":        "#000000",
+			"--bg-panel":       "#030703",
+			"--bg-hover":       "rgba(51, 255, 51, 0.12)",
+			"--bg-active":      "rgba(51, 255, 51, 0.22)",
+			"--bg-input":       "#000000",
+			"--bg-input-focus": "rgba(51, 255, 51, 0.05)",
+			"--bg-terminal":    "#000000",
+
+			// Native popups — phosphor green on black
+			"--option-bg":       "#000000",
+			"--option-fg":       "#33ff33",
+			"--option-group-fg": "rgba(51, 255, 51, 0.55)",
+
+			// Phosphor-green foreground, with diminishing alpha for secondary text
+			"--fg-primary":   "#33ff33",
+			"--fg-secondary": "rgba(51, 255, 51, 0.72)",
+			"--fg-tertiary":  "rgba(51, 255, 51, 0.45)",
+
+			// Borders are phosphor-tinted — CRTs rarely had soft borders,
+			// they had thin bright outlines
+			"--border-subtle":     "rgba(51, 255, 51, 0.28)",
+			"--border-strong":     "rgba(51, 255, 51, 0.55)",
+			"--input-border-idle": "rgba(51, 255, 51, 0.32)",
+			"--panel-border":      "1px solid rgba(51, 255, 51, 0.22)",
+			"--sidebar-divider":   "1px solid rgba(51, 255, 51, 0.35)",
+
+			// Accents stay in the phosphor-green family; status colors
+			// shift to their closest CRT-friendly hues
+			"--accent":       "#55ff55",
+			"--accent-hover": "#77ff77",
+			"--danger":       "#ff5555",
+			"--success":      "#88ff88",
+			"--warn":         "#ffff55",
+
+			// No rounded corners — CRTs drew characters on a grid
+			"--radius-sm": "0",
+			"--radius-md": "0",
+			"--radius-lg": "0",
+
+			// No drop shadow; instead the whole app has a text glow.
+			// Floating shadow becomes a halo of phosphor light.
+			"--shadow-panel":    "none",
+			"--shadow-floating": "0 0 24px rgba(51, 255, 51, 0.18)",
+			"--blur-strength":   "0px",
+
+			// Scrollbars phosphor-tinted
+			"--scrollbar-thumb":       "rgba(51, 255, 51, 0.35)",
+			"--scrollbar-thumb-hover": "rgba(51, 255, 51, 0.6)",
+
+			// Flush layout
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "28px",
+
+			// The CRT fingerprint: phosphor glow around every character,
+			// plus a horizontal scan-line overlay across the whole window.
+			"--text-shadow": "0 0 2px currentColor, 0 0 6px rgba(51, 255, 51, 0.3)",
+			"--overlay":     "repeating-linear-gradient(0deg, transparent 0px, transparent 2px, rgba(0, 0, 0, 0.22) 2px, rgba(0, 0, 0, 0.22) 3px)",
+		},
+	},
 }
