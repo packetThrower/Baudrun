@@ -902,6 +902,121 @@ var builtins = []Skin{
 		},
 	},
 	{
+		ID:            "elementary-pantheon",
+		Name:          "elementary OS (Pantheon)",
+		Source:        "builtin",
+		Description:   "elementary OS / Pantheon: Inter typography, flat minimalist surfaces, gentle radii, signature elementary blue, subtle shadows. Adapts to system light/dark.",
+		SupportsLight: true,
+		LightVars: map[string]string{
+			"--bg-window":      "#fafafa",
+			"--bg-sidebar":     "#f0f0f0",
+			"--bg-main":        "#ffffff",
+			"--bg-panel":       "#ffffff",
+			"--bg-hover":       "rgba(0, 0, 0, 0.05)",
+			"--bg-active":      "rgba(54, 137, 230, 0.22)",
+			// Inputs/dropdowns need a visible surface on the white main bg.
+			// Real Pantheon ComboBox controls have a subtle light-gray fill
+			// plus a 1px border; focus brightens to white with the accent
+			// border treatment from the base input:focus rule.
+			"--bg-input":       "#f5f5f5",
+			"--bg-input-focus": "#ffffff",
+			"--bg-terminal":    "#1d1d1d",
+
+			"--option-bg":       "#ffffff",
+			"--option-fg":       "rgba(0, 0, 0, 0.87)",
+			"--option-group-fg": "rgba(0, 0, 0, 0.55)",
+
+			"--fg-primary":   "rgba(0, 0, 0, 0.87)",
+			"--fg-secondary": "rgba(0, 0, 0, 0.62)",
+			"--fg-tertiary":  "rgba(0, 0, 0, 0.42)",
+
+			"--border-subtle":     "rgba(0, 0, 0, 0.08)",
+			"--border-strong":     "rgba(0, 0, 0, 0.14)",
+			"--input-border-idle": "rgba(0, 0, 0, 0.11)",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.08)",
+
+			"--shadow-panel":          "0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06)",
+			"--shadow-floating":       "0 8px 24px rgba(0, 0, 0, 0.16)",
+			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.16)",
+			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.3)",
+		},
+		Vars: map[string]string{
+			// Inter is elementary OS's designated UI font. Cross-platform
+			// fallbacks; Roboto Mono is a popular default on Linux dev
+			// setups and reads as elementary-consistent.
+			"--font-ui":   `"Inter", "Inter UI", "Inter Display", system-ui, -apple-system, sans-serif`,
+			"--font-mono": `"Roboto Mono", "Source Code Pro", "JetBrains Mono", Menlo, ui-monospace, monospace`,
+
+			// Sentence-case row labels; elementary is firmly anti-iOS-caps
+			"--label-transform":      "none",
+			"--label-letter-spacing": "0",
+			"--label-weight":         "500",
+			"--font-size-base":       "13px",
+			"--font-size-label":      "12px",
+			"--font-size-section":    "15px",
+			"--font-size-h1":         "23px",
+
+			// elementary dark surfaces — medium-dark gray, not black. Sidebar
+			// slightly darker than main (elementary's navigation-pane
+			// convention).
+			"--bg-window":      "#2d2d2d",
+			"--bg-sidebar":     "#252525",
+			"--bg-main":        "#2d2d2d",
+			"--bg-panel":       "#3a3a3a",
+			"--bg-hover":       "rgba(255, 255, 255, 0.06)",
+			"--bg-active":      "rgba(54, 137, 230, 0.25)",
+			"--bg-input":       "rgba(255, 255, 255, 0.08)",
+			"--bg-input-focus": "rgba(255, 255, 255, 0.12)",
+			"--bg-terminal":    "#1d1d1d",
+
+			"--option-bg":       "#3a3a3a",
+			"--option-fg":       "rgba(255, 255, 255, 0.87)",
+			"--option-group-fg": "rgba(255, 255, 255, 0.55)",
+
+			"--fg-primary":   "rgba(255, 255, 255, 0.87)",
+			"--fg-secondary": "rgba(255, 255, 255, 0.62)",
+			"--fg-tertiary":  "rgba(255, 255, 255, 0.42)",
+
+			// Minimal borders — elementary favors spacing and color over
+			// strokes, even more so than GNOME
+			"--border-subtle":     "rgba(255, 255, 255, 0.06)",
+			"--border-strong":     "rgba(255, 255, 255, 0.12)",
+			"--input-border-idle": "transparent",
+			"--panel-border":      "none",
+			"--sidebar-divider":   "1px solid rgba(0, 0, 0, 0.35)",
+
+			// Signature elementary blue + elementary color palette
+			// (which has named "Strawberry", "Grape", "Mint", etc. for the
+			// status colors — these are the canonical hex values)
+			"--accent":       "#3689e6",
+			"--accent-hover": "#4a95ea",
+			"--danger":       "#c6262e",
+			"--success":      "#68b723",
+			"--warn":         "#f9c440",
+
+			// Gentle radii; elementary is rounder than KDE but squarer than
+			// libadwaita
+			"--radius-sm": "4px",
+			"--radius-md": "6px",
+			"--radius-lg": "8px",
+
+			// Subtle two-layer elevation, very restrained
+			"--shadow-panel":    "0 1px 3px rgba(0, 0, 0, 0.24), 0 1px 2px rgba(0, 0, 0, 0.12)",
+			"--shadow-floating": "0 10px 25px rgba(0, 0, 0, 0.4)",
+			"--blur-strength":   "0px",
+
+			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.16)",
+			"--scrollbar-thumb-hover": "rgba(255, 255, 255, 0.3)",
+
+			// Flush layout
+			"--shell-padding":   "0",
+			"--shell-gap":       "0",
+			"--panel-radius":    "0",
+			"--panel-shadow":    "none",
+			"--titlebar-height": "40px",
+		},
+	},
+	{
 		ID:          "crt",
 		Name:        "CRT (Green Phosphor)",
 		Source:      "builtin",
