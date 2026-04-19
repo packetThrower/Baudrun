@@ -94,7 +94,9 @@ radii, elevation, layout shape. Grouped by inspiration:
   supports both modes. The app's CSS palette flips per-skin based on a
   Settings dropdown (Auto / Light / Dark).
 - Import custom skin JSON files (flat map of `--css-var: value` pairs).
-  Persisted to `~/Library/Application Support/Seriesly/skins/`.
+  Persisted to `~/Library/Application Support/Seriesly/skins/`. See
+  [docs/SKINS.md](docs/SKINS.md) for the full variable reference and
+  authoring guide.
 - Skins are distinct from themes — themes recolor the terminal viewport;
   skins change the app chrome surrounding it. Mix freely (e.g. Liquid
   Glass skin + Solarized Dark theme, or CRT skin + CRT Phosphor theme).
