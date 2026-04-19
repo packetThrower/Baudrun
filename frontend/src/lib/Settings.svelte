@@ -17,6 +17,7 @@
     setSkin: string;
     importSkin: void;
     deleteSkin: string;
+    setAppearance: "auto" | "light" | "dark";
   }>();
 
   let importing = false;
@@ -54,6 +55,13 @@
     dispatch("setSkin", (e.target as HTMLSelectElement).value);
   }
 
+  function onAppearanceChange(e: Event) {
+    const v = (e.target as HTMLSelectElement).value;
+    if (v === "auto" || v === "light" || v === "dark") {
+      dispatch("setAppearance", v);
+    }
+  }
+
   export let defaultLogDir: string = "";
 
   $: builtinThemes = themes.filter((t) => t.source === "builtin");
@@ -79,7 +87,7 @@
       viewport's color scheme.
     </p>
     <div class="grid">
-      <div class="field full">
+      <div class="field">
         <label for="skin">Skin</label>
         <select
           id="skin"
@@ -100,6 +108,19 @@
               {/each}
             </optgroup>
           {/if}
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="appearance">Appearance</label>
+        <select
+          id="appearance"
+          value={settings.appearance || "auto"}
+          on:change={onAppearanceChange}
+        >
+          <option value="auto">Auto (Follow System)</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
         </select>
       </div>
     </div>

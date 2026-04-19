@@ -185,6 +185,22 @@ func (a *App) DeleteSkin(id string) error {
 	return a.skins.Delete(id)
 }
 
+// SetWindowAppearance flips the OS window vibrancy between dark, light,
+// or following the system. Called by the frontend whenever the appearance
+// preference changes so the window material matches the skin's light/dark
+// mode (otherwise translucent skins show the wrong backdrop color
+// through).
+func (a *App) SetWindowAppearance(mode string) {
+	switch mode {
+	case "light":
+		runtime.WindowSetLightTheme(a.ctx)
+	case "dark":
+		runtime.WindowSetDarkTheme(a.ctx)
+	default:
+		runtime.WindowSetSystemDefaultTheme(a.ctx)
+	}
+}
+
 // Settings API
 
 func (a *App) GetSettings() settings.Settings {

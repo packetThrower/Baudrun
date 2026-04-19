@@ -51,6 +51,8 @@ export function SetDTR(arg1:boolean):Promise<void>;
 
 export function SetRTS(arg1:boolean):Promise<void>;
 
+export function SetWindowAppearance(arg1:string):Promise<void>;
+
 export function UpdateProfile(arg1:profiles.Profile):Promise<profiles.Profile>;
 
 export function UpdateSettings(arg1:settings.Settings):Promise<settings.Settings>;

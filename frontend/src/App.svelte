@@ -25,11 +25,14 @@
   import {
     skins,
     activeSkinID,
+    appearance,
+    systemIsDark,
     loadSkins,
     applySkin,
     resolveSkin,
     importSkin,
     deleteSkin,
+    type Appearance,
   } from "./stores/skins";
   import { session } from "./stores/session";
 
@@ -75,8 +78,25 @@
   $: effectiveTheme = resolveTheme(effectiveThemeID, $themes);
   $: termFontSize = $settings.fontSize || 13;
 
-  // Re-apply skin whenever the active selection or the loaded skin list changes.
-  $: applySkin(resolveSkin($activeSkinID, $skins));
+  // Re-apply skin whenever the active selection, loaded list, appearance
+  // preference, or system color scheme changes.
+  $: applySkin(
+    resolveSkin($activeSkinID, $skins),
+    $appearance,
+    $systemIsDark,
+  );
+
+  // Flip the OS window vibrancy to match the active mode so translucent
+  // skins sit on the correct backdrop material. Dark-only skins (CRT)
+  // pin the window to dark regardless of the preference.
+  $: {
+    const s = resolveSkin($activeSkinID, $skins);
+    if (s) {
+      const wantDark = s.supportsLight === false;
+      const mode = wantDark ? "dark" : $appearance;
+      api.setWindowAppearance(mode).catch(() => {});
+    }
+  }
 
   function resolveTheme(id: string, all: Theme[]): Theme | undefined {
     return (
@@ -96,7 +116,8 @@
       loadSettings(),
     ]);
     activeSkinID.set($settings.skinId || "seriesly");
-    applySkin(resolveSkin($activeSkinID, $skins));
+    appearance.set(($settings.appearance as Appearance) || "auto");
+    applySkin(resolveSkin($activeSkinID, $skins), $appearance, $systemIsDark);
 
     offDisconnect = api.onDisconnect((reason) => {
       session.set({ status: "idle" });
@@ -347,6 +368,16 @@
     }
   }
 
+  async function handleSetAppearance(mode: Appearance) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, appearance: mode });
+      settings.set(updated);
+      appearance.set(mode);
+    } catch (e) {
+      statusMsg = `Appearance change failed: ${e}`;
+    }
+  }
+
 </script>
 
 <div class="shell">
@@ -378,6 +409,7 @@
           on:setSkin={(e) => handleSetSkin(e.detail)}
           on:importSkin={handleImportSkin}
           on:deleteSkin={(e) => handleDeleteSkin(e.detail)}
+          on:setAppearance={(e) => handleSetAppearance(e.detail)}
         />
       {:else if !currentProfile}
         <div class="titlebar" style="--wails-draggable: drag;"></div>

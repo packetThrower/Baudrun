@@ -29,9 +29,12 @@ func main() {
 		Bind:              []interface{}{app},
 		Mac: &mac.Options{
 			TitleBar:             mac.TitleBarHiddenInset(),
-			Appearance:           mac.NSAppearanceNameDarkAqua,
 			WindowIsTranslucent:  true,
 			WebviewIsTransparent: true,
+			// NSAppearance is controlled at runtime via App.SetWindowAppearance
+			// so the window's vibrancy stays in sync with the user's light/dark
+			// preference. Leaving this unset means the window defaults to the
+			// system appearance before our startup logic applies.
 			About: &mac.AboutInfo{
 				Title:   "Seriesly",
 				Message: "A serial terminal for network devices.",

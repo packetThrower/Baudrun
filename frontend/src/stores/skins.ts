@@ -4,10 +4,25 @@ import { api, type Skin } from "../lib/api";
 export const skins = writable<Skin[]>([]);
 export const activeSkinID = writable<string>("seriesly");
 
+// "auto" follows `prefers-color-scheme`; "light" / "dark" pin.
+export type Appearance = "auto" | "light" | "dark";
+export const appearance = writable<Appearance>("auto");
+
+// Tracks the system preference via matchMedia; updates whenever the OS flips
+// between light and dark while the app is running.
+export const systemIsDark = writable<boolean>(
+  typeof window !== "undefined"
+    ? window.matchMedia("(prefers-color-scheme: dark)").matches
+    : true,
+);
+
+if (typeof window !== "undefined") {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener("change", (e) => systemIsDark.set(e.matches));
+}
+
 // Track which CSS custom-property names we've written, so we can reliably
-// clear them before applying a new skin. Without this, switching from a
-// richer skin back to a sparser one would leave stale values set on the
-// document root.
+// clear them before applying a new skin or switching modes.
 let managedProps = new Set<string>();
 
 export async function loadSkins() {
@@ -15,22 +30,42 @@ export async function loadSkins() {
   skins.set(list ?? []);
 }
 
-export function applySkin(skin: Skin | undefined) {
+export function effectiveMode(
+  pref: Appearance,
+  isDark: boolean,
+): "light" | "dark" {
+  if (pref === "light") return "light";
+  if (pref === "dark") return "dark";
+  return isDark ? "dark" : "light";
+}
+
+export function applySkin(
+  skin: Skin | undefined,
+  pref: Appearance,
+  isDark: boolean,
+) {
   const root = document.documentElement.style;
 
-  // Clear anything we previously set but which this skin doesn't override.
-  for (const k of managedProps) {
-    root.removeProperty(k);
-  }
+  for (const k of managedProps) root.removeProperty(k);
   managedProps = new Set();
 
-  if (!skin || !skin.vars) return;
+  if (!skin) return;
 
-  for (const [k, v] of Object.entries(skin.vars)) {
-    if (!k.startsWith("--")) continue;
-    root.setProperty(k, v);
-    managedProps.add(k);
-  }
+  // Dark-only skins (CRT, potentially Matrix/Synthwave later) ignore the
+  // global appearance preference and always render in their dark palette.
+  const mode = skin.supportsLight ? effectiveMode(pref, isDark) : "dark";
+
+  const write = (map: Record<string, string> | undefined) => {
+    if (!map) return;
+    for (const [k, v] of Object.entries(map)) {
+      if (!k.startsWith("--")) continue;
+      root.setProperty(k, v);
+      managedProps.add(k);
+    }
+  };
+
+  write(skin.vars);
+  write(mode === "dark" ? skin.darkVars : skin.lightVars);
 }
 
 export function resolveSkin(id: string, all: Skin[]): Skin | undefined {

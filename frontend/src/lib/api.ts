@@ -42,6 +42,7 @@ export const api = {
   listSkins: App.ListSkins,
   importSkin: App.ImportSkin,
   deleteSkin: App.DeleteSkin,
+  setWindowAppearance: App.SetWindowAppearance,
 
   getSettings: App.GetSettings,
   updateSettings: App.UpdateSettings,

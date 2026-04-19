@@ -19,15 +19,23 @@ import (
 //
 //	"--bg-sidebar": "rgba(255, 255, 255, 0.1)"
 //
-// The frontend iterates these and calls setProperty on the document root.
-// Keys not present in a skin fall back to whatever style.css defines as
-// the default, which is always the Seriesly skin.
+// Vars are always applied. DarkVars overlay on top when the app is in
+// dark appearance; LightVars when in light. The applier reads the
+// current appearance (from Settings.Appearance, respecting system
+// preference when set to "auto") and picks the right overlay.
+//
+// SupportsLight=false means the skin is dark-only (e.g., CRT, Matrix).
+// In that case the applier pins the dark overlay regardless of the
+// user's global appearance preference.
 type Skin struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Source      string            `json:"source"` // "builtin" | "user"
-	Description string            `json:"description,omitempty"`
-	Vars        map[string]string `json:"vars"`
+	ID            string            `json:"id"`
+	Name          string            `json:"name"`
+	Source        string            `json:"source"` // "builtin" | "user"
+	Description   string            `json:"description,omitempty"`
+	Vars          map[string]string `json:"vars"`
+	DarkVars      map[string]string `json:"darkVars,omitempty"`
+	LightVars     map[string]string `json:"lightVars,omitempty"`
+	SupportsLight bool              `json:"supportsLight"`
 }
 
 const DefaultSkinID = "seriesly"
@@ -188,12 +196,14 @@ func validate(sk Skin) error {
 	if sk.Name == "" {
 		return errors.New("skin name required")
 	}
-	if len(sk.Vars) == 0 {
+	if len(sk.Vars) == 0 && len(sk.DarkVars) == 0 && len(sk.LightVars) == 0 {
 		return errors.New("skin has no variables")
 	}
-	for k := range sk.Vars {
-		if !strings.HasPrefix(k, "--") {
-			return fmt.Errorf("skin var %q must start with --", k)
+	for _, m := range []map[string]string{sk.Vars, sk.DarkVars, sk.LightVars} {
+		for k := range m {
+			if !strings.HasPrefix(k, "--") {
+				return fmt.Errorf("skin var %q must start with --", k)
+			}
 		}
 	}
 	return nil
