@@ -141,6 +141,14 @@ highlighting only fills in uncolored text.
   a new one, opening Settings) auto-disconnects by default — Suspend is the
   explicit opt-in to keep a session alive.
 
+### More
+
+Task-oriented walkthroughs of the power features — Send Break for
+ROMMON access, hex send/view for binary protocols, paste safety,
+auto-reconnect, RS-485 control-line policies, session logging,
+driver troubleshooting — live in
+[docs/ADVANCED.md](docs/ADVANCED.md).
+
 ## Requirements
 
 ### macOS
