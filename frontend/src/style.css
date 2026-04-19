@@ -90,8 +90,20 @@ body {
   font-size: var(--font-size-base);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-shadow: var(--text-shadow, none);
   user-select: none;
   cursor: default;
+}
+
+/* Full-screen overlay slot. Most skins leave --overlay transparent so this
+   is a no-op. CRT skin uses it for scan lines. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: var(--overlay, transparent);
+  z-index: 9999;
 }
 
 #app {
