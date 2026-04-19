@@ -41,6 +41,9 @@ export namespace profiles {
 	    logEnabled: boolean;
 	    autoReconnect: boolean;
 	    backspaceKey: string;
+	    pasteWarnMultiline: boolean;
+	    pasteSlow: boolean;
+	    pasteCharDelayMs?: number;
 	    // Go type: time
 	    createdAt: any;
 	    // Go type: time
@@ -73,6 +76,9 @@ export namespace profiles {
 	        this.logEnabled = source["logEnabled"];
 	        this.autoReconnect = source["autoReconnect"];
 	        this.backspaceKey = source["backspaceKey"];
+	        this.pasteWarnMultiline = source["pasteWarnMultiline"];
+	        this.pasteSlow = source["pasteSlow"];
+	        this.pasteCharDelayMs = source["pasteCharDelayMs"];
 	        this.createdAt = this.convertValues(source["createdAt"], null);
 	        this.updatedAt = this.convertValues(source["updatedAt"], null);
 	    }

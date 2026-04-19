@@ -573,6 +573,52 @@
           </div>
         </div>
       </section>
+
+      <section class="sub">
+        <h4>Paste safety</h4>
+        <p class="section-hint">
+          Catch the "I pasted into the wrong window" mistake, and pace
+          pastes so UARTs on slower devices don't drop bytes.
+        </p>
+        <div class="grid">
+          <div class="field checkbox full">
+            <label>
+              <input
+                type="checkbox"
+                bind:checked={draft.pasteWarnMultiline}
+                on:change={markDirty}
+              />
+              Confirm multi-line pastes
+              <span class="inline-hint">prompt before sending pasted text that contains line breaks</span>
+            </label>
+          </div>
+
+          <div class="field checkbox">
+            <label>
+              <input
+                type="checkbox"
+                bind:checked={draft.pasteSlow}
+                on:change={markDirty}
+              />
+              Slow paste
+              <span class="inline-hint">send one char at a time with a delay</span>
+            </label>
+          </div>
+
+          <div class="field">
+            <label for="paste-delay">Slow-paste delay (ms)</label>
+            <input
+              id="paste-delay"
+              type="number"
+              min="0"
+              max="500"
+              bind:value={draft.pasteCharDelayMs}
+              on:change={markDirty}
+              disabled={!draft.pasteSlow}
+            />
+          </div>
+        </div>
+      </section>
     </details>
   </section>
   </div>

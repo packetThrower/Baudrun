@@ -83,6 +83,11 @@
   $: termBackspaceKey = ((activeProfile?.backspaceKey || currentProfile?.backspaceKey) ||
     "del") as "bs" | "del";
   $: termCopyOnSelect = $settings.copyOnSelect ?? false;
+  $: termPasteWarnMultiline =
+    activeProfile?.pasteWarnMultiline ?? currentProfile?.pasteWarnMultiline ?? false;
+  $: termPasteSlow = activeProfile?.pasteSlow ?? currentProfile?.pasteSlow ?? false;
+  $: termPasteCharDelayMs =
+    activeProfile?.pasteCharDelayMs ?? currentProfile?.pasteCharDelayMs ?? 10;
 
   $: effectiveThemeID =
     (activeProfile?.themeId || currentProfile?.themeId) ||
@@ -547,6 +552,9 @@
           timestamps={termTimestamps}
           backspaceKey={termBackspaceKey}
           copyOnSelect={termCopyOnSelect}
+          pasteWarnMultiline={termPasteWarnMultiline}
+          pasteSlow={termPasteSlow}
+          pasteCharDelayMs={termPasteCharDelayMs}
           onStatus={(m) => (statusMsg = m)}
         />
       </div>
