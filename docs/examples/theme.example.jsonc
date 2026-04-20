@@ -1,0 +1,92 @@
+// ============================================================================
+// Reference theme — every color slot Seriesly / xterm.js reads, grouped and
+// annotated. This is a .jsonc file (JSON with comments) for humans to read;
+// Seriesly's importer only eats strict JSON, so import theme.example.json
+// instead, or strip the // comments from this file before importing.
+//
+// Themes control the *terminal viewport* — the 16 ANSI color slots plus
+// background/foreground/cursor/selection. Distinct from skins, which
+// restyle the surrounding app chrome (see skin.example.jsonc).
+//
+// Use as a template: copy, rename, change "id" + "name", tweak the colors,
+// save as <id>.json in your themes directory (or use the .itermcolors
+// importer in Settings → Installed Themes → Import).
+//
+// Theme directories per OS:
+//   macOS:   ~/Library/Application Support/Seriesly/themes/
+//   Windows: %APPDATA%\Seriesly\themes\
+//   Linux:   $XDG_CONFIG_HOME/Seriesly/themes/
+//
+// See docs/THEMES.md for the full reference.
+// ============================================================================
+
+{
+  // Stable slug. Must be unique; on import, clashes get a -2, -3 suffix.
+  // Omit to derive from "name".
+  "id": "graphite-teal-example",
+
+  // Display name shown in the theme picker. Required.
+  "name": "Graphite Teal (Example)",
+
+  // Seriesly writes this automatically on import; you can leave it off.
+  // Possible values: "builtin" or "user".
+  "source": "user",
+
+  // ─── Screen-level colors ─────────────────────────────────────────────
+  // These control the terminal as a whole — the canvas the ANSI colors
+  // are drawn on.
+
+  // Terminal viewport fill.
+  "background": "#16191e",
+
+  // Default text color — what the device sends when it doesn't specify
+  // an ANSI color explicitly.
+  "foreground": "#d7dde6",
+
+  // Cursor block fill.
+  "cursor": "#4eb8ac",
+
+  // Character color under the cursor. If unset, xterm uses "background",
+  // which usually reads fine.
+  "cursorAccent": "#16191e",
+
+  // Background of selected text.
+  "selection": "#1f3a3a",
+
+  // Text color inside a selection. Optional; leaving it unset lets
+  // xterm pick (usually preserves original foreground, which is fine).
+  "selectionForeground": "#ffffff",
+
+  // ─── ANSI palette — normal intensity (SGR 30-37 / 40-47) ─────────────
+  // Devices pick colors by SGR code; Seriesly's syntax highlighter also
+  // uses these slots by name:
+  //   red    → `down`, `failed`, errors
+  //   green  → `up`, `ok`, `active`
+  //   yellow → `warning`, `degraded`
+  //   blue   → interface names
+  //   magenta→ MAC addresses
+  //   cyan   → IPv4 / IPv6
+
+  "black":   "#16191e",  // SGR 30 / 40 — darkest slot, usually matches bg
+  "red":     "#e46964",  // SGR 31 / 41 — errors, down states
+  "green":   "#87c792",  // SGR 32 / 42 — ok, up, active
+  "yellow":  "#e5c07b",  // SGR 33 / 43 — warnings
+  "blue":    "#6eb1c4",  // SGR 34 / 44 — interfaces, info
+  "magenta": "#c678dd",  // SGR 35 / 45 — MAC addresses
+  "cyan":    "#4eb8ac",  // SGR 36 / 46 — IPs; also the theme accent
+  "white":   "#d7dde6",  // SGR 37 / 47 — lightest slot at normal intensity
+
+  // ─── ANSI palette — bright intensity (SGR 90-97 / 100-107) ───────────
+  // Devices pick bright when bold attribute is active. Low contrast
+  // between normal and bright kills readability on `show version` walls
+  // where many lines are bolded.
+
+  "brightBlack":   "#5c6370",  // Dimmed gray — used for timestamps + dates in highlighter
+  "brightRed":     "#ff8382",
+  "brightGreen":   "#a2e5a2",
+  "brightYellow":  "#ffd68f",
+  "brightBlue":    "#8fc5d8",
+  "brightMagenta": "#e0a4f5",
+  "brightCyan":    "#62ccc0",
+  "brightWhite":   "#ffffff"
+}

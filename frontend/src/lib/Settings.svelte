@@ -45,6 +45,8 @@
 
   let importing = false;
   let importError = "";
+  let importingSkin = false;
+  let skinImportError = "";
 
   async function handleImport() {
     importing = true;
@@ -55,6 +57,18 @@
       importError = String(e);
     } finally {
       importing = false;
+    }
+  }
+
+  async function handleSkinImport() {
+    importingSkin = true;
+    skinImportError = "";
+    try {
+      dispatch("importSkin");
+    } catch (e) {
+      skinImportError = String(e);
+    } finally {
+      importingSkin = false;
     }
   }
 
@@ -162,6 +176,47 @@
         </select>
       </div>
     </div>
+  </section>
+
+  <section class="flat">
+    <div class="section-head">
+      <h3>Installed Skins</h3>
+      <button on:click={handleSkinImport} disabled={importingSkin}>
+        {importingSkin ? "Importing…" : "Import skin…"}
+      </button>
+    </div>
+    {#if skinImportError}
+      <div class="error">{skinImportError}</div>
+    {/if}
+
+    {#if skins.some((s) => s.source === "user")}
+      <ul class="theme-list">
+        {#each skins.filter((s) => s.source === "user") as s (s.id)}
+          <li class="theme-row">
+            <div class="theme-meta">
+              <span class="theme-name">{s.name}</span>
+              <span class="theme-source">
+                Custom{#if s.supportsLight === false} · dark-only{/if}
+              </span>
+            </div>
+            <button
+              class="danger small"
+              on:click={() => dispatch("deleteSkin", s.id)}
+              title="Remove skin"
+              aria-label="Remove skin"
+            >
+              Remove
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="section-hint" style="margin: 0;">
+        No custom skins installed. Use Import to add a skin JSON file.
+        See <code>docs/SKINS.md</code> for the authoring guide, or
+        start from <code>docs/examples/skin.example.json</code>.
+      </p>
+    {/if}
   </section>
 
   <section>

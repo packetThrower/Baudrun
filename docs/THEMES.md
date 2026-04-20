@@ -149,6 +149,22 @@ so you can judge a theme without switching and reconnecting.
 A profile's theme wins over the global default; skins never interact
 with theme selection.
 
+## Annotated reference theme
+
+For a complete working theme with every color slot set and a
+per-field comment on what it does, see:
+
+- [`docs/examples/theme.example.jsonc`](examples/theme.example.jsonc) —
+  annotated version, for reading and learning. Not directly
+  importable (Seriesly's JSON parser doesn't accept comments).
+- [`docs/examples/theme.example.json`](examples/theme.example.json) —
+  stripped version with the same values, importable by dropping
+  into the themes directory.
+
+The annotated file is the recommended starting point: read it,
+copy the stripped version, rename the `id` + `name`, and tweak
+the colors you care about.
+
 ## Creating a custom theme
 
 ### From `.itermcolors`
