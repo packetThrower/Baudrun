@@ -169,6 +169,7 @@ export namespace settings {
 	    skinId?: string;
 	    appearance?: string;
 	    copyOnSelect?: boolean;
+	    screenReaderMode?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -183,6 +184,7 @@ export namespace settings {
 	        this.skinId = source["skinId"];
 	        this.appearance = source["appearance"];
 	        this.copyOnSelect = source["copyOnSelect"];
+	        this.screenReaderMode = source["screenReaderMode"];
 	    }
 	}
 

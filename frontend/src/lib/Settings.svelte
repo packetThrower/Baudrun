@@ -17,6 +17,7 @@
     onPickLogDir: () => void;
     onSetDetectDrivers: (enabled: boolean) => void;
     onSetCopyOnSelect: (enabled: boolean) => void;
+    onSetScreenReaderMode: (enabled: boolean) => void;
     onPickConfigDir: () => void;
     onResetConfigDir: () => void;
     onSetSkin: (id: string) => void;
@@ -40,6 +41,7 @@
     onPickLogDir,
     onSetDetectDrivers,
     onSetCopyOnSelect,
+    onSetScreenReaderMode,
     onPickConfigDir,
     onResetConfigDir,
     onSetSkin,
@@ -113,6 +115,10 @@
 
   function onCopyOnSelectChange(e: Event) {
     onSetCopyOnSelect((e.target as HTMLInputElement).checked);
+  }
+
+  function onScreenReaderModeChange(e: Event) {
+    onSetScreenReaderMode((e.target as HTMLInputElement).checked);
   }
 
   async function openInFileManager(path: string) {
@@ -398,6 +404,23 @@
             on:change={onCopyOnSelectChange}
           />
           Copy terminal selection to clipboard automatically
+        </label>
+      </div>
+
+      <div class="sub">
+        <h4>Screen Reader Support</h4>
+        <p class="section-hint">
+          Route incoming terminal output through an ARIA live region
+          so screen readers (VoiceOver, NVDA, Orca) can narrate it.
+          Small perf cost on heavy output — leave off unless needed.
+        </p>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={settings.screenReaderMode ?? false}
+            on:change={onScreenReaderModeChange}
+          />
+          Enable xterm screen-reader mode
         </label>
       </div>
 

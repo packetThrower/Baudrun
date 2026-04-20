@@ -108,6 +108,7 @@
       | "del",
   );
   const termCopyOnSelect = $derived($settings.copyOnSelect ?? false);
+  const termScreenReaderMode = $derived($settings.screenReaderMode ?? false);
   const termPasteWarnMultiline = $derived(
     activeProfile?.pasteWarnMultiline ?? currentProfile?.pasteWarnMultiline ?? false,
   );
@@ -564,6 +565,44 @@
     fn();
   }
 
+  // Terminal zoom shortcuts — standard convention across terminals
+  // (iTerm2, Windows Terminal, VS Code). Persisted to Settings.fontSize
+  // so zoom sticks across sessions.
+  const FONT_MIN = 8;
+  const FONT_MAX = 28;
+  const FONT_DEFAULT = 13;
+
+  async function applyFontSize(size: number) {
+    const clamped = Math.max(FONT_MIN, Math.min(FONT_MAX, size));
+    try {
+      const updated = await api.updateSettings({ ...$settings, fontSize: clamped });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Font size update failed: ${e}`;
+    }
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && overflowOpen) {
+      overflowOpen = false;
+      return;
+    }
+    // Cmd on macOS, Ctrl elsewhere. metaKey is Cmd; ctrlKey is Ctrl.
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    // "=" with shift is "+", so accept both "=" and "+" as zoom-in.
+    if (e.key === "=" || e.key === "+") {
+      e.preventDefault();
+      void applyFontSize(($settings.fontSize || FONT_DEFAULT) + 1);
+    } else if (e.key === "-" || e.key === "_") {
+      e.preventDefault();
+      void applyFontSize(($settings.fontSize || FONT_DEFAULT) - 1);
+    } else if (e.key === "0") {
+      e.preventDefault();
+      void applyFontSize(FONT_DEFAULT);
+    }
+  }
+
   async function handleDisconnect() {
     try {
       await api.disconnect();
@@ -663,6 +702,15 @@
     }
   }
 
+  async function handleSetScreenReaderMode(enabled: boolean) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, screenReaderMode: enabled });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Setting update failed: ${e}`;
+    }
+  }
+
   async function handlePickConfigDir() {
     try {
       const dir = await api.pickConfigDirectory();
@@ -729,7 +777,7 @@
 
 <svelte:window
   on:click={() => { if (overflowOpen) overflowOpen = false; }}
-  on:keydown={(e) => { if (e.key === "Escape" && overflowOpen) overflowOpen = false; }}
+  on:keydown={handleWindowKeydown}
 />
 
 <div class="shell">
@@ -761,6 +809,7 @@
           onPickLogDir={handlePickLogDir}
           onSetDetectDrivers={handleSetDetectDrivers}
           onSetCopyOnSelect={handleSetCopyOnSelect}
+          onSetScreenReaderMode={handleSetScreenReaderMode}
           onPickConfigDir={handlePickConfigDir}
           onResetConfigDir={handleResetConfigDir}
           onSetSkin={handleSetSkin}
@@ -891,6 +940,7 @@
           timestamps={termTimestamps}
           backspaceKey={termBackspaceKey}
           copyOnSelect={termCopyOnSelect}
+          screenReaderMode={termScreenReaderMode}
           pasteWarnMultiline={termPasteWarnMultiline}
           pasteSlow={termPasteSlow}
           pasteCharDelayMs={termPasteCharDelayMs}
@@ -1172,6 +1222,10 @@
     50% { opacity: 0.35; }
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    .dot.reconnecting { animation: none; }
+  }
+
   .status {
     padding: 5px 14px;
     height: 30px;
@@ -1206,6 +1260,10 @@
   @keyframes scanning-pulse {
     0%, 100% { opacity: 0.35; }
     50% { opacity: 1; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanning-dot { animation: none; opacity: 1; }
   }
 
   .undo-btn {

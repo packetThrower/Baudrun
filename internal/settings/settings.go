@@ -21,6 +21,10 @@ type Settings struct {
 	// CopyOnSelect copies the xterm selection to the clipboard
 	// automatically when the user releases the mouse, PuTTY-style.
 	CopyOnSelect bool `json:"copyOnSelect,omitempty"`
+	// ScreenReaderMode enables xterm.js's screen-reader mode. When on,
+	// xterm exposes incoming output to assistive tech through a live
+	// DOM region. Small perf cost on heavy output; off by default.
+	ScreenReaderMode bool `json:"screenReaderMode,omitempty"`
 }
 
 type Store struct {
