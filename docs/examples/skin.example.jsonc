@@ -1,0 +1,127 @@
+// ============================================================================
+// Reference skin — every CSS custom property Seriesly reads, grouped and
+// annotated. This is a .jsonc file (JSON with comments) for humans to read;
+// Seriesly's importer only eats strict JSON, so import skin.example.json
+// instead, or strip the // comments from this file before importing.
+//
+// Use as a template: copy, rename, change "id" + "name", tweak the values
+// you care about, save as <id>.json in your skins directory (Settings →
+// Installed Skins → shows the location, or platform default is:
+//   macOS:   ~/Library/Application Support/Seriesly/skins/
+//   Windows: %APPDATA%\Seriesly\skins\
+//   Linux:   $XDG_CONFIG_HOME/Seriesly/skins/
+// ).
+//
+// Variables you don't set fall back to the defaults in frontend/src/style.css.
+// See docs/SKINS.md for the full reference and light/dark caveats.
+// ============================================================================
+
+{
+  // Stable slug. Must be unique; on import, clashes get a -2, -3 suffix.
+  // Omit this and Seriesly will derive one from "name".
+  "id": "graphite-teal-example",
+
+  // Display name shown in the Skin picker. Required.
+  "name": "Graphite Teal (Example)",
+
+  // Optional short description, reserved for a future UI surface.
+  "description": "Neutral dark grays with a teal accent — reference skin with every option set.",
+
+  // false = dark-only; the skin pins dark regardless of the user's
+  // Appearance preference (Auto/Light/Dark). true = the skin has a working
+  // lightVars overlay (omitted in this example).
+  "supportsLight": false,
+
+  // Always-applied variables. Effectively the dark base, since the window's
+  // vibrancy material is pinned dark on macOS. Every key must start with --.
+  "vars": {
+
+    // ─── Typography ────────────────────────────────────────────────────
+    // Font stacks use normal CSS syntax. Fall-throughs cover missing fonts
+    // on the user's system.
+    "--font-ui":          "-apple-system, BlinkMacSystemFont, \"Inter\", system-ui, sans-serif",
+    "--font-mono":        "\"JetBrains Mono\", \"SF Mono\", Menlo, ui-monospace, monospace",
+    "--font-size-base":   "13px",   // UI body
+    "--font-size-label":  "11px",   // Form labels
+    "--font-size-section":"15px",   // Section headers
+    "--font-size-h1":     "24px",   // Page titles
+    "--label-transform":  "uppercase",   // "uppercase" or "none"
+    "--label-letter-spacing": "0.04em",
+    "--label-weight":     "500",
+
+    // ─── Surfaces (backgrounds) ────────────────────────────────────────
+    "--bg-window":      "rgba(20, 22, 26, 0)",     // Root window fill; usually transparent
+    "--bg-sidebar":     "rgba(255, 255, 255, 0.03)", // Left profile pane
+    "--bg-main":        "rgba(22, 26, 30, 0.7)",   // Main content pane
+    "--bg-panel":       "rgba(255, 255, 255, 0.05)", // Cards / sub-panels inside sections
+    "--bg-hover":       "rgba(255, 255, 255, 0.07)", // Hover state on interactive rows
+    "--bg-active":      "rgba(78, 184, 172, 0.22)",  // Selected / active item highlight
+    "--bg-input":       "rgba(255, 255, 255, 0.06)", // Text + select inputs
+    "--bg-input-focus": "rgba(255, 255, 255, 0.10)", // Focused input
+    "--bg-terminal":    "#16191e",                   // Terminal viewport fallback (themes usually win)
+
+    // Native <select> popups — Chromium renders these using the OS.
+    "--option-bg":       "#22272e",
+    "--option-fg":       "#d7dde6",
+    "--option-group-fg": "#8a94a0",
+
+    // ─── Foreground (text) ─────────────────────────────────────────────
+    "--fg-primary":   "rgba(255, 255, 255, 0.92)", // Body text, strong labels
+    "--fg-secondary": "rgba(255, 255, 255, 0.62)", // Section hints, secondary labels
+    "--fg-tertiary":  "rgba(255, 255, 255, 0.40)", // Meta info (timestamps, footnotes)
+
+    // ─── Borders ───────────────────────────────────────────────────────
+    "--border-subtle":     "rgba(255, 255, 255, 0.07)", // Section dividers, faint lines
+    "--border-strong":     "rgba(255, 255, 255, 0.14)", // Emphasized borders
+    "--input-border-idle": "transparent",                // Input outline when unfocused
+    "--panel-border":      "none",                       // Full border on cards ("1px solid ..." or "none")
+    "--sidebar-divider":   "1px solid rgba(255, 255, 255, 0.08)",
+
+    // ─── Semantic colors ───────────────────────────────────────────────
+    "--accent":       "#4eb8ac",   // Primary action, selected text
+    "--accent-hover": "#62ccc0",
+    "--danger":       "#ff6b6b",   // Errors, destructive actions
+    "--success":      "#4ecdc4",   // OK states, connected dot
+    "--warn":         "#f5c572",   // Warnings, reconnecting pulse
+
+    // ─── Radii + elevation ─────────────────────────────────────────────
+    "--radius-sm":        "4px",   // Small inputs, swatches
+    "--radius-md":        "6px",   // Buttons, cards
+    "--radius-lg":        "10px",  // Large panels, modals
+    "--shadow-panel":     "none",  // Card/panel shadow
+    "--shadow-floating":  "0 8px 24px rgba(0, 0, 0, 0.35)", // Modals, dropdowns
+    "--blur-strength":    "0px",   // backdrop-filter: blur(var(--blur-strength))
+
+    // ─── Layout (flush-edge vs. floating-bubble) ───────────────────────
+    // Set all four to non-zero for the floating-bubble look (sidebar + main
+    // become rounded cards with a gap between them showing window vibrancy).
+    // Leave zero / flat values for the default flush-edge layout.
+    "--shell-padding":   "0",     // Outer padding around sidebar + main
+    "--shell-gap":       "0",     // Gap between sidebar and main
+    "--panel-radius":    "0",     // Corner radius on sidebar + main
+    "--panel-shadow":    "none",  // Drop shadow on sidebar + main
+    "--titlebar-height": "38px",  // Space reserved for macOS traffic lights
+
+    // ─── Scrollbars ────────────────────────────────────────────────────
+    "--scrollbar-thumb":       "rgba(255, 255, 255, 0.16)",
+    "--scrollbar-thumb-hover": "rgba(255, 255, 255, 0.28)",
+
+    // ─── Decorative overlay (body::after) ──────────────────────────────
+    // Any valid CSS `background` value. Patterns, images, gradients.
+    // Used by CRT for scanlines, Blueprint for grid lines. Unset = none.
+    // "--overlay": "repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,0.1) 2px 3px)"
+  }
+
+  // If you want a light-mode overlay, set supportsLight: true above and
+  // add a lightVars block here. Light skins on macOS need opaque surfaces
+  // because the window's vibrancy material is pinned dark — translucent
+  // light CSS on dark vibrancy reads as muddy gray. See docs/SKINS.md.
+  //
+  // "lightVars": {
+  //   "--bg-main":        "#f5f5f7",
+  //   "--bg-sidebar":     "#ececee",
+  //   "--bg-panel":       "#ffffff",
+  //   "--fg-primary":     "rgba(0, 0, 0, 0.88)",
+  //   ...
+  // }
+}

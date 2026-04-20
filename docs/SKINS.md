@@ -191,6 +191,23 @@ for those regardless of the user's Appearance preference.
    `darkVars` overlays are honored. No sepia, high-contrast, etc.
    beyond what one of those can express.
 
+## Annotated reference skin
+
+For a complete working skin with every option set and a per-field
+comment on what it does, see:
+
+- [`docs/examples/skin.example.jsonc`](examples/skin.example.jsonc) —
+  annotated version, for reading and learning. Not directly
+  importable (Seriesly's JSON parser doesn't accept comments).
+- [`docs/examples/skin.example.json`](examples/skin.example.json) —
+  stripped version with the same values, importable via
+  **Settings → Installed Skins → Import skin…** or by dropping into
+  the skins directory.
+
+The annotated file is the recommended starting point: read it,
+copy the stripped version, rename the `id` + `name`, and tweak
+the values you care about.
+
 ## Example: minimal complete skin
 
 A solid-color dark skin with a cyan accent. Save as `ocean.json` in

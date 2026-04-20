@@ -1,0 +1,30 @@
+{
+  "id": "graphite-teal-example",
+  "name": "Graphite Teal (Example)",
+  "source": "user",
+
+  "background": "#16191e",
+  "foreground": "#d7dde6",
+  "cursor": "#4eb8ac",
+  "cursorAccent": "#16191e",
+  "selection": "#1f3a3a",
+  "selectionForeground": "#ffffff",
+
+  "black": "#16191e",
+  "red": "#e46964",
+  "green": "#87c792",
+  "yellow": "#e5c07b",
+  "blue": "#6eb1c4",
+  "magenta": "#c678dd",
+  "cyan": "#4eb8ac",
+  "white": "#d7dde6",
+
+  "brightBlack": "#5c6370",
+  "brightRed": "#ff8382",
+  "brightGreen": "#a2e5a2",
+  "brightYellow": "#ffd68f",
+  "brightBlue": "#8fc5d8",
+  "brightMagenta": "#e0a4f5",
+  "brightCyan": "#62ccc0",
+  "brightWhite": "#ffffff"
+}
