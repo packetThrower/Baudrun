@@ -63,6 +63,7 @@ export const api = {
   getDefaultConfigDirectory: App.GetDefaultConfigDirectory,
   pickConfigDirectory: App.PickConfigDirectory,
   setConfigDirectory: App.SetConfigDirectory,
+  openPath: App.OpenPath,
 
   getControlLines: App.GetControlLines,
 

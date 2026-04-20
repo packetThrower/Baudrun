@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
-  import type { Theme, Settings, Skin } from "./api";
+  import { api, type Theme, type Settings, type Skin } from "./api";
   import PreviewTerminal from "./PreviewTerminal.svelte";
 
   export let themes: Theme[] = [];
@@ -76,6 +76,17 @@
 
   function onCopyOnSelectChange(e: Event) {
     dispatch("setCopyOnSelect", (e.target as HTMLInputElement).checked);
+  }
+
+  async function openInFileManager(path: string) {
+    if (!path) return;
+    try {
+      await api.openPath(path);
+    } catch {
+      // Swallow — the Open button is a nicety; errors would only
+      // surface from malformed paths that the user can see in the
+      // adjacent text field.
+    }
   }
 
   function onSkinChange(e: Event) {
@@ -268,6 +279,10 @@
             placeholder={defaultLogDir}
             on:change={onLogDirChange}
           />
+          <button
+            on:click={() => openInFileManager(settings.logDir || defaultLogDir)}
+            title="Open this folder in Finder / Explorer"
+          >Open</button>
           <button on:click={() => dispatch("pickLogDir")}>Choose…</button>
           {#if settings.logDir}
             <button on:click={() => dispatch("setLogDir", "")} title="Reset to default">
@@ -321,6 +336,10 @@
         </p>
         <div class="log-row">
           <input type="text" readonly value={configDir} />
+          <button
+            on:click={() => openInFileManager(configDir)}
+            title="Open this folder in Finder / Explorer"
+          >Open</button>
           <button on:click={() => dispatch("pickConfigDir")}>Choose…</button>
           {#if configIsCustom}
             <button on:click={() => dispatch("resetConfigDir")} title="Reset to default">
