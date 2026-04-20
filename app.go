@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"Seriesly/internal/appdata"
+	"Seriesly/internal/openpath"
 	"Seriesly/internal/profiles"
 	sserial "Seriesly/internal/serial"
 	"Seriesly/internal/settings"
@@ -264,6 +265,13 @@ func (a *App) PickConfigDirectory() (string, error) {
 // on next launch.
 func (a *App) SetConfigDirectory(dir string) error {
 	return appdata.WriteOverride(dir)
+}
+
+// OpenPath opens path in the OS's default file manager — Finder on
+// macOS, Explorer on Windows, the XDG default on Linux. Used by the
+// Settings UI's "Open" buttons next to directory paths.
+func (a *App) OpenPath(path string) error {
+	return openpath.Open(path)
 }
 
 // DefaultLogDirectory returns the path session logs land in when no

@@ -86,6 +86,10 @@ export function ListThemes() {
   return window['go']['main']['App']['ListThemes']();
 }
 
+export function OpenPath(arg1) {
+  return window['go']['main']['App']['OpenPath'](arg1);
+}
+
 export function PickConfigDirectory() {
   return window['go']['main']['App']['PickConfigDirectory']();
 }

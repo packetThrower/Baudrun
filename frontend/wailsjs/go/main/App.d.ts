@@ -49,6 +49,8 @@ export function ListSkins():Promise<Array<skins.Skin>>;
 
 export function ListThemes():Promise<Array<themes.Theme>>;
 
+export function OpenPath(arg1:string):Promise<void>;
+
 export function PickConfigDirectory():Promise<string>;
 
 export function PickLogDirectory():Promise<string>;
