@@ -37,75 +37,106 @@
   import { session } from "./stores/session";
   import { portScanning } from "./stores/scanning";
 
-  let draft: Profile | null = null;
-  let terminalRef: Terminal | null = null;
-  let statusMsg = "";
+  let draft = $state<Profile | null>(null);
+  let terminalRef = $state<Terminal | null>(null);
+  let statusMsg = $state("");
   let offDisconnect: (() => void) | null = null;
   let offReconnecting: (() => void) | null = null;
   let offReconnected: (() => void) | null = null;
-  let settingsOpen = false;
-  let suspended = false;
-  let ctrlDTR = true;
-  let ctrlRTS = true;
+  let settingsOpen = $state(false);
+  let suspended = $state(false);
+  let ctrlDTR = $state(true);
+  let ctrlRTS = $state(true);
 
-  $: selectedExisting = $profiles.find((p) => p.id === $selectedProfileID) ?? null;
-  $: currentProfile = draft ?? selectedExisting;
-  $: isNew = !!draft;
-  $: activeProfileID =
+  const selectedExisting = $derived(
+    $profiles.find((p) => p.id === $selectedProfileID) ?? null,
+  );
+  const currentProfile = $derived(draft ?? selectedExisting);
+  const isNew = $derived(!!draft);
+  const activeProfileID = $derived(
     $session.status === "connected" ||
-    $session.status === "connecting" ||
-    $session.status === "reconnecting"
+      $session.status === "connecting" ||
+      $session.status === "reconnecting"
       ? $session.profileID
-      : "";
-  $: isConnected =
+      : "",
+  );
+  const isConnected = $derived(
     $session.status === "connected" &&
-    currentProfile?.id === $session.profileID;
-  $: isConnecting =
+      currentProfile?.id === $session.profileID,
+  );
+  const isConnecting = $derived(
     $session.status === "connecting" &&
-    currentProfile?.id === $session.profileID;
-  $: isReconnecting =
+      currentProfile?.id === $session.profileID,
+  );
+  const isReconnecting = $derived(
     $session.status === "reconnecting" &&
-    currentProfile?.id === $session.profileID;
+      currentProfile?.id === $session.profileID,
+  );
   // Keep the terminal visible during a reconnect so scrollback survives.
-  $: viewingTerminal = (isConnected || isReconnecting) && !suspended;
-  $: hasSession =
+  const viewingTerminal = $derived(
+    (isConnected || isReconnecting) && !suspended,
+  );
+  const hasSession = $derived(
     $session.status === "connected" ||
-    $session.status === "connecting" ||
-    $session.status === "reconnecting";
-  $: activeProfile = $profiles.find((p) => p.id === activeProfileID) ?? null;
-  $: termLineEnding = (activeProfile?.lineEnding ?? currentProfile?.lineEnding ?? "crlf") as
-    | "cr"
-    | "lf"
-    | "crlf";
-  $: termLocalEcho = activeProfile?.localEcho ?? currentProfile?.localEcho ?? false;
-  $: termHighlight = activeProfile?.highlight ?? currentProfile?.highlight ?? true;
-  $: termHexView = activeProfile?.hexView ?? currentProfile?.hexView ?? false;
-  $: termTimestamps = activeProfile?.timestamps ?? currentProfile?.timestamps ?? false;
-  $: termBackspaceKey = ((activeProfile?.backspaceKey || currentProfile?.backspaceKey) ||
-    "del") as "bs" | "del";
-  $: termCopyOnSelect = $settings.copyOnSelect ?? false;
-  $: termPasteWarnMultiline =
-    activeProfile?.pasteWarnMultiline ?? currentProfile?.pasteWarnMultiline ?? false;
-  $: termPasteSlow = activeProfile?.pasteSlow ?? currentProfile?.pasteSlow ?? false;
-  $: termPasteCharDelayMs =
-    activeProfile?.pasteCharDelayMs ?? currentProfile?.pasteCharDelayMs ?? 10;
+      $session.status === "connecting" ||
+      $session.status === "reconnecting",
+  );
+  const activeProfile = $derived(
+    $profiles.find((p) => p.id === activeProfileID) ?? null,
+  );
+  const termLineEnding = $derived(
+    (activeProfile?.lineEnding ?? currentProfile?.lineEnding ?? "crlf") as
+      | "cr"
+      | "lf"
+      | "crlf",
+  );
+  const termLocalEcho = $derived(
+    activeProfile?.localEcho ?? currentProfile?.localEcho ?? false,
+  );
+  const termHighlight = $derived(
+    activeProfile?.highlight ?? currentProfile?.highlight ?? true,
+  );
+  const termHexView = $derived(
+    activeProfile?.hexView ?? currentProfile?.hexView ?? false,
+  );
+  const termTimestamps = $derived(
+    activeProfile?.timestamps ?? currentProfile?.timestamps ?? false,
+  );
+  const termBackspaceKey = $derived(
+    ((activeProfile?.backspaceKey || currentProfile?.backspaceKey) || "del") as
+      | "bs"
+      | "del",
+  );
+  const termCopyOnSelect = $derived($settings.copyOnSelect ?? false);
+  const termPasteWarnMultiline = $derived(
+    activeProfile?.pasteWarnMultiline ?? currentProfile?.pasteWarnMultiline ?? false,
+  );
+  const termPasteSlow = $derived(
+    activeProfile?.pasteSlow ?? currentProfile?.pasteSlow ?? false,
+  );
+  const termPasteCharDelayMs = $derived(
+    activeProfile?.pasteCharDelayMs ?? currentProfile?.pasteCharDelayMs ?? 10,
+  );
 
-  $: effectiveThemeID =
+  const effectiveThemeID = $derived(
     (activeProfile?.themeId || currentProfile?.themeId) ||
-    $settings.defaultThemeId ||
-    "seriesly";
-  $: effectiveTheme = resolveTheme(effectiveThemeID, $themes);
-  $: termFontSize = $settings.fontSize || 13;
+      $settings.defaultThemeId ||
+      "seriesly",
+  );
+  const effectiveTheme = $derived(resolveTheme(effectiveThemeID, $themes));
+  const termFontSize = $derived($settings.fontSize || 13);
 
   // Re-apply skin whenever the active selection, loaded list, appearance
   // preference, or system color scheme changes. The window's own NSAppearance
   // is pinned dark at launch (main.go) because Wails v2.12's runtime theme
   // setters are empty stubs on macOS — only CSS swaps live.
-  $: applySkin(
-    resolveSkin($activeSkinID, $skins),
-    $appearance,
-    $systemIsDark,
-  );
+  $effect(() => {
+    applySkin(
+      resolveSkin($activeSkinID, $skins),
+      $appearance,
+      $systemIsDark,
+    );
+  });
 
   function resolveTheme(id: string, all: Theme[]): Theme | undefined {
     return (
@@ -115,9 +146,9 @@
     );
   }
 
-  let defaultLogDir = "";
-  let configDir = "";
-  let defaultConfigDir = "";
+  let defaultLogDir = $state("");
+  let configDir = $state("");
+  let defaultConfigDir = $state("");
 
   onMount(async () => {
     // Svelte has no formal error boundaries; without these two
@@ -310,9 +341,9 @@
     }
   }
 
-  let hexSendOpen = false;
-  let hexInput = "";
-  let hexError = "";
+  let hexSendOpen = $state(false);
+  let hexInput = $state("");
+  let hexError = $state("");
 
   function openHexSend() {
     hexSendOpen = true;
@@ -373,10 +404,10 @@
     | { status: "done"; filename: string }
     | { status: "error"; reason: string };
 
-  let transferOpen = false;
-  let transferProtocol: TransferProtocol = "ymodem";
-  let transferPath = "";
-  let transferState: TransferState = { status: "picking" };
+  let transferOpen = $state(false);
+  let transferProtocol = $state<TransferProtocol>("ymodem");
+  let transferPath = $state("");
+  let transferState = $state<TransferState>({ status: "picking" });
   let offTransferProgress: (() => void) | null = null;
   let offTransferComplete: (() => void) | null = null;
   let offTransferError: (() => void) | null = null;
@@ -440,7 +471,7 @@
   // Hex, Send File) so the session header stays compact. DTR/RTS
   // stay visible because their pill shows live line state; moving
   // them to a menu hides that information.
-  let overflowOpen = false;
+  let overflowOpen = $state(false);
 
   function toggleOverflow() {
     overflowOpen = !overflowOpen;
@@ -629,9 +660,9 @@
     selectedID={$selectedProfileID}
     activeID={activeProfileID}
     {settingsOpen}
-    on:select={(e) => handleSelect(e.detail)}
-    on:create={handleCreate}
-    on:settings={handleToggleSettings}
+    onSelect={handleSelect}
+    onCreate={handleCreate}
+    onSettings={handleToggleSettings}
   />
 
   <main class="main">
@@ -642,22 +673,22 @@
           skins={$skins}
           settings={$settings}
           {defaultLogDir}
-          on:setDefault={(e) => handleSetDefault(e.detail)}
-          on:import={handleImportTheme}
-          on:delete={(e) => handleDeleteTheme(e.detail)}
-          on:setFontSize={(e) => handleSetFontSize(e.detail)}
-          on:setLogDir={(e) => handleSetLogDir(e.detail)}
-          on:pickLogDir={handlePickLogDir}
-          on:setDetectDrivers={(e) => handleSetDetectDrivers(e.detail)}
-          on:setCopyOnSelect={(e) => handleSetCopyOnSelect(e.detail)}
-          on:pickConfigDir={handlePickConfigDir}
-          on:resetConfigDir={handleResetConfigDir}
           {configDir}
           {defaultConfigDir}
-          on:setSkin={(e) => handleSetSkin(e.detail)}
-          on:importSkin={handleImportSkin}
-          on:deleteSkin={(e) => handleDeleteSkin(e.detail)}
-          on:setAppearance={(e) => handleSetAppearance(e.detail)}
+          onSetDefault={handleSetDefault}
+          onImport={handleImportTheme}
+          onDelete={handleDeleteTheme}
+          onSetFontSize={handleSetFontSize}
+          onSetLogDir={handleSetLogDir}
+          onPickLogDir={handlePickLogDir}
+          onSetDetectDrivers={handleSetDetectDrivers}
+          onSetCopyOnSelect={handleSetCopyOnSelect}
+          onPickConfigDir={handlePickConfigDir}
+          onResetConfigDir={handleResetConfigDir}
+          onSetSkin={handleSetSkin}
+          onImportSkin={handleImportSkin}
+          onDeleteSkin={handleDeleteSkin}
+          onSetAppearance={handleSetAppearance}
         />
       {:else if !currentProfile}
         <div class="titlebar" style="--wails-draggable: drag;"></div>
@@ -680,11 +711,11 @@
           themes={$themes}
           defaultThemeID={$settings.defaultThemeId}
           detectDrivers={!$settings.disableDriverDetection}
-          on:save={(e) => handleSave(e.detail)}
-          on:delete={(e) => handleDelete(e.detail)}
-          on:connect={handleConnect}
-          on:disconnect={handleDisconnect}
-          on:resume={handleResume}
+          onSave={handleSave}
+          onDelete={handleDelete}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnect}
+          onResume={handleResume}
         />
       {/if}
     {/if}

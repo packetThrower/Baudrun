@@ -9,26 +9,43 @@
   import { TerminalHighlighter } from "./highlight";
   import { HexFormatter } from "./hexdump";
 
-  export let lineEnding: "cr" | "lf" | "crlf" = "crlf";
-  export let localEcho: boolean = false;
-  export let theme: Theme | undefined = undefined;
-  export let fontSize: number = 13;
-  export let highlight: boolean = true;
-  export let hexView: boolean = false;
-  export let timestamps: boolean = false;
-  // "del" (0x7f) matches VT100 / xterm convention and is what most modern
-  // devices expect. "bs" (0x08) is what some older gear (e.g. some Cisco
-  // IOS releases, Foundry) wants; wrong setting shows as ^H echoed on screen.
-  export let backspaceKey: "bs" | "del" = "del";
-  export let copyOnSelect: boolean = false;
-  // Paste safety.
-  // pasteWarnMultiline prompts before sending text that crosses a line.
-  // pasteSlow inserts pasteCharDelayMs between characters so UART
-  // buffers on underpowered devices can drain.
-  export let pasteWarnMultiline: boolean = false;
-  export let pasteSlow: boolean = false;
-  export let pasteCharDelayMs: number = 10;
-  export let onStatus: (msg: string) => void = () => {};
+  type Props = {
+    lineEnding?: "cr" | "lf" | "crlf";
+    localEcho?: boolean;
+    theme?: Theme | undefined;
+    fontSize?: number;
+    highlight?: boolean;
+    hexView?: boolean;
+    timestamps?: boolean;
+    // "del" (0x7f) matches VT100 / xterm convention and is what most
+    // modern devices expect. "bs" (0x08) is what some older gear (some
+    // Cisco IOS releases, Foundry) wants; wrong setting shows as ^H.
+    backspaceKey?: "bs" | "del";
+    copyOnSelect?: boolean;
+    // pasteWarnMultiline prompts before sending text that crosses a
+    // line. pasteSlow inserts pasteCharDelayMs between characters so
+    // UART buffers on underpowered devices can drain.
+    pasteWarnMultiline?: boolean;
+    pasteSlow?: boolean;
+    pasteCharDelayMs?: number;
+    onStatus?: (msg: string) => void;
+  };
+
+  let {
+    lineEnding = "crlf",
+    localEcho = false,
+    theme = undefined,
+    fontSize = 13,
+    highlight = true,
+    hexView = false,
+    timestamps = false,
+    backspaceKey = "del",
+    copyOnSelect = false,
+    pasteWarnMultiline = false,
+    pasteSlow = false,
+    pasteCharDelayMs = 10,
+    onStatus = () => {},
+  }: Props = $props();
 
   let hostEl: HTMLDivElement;
   let term: Terminal | null = null;
@@ -39,9 +56,15 @@
   let hexFormatter: HexFormatter | null = null;
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  $: if (highlighter && !highlight) highlighter.reset();
-  $: if (hexFormatter && !hexView) hexFormatter.reset();
-  $: if (highlighter && hexView) highlighter.reset();
+  $effect(() => {
+    if (highlighter && !highlight) highlighter.reset();
+  });
+  $effect(() => {
+    if (hexFormatter && !hexView) hexFormatter.reset();
+  });
+  $effect(() => {
+    if (highlighter && hexView) highlighter.reset();
+  });
 
   function eolBytes(): Uint8Array {
     switch (lineEnding) {
@@ -143,13 +166,17 @@
     brightCyan: "#a6ecec", brightWhite: "#ffffff",
   };
 
-  $: if (term && theme) {
-    term.options.theme = themeToXterm(theme);
-  }
-  $: if (term && fontSize && fontSize > 0) {
-    term.options.fontSize = fontSize;
-    try { fit?.fit(); } catch {}
-  }
+  $effect(() => {
+    if (term && theme) {
+      term.options.theme = themeToXterm(theme);
+    }
+  });
+  $effect(() => {
+    if (term && fontSize && fontSize > 0) {
+      term.options.fontSize = fontSize;
+      try { fit?.fit(); } catch {}
+    }
+  });
 
   onMount(() => {
     term = new Terminal({

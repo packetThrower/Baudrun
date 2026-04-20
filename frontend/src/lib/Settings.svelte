@@ -1,13 +1,54 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
   import { api, type Theme, type Settings, type Skin } from "./api";
   import PreviewTerminal from "./PreviewTerminal.svelte";
 
-  export let themes: Theme[] = [];
-  export let skins: Skin[] = [];
-  export let settings: Settings;
+  type Props = {
+    themes?: Theme[];
+    skins?: Skin[];
+    settings: Settings;
+    configDir?: string;
+    defaultConfigDir?: string;
+    defaultLogDir?: string;
+    onSetDefault: (id: string) => void;
+    onImport: () => void;
+    onDelete: (id: string) => void;
+    onSetFontSize: (size: number) => void;
+    onSetLogDir: (dir: string) => void;
+    onPickLogDir: () => void;
+    onSetDetectDrivers: (enabled: boolean) => void;
+    onSetCopyOnSelect: (enabled: boolean) => void;
+    onPickConfigDir: () => void;
+    onResetConfigDir: () => void;
+    onSetSkin: (id: string) => void;
+    onImportSkin: () => void;
+    onDeleteSkin: (id: string) => void;
+    onSetAppearance: (mode: "auto" | "light" | "dark") => void;
+  };
 
-  let previewTheme: Theme | null = null;
+  let {
+    themes = [],
+    skins = [],
+    settings,
+    configDir = "",
+    defaultConfigDir = "",
+    defaultLogDir = "",
+    onSetDefault,
+    onImport,
+    onDelete,
+    onSetFontSize,
+    onSetLogDir,
+    onPickLogDir,
+    onSetDetectDrivers,
+    onSetCopyOnSelect,
+    onPickConfigDir,
+    onResetConfigDir,
+    onSetSkin,
+    onImportSkin,
+    onDeleteSkin,
+    onSetAppearance,
+  }: Props = $props();
+
+  let previewTheme = $state<Theme | null>(null);
 
   function openPreview(t: Theme) {
     previewTheme = t;
@@ -21,38 +62,20 @@
     if (e.key === "Escape") closePreview();
   }
 
-  const dispatch = createEventDispatcher<{
-    setDefault: string;
-    import: void;
-    delete: string;
-    setFontSize: number;
-    setLogDir: string;
-    pickLogDir: void;
-    setDetectDrivers: boolean;
-    setCopyOnSelect: boolean;
-    pickConfigDir: void;
-    resetConfigDir: void;
-    setSkin: string;
-    importSkin: void;
-    deleteSkin: string;
-    setAppearance: "auto" | "light" | "dark";
-  }>();
+  const configIsCustom = $derived(
+    !!configDir && !!defaultConfigDir && configDir !== defaultConfigDir,
+  );
 
-  export let configDir: string = "";
-  export let defaultConfigDir: string = "";
-  $: configIsCustom =
-    !!configDir && !!defaultConfigDir && configDir !== defaultConfigDir;
-
-  let importing = false;
-  let importError = "";
-  let importingSkin = false;
-  let skinImportError = "";
+  let importing = $state(false);
+  let importError = $state("");
+  let importingSkin = $state(false);
+  let skinImportError = $state("");
 
   async function handleImport() {
     importing = true;
     importError = "";
     try {
-      dispatch("import");
+      onImport();
     } catch (e) {
       importError = String(e);
     } finally {
@@ -64,7 +87,7 @@
     importingSkin = true;
     skinImportError = "";
     try {
-      dispatch("importSkin");
+      onImportSkin();
     } catch (e) {
       skinImportError = String(e);
     } finally {
@@ -73,23 +96,23 @@
   }
 
   function onDefaultChange(e: Event) {
-    dispatch("setDefault", (e.target as HTMLSelectElement).value);
+    onSetDefault((e.target as HTMLSelectElement).value);
   }
 
   function onFontSizeChange(e: Event) {
-    dispatch("setFontSize", Number((e.target as HTMLInputElement).value));
+    onSetFontSize(Number((e.target as HTMLInputElement).value));
   }
 
   function onLogDirChange(e: Event) {
-    dispatch("setLogDir", (e.target as HTMLInputElement).value.trim());
+    onSetLogDir((e.target as HTMLInputElement).value.trim());
   }
 
   function onDetectDriversChange(e: Event) {
-    dispatch("setDetectDrivers", (e.target as HTMLInputElement).checked);
+    onSetDetectDrivers((e.target as HTMLInputElement).checked);
   }
 
   function onCopyOnSelectChange(e: Event) {
-    dispatch("setCopyOnSelect", (e.target as HTMLInputElement).checked);
+    onSetCopyOnSelect((e.target as HTMLInputElement).checked);
   }
 
   async function openInFileManager(path: string) {
@@ -104,20 +127,18 @@
   }
 
   function onSkinChange(e: Event) {
-    dispatch("setSkin", (e.target as HTMLSelectElement).value);
+    onSetSkin((e.target as HTMLSelectElement).value);
   }
 
   function onAppearanceChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
     if (v === "auto" || v === "light" || v === "dark") {
-      dispatch("setAppearance", v);
+      onSetAppearance(v);
     }
   }
 
-  export let defaultLogDir: string = "";
-
-  $: builtinThemes = themes.filter((t) => t.source === "builtin");
-  $: userThemes = themes.filter((t) => t.source === "user");
+  const builtinThemes = $derived(themes.filter((t) => t.source === "builtin"));
+  const userThemes = $derived(themes.filter((t) => t.source === "user"));
 </script>
 
 <div class="settings">
@@ -201,7 +222,7 @@
             </div>
             <button
               class="danger small"
-              on:click={() => dispatch("deleteSkin", s.id)}
+              on:click={() => onDeleteSkin(s.id)}
               title="Remove skin"
               aria-label="Remove skin"
             >
@@ -302,7 +323,7 @@
           {#if t.source === "user"}
             <button
               class="danger small"
-              on:click={() => dispatch("delete", t.id)}
+              on:click={() => onDelete(t.id)}
               title="Delete theme"
               aria-label="Delete theme"
             >
@@ -338,9 +359,9 @@
             on:click={() => openInFileManager(settings.logDir || defaultLogDir)}
             title="Open this folder in Finder / Explorer"
           >Open</button>
-          <button on:click={() => dispatch("pickLogDir")}>Choose…</button>
+          <button on:click={onPickLogDir}>Choose…</button>
           {#if settings.logDir}
-            <button on:click={() => dispatch("setLogDir", "")} title="Reset to default">
+            <button on:click={() => onSetLogDir("")} title="Reset to default">
               Reset
             </button>
           {/if}
@@ -395,9 +416,9 @@
             on:click={() => openInFileManager(configDir)}
             title="Open this folder in Finder / Explorer"
           >Open</button>
-          <button on:click={() => dispatch("pickConfigDir")}>Choose…</button>
+          <button on:click={onPickConfigDir}>Choose…</button>
           {#if configIsCustom}
-            <button on:click={() => dispatch("resetConfigDir")} title="Reset to default">
+            <button on:click={onResetConfigDir} title="Reset to default">
               Reset
             </button>
           {/if}
