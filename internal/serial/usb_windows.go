@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 
+	"Seriesly/internal/winconsole"
+
 	"go.bug.st/serial/enumerator"
 )
 
@@ -33,6 +35,7 @@ func DetectMissingDrivers() ([]USBSerialCandidate, error) {
 		`| ForEach-Object { $_ | Select-Object InstanceId,FriendlyName,Manufacturer | ConvertTo-Json -Compress }`
 
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	winconsole.Hide(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("Get-PnpDevice: %w", err)
