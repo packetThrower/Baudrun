@@ -168,19 +168,19 @@
     brightCyan: "#a6ecec", brightWhite: "#ffffff",
   };
 
-  // Guard against spurious theme-effect re-runs: the prop binding can
-  // re-emit even when the underlying theme didn't actually change,
-  // and term.refresh() is expensive enough that doing it per-keystroke
-  // produces visible typing lag. Track the last applied theme by id
-  // and skip work if nothing's different.
+  // Theme application. The prop-driven $effect alone has proven
+  // unreliable for an already-mounted xterm instance — updates
+  // don't always propagate to the runtime. Expose applyTheme as an
+  // exported function too so App.svelte can push theme changes
+  // imperatively via the bind:this ref. Both paths land here; the
+  // lastAppliedThemeId guard keeps it idempotent.
   let lastAppliedThemeId: string | undefined;
 
   function applyTheme(t: Theme | undefined) {
     if (!term || !t || t.id === lastAppliedThemeId) return;
     term.options.theme = themeToXterm(t);
-    // xterm caches glyph rendering per-color; options.theme picks up
-    // for newly-drawn glyphs (cursor, selection) but existing text
-    // stays in the old palette until explicitly refreshed.
+    // options.theme updates cursor + selection chrome; refresh is
+    // required to repaint already-drawn glyphs in the new palette.
     try {
       term.refresh(0, term.rows - 1);
     } catch {}
@@ -190,11 +190,35 @@
   $effect(() => {
     applyTheme(theme);
   });
+
+  export function setTheme(t: Theme | undefined) {
+    applyTheme(t);
+  }
+  // Font size live update. xterm v6's options.fontSize setter
+  // updates the stored value but fit.fit() won't reflow unless the
+  // internal char-size cache has been refreshed. proposeDimensions()
+  // reads cached cell metrics, so without a re-measure nothing
+  // appears to change. Reaching into xterm's private _charSizeService
+  // to trigger `measure()` is the only reliable path short of
+  // disposing and recreating the whole Terminal.
+  let lastAppliedFontSize: number | undefined;
   $effect(() => {
-    if (term && fontSize && fontSize > 0) {
-      term.options.fontSize = fontSize;
-      try { fit?.fit(); } catch {}
-    }
+    if (!term || !fontSize || fontSize <= 0) return;
+    if (fontSize === lastAppliedFontSize) return;
+    lastAppliedFontSize = fontSize;
+    term.options.fontSize = fontSize;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const core = (term as any)._core;
+      core?._charSizeService?.measure?.();
+    } catch {}
+    requestAnimationFrame(() => {
+      if (!term) return;
+      try {
+        fit?.fit();
+        term.refresh(0, term.rows - 1);
+      } catch {}
+    });
   });
   $effect(() => {
     if (term) {
@@ -202,9 +226,6 @@
     }
   });
 
-  export function setTheme(t: Theme | undefined) {
-    applyTheme(t);
-  }
 
   onMount(() => {
     term = new Terminal({
