@@ -122,12 +122,23 @@ textarea {
   background: var(--bg-input);
   border: 1px solid var(--input-border-idle);
   border-radius: var(--radius-md);
-  padding: 5px 8px;
+  /* Explicit height + box-sizing so <input type="number"> (with its
+     native spinner affordance) lines up with <select> at the same
+     visual height. Default intrinsic sizing drifts by a few px. */
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  line-height: 1.4;
   outline: none;
   transition: background 0.12s, border-color 0.12s;
   /* Force native UI controls (dropdown popups, spinners) into dark mode on
      Windows WebView2 / Chromium, which otherwise renders them light. */
   color-scheme: dark;
+}
+
+textarea {
+  height: auto;
+  padding: 6px 8px;
 }
 
 option,
