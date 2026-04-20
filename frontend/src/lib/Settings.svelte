@@ -30,11 +30,18 @@
     pickLogDir: void;
     setDetectDrivers: boolean;
     setCopyOnSelect: boolean;
+    pickConfigDir: void;
+    resetConfigDir: void;
     setSkin: string;
     importSkin: void;
     deleteSkin: string;
     setAppearance: "auto" | "light" | "dark";
   }>();
+
+  export let configDir: string = "";
+  export let defaultConfigDir: string = "";
+  $: configIsCustom =
+    !!configDir && !!defaultConfigDir && configDir !== defaultConfigDir;
 
   let importing = false;
   let importError = "";
@@ -301,6 +308,31 @@
           />
           Copy terminal selection to clipboard automatically
         </label>
+      </div>
+
+      <div class="sub">
+        <h4>Config Directory</h4>
+        <p class="section-hint">
+          Where profiles, themes, skins, and settings are stored.
+          Relocate to keep Seriesly's config alongside your other
+          dotfiles. Takes effect on next app launch. <strong>Existing
+          files are not moved</strong> — copy them over yourself to
+          preserve profiles.
+        </p>
+        <div class="log-row">
+          <input type="text" readonly value={configDir} />
+          <button on:click={() => dispatch("pickConfigDir")}>Choose…</button>
+          {#if configIsCustom}
+            <button on:click={() => dispatch("resetConfigDir")} title="Reset to default">
+              Reset
+            </button>
+          {/if}
+        </div>
+        {#if configIsCustom}
+          <p class="section-hint" style="margin-top: 8px;">
+            Default: <code>{defaultConfigDir}</code>
+          </p>
+        {/if}
       </div>
     </details>
   </section>

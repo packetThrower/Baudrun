@@ -42,8 +42,16 @@ export function Disconnect() {
   return window['go']['main']['App']['Disconnect']();
 }
 
+export function GetConfigDirectory() {
+  return window['go']['main']['App']['GetConfigDirectory']();
+}
+
 export function GetControlLines() {
   return window['go']['main']['App']['GetControlLines']();
+}
+
+export function GetDefaultConfigDirectory() {
+  return window['go']['main']['App']['GetDefaultConfigDirectory']();
 }
 
 export function GetSettings() {
@@ -78,6 +86,10 @@ export function ListThemes() {
   return window['go']['main']['App']['ListThemes']();
 }
 
+export function PickConfigDirectory() {
+  return window['go']['main']['App']['PickConfigDirectory']();
+}
+
 export function PickLogDirectory() {
   return window['go']['main']['App']['PickLogDirectory']();
 }
@@ -96,6 +108,10 @@ export function SendBreak() {
 
 export function SendFile(arg1, arg2) {
   return window['go']['main']['App']['SendFile'](arg1, arg2);
+}
+
+export function SetConfigDirectory(arg1) {
+  return window['go']['main']['App']['SetConfigDirectory'](arg1);
 }
 
 export function SetDTR(arg1) {

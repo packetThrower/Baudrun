@@ -233,6 +233,39 @@ func (a *App) PickLogDirectory() (string, error) {
 	})
 }
 
+// Config-directory relocation. The app reads profiles/themes/skins/
+// settings from SupportDir at startup; moving that location takes
+// effect on next launch. Existing files are not migrated — users
+// copy them manually if they want to keep them.
+
+// GetConfigDirectory returns the path the app is currently reading
+// from.
+func (a *App) GetConfigDirectory() (string, error) {
+	return appdata.SupportDir()
+}
+
+// GetDefaultConfigDirectory returns the OS-idiomatic default,
+// ignoring any override. Useful for the Settings UI's "reset to
+// default" affordance.
+func (a *App) GetDefaultConfigDirectory() (string, error) {
+	return appdata.DefaultSupportDir()
+}
+
+// PickConfigDirectory opens a native folder picker for choosing a
+// new config directory. Empty string means the user cancelled.
+func (a *App) PickConfigDirectory() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "Choose config directory",
+	})
+}
+
+// SetConfigDirectory writes the override file. Passing "" clears
+// the override so the next launch uses the default. Takes effect
+// on next launch.
+func (a *App) SetConfigDirectory(dir string) error {
+	return appdata.WriteOverride(dir)
+}
+
 // DefaultLogDirectory returns the path session logs land in when no
 // LogDir is configured — shown as a hint in the Settings UI.
 func (a *App) DefaultLogDirectory() (string, error) {
