@@ -29,6 +29,11 @@ import workflow, pointers to the iterm2colorschemes /
 mbadolato / Gogh ecosystems, and tips on picking a theme that reads
 well on real network-gear output.
 
+**[Accessibility](ACCESSIBILITY.md)** — xterm screen-reader mode,
+`prefers-reduced-motion` support, Cmd/Ctrl +/- zoom, ARIA-label
+coverage, and the known caveats (WKWebView media-query caching,
+gaps that are still on the TODO).
+
 **[Skins](SKINS.md)** — app-chrome swaps. Complete CSS-variable
 reference grouped by purpose (typography, surfaces, foreground,
 borders, semantic colors, radii/elevation, layout, scrollbars,
