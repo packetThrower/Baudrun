@@ -177,6 +177,7 @@ Full reference docs under [docs/](docs/):
 | File | Covers |
 |---|---|
 | [ADVANCED.md](docs/ADVANCED.md) | Every advanced feature — Send Break, hex send/view, file transfer, auto-reconnect, control-line policies, session logging, driver detection, config-directory relocation, and more. Reference, not how-to. |
+| [ACCESSIBILITY.md](docs/ACCESSIBILITY.md) | Screen-reader mode, reduced-motion, terminal zoom shortcuts, ARIA-label coverage, and known caveats. |
 | [PROFILES.md](docs/PROFILES.md) | Profile JSON schema + bulk provisioning from CSV inventory via jq/Python. |
 | [THEMES.md](docs/THEMES.md) | Theme JSON schema, ANSI-slot reference, `.itermcolors` import ecosystem. |
 | [SKINS.md](docs/SKINS.md) | Skin CSS-variable reference, light/dark handling, layout tradeoffs. |
