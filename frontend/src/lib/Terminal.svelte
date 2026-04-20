@@ -58,14 +58,23 @@
   let hexFormatter: HexFormatter | null = null;
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
+  // Svelte 5's runtime dependency tracker only registers a prop
+  // read if it actually happens during the effect's execution. If
+  // the condition short-circuits on a plain (non-reactive) variable
+  // like highlighter/hexFormatter, the prop is never read on the
+  // first run, never tracked, and subsequent prop changes don't
+  // fire the effect. Read the reactive props unconditionally first.
   $effect(() => {
-    if (highlighter && !highlight) highlighter.reset();
+    const h = highlight;
+    if (highlighter && !h) highlighter.reset();
   });
   $effect(() => {
-    if (hexFormatter && !hexView) hexFormatter.reset();
+    const hv = hexView;
+    if (hexFormatter && !hv) hexFormatter.reset();
   });
   $effect(() => {
-    if (highlighter && hexView) highlighter.reset();
+    const hv = hexView;
+    if (highlighter && hv) highlighter.reset();
   });
 
   function eolBytes(): Uint8Array {
@@ -188,50 +197,101 @@
   }
 
   $effect(() => {
-    applyTheme(theme);
+    // Read the prop unconditionally so Svelte 5's runtime tracker
+    // registers the dependency even on the first run where term
+    // might still be null. Without this the short-circuit in
+    // applyTheme() lets the effect skip the read and miss future
+    // prop updates.
+    const t = theme;
+    applyTheme(t);
   });
 
   export function setTheme(t: Theme | undefined) {
     applyTheme(t);
   }
-  // Font size live update. xterm v6's options.fontSize setter
-  // updates the stored value but fit.fit() won't reflow unless the
-  // internal char-size cache has been refreshed. proposeDimensions()
-  // reads cached cell metrics, so without a re-measure nothing
-  // appears to change. Reaching into xterm's private _charSizeService
-  // to trigger `measure()` is the only reliable path short of
-  // disposing and recreating the whole Terminal.
-  let lastAppliedFontSize: number | undefined;
+  // Font size live update.
+  //
+  // Every "lighter" approach we tried fell short: options.fontSize
+  // setter, requestAnimationFrame-deferred fit, window resize
+  // dispatch, _charSizeService.measure() via private API — none
+  // reliably got xterm to reflow an already-mounted instance. The
+  // only path that works across xterm v6 renderers is disposing the
+  // instance and creating a fresh one with the new fontSize in its
+  // constructor options.
+  //
+  // Tradeoff: the recreated xterm starts with an empty buffer, so
+  // we snapshot plain text from the old buffer and write it back.
+  // ANSI color attributes and the current selection are lost in
+  // that transition — users changing zoom mid-session pay one
+  // flicker and one palette-flatten on the existing scrollback.
+  // New output after the resize is fully colored as normal.
+  // Seed with the initial prop value so the effect's first run sees
+  // fontSize === lastAppliedFontSize and skips the recreate — onMount
+  // has already built xterm with this size.
+  // Debounce window for rapid zoom presses. Each Cmd+= keypress
+  // would otherwise trigger a full xterm teardown/rebuild, which
+  // iterates the full scrollback (~10k lines). Collapsing rapid
+  // changes into one recreate keeps holding the key or chaining
+  // presses from producing a pile of mid-teardown allocations.
+  const FONT_RECREATE_DEBOUNCE_MS = 120;
+  let lastAppliedFontSize: number = fontSize || 13;
+  let pendingFontResize: ReturnType<typeof setTimeout> | null = null;
+
   $effect(() => {
-    if (!term || !fontSize || fontSize <= 0) return;
-    if (fontSize === lastAppliedFontSize) return;
-    lastAppliedFontSize = fontSize;
-    term.options.fontSize = fontSize;
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const core = (term as any)._core;
-      core?._charSizeService?.measure?.();
-    } catch {}
-    requestAnimationFrame(() => {
-      if (!term) return;
+    // Read fontSize FIRST so Svelte 5's runtime tracker registers
+    // the dependency regardless of whether term is ready yet. A
+    // `!term || !fontSize`-style short-circuit would skip the read
+    // on the first run (term null) and silently drop tracking.
+    const fs = fontSize;
+    if (!fs || fs <= 0) return;
+    if (!term) return;
+    if (fs === lastAppliedFontSize) return;
+    lastAppliedFontSize = fs;
+    if (pendingFontResize) clearTimeout(pendingFontResize);
+    pendingFontResize = setTimeout(() => {
+      pendingFontResize = null;
       try {
-        fit?.fit();
-        term.refresh(0, term.rows - 1);
-      } catch {}
-    });
+        recreateWithNewFontSize();
+      } catch (e) {
+        onStatus(`xterm rebuild failed: ${e}`);
+      }
+    }, FONT_RECREATE_DEBOUNCE_MS);
   });
-  $effect(() => {
-    if (term) {
-      term.options.screenReaderMode = screenReaderMode;
+
+  function recreateWithNewFontSize() {
+    if (!term) return;
+
+    // Snapshot buffer content as plain text lines.
+    const buf = term.buffer.active;
+    const lines: string[] = [];
+    for (let y = 0; y < buf.length; y++) {
+      const line = buf.getLine(y);
+      if (line) lines.push(line.translateToString(true));
     }
-  });
+    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
 
+    const hadFocus = !!term.element && term.element.contains(document.activeElement);
 
-  onMount(() => {
-    term = new Terminal({
-      fontFamily: getComputedStyle(document.documentElement)
-        .getPropertyValue("--font-mono")
-        .trim() || "SF Mono, Menlo, monospace",
+    term.dispose();
+    term = null;
+    fit = null;
+
+    const fresh = buildTerminal();
+    term = fresh.term;
+    fit = fresh.fit;
+
+    if (lines.length > 0) {
+      term.write(lines.join("\r\n") + "\r\n");
+    }
+    if (hadFocus) term.focus();
+  }
+
+  function buildTerminal(): { term: Terminal; fit: FitAddon } {
+    const t = new Terminal({
+      fontFamily:
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--font-mono")
+          .trim() || "SF Mono, Menlo, monospace",
       fontSize: fontSize || 13,
       cursorBlink: true,
       cursorStyle: "block",
@@ -241,35 +301,43 @@
       theme: theme ? themeToXterm(theme) : fallbackTheme,
       screenReaderMode,
     });
-
-    fit = new FitAddon();
-    term.loadAddon(fit);
-    // WebLinksAddon's default click handler is window.open, which in a
-    // Wails webview either does nothing or opens the URL inside the
-    // app. Route through BrowserOpenURL so clicks go to the system
-    // browser like users expect.
-    term.loadAddon(
+    const f = new FitAddon();
+    t.loadAddon(f);
+    t.loadAddon(
       new WebLinksAddon((_event, uri) => {
         BrowserOpenURL(uri);
       }),
     );
-    term.open(hostEl);
-    fit.fit();
-    term.focus();
-
-    term.onData(handleInput);
-
-    // PuTTY-style copy-on-select. xterm fires onSelectionChange during
-    // the drag and once more at release; we write on every change so
-    // the clipboard reflects the live selection. Empty strings are
-    // ignored to avoid clobbering the clipboard when the user clicks
-    // into the terminal without dragging.
-    term.onSelectionChange(() => {
-      if (!copyOnSelect || !term) return;
-      const sel = term.getSelection();
+    t.open(hostEl);
+    f.fit();
+    t.onData(handleInput);
+    t.onSelectionChange(() => {
+      if (!copyOnSelect || !t) return;
+      const sel = t.getSelection();
       if (sel.length === 0) return;
       navigator.clipboard?.writeText(sel).catch(() => {});
     });
+    // After a rebuild, re-apply the current theme so the lastAppliedThemeId
+    // guard (in the theme effect) doesn't skip because the new instance
+    // has a fresh theme slate.
+    lastAppliedThemeId = undefined;
+    return { term: t, fit: f };
+  }
+  $effect(() => {
+    // Read the prop first so the tracker picks it up regardless of
+    // term's state on the first run.
+    const sr = screenReaderMode;
+    if (term) {
+      term.options.screenReaderMode = sr;
+    }
+  });
+
+
+  onMount(() => {
+    const fresh = buildTerminal();
+    term = fresh.term;
+    fit = fresh.fit;
+    term.focus();
 
     highlighter = new TerminalHighlighter((text) => {
       if (term) term.write(text);
@@ -297,6 +365,10 @@
   });
 
   onDestroy(() => {
+    if (pendingFontResize) {
+      clearTimeout(pendingFontResize);
+      pendingFontResize = null;
+    }
     ro?.disconnect();
     unsubData?.();
     highlighter?.dispose();
