@@ -127,16 +127,6 @@
   const effectiveTheme = $derived(resolveTheme(effectiveThemeID, $themes));
   const termFontSize = $derived($settings.fontSize || 13);
 
-  // Belt-and-suspenders: the prop-based $effect inside Terminal.svelte
-  // catches theme changes most of the time, but some update paths
-  // (especially around suspend/reconnect) don't fire it reliably.
-  // Pushing imperatively via the bound ref covers the gap.
-  $effect(() => {
-    if (effectiveTheme && terminalRef) {
-      terminalRef.setTheme(effectiveTheme);
-    }
-  });
-
   // Re-apply skin whenever the active selection, loaded list, appearance
   // preference, or system color scheme changes. The window's own NSAppearance
   // is pinned dark at launch (main.go) because Wails v2.12's runtime theme

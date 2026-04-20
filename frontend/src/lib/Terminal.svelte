@@ -177,38 +177,26 @@
     brightCyan: "#a6ecec", brightWhite: "#ffffff",
   };
 
-  // Theme application. The prop-driven $effect alone has proven
-  // unreliable for an already-mounted xterm instance — updates
-  // don't always propagate to the runtime. Expose applyTheme as an
-  // exported function too so App.svelte can push theme changes
-  // imperatively via the bind:this ref. Both paths land here; the
-  // lastAppliedThemeId guard keeps it idempotent.
+  // Theme application. lastAppliedThemeId guards against redundant
+  // refreshes if the effect re-fires with the same theme reference.
+  // options.theme updates cursor + selection chrome immediately;
+  // term.refresh repaints already-drawn glyphs in the new palette.
   let lastAppliedThemeId: string | undefined;
 
-  function applyTheme(t: Theme | undefined) {
+  $effect(() => {
+    // Read the prop unconditionally so Svelte 5's runtime tracker
+    // registers the dependency on the first run (where term may
+    // still be null). Without this, the short-circuit in the
+    // !term check skips the read and future prop updates don't
+    // fire the effect at all.
+    const t = theme;
     if (!term || !t || t.id === lastAppliedThemeId) return;
     term.options.theme = themeToXterm(t);
-    // options.theme updates cursor + selection chrome; refresh is
-    // required to repaint already-drawn glyphs in the new palette.
     try {
       term.refresh(0, term.rows - 1);
     } catch {}
     lastAppliedThemeId = t.id;
-  }
-
-  $effect(() => {
-    // Read the prop unconditionally so Svelte 5's runtime tracker
-    // registers the dependency even on the first run where term
-    // might still be null. Without this the short-circuit in
-    // applyTheme() lets the effect skip the read and miss future
-    // prop updates.
-    const t = theme;
-    applyTheme(t);
   });
-
-  export function setTheme(t: Theme | undefined) {
-    applyTheme(t);
-  }
   // Font size live update.
   //
   // Every "lighter" approach we tried fell short: options.fontSize
@@ -317,10 +305,11 @@
       if (sel.length === 0) return;
       navigator.clipboard?.writeText(sel).catch(() => {});
     });
-    // After a rebuild, re-apply the current theme so the lastAppliedThemeId
-    // guard (in the theme effect) doesn't skip because the new instance
-    // has a fresh theme slate.
-    lastAppliedThemeId = undefined;
+    // After a rebuild the new xterm has the current theme baked in
+    // via its constructor options — but the theme-effect guard is
+    // keyed to the *last id we applied*, which is still set. Reset
+    // it so the next theme change re-runs against the new instance.
+    lastAppliedThemeId = t.options.theme && theme ? theme.id : undefined;
     return { term: t, fit: f };
   }
   $effect(() => {
