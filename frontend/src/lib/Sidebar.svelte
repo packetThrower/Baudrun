@@ -1,20 +1,29 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
   import type { Profile } from "./api";
-  import { api } from "./api";
 
-  export let profiles: Profile[];
-  export let selectedID: string | null;
-  export let activeID: string;
-  export let settingsOpen: boolean = false;
+  type Props = {
+    profiles: Profile[];
+    selectedID: string | null;
+    activeID: string;
+    settingsOpen?: boolean;
+    onSelect: (id: string) => void;
+    onCreate: () => void;
+    onSettings: () => void;
+  };
 
-  const dispatch = createEventDispatcher<{
-    select: string;
-    create: void;
-    settings: void;
-  }>();
+  let {
+    profiles,
+    selectedID,
+    activeID,
+    settingsOpen = false,
+    onSelect,
+    onCreate,
+    onSettings,
+  }: Props = $props();
 
-  $: sorted = [...profiles].sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = $derived(
+    [...profiles].sort((a, b) => a.name.localeCompare(b.name)),
+  );
 </script>
 
 <aside class="sidebar">
@@ -26,7 +35,7 @@
       <button
         class="icon-btn"
         title="New profile"
-        on:click={() => dispatch("create")}
+        onclick={onCreate}
         aria-label="New profile"
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -44,7 +53,7 @@
   {#if sorted.length === 0}
     <div class="empty">
       <p>No profiles yet.</p>
-      <button on:click={() => dispatch("create")}>Create one</button>
+      <button onclick={onCreate}>Create one</button>
     </div>
   {:else}
     <ul class="list">
@@ -53,7 +62,7 @@
           <button
             class="row"
             class:selected={p.id === selectedID && !settingsOpen}
-            on:click={() => dispatch("select", p.id)}
+            onclick={() => onSelect(p.id)}
           >
             <span class="indicator" class:active={p.id === activeID}></span>
             <span class="row-body">
@@ -72,7 +81,7 @@
     <button
       class="footer-btn"
       class:active={settingsOpen}
-      on:click={() => dispatch("settings")}
+      onclick={onSettings}
       title="Settings"
     >
       <svg width="13" height="13" viewBox="0 0 14 14" fill="none">

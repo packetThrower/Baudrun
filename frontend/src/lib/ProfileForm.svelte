@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
+  import { onMount } from "svelte";
   import { BrowserOpenURL } from "../../wailsjs/runtime/runtime.js";
   import {
     dismissedDrivers,
@@ -22,46 +22,69 @@
     type USBSerialCandidate,
   } from "./api";
 
-  export let profile: Profile;
-  export let isNew: boolean;
-  export let canConnect: boolean;
-  export let isConnected: boolean;
-  export let isConnecting: boolean;
-  export let themes: Theme[] = [];
-  export let defaultThemeID: string = "seriesly";
-  export let detectDrivers: boolean = true;
+  type Props = {
+    profile: Profile;
+    isNew: boolean;
+    canConnect: boolean;
+    isConnected: boolean;
+    isConnecting: boolean;
+    themes?: Theme[];
+    defaultThemeID?: string;
+    detectDrivers?: boolean;
+    onSave: (p: Profile) => void;
+    onDelete: (id: string) => void;
+    onConnect: () => void;
+    onDisconnect: () => void;
+    onResume: () => void;
+  };
 
-  const dispatch = createEventDispatcher<{
-    save: Profile;
-    delete: string;
-    connect: void;
-    disconnect: void;
-    resume: void;
-  }>();
+  let {
+    profile,
+    isNew,
+    canConnect,
+    isConnected,
+    isConnecting,
+    themes = [],
+    defaultThemeID = "seriesly",
+    detectDrivers = true,
+    onSave,
+    onDelete,
+    onConnect,
+    onDisconnect,
+    onResume,
+  }: Props = $props();
 
-  let draft: Profile = { ...profile };
+  let draft = $state<Profile>({ ...profile });
+  // syncedFrom deliberately NOT $state — writing to it inside $effect
+  // where the effect also reads it would otherwise retrigger the
+  // effect (even though the condition self-stabilizes, cleaner to
+  // keep it as a plain tracking variable).
   let syncedFrom: Profile = profile;
-  let dirty = false;
-  let ports: PortInfo[] = [];
-  let missingDrivers: USBSerialCandidate[] = [];
-  let loadingPorts = false;
-  let saving = false;
-  let error = "";
+  let dirty = $state(false);
+  let ports = $state<PortInfo[]>([]);
+  let missingDrivers = $state<USBSerialCandidate[]>([]);
+  let loadingPorts = $state(false);
+  let saving = $state(false);
+  let error = $state("");
 
-  $: if (profile !== syncedFrom) {
-    draft = { ...profile };
-    syncedFrom = profile;
-    dirty = false;
-    error = "";
-  }
+  $effect(() => {
+    if (profile !== syncedFrom) {
+      draft = { ...profile };
+      syncedFrom = profile;
+      dirty = false;
+      error = "";
+    }
+  });
 
-  $: locked = isConnected || isConnecting;
+  const locked = $derived(isConnected || isConnecting);
 
   // customMode sticks after the user picks "Custom…" from the dropdown,
   // even if their typed value happens to coincide with a preset. Cleared
   // whenever the user picks a preset back from the dropdown.
-  let customMode = false;
-  $: baudIsCustom = customMode || !BAUD_RATES.includes(draft.baudRate);
+  let customMode = $state(false);
+  const baudIsCustom = $derived(
+    customMode || !BAUD_RATES.includes(draft.baudRate),
+  );
 
   onMount(refreshPorts);
 
@@ -88,14 +111,20 @@
   }
 
   // Rescan when the global toggle flips so banners disappear/reappear live.
+  // lastDetectDrivers is deliberately NOT $state — making it reactive
+  // would cause the $effect to re-run when we write to it, leading to
+  // a spin that kept refreshPorts firing and the scanning indicator
+  // stuck on.
   let lastDetectDrivers = detectDrivers;
-  $: if (detectDrivers !== lastDetectDrivers) {
-    lastDetectDrivers = detectDrivers;
-    refreshPorts();
-  }
+  $effect(() => {
+    if (detectDrivers !== lastDetectDrivers) {
+      lastDetectDrivers = detectDrivers;
+      refreshPorts();
+    }
+  });
 
-  $: visibleMissing = missingDrivers.filter(
-    (d) => !$dismissedDrivers.has(driverKey(d)),
+  const visibleMissing = $derived(
+    missingDrivers.filter((d) => !$dismissedDrivers.has(driverKey(d))),
   );
 
   function markDirty() {
@@ -107,7 +136,7 @@
     saving = true;
     error = "";
     try {
-      dispatch("save", { ...draft });
+      onSave({ ...draft });
     } catch (e) {
       error = String(e);
     } finally {
@@ -149,7 +178,9 @@
     markDirty();
   }
 
-  $: defaultThemeName = themes.find((t) => t.id === defaultThemeID)?.name ?? "Seriesly";
+  const defaultThemeName = $derived(
+    themes.find((t) => t.id === defaultThemeID)?.name ?? "Seriesly",
+  );
 </script>
 
 <div class="form">
@@ -177,7 +208,7 @@
       {#if !isNew}
         <button
           class="danger"
-          on:click={() => dispatch("delete", draft.id)}
+          on:click={() => onDelete(draft.id)}
           disabled={locked}
         >
           Delete
@@ -187,16 +218,16 @@
         {isNew ? "Create" : "Save"}
       </button>
       {#if isConnected}
-        <button on:click={() => dispatch("disconnect")}>
+        <button on:click={onDisconnect}>
           Disconnect
         </button>
-        <button class="primary" on:click={() => dispatch("resume")}>
+        <button class="primary" on:click={onResume}>
           Resume
         </button>
       {:else}
         <button
           class="primary"
-          on:click={() => dispatch("connect")}
+          on:click={onConnect}
           disabled={!canConnect || isConnecting}
         >
           {isConnecting ? "Connecting…" : "Connect"}

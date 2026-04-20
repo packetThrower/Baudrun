@@ -6,7 +6,8 @@
   import { themeToXterm, type Theme } from "./api";
   import { highlightLines } from "./highlight";
 
-  export let theme: Theme;
+  type Props = { theme: Theme };
+  let { theme }: Props = $props();
 
   let hostEl: HTMLDivElement;
   let term: Terminal | null = null;
@@ -39,9 +40,11 @@
     "RUGGEDCOM RS900G # ",
   ];
 
-  $: if (term && theme) {
-    term.options.theme = themeToXterm(theme);
-  }
+  $effect(() => {
+    if (term && theme) {
+      term.options.theme = themeToXterm(theme);
+    }
+  });
 
   onMount(() => {
     term = new Terminal({
