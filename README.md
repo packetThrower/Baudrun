@@ -9,139 +9,37 @@ network gear without the ritual of remembering baud rates, fiddling with
 
 ## Features
 
-### Profiles
-- Named connection settings per device: port, baud, data bits, parity, stop
-  bits, flow control, line ending, local echo.
-- Persisted as JSON at `~/Library/Application Support/Seriesly/profiles.json`
-  (macOS) or `%APPDATA%\Seriesly\profiles.json` (Windows) — hand-editable,
-  iCloud-syncable, diff-friendly. See [docs/PROFILES.md](docs/PROFILES.md)
-  for the full schema, control-line policy reference, and examples of
-  bulk-provisioning from CSV inventory.
-- Sensible defaults for network gear (CR line ending, 9600 8N1).
-
-### Serial I/O
-- Port auto-detection enumerates `/dev/cu.*` on macOS, `/dev/ttyUSB*` /
-  `/dev/ttyACM*` on Linux, and `COM*` on Windows, surfacing USB metadata
-  (VID/PID, product, serial number, **chipset family**) when available.
-- Works out of the box with CDC-ACM USB-C consoles (HPE/Aruba, newer Cisco,
-  RuggedCom RST2228) — no driver needed.
-- **Custom baud rate** — pick any rate the adapter supports via a "Custom…"
-  option in the baud dropdown (not just the standard presets).
-- Control-line policies per profile: explicit `DTR on connect`, `RTS on
-  connect`, `DTR on disconnect`, `RTS on disconnect` (useful for RS-485
-  direction, Arduino DTR-reset, firmwares that gate session state on DTR).
-- Live DTR/RTS toggle pills in the session header for in-session control.
-- **Send Break** — 300 ms TX-low pulse for Cisco ROMMON access, Juniper
+- **Profile-based connections** — named settings per device (port, baud,
+  framing, flow control, line ending, and more), stored as plain JSON.
+  See [docs/PROFILES.md](docs/PROFILES.md) for the full schema and
+  bulk-provisioning recipes.
+- **Auto-detecting ports + chipset identification** — USB VID/PID lookup
+  surfaces the chipset family (CP210x, FTDI, PL2303, CH340, MCP2221,
+  and a dozen more) and links to the vendor driver when one's missing.
+  Works out of the box with CDC-ACM USB-C consoles (HPE/Aruba, newer
+  Cisco, RuggedCom RST2228).
+- **Rich terminal** — xterm.js backend with 10k-line scrollback, line-
+  ending translation, local echo, hex view / send, line timestamps,
+  session logging to file, copy-on-select, custom baud rates, and
+  Backspace/Delete mapping.
+- **Auto-reconnect** — opt-in per profile; USB adapter drops recover
+  transparently with the xterm buffer preserved across the gap.
+- **Send Break** — 300 ms TX-low pulse for Cisco ROMMON, Juniper
   diagnostic mode, and boot-loader interrupts.
-- **Auto-reconnect** (opt-in per profile) — when a USB adapter drops,
-  poll for it to reappear (1s interval, 30s timeout) and reopen
-  transparently. xterm stays mounted so scrollback survives the gap;
-  session header shows an amber pulsing dot with "reconnecting…".
-- **Backspace / Delete key mapping** — profile-level choice of DEL (0x7F,
-  VT100 default) vs BS (0x08, what some older Cisco / Foundry gear wants).
-- **Paste safety** — optional multi-line confirmation prompt + configurable
-  slow paste (per-character delay) so fast pastes don't corrupt on UARTs
-  that can't buffer at line rate.
-- **Hex send** — modal for sending raw bytes from a flexible parser
-  (`02 FF AA 55` / `02FFAA55` / `0x02 0xFF` all equivalent). Counterpart
-  to the hex view on RX.
-- **File transfer** — XMODEM, XMODEM-CRC, XMODEM-1K, and YMODEM. Firmware
-  uploads to embedded bootloaders, live progress bar, cancellable.
-
-### Driver detection (macOS + Windows)
-- When a USB-serial adapter is plugged in but its vendor driver isn't loaded,
-  Seriesly detects the chipset and shows a yellow banner above the port
-  dropdown with a one-click link to the vendor's driver download.
-- Chipset coverage: CP210x (SiLabs), FTDI, Prolific PL2303, WCH CH340/CH341,
-  Microchip MCP2221, Cypress, ATEN, ARM mbed CDC-ACM, MosChip/ASIX, Magic
-  Control, Moxa UPort, Brainboxes.
-- Special cases handled: Siemens RUGGEDCOM RST2228 (CP210x reprogrammed with
-  Siemens VID), counterfeit-Prolific drivers that refuse older but genuine
-  chips (TRENDnet TU-S9), manufacturer-string fallback for rebrands.
-- macOS: reads IOKit via `ioreg`. Windows: queries `Get-PnpDevice` over
-  PowerShell.
-- Dismissible per-device (× button, session-scoped) and disable-able
-  globally via Settings → Advanced.
-
-### Terminal
-- xterm.js-backed, full ANSI/VT100 support, 10,000-line scrollback.
-- Line-ending translation on Enter (CR, LF, CRLF) per profile.
-- Local echo toggle.
-- **Hex view** — alternate output mode showing bytes as a 16-per-line hex
-  dump with ASCII sidebar. Useful for binary protocols (Modbus RTU, firmware
-  bootloaders) or debugging line endings.
-- **Line timestamps** — prefix each line with `[HH:MM:SS.mmm]` for
-  correlating events in logs.
-- **Session logging** — toggle per profile to record raw incoming bytes to a
-  timestamped file under `~/Library/Application Support/Seriesly/logs/`
-  (configurable directory).
-- **Copy on select** — PuTTY-style optional setting: release the mouse
-  after a drag-select and the selection lands on the clipboard
-  automatically.
-
-### Themes (terminal colors)
-- Thirteen built-in themes: Seriesly, Dracula, Solarized Dark/Light, Nord,
-  One Dark, Monokai, Gruvbox Dark, Tomorrow Night, **Colorblind Safe**,
-  **CRT Phosphor (Green)**, **Synthwave**, **Brogrammer**.
-- The Colorblind Safe theme uses Bang Wong's palette (Nature Methods, 2011)
-  — red and green slots are vermillion and bluish-green, perpendicular to
-  the protan/deutan confusion axis, so `up` vs `down` output stays
-  distinguishable for ~6% of men with red-green colorblindness.
-- CRT Phosphor is a monochrome-green VT100/IBM-3270 palette (pairs with
-  the CRT skin). Synthwave is a neon palette on deep purple (pairs with
-  Cyberpunk).
-- **Theme preview** — each theme has a Preview button in Settings that
-  opens a modal with a canned RuggedCom-style output sample showing the
-  palette + highlighter against real network-gear text. See how a theme
-  looks without having to switch.
-- Import any `.itermcolors` file from iTerm2's color scheme ecosystem
-  ([iterm2colorschemes.com](https://iterm2colorschemes.com/) has hundreds).
-- Per-profile theme override, with a global default that every profile
-  inherits unless it sets its own.
-- Custom themes persisted to `~/Library/Application Support/Seriesly/themes/`.
-  See [docs/THEMES.md](docs/THEMES.md) for the JSON schema, the ANSI-slot
-  reference, and tips on picking `.itermcolors` files from the wider
-  ecosystem.
-
-### Skins (app chrome)
-
-Fourteen built-in skins swap the whole app's chrome — colors, typography,
-radii, elevation, layout shape. Grouped by inspiration:
-
-| Category | Skins |
-|---|---|
-| Default | **Seriesly** — translucent sidebar, flush-edge layout, uppercase iOS-style row labels. |
-| Modern OS | **macOS 26 (Liquid Glass)** — floating rounded bubbles with backdrop blur. **Windows 11 (Fluent)** — Segoe UI Variable, Mica surfaces, stroke borders. **GNOME (Adwaita)** — Cantarell font, flat surfaces, GNOME blue accent. **KDE (Breeze)** — Breeze palette, tighter type. **elementary (Pantheon)** — rounded everything, strataverse blue. **Xfce (Greybird)** — neutral grey, thin borders. |
-| Retro OS | **macOS Classic** — Sierra-era Aqua. **Windows XP (Luna)** — blue start-button and bevels. |
-| Aesthetic | **CRT (Green Phosphor)** — green-on-black VT100 look with scanline overlay. **Cyberpunk (Synthwave)** — neon magenta/cyan on deep purple. **Blueprint** — engineering-drawing grid on blue paper. **E-Ink (Paper)** — warm paper-white, low saturation. |
-| Accessibility | **High Contrast** — solid black surfaces, pure white foreground, visible borders on every control, WCAG-AAA accents. |
-
-- **Light/Dark appearance** — every skin except CRT and Cyberpunk
-  supports both modes. The app's CSS palette flips per-skin based on a
-  Settings dropdown (Auto / Light / Dark).
-- Import custom skin JSON files (flat map of `--css-var: value` pairs).
-  Persisted to `~/Library/Application Support/Seriesly/skins/`. See
-  [docs/SKINS.md](docs/SKINS.md) for the full variable reference and
-  authoring guide.
-- Skins are distinct from themes — themes recolor the terminal viewport;
-  skins change the app chrome surrounding it. Mix freely (e.g. Liquid
-  Glass skin + Solarized Dark theme, or CRT skin + CRT Phosphor theme).
-
-**Caveats:** native `<select>` popups always render in the OS's native
-style (Chromium delegates popup rendering to the OS). The window's own
-NSVisualEffectView on macOS is pinned to the dark system appearance —
-Wails v2.12's runtime theme setters are empty stubs on macOS, so the
-vibrancy material can't flip live. Light mode works in the CSS layer;
-translucent light skins layer over dark vibrancy only when the CSS is
-opaque enough to hide it.
-
-### Syntax highlighting
-Universal pattern-based colorization applied to incoming text. Toggle per
-profile.
+- **Paste safety** — multi-line confirmation prompt + configurable slow
+  paste so UARTs with small buffers don't drop bytes.
+- **File transfer** — XMODEM / XMODEM-CRC / XMODEM-1K / YMODEM for
+  firmware uploads to embedded bootloaders.
+- **Suspend / Resume** — step away from a connected session without
+  tearing down the serial port; xterm stays mounted so the full
+  backlog is preserved on return.
+- **Syntax highlighting for network gear** — auto-color IPs, MACs,
+  interface names, status keywords (up/down/err-disabled/warning),
+  timestamps. Device-supplied ANSI colors pass through unchanged.
 
 | Color | Matches |
 |-------|---------|
-| Cyan | IPv4 (`192.168.1.1/24`), IPv6, MAC addresses |
+| Cyan | IPv4 (with CIDR), IPv6, MAC addresses |
 | Magenta | MAC addresses (colon, dash, Cisco-dotted) |
 | Blue | Interface names — `GigabitEthernet0/1`, `Gi1/0/24`, `ge-0/0/1`, `Vlan100` |
 | Green | `up`, `online`, `active`, `established`, `enabled`, `OK`, `FULL` |
@@ -149,27 +47,37 @@ profile.
 | Yellow | `warning`, `degraded`, `init`, `learning`, `blocking` |
 | Dim gray | Timestamps (`HH:MM:SS`), dates (`YYYY-MM-DD`) |
 
-Device-supplied ANSI colors (e.g. Aruba CX, Junos) pass through untouched —
-highlighting only fills in uncolored text.
+- **13 built-in terminal themes + `.itermcolors` import** — including
+  **Colorblind Safe** (Bang Wong's palette from Nature Methods, 2011 —
+  perpendicular to the protan/deutan confusion axis so up/down stays
+  legible for the ~6% of men with red-green colorblindness), **CRT
+  Phosphor**, **Synthwave**, **Brogrammer**, and all the usual
+  Dracula/Solarized/Nord/Gruvbox suspects. [docs/THEMES.md](docs/THEMES.md).
+- **14 built-in app skins** with light/dark appearance support:
 
-### Suspend / Resume
-- **Suspend** a connected session to return to the profile list without
-  closing the serial port. Green dot + "Session suspended" badge show it's
-  still alive.
-- **Resume** picks up where you left off — **full backlog preserved** because
-  xterm stays mounted in the background while bytes keep streaming in.
-- Navigating away from the terminal view (clicking another profile, creating
-  a new one, opening Settings) auto-disconnects by default — Suspend is the
-  explicit opt-in to keep a session alive.
+  | Category | Skins |
+  |---|---|
+  | Default | **Seriesly** |
+  | Modern OS | **macOS 26 (Liquid Glass)**, **Windows 11 (Fluent)**, **GNOME (Adwaita)**, **KDE (Breeze)**, **elementary (Pantheon)**, **Xfce (Greybird)** |
+  | Retro OS | **macOS Classic**, **Windows XP (Luna)** |
+  | Aesthetic | **CRT (Green Phosphor)**, **Cyberpunk (Synthwave)**, **Blueprint**, **E-Ink (Paper)** |
+  | Accessibility | **High Contrast** |
 
-### Configuration portability
-- Profiles, themes, skins, and settings live as plain JSON under the OS's
-  config directory (hand-editable, diff-friendly, iCloud/Dropbox-syncable).
-- **Relocatable config directory** — Settings → Advanced lets you point
-  Seriesly at an alternate path (e.g. `~/dotfiles/seriesly/`) so it lives
-  alongside your other editor/tool configs.
-- **Open** buttons on Settings paths jump to Finder / Explorer / xdg-open
-  for quick filesystem access.
+  Skins and themes are orthogonal — mix freely (Liquid Glass skin +
+  Solarized Dark theme, CRT skin + CRT Phosphor theme, etc.). Author
+  your own via [docs/SKINS.md](docs/SKINS.md).
+- **Accessibility** — xterm screen-reader mode, `prefers-reduced-motion`
+  respected, Cmd/Ctrl +/- terminal zoom, ARIA labels on every icon-only
+  control. Details in [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md).
+- **Relocatable config directory** — keep profiles, themes, skins, and
+  settings alongside your dotfiles; Settings → Advanced picks the
+  target.
+
+Everything above is documented in depth under [docs/](docs/) — see
+[docs/ADVANCED.md](docs/ADVANCED.md) for the feature reference covering
+Send Break, hex send/view, file transfer, auto-reconnect, control-line
+policies, session logging, driver detection, and config-directory
+relocation.
 
 ### Documentation
 Full reference docs under [docs/](docs/):
