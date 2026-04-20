@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+
+	"Seriesly/internal/winconsole"
 )
 
 // Open launches the OS's default handler for path. path should be a
@@ -23,14 +25,18 @@ func Open(path string) error {
 	case "darwin":
 		cmd = exec.Command("open", path)
 	case "windows":
-		// cmd /c start accepts an empty window title as the first
-		// positional argument, then the target path. Without the
-		// empty "" it would treat a quoted path as the window title.
-		cmd = exec.Command("cmd", "/c", "start", "", path)
+		// explorer.exe directly — skips the cmd /c start dance that
+		// would otherwise flash a console window. explorer ignores
+		// its exit code conventions (returns 1 even on success) so
+		// we can't rely on the return value either way.
+		cmd = exec.Command("explorer.exe", path)
 	case "linux", "freebsd", "openbsd", "netbsd":
 		cmd = exec.Command("xdg-open", path)
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
+	// Belt-and-suspenders: explorer.exe shouldn't flash a console
+	// but HideWindow costs nothing and covers any stray code path.
+	winconsole.Hide(cmd)
 	return cmd.Start()
 }
