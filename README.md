@@ -20,15 +20,33 @@ network gear without the ritual of remembering baud rates, fiddling with
 - Sensible defaults for network gear (CR line ending, 9600 8N1).
 
 ### Serial I/O
-- Port auto-detection enumerates `/dev/cu.*` on macOS and `COM*` on Windows,
-  surfacing USB metadata (VID/PID, product, serial number, **chipset family**)
-  when available.
+- Port auto-detection enumerates `/dev/cu.*` on macOS, `/dev/ttyUSB*` /
+  `/dev/ttyACM*` on Linux, and `COM*` on Windows, surfacing USB metadata
+  (VID/PID, product, serial number, **chipset family**) when available.
 - Works out of the box with CDC-ACM USB-C consoles (HPE/Aruba, newer Cisco,
   RuggedCom RST2228) — no driver needed.
+- **Custom baud rate** — pick any rate the adapter supports via a "Custom…"
+  option in the baud dropdown (not just the standard presets).
 - Control-line policies per profile: explicit `DTR on connect`, `RTS on
   connect`, `DTR on disconnect`, `RTS on disconnect` (useful for RS-485
   direction, Arduino DTR-reset, firmwares that gate session state on DTR).
 - Live DTR/RTS toggle pills in the session header for in-session control.
+- **Send Break** — 300 ms TX-low pulse for Cisco ROMMON access, Juniper
+  diagnostic mode, and boot-loader interrupts.
+- **Auto-reconnect** (opt-in per profile) — when a USB adapter drops,
+  poll for it to reappear (1s interval, 30s timeout) and reopen
+  transparently. xterm stays mounted so scrollback survives the gap;
+  session header shows an amber pulsing dot with "reconnecting…".
+- **Backspace / Delete key mapping** — profile-level choice of DEL (0x7F,
+  VT100 default) vs BS (0x08, what some older Cisco / Foundry gear wants).
+- **Paste safety** — optional multi-line confirmation prompt + configurable
+  slow paste (per-character delay) so fast pastes don't corrupt on UARTs
+  that can't buffer at line rate.
+- **Hex send** — modal for sending raw bytes from a flexible parser
+  (`02 FF AA 55` / `02FFAA55` / `0x02 0xFF` all equivalent). Counterpart
+  to the hex view on RX.
+- **File transfer** — XMODEM, XMODEM-CRC, XMODEM-1K, and YMODEM. Firmware
+  uploads to embedded bootloaders, live progress bar, cancellable.
 
 ### Driver detection (macOS + Windows)
 - When a USB-serial adapter is plugged in but its vendor driver isn't loaded,
@@ -57,6 +75,9 @@ network gear without the ritual of remembering baud rates, fiddling with
 - **Session logging** — toggle per profile to record raw incoming bytes to a
   timestamped file under `~/Library/Application Support/Seriesly/logs/`
   (configurable directory).
+- **Copy on select** — PuTTY-style optional setting: release the mouse
+  after a drag-select and the selection lands on the clipboard
+  automatically.
 
 ### Themes (terminal colors)
 - Thirteen built-in themes: Seriesly, Dracula, Solarized Dark/Light, Nord,
@@ -141,13 +162,25 @@ highlighting only fills in uncolored text.
   a new one, opening Settings) auto-disconnects by default — Suspend is the
   explicit opt-in to keep a session alive.
 
-### More
+### Configuration portability
+- Profiles, themes, skins, and settings live as plain JSON under the OS's
+  config directory (hand-editable, diff-friendly, iCloud/Dropbox-syncable).
+- **Relocatable config directory** — Settings → Advanced lets you point
+  Seriesly at an alternate path (e.g. `~/dotfiles/seriesly/`) so it lives
+  alongside your other editor/tool configs.
+- **Open** buttons on Settings paths jump to Finder / Explorer / xdg-open
+  for quick filesystem access.
 
-Task-oriented walkthroughs of the power features — Send Break for
-ROMMON access, hex send/view for binary protocols, paste safety,
-auto-reconnect, RS-485 control-line policies, session logging,
-driver troubleshooting — live in
-[docs/ADVANCED.md](docs/ADVANCED.md).
+### Documentation
+Full reference docs under [docs/](docs/):
+
+| File | Covers |
+|---|---|
+| [ADVANCED.md](docs/ADVANCED.md) | Every advanced feature — Send Break, hex send/view, file transfer, auto-reconnect, control-line policies, session logging, driver detection, config-directory relocation, and more. Reference, not how-to. |
+| [PROFILES.md](docs/PROFILES.md) | Profile JSON schema + bulk provisioning from CSV inventory via jq/Python. |
+| [THEMES.md](docs/THEMES.md) | Theme JSON schema, ANSI-slot reference, `.itermcolors` import ecosystem. |
+| [SKINS.md](docs/SKINS.md) | Skin CSS-variable reference, light/dark handling, layout tradeoffs. |
+| [examples/](docs/examples/) | Annotated `.jsonc` + importable `.json` reference files for authoring your own skin or theme. |
 
 ## Requirements
 
