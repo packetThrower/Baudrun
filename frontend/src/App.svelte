@@ -127,12 +127,10 @@
   const effectiveTheme = $derived(resolveTheme(effectiveThemeID, $themes));
   const termFontSize = $derived($settings.fontSize || 13);
 
-  // Imperatively push the theme to the mounted xterm on every
-  // effectiveTheme change. The prop-based $effect inside Terminal.svelte
-  // also handles this, but during a suspend the prop path has proven
-  // unreliable — the xterm viewport is CSS-hidden but the component
-  // is still mounted, and prop updates don't always route through.
-  // Calling setTheme via the bound ref covers the gap.
+  // Belt-and-suspenders: the prop-based $effect inside Terminal.svelte
+  // catches theme changes most of the time, but some update paths
+  // (especially around suspend/reconnect) don't fire it reliably.
+  // Pushing imperatively via the bound ref covers the gap.
   $effect(() => {
     if (effectiveTheme && terminalRef) {
       terminalRef.setTheme(effectiveTheme);
@@ -591,14 +589,21 @@
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     // "=" with shift is "+", so accept both "=" and "+" as zoom-in.
+    const current = $settings.fontSize || FONT_DEFAULT;
     if (e.key === "=" || e.key === "+") {
       e.preventDefault();
-      void applyFontSize(($settings.fontSize || FONT_DEFAULT) + 1);
+      e.stopPropagation();
+      statusMsg = `Font size: ${Math.min(FONT_MAX, current + 1)}`;
+      void applyFontSize(current + 1);
     } else if (e.key === "-" || e.key === "_") {
       e.preventDefault();
-      void applyFontSize(($settings.fontSize || FONT_DEFAULT) - 1);
+      e.stopPropagation();
+      statusMsg = `Font size: ${Math.max(FONT_MIN, current - 1)}`;
+      void applyFontSize(current - 1);
     } else if (e.key === "0") {
       e.preventDefault();
+      e.stopPropagation();
+      statusMsg = `Font size: ${FONT_DEFAULT}`;
       void applyFontSize(FONT_DEFAULT);
     }
   }
@@ -776,8 +781,8 @@
 </script>
 
 <svelte:window
-  on:click={() => { if (overflowOpen) overflowOpen = false; }}
-  on:keydown={handleWindowKeydown}
+  onclick={() => { if (overflowOpen) overflowOpen = false; }}
+  onkeydown={handleWindowKeydown}
 />
 
 <div class="shell">
