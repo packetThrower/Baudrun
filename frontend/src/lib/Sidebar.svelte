@@ -77,25 +77,14 @@
     </ul>
   {/if}
 
-  <div class="footer">
-    <button
-      class="footer-btn"
-      class:active={settingsOpen}
-      onclick={onSettings}
-      title="Settings"
-    >
-      <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-        <circle cx="7" cy="7" r="2" stroke="currentColor" stroke-width="1.3" />
-        <path
-          d="M7 1v1.5M7 11.5V13M13 7h-1.5M2.5 7H1M11.243 2.757l-1.06 1.06M3.818 10.182l-1.06 1.06M11.243 11.243l-1.06-1.06M3.818 3.818l-1.06-1.06"
-          stroke="currentColor"
-          stroke-width="1.3"
-          stroke-linecap="round"
-        />
-      </svg>
-      <span>Settings</span>
-    </button>
-  </div>
+  <button
+    class="footer-btn"
+    class:active={settingsOpen}
+    onclick={onSettings}
+    title="Settings"
+  >
+    Settings
+  </button>
 </aside>
 
 <style>
@@ -229,24 +218,19 @@
     gap: 4px;
   }
 
-  .footer {
-    padding: 6px 8px 10px 8px;
-    border-top: 1px solid var(--border-subtle);
-    flex-shrink: 0;
-  }
-
   .footer-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
     width: 100%;
-    padding: 6px 10px;
-    background: transparent;
+    height: 30px;
+    background: rgba(0, 0, 0, 0.2);
     border: none;
+    border-top: 1px solid var(--border-subtle);
+    border-radius: 0;
     color: var(--fg-secondary);
-    border-radius: var(--radius-md);
-    text-align: left;
-    font-size: 12px;
+    font-size: 11px;
+    flex-shrink: 0;
   }
 
   .footer-btn:hover {
