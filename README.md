@@ -59,9 +59,9 @@ network gear without the ritual of remembering baud rates, fiddling with
   (configurable directory).
 
 ### Themes (terminal colors)
-- Twelve built-in themes: Seriesly, Dracula, Solarized Dark/Light, Nord,
+- Thirteen built-in themes: Seriesly, Dracula, Solarized Dark/Light, Nord,
   One Dark, Monokai, Gruvbox Dark, Tomorrow Night, **Colorblind Safe**,
-  **CRT Phosphor (Green)**, **Synthwave**.
+  **CRT Phosphor (Green)**, **Synthwave**, **Brogrammer**.
 - The Colorblind Safe theme uses Bang Wong's palette (Nature Methods, 2011)
   — red and green slots are vermillion and bluish-green, perpendicular to
   the protan/deutan confusion axis, so `up` vs `down` output stays
