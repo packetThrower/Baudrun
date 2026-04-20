@@ -150,6 +150,35 @@
   let configDir = $state("");
   let defaultConfigDir = $state("");
 
+  // Delayed-delete state for the profile undo flow. The profile stays
+  // in the backend until the timer fires or the user undoes; the
+  // sidebar just filters it out during the pending window.
+  type PendingDelete = {
+    profile: Profile;
+    timerId: ReturnType<typeof setTimeout>;
+  };
+  let pendingDelete = $state<PendingDelete | null>(null);
+  const UNDO_WINDOW_MS = 10_000;
+  // Seconds remaining on the current pending delete's undo window.
+  // Ticks down via a $effect-managed interval so the button label
+  // shows a live countdown.
+  let pendingDeleteSecondsLeft = $state(0);
+
+  $effect(() => {
+    if (!pendingDelete) return;
+    pendingDeleteSecondsLeft = Math.ceil(UNDO_WINDOW_MS / 1000);
+    const tick = setInterval(() => {
+      pendingDeleteSecondsLeft = Math.max(0, pendingDeleteSecondsLeft - 1);
+    }, 1000);
+    return () => clearInterval(tick);
+  });
+
+  const visibleProfiles = $derived(
+    pendingDelete
+      ? $profiles.filter((p) => p.id !== pendingDelete!.profile.id)
+      : $profiles,
+  );
+
   onMount(async () => {
     // Svelte has no formal error boundaries; without these two
     // listeners an unhandled promise rejection or a runtime error
@@ -273,14 +302,51 @@
   }
 
   async function handleDelete(id: string) {
+    const profile = $profiles.find((p) => p.id === id);
+    if (!profile) return;
+
+    // If there's already a pending delete, commit it immediately —
+    // the user has moved on and won't expect two simultaneous undos.
+    if (pendingDelete) {
+      await commitPendingDelete();
+    }
+
     try {
       if (isConnected) await api.disconnect();
-      await deleteProfile(id);
-      draft = null;
-      statusMsg = "Deleted";
+    } catch (e) {
+      statusMsg = `Disconnect failed: ${e}`;
+      return;
+    }
+    draft = null;
+    if ($selectedProfileID === id) selectedProfileID.set(null);
+
+    const timerId = setTimeout(() => {
+      void commitPendingDelete();
+    }, UNDO_WINDOW_MS);
+    pendingDelete = { profile, timerId };
+    statusMsg = `Deleted ${profile.name} — undo available for ${Math.ceil(UNDO_WINDOW_MS / 1000)}s`;
+  }
+
+  async function commitPendingDelete() {
+    if (!pendingDelete) return;
+    const { profile, timerId } = pendingDelete;
+    clearTimeout(timerId);
+    pendingDelete = null;
+    try {
+      await deleteProfile(profile.id);
     } catch (e) {
       statusMsg = `Delete failed: ${e}`;
     }
+  }
+
+  function undoDelete() {
+    if (!pendingDelete) return;
+    clearTimeout(pendingDelete.timerId);
+    const restored = pendingDelete.profile;
+    pendingDelete = null;
+    statusMsg = `Restored ${restored.name}`;
+    // Select the restored profile so the user lands back on it.
+    selectedProfileID.set(restored.id);
   }
 
   async function handleConnect() {
@@ -656,7 +722,7 @@
 
 <div class="shell">
   <Sidebar
-    profiles={$profiles}
+    profiles={visibleProfiles}
     selectedID={$selectedProfileID}
     activeID={activeProfileID}
     {settingsOpen}
@@ -828,6 +894,15 @@
         </span>
       {/if}
       <span class="status-text">{statusMsg || " "}</span>
+      {#if pendingDelete}
+        <button
+          class="undo-btn"
+          on:click={undoDelete}
+          title="Restore {pendingDelete.profile.name}"
+        >
+          Undo <span class="undo-countdown">({pendingDeleteSecondsLeft}s)</span>
+        </button>
+      {/if}
     </footer>
   </main>
 </div>
@@ -1085,8 +1160,8 @@
   }
 
   .status {
-    padding: 4px 16px;
-    height: 22px;
+    padding: 5px 14px;
+    height: 30px;
     font-size: 11px;
     color: var(--fg-tertiary);
     border-top: 1px solid var(--border-subtle);
@@ -1118,6 +1193,28 @@
   @keyframes scanning-pulse {
     0%, 100% { opacity: 0.35; }
     50% { opacity: 1; }
+  }
+
+  .undo-btn {
+    margin-left: auto;
+    padding: 2px 9px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    line-height: 1.3;
+  }
+
+  .undo-btn:hover {
+    background: var(--bg-active);
+  }
+
+  .undo-countdown {
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
+    margin-left: 2px;
   }
 
   .terminal-layer {
