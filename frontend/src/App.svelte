@@ -35,6 +35,7 @@
     type Appearance,
   } from "./stores/skins";
   import { session } from "./stores/session";
+  import { portScanning } from "./stores/scanning";
 
   let draft: Profile | null = null;
   let terminalRef: Terminal | null = null;
@@ -787,6 +788,12 @@
     {/if}
 
     <footer class="status">
+      {#if $portScanning}
+        <span class="scanning-pill" title="Enumerating serial ports and USB adapters">
+          <span class="scanning-dot"></span>
+          Scanning for COM ports…
+        </span>
+      {/if}
       <span class="status-text">{statusMsg || " "}</span>
     </footer>
   </main>
@@ -1050,8 +1057,32 @@
     border-top: 1px solid var(--border-subtle);
     display: flex;
     align-items: center;
+    gap: 10px;
     flex-shrink: 0;
     background: rgba(0, 0, 0, 0.2);
+  }
+
+  .scanning-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--fg-secondary);
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+  }
+
+  .scanning-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: scanning-pulse 1.1s ease-in-out infinite;
+  }
+
+  @keyframes scanning-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
   }
 
   .terminal-layer {
