@@ -57,26 +57,23 @@ high-effort or niche enough that priority tracks real demand.
 
 ## Accessibility
 
-- [ ] **xterm screenReaderMode toggle.** Flip xterm's
-      `screenReaderMode: true` behind a Settings → Accessibility
-      toggle. Exposes incoming output to screen readers via a live
-      region — critical for blind users. Default off (small perf
-      cost on heavy output).
-- [ ] **Respect `prefers-reduced-motion`.** The reconnecting pulse
-      animation and any future skin-level overlays (CRT scanlines,
-      blueprint grid shimmer) should disable when the OS reports a
-      reduced-motion preference. Pulse stays visible as a static
-      amber dot. `@media (prefers-reduced-motion: reduce) { ... }`
-      wrapper in style.css.
-- [ ] **ARIA-label audit.** Pass over icon-only / text-light
-      controls: DTR/RTS pills, driver-install banner × button, theme
-      swatch rows, the sidebar settings button. Add explicit
-      `aria-label` where the visible text doesn't stand on its own.
-- [ ] **Ctrl/Cmd +/- terminal zoom.** Standard in every other
-      terminal (iTerm2, Windows Terminal, VS Code). Easier for
-      low-vision users than the Settings → Font size dropdown.
-      Re-uses the existing fontSize setting; shortcut clamps to
-      8-28px.
+- [x] **xterm screenReaderMode toggle.** Settings → Advanced →
+      "Enable xterm screen-reader mode." Persisted as
+      Settings.ScreenReaderMode; routed to xterm via
+      `term.options.screenReaderMode` on init + $effect.
+- [x] **Respect `prefers-reduced-motion`.** The reconnecting pulse
+      and port-scanning pulse both wrap their animations in
+      `@media (prefers-reduced-motion: reduce)` — dots stay visible
+      as static indicators instead of blanking entirely.
+- [x] **ARIA-label audit.** All icon-only / text-light buttons
+      checked; existing labels on New Profile, Rescan ports,
+      Dismiss driver notice, Remove/Preview theme, Remove skin,
+      Overflow "More actions", modal × dismiss. Other controls
+      have visible text that stands on its own.
+- [x] **Ctrl/Cmd +/- terminal zoom.** Window-level keydown handler
+      in App.svelte — `+` / `-` bump font size ±1, `0` resets to
+      13. Clamped 8-28. Persisted to Settings.fontSize so zoom
+      sticks across sessions.
 - [ ] **Keyboard shortcuts for Break / Clear / Suspend.** **[on request]**
       Session-header buttons are currently mouse-only, which blocks
       keyboard-only users from sending Break. Cmd/Ctrl+Shift+B is

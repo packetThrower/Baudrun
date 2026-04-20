@@ -28,6 +28,7 @@
     pasteWarnMultiline?: boolean;
     pasteSlow?: boolean;
     pasteCharDelayMs?: number;
+    screenReaderMode?: boolean;
     onStatus?: (msg: string) => void;
   };
 
@@ -44,6 +45,7 @@
     pasteWarnMultiline = false,
     pasteSlow = false,
     pasteCharDelayMs = 10,
+    screenReaderMode = false,
     onStatus = () => {},
   }: Props = $props();
 
@@ -194,6 +196,11 @@
       try { fit?.fit(); } catch {}
     }
   });
+  $effect(() => {
+    if (term) {
+      term.options.screenReaderMode = screenReaderMode;
+    }
+  });
 
   export function setTheme(t: Theme | undefined) {
     applyTheme(t);
@@ -211,6 +218,7 @@
       scrollback: 10000,
       convertEol: false,
       theme: theme ? themeToXterm(theme) : fallbackTheme,
+      screenReaderMode,
     });
 
     fit = new FitAddon();
