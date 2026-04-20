@@ -56,7 +56,11 @@
 
   $: locked = isConnected || isConnecting;
 
-  $: baudIsCustom = !BAUD_RATES.includes(draft.baudRate);
+  // customMode sticks after the user picks "Custom…" from the dropdown,
+  // even if their typed value happens to coincide with a preset. Cleared
+  // whenever the user picks a preset back from the dropdown.
+  let customMode = false;
+  $: baudIsCustom = customMode || !BAUD_RATES.includes(draft.baudRate);
 
   onMount(refreshPorts);
 
@@ -130,7 +134,15 @@
 
   function onBaudChange(e: Event) {
     const v = (e.target as HTMLSelectElement).value;
-    if (v !== "custom") draft.baudRate = Number(v);
+    if (v === "custom") {
+      // Keep the current baud as the starting point so the user has
+      // something sensible to edit from; flipping customMode reveals
+      // the numeric input below.
+      customMode = true;
+    } else {
+      customMode = false;
+      draft.baudRate = Number(v);
+    }
     markDirty();
   }
 
@@ -299,10 +311,13 @@
             class="mt-4"
             type="number"
             min="50"
+            step="1"
+            placeholder="baud (e.g. 500000)"
             bind:value={draft.baudRate}
             on:input={markDirty}
             disabled={locked}
           />
+          <span class="inline-hint">Any positive integer the adapter supports.</span>
         {/if}
       </div>
 
