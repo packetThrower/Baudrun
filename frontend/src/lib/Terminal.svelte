@@ -166,10 +166,27 @@
     brightCyan: "#a6ecec", brightWhite: "#ffffff",
   };
 
+  // Guard against spurious theme-effect re-runs: the prop binding can
+  // re-emit even when the underlying theme didn't actually change,
+  // and term.refresh() is expensive enough that doing it per-keystroke
+  // produces visible typing lag. Track the last applied theme by id
+  // and skip work if nothing's different.
+  let lastAppliedThemeId: string | undefined;
+
+  function applyTheme(t: Theme | undefined) {
+    if (!term || !t || t.id === lastAppliedThemeId) return;
+    term.options.theme = themeToXterm(t);
+    // xterm caches glyph rendering per-color; options.theme picks up
+    // for newly-drawn glyphs (cursor, selection) but existing text
+    // stays in the old palette until explicitly refreshed.
+    try {
+      term.refresh(0, term.rows - 1);
+    } catch {}
+    lastAppliedThemeId = t.id;
+  }
+
   $effect(() => {
-    if (term && theme) {
-      term.options.theme = themeToXterm(theme);
-    }
+    applyTheme(theme);
   });
   $effect(() => {
     if (term && fontSize && fontSize > 0) {
@@ -177,6 +194,10 @@
       try { fit?.fit(); } catch {}
     }
   });
+
+  export function setTheme(t: Theme | undefined) {
+    applyTheme(t);
+  }
 
   onMount(() => {
     term = new Terminal({

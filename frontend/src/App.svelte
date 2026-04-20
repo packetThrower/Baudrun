@@ -126,6 +126,18 @@
   const effectiveTheme = $derived(resolveTheme(effectiveThemeID, $themes));
   const termFontSize = $derived($settings.fontSize || 13);
 
+  // Imperatively push the theme to the mounted xterm on every
+  // effectiveTheme change. The prop-based $effect inside Terminal.svelte
+  // also handles this, but during a suspend the prop path has proven
+  // unreliable — the xterm viewport is CSS-hidden but the component
+  // is still mounted, and prop updates don't always route through.
+  // Calling setTheme via the bound ref covers the gap.
+  $effect(() => {
+    if (effectiveTheme && terminalRef) {
+      terminalRef.setTheme(effectiveTheme);
+    }
+  });
+
   // Re-apply skin whenever the active selection, loaded list, appearance
   // preference, or system color scheme changes. The window's own NSAppearance
   // is pinned dark at launch (main.go) because Wails v2.12's runtime theme
@@ -774,6 +786,7 @@
           canConnect={!!currentProfile.id && !!currentProfile.portName}
           {isConnected}
           {isConnecting}
+          {suspended}
           themes={$themes}
           defaultThemeID={$settings.defaultThemeId}
           detectDrivers={!$settings.disableDriverDetection}
