@@ -232,6 +232,29 @@ jobs:
             --package "seriesly-${RPM_VERSION}-${RPM_RELEASE}.${{ matrix.appimage_arch }}.rpm" \
             .
 
+      # Arch Linux package. fpm's pacman target builds the archive
+      # directly without needing makepkg or a native Arch runner. Arch
+      # package names for the GTK/WebKit deps match Fedora's here.
+      # pacman pkgver can't contain hyphens; reuse the RPM-style split.
+      - name: Build .pkg.tar.zst
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          PKG_VERSION="${VERSION%-*}"
+          PKG_RELEASE="${VERSION##*-}"
+          fpm -s dir -t pacman \
+            --name seriesly \
+            --version "${PKG_VERSION}" \
+            --iteration "${PKG_RELEASE}" \
+            --architecture "${{ matrix.appimage_arch }}" \
+            --depends "gtk3" \
+            --depends "webkit2gtk-4.1" \
+            --description "A serial terminal for network devices" \
+            --url "https://github.com/otec-it/Seriesly" \
+            --maintainer "Will Lehnertz <wlehnertz@otec.coop>" \
+            -C pkg \
+            --package "seriesly-${PKG_VERSION}-${PKG_RELEASE}-${{ matrix.appimage_arch }}.pkg.tar.zst" \
+            .
+
       # AppImage is a self-contained bundle; reuses the same staging
       # tree under AppDir/. AppRun is the entrypoint the runtime
       # invokes; the top-level .desktop + .DirIcon are required by
@@ -263,6 +286,7 @@ jobs:
           path: |
             seriesly_*.deb
             seriesly-*.rpm
+            seriesly-*.pkg.tar.zst
             Seriesly-*.AppImage
 
   release:

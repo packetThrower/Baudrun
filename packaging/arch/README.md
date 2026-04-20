@@ -1,9 +1,27 @@
 # Arch Linux packaging
 
-`PKGBUILD` for the Arch User Repository. The package is
-`seriesly-bin` — it downloads the pre-built `.deb` from the GitHub
-release and extracts it, so the install is fast and no Go / Node /
-Wails toolchain is needed on the user's machine.
+Two paths are supported:
+
+1. **CI-produced `.pkg.tar.zst`** — the release workflow builds a
+   native Arch package (via `fpm -t pacman`) alongside the `.deb`,
+   `.rpm`, and `.AppImage` artifacts. Arch users can install it
+   directly:
+   ```bash
+   sudo pacman -U seriesly-<version>-<arch>.pkg.tar.zst
+   ```
+   This is the zero-setup path.
+
+2. **AUR `seriesly-bin`** — the `PKGBUILD` in this directory is for
+   submission to the Arch User Repository. `pacman -U` works, but
+   AUR integration gives users `yay -S seriesly-bin` and automatic
+   update notifications. The PKGBUILD downloads the `.deb` from the
+   GitHub release and extracts it, so there's no Go / Node / Wails
+   toolchain required on the user's machine.
+
+The CI-built `.pkg.tar.zst` and the AUR `-bin` package install the
+same files from the same source (the release's `.deb`). The AUR
+package is a thin wrapper that gives Arch users a familiar install
+flow.
 
 ## Release workflow
 
