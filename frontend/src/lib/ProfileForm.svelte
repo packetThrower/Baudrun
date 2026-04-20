@@ -708,7 +708,25 @@
   }
 
   section {
-    margin-bottom: 28px;
+    margin-bottom: 16px;
+    padding: 16px 20px;
+    background: var(--bg-panel);
+    border: var(--panel-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
+  }
+
+  /* The Advanced section is a disclosure wrapping nested sub-panels;
+     skip the outer panel treatment so we don't stack layers. */
+  section.advanced {
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   section h3 {

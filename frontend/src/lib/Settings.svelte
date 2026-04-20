@@ -197,7 +197,7 @@
     </div>
   </section>
 
-  <section>
+  <section class="flat">
     <div class="section-head">
       <h3>Installed Themes</h3>
       <button on:click={handleImport} disabled={importing}>
@@ -406,7 +406,27 @@
   }
 
   section {
-    margin-bottom: 32px;
+    margin-bottom: 16px;
+    padding: 16px 20px;
+    background: var(--bg-panel);
+    border: var(--panel-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
+  }
+
+  /* Sections that contain their own card rows (theme list) or their
+     own nested sub-panels (Advanced) opt out of the outer panel
+     treatment so layers don't stack. */
+  section.advanced,
+  section.flat {
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   section h3 {
