@@ -6,6 +6,7 @@
     dismissDriver,
     driverKey,
   } from "../stores/drivers";
+  import { portScanning } from "../stores/scanning";
   import {
     api,
     BAUD_RATES,
@@ -66,6 +67,7 @@
 
   async function refreshPorts() {
     loadingPorts = true;
+    portScanning.set(true);
     try {
       const pPromise = api.listPorts();
       const mPromise = detectDrivers
@@ -81,6 +83,7 @@
       console.error("list ports", e);
     } finally {
       loadingPorts = false;
+      portScanning.set(false);
     }
   }
 
