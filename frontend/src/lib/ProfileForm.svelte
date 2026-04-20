@@ -28,6 +28,7 @@
     canConnect: boolean;
     isConnected: boolean;
     isConnecting: boolean;
+    suspended?: boolean;
     themes?: Theme[];
     defaultThemeID?: string;
     detectDrivers?: boolean;
@@ -44,6 +45,7 @@
     canConnect,
     isConnected,
     isConnecting,
+    suspended = false,
     themes = [],
     defaultThemeID = "seriesly",
     detectDrivers = true,
@@ -76,7 +78,12 @@
     }
   });
 
-  const locked = $derived(isConnected || isConnecting);
+  // Lock form fields + Save while the port is actively held or being
+  // opened. A suspended session keeps the port open too, but the UI
+  // contract there is "I've stepped away, let me edit" — save still
+  // just writes JSON; the live session keeps its old settings until
+  // the user disconnects and reconnects.
+  const locked = $derived((isConnected && !suspended) || isConnecting);
 
   // customMode sticks after the user picks "Custom…" from the dropdown,
   // even if their typed value happens to coincide with a preset. Cleared
