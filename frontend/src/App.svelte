@@ -723,7 +723,9 @@
                 <div
                   class="overflow-menu"
                   role="menu"
+                  tabindex="-1"
                   on:click|stopPropagation
+                  on:keydown={(e) => { if (e.key === "Escape") overflowOpen = false; }}
                 >
                   <button
                     role="menuitem"
@@ -803,6 +805,7 @@
   <div
     class="modal-backdrop"
     on:click={closeTransfer}
+    on:keydown={(e) => { if (e.key === "Escape") closeTransfer(); }}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
@@ -829,9 +832,10 @@
         </div>
 
         <div class="field">
-          <label>File</label>
+          <label for="transfer-path">File</label>
           <div class="file-row">
             <input
+              id="transfer-path"
               type="text"
               readonly
               value={transferPath || ""}
