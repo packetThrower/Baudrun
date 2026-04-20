@@ -137,4 +137,18 @@ var builtins = []Theme{
 		BrightBlack: "#4a3a5a", BrightRed: "#ff6533", BrightGreen: "#7dff5a", BrightYellow: "#ffff33",
 		BrightBlue:  "#55ffff", BrightMagenta: "#ff33a0", BrightCyan: "#c0ffff", BrightWhite: "#ffffff",
 	},
+	// Brogrammer — high-contrast near-black background with saturated
+	// ANSI palette. Red/green slots pop hard which reads well on long
+	// `show interface` walls where up/down density matters. Widely
+	// distributed via iTerm2 color-scheme libraries.
+	{
+		ID: "brogrammer", Name: "Brogrammer", Source: "builtin",
+		Background: "#131313", Foreground: "#d6dbe5",
+		Cursor: "#b9b9b9", CursorAccent: "#101010",
+		Selection: "#1f1f1f", SelectionForeground: "#d6dbe5",
+		Black:       "#1f1f1f", Red: "#f81118", Green: "#2dc55e", Yellow: "#ecba0f",
+		Blue:        "#2a84d2", Magenta: "#4e5ab7", Cyan: "#1081d6", White: "#d6dbe5",
+		BrightBlack: "#d6dbe5", BrightRed: "#de352e", BrightGreen: "#1dd361", BrightYellow: "#f3bd09",
+		BrightBlue:  "#1081d6", BrightMagenta: "#5350b9", BrightCyan: "#0f7ddb", BrightWhite: "#ffffff",
+	},
 }

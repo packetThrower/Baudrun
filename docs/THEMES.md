@@ -43,6 +43,7 @@ Deleting a user theme from Settings also removes its file.
 | `colorblind-safe` | Colorblind Safe       | any skin — see note        |
 | `crt-phosphor`    | CRT Phosphor (Green)  | **CRT** skin               |
 | `synthwave`       | Synthwave             | **Cyberpunk** skin         |
+| `brogrammer`      | Brogrammer            | any dark skin              |
 
 **Colorblind Safe** uses Bang Wong's palette
 ([Nature Methods, 2011](https://www.nature.com/articles/nmeth.1618)).
