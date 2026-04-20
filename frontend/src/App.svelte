@@ -115,6 +115,8 @@
   }
 
   let defaultLogDir = "";
+  let configDir = "";
+  let defaultConfigDir = "";
 
   onMount(async () => {
     // Svelte has no formal error boundaries; without these two
@@ -174,6 +176,11 @@
 
     try {
       defaultLogDir = await api.defaultLogDirectory();
+    } catch {}
+
+    try {
+      configDir = await api.getConfigDirectory();
+      defaultConfigDir = await api.getDefaultConfigDirectory();
     } catch {}
   });
 
@@ -428,6 +435,25 @@
     api.cancelTransfer().catch(() => {});
   }
 
+  // Overflow menu holds the less-frequently-used actions (Break,
+  // Hex, Send File) so the session header stays compact. DTR/RTS
+  // stay visible because their pill shows live line state; moving
+  // them to a menu hides that information.
+  let overflowOpen = false;
+
+  function toggleOverflow() {
+    overflowOpen = !overflowOpen;
+  }
+
+  function closeOverflow() {
+    overflowOpen = false;
+  }
+
+  function runFromOverflow(fn: () => void) {
+    overflowOpen = false;
+    fn();
+  }
+
   async function handleDisconnect() {
     try {
       await api.disconnect();
@@ -527,6 +553,28 @@
     }
   }
 
+  async function handlePickConfigDir() {
+    try {
+      const dir = await api.pickConfigDirectory();
+      if (!dir) return;
+      await api.setConfigDirectory(dir);
+      configDir = dir;
+      statusMsg = "Config directory updated — restart Seriesly to apply";
+    } catch (e) {
+      statusMsg = `Config directory change failed: ${e}`;
+    }
+  }
+
+  async function handleResetConfigDir() {
+    try {
+      await api.setConfigDirectory("");
+      configDir = defaultConfigDir;
+      statusMsg = "Config directory reset — restart Seriesly to apply";
+    } catch (e) {
+      statusMsg = `Reset failed: ${e}`;
+    }
+  }
+
   async function handleSetSkin(id: string) {
     try {
       const updated = await api.updateSettings({ ...$settings, skinId: id });
@@ -569,6 +617,11 @@
 
 </script>
 
+<svelte:window
+  on:click={() => { if (overflowOpen) overflowOpen = false; }}
+  on:keydown={(e) => { if (e.key === "Escape" && overflowOpen) overflowOpen = false; }}
+/>
+
 <div class="shell">
   <Sidebar
     profiles={$profiles}
@@ -596,6 +649,10 @@
           on:pickLogDir={handlePickLogDir}
           on:setDetectDrivers={(e) => handleSetDetectDrivers(e.detail)}
           on:setCopyOnSelect={(e) => handleSetCopyOnSelect(e.detail)}
+          on:pickConfigDir={handlePickConfigDir}
+          on:resetConfigDir={handleResetConfigDir}
+          {configDir}
+          {defaultConfigDir}
           on:setSkin={(e) => handleSetSkin(e.detail)}
           on:importSkin={handleImportSkin}
           on:deleteSkin={(e) => handleDeleteSkin(e.detail)}
@@ -650,6 +707,41 @@
             </div>
           </div>
           <div class="session-actions">
+            <div class="overflow-wrap">
+              <button
+                class="overflow-btn"
+                class:open={overflowOpen}
+                on:click|stopPropagation={toggleOverflow}
+                disabled={isReconnecting}
+                title="More actions"
+                aria-label="More actions"
+                aria-haspopup="menu"
+                aria-expanded={overflowOpen}
+              >⋯</button>
+              {#if overflowOpen}
+                <div
+                  class="overflow-menu"
+                  role="menu"
+                  on:click|stopPropagation
+                >
+                  <button
+                    role="menuitem"
+                    on:click={() => runFromOverflow(sendBreak)}
+                    title="~300ms serial break (Cisco ROMMON, Juniper diag, boot-loader interrupt)"
+                  >Send Break</button>
+                  <button
+                    role="menuitem"
+                    on:click={() => runFromOverflow(openHexSend)}
+                    title="Send raw bytes as hex (Modbus, firmware bootloaders, binary protocols)"
+                  >Send Hex…</button>
+                  <button
+                    role="menuitem"
+                    on:click={() => runFromOverflow(openTransfer)}
+                    title="Send a file via XMODEM or YMODEM (firmware uploads, embedded bootloaders)"
+                  >Send File…</button>
+                </div>
+              {/if}
+            </div>
             <button
               class="line-btn"
               class:asserted={ctrlDTR}
@@ -667,27 +759,6 @@
               title="Toggle RTS line ({ctrlRTS ? 'asserted' : 'deasserted'})"
             >
               <span class="line-dot"></span>RTS
-            </button>
-            <button
-              on:click={sendBreak}
-              disabled={isReconnecting}
-              title="Send a ~300ms serial break (Cisco ROMMON, Juniper diag mode, boot-loader interrupt)"
-            >
-              Break
-            </button>
-            <button
-              on:click={openHexSend}
-              disabled={isReconnecting}
-              title="Send raw bytes as hex (Modbus, firmware bootloaders, binary protocols)"
-            >
-              Hex
-            </button>
-            <button
-              on:click={openTransfer}
-              disabled={isReconnecting}
-              title="Send a file via XMODEM or YMODEM (firmware uploads, embedded bootloaders)"
-            >
-              Send File
             </button>
             <button on:click={() => terminalRef?.clear()}>Clear</button>
             <button on:click={handleSuspend} title="Keep session alive; return to profile">
@@ -1016,6 +1087,53 @@
     background: var(--success);
     border-color: var(--success);
     box-shadow: 0 0 5px rgba(50, 215, 75, 0.6);
+  }
+
+  .overflow-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .overflow-btn {
+    font-size: 16px;
+    line-height: 1;
+    padding: 5px 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+
+  .overflow-btn.open {
+    background: var(--bg-active);
+  }
+
+  .overflow-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 180px;
+    background: var(--option-bg, var(--bg-panel));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-floating, 0 10px 30px rgba(0, 0, 0, 0.35));
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 200;
+  }
+
+  .overflow-menu button {
+    text-align: left;
+    padding: 7px 10px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--option-fg, var(--fg-primary));
+    font-size: 13px;
+  }
+
+  .overflow-menu button:hover {
+    background: var(--bg-hover);
   }
 
   .modal-backdrop {

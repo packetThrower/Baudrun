@@ -59,6 +59,10 @@ export const api = {
   updateSettings: App.UpdateSettings,
   pickLogDirectory: App.PickLogDirectory,
   defaultLogDirectory: App.DefaultLogDirectory,
+  getConfigDirectory: App.GetConfigDirectory,
+  getDefaultConfigDirectory: App.GetDefaultConfigDirectory,
+  pickConfigDirectory: App.PickConfigDirectory,
+  setConfigDirectory: App.SetConfigDirectory,
 
   getControlLines: App.GetControlLines,
 

@@ -27,7 +27,11 @@ export function DeleteTheme(arg1:string):Promise<void>;
 
 export function Disconnect():Promise<void>;
 
+export function GetConfigDirectory():Promise<string>;
+
 export function GetControlLines():Promise<main.ControlLines>;
+
+export function GetDefaultConfigDirectory():Promise<string>;
 
 export function GetSettings():Promise<settings.Settings>;
 
@@ -45,6 +49,8 @@ export function ListSkins():Promise<Array<skins.Skin>>;
 
 export function ListThemes():Promise<Array<themes.Theme>>;
 
+export function PickConfigDirectory():Promise<string>;
+
 export function PickLogDirectory():Promise<string>;
 
 export function PickSendFile():Promise<string>;
@@ -54,6 +60,8 @@ export function Send(arg1:string):Promise<void>;
 export function SendBreak():Promise<void>;
 
 export function SendFile(arg1:string,arg2:string):Promise<void>;
+
+export function SetConfigDirectory(arg1:string):Promise<void>;
 
 export function SetDTR(arg1:boolean):Promise<void>;
 

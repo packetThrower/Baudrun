@@ -109,6 +109,29 @@ see [PROFILES.md](PROFILES.md).
 - Only visible in plain view — hex view has no per-line concept to
   prefix.
 
+## Config-directory relocation
+
+- Settings → Advanced → **Config Directory**.
+- Changes where the app reads profiles, themes, skins, and settings
+  from. The default is platform-idiomatic
+  (`~/Library/Application Support/Seriesly` on macOS,
+  `%APPDATA%\Seriesly` on Windows, `$XDG_CONFIG_HOME/Seriesly` on
+  Linux); relocation lets users who keep their dotfiles in a single
+  tree (e.g. `~/dotfiles/seriesly/`) store Seriesly's config
+  alongside.
+- Implementation: a single-line redirect file
+  (`config_dir_override`) lives at the platform default location
+  and contains the absolute path of the custom directory. On startup,
+  `appdata.SupportDir()` reads it; if absent, falls back to the
+  default. Deleting the file resets to default.
+- **Takes effect on next launch** — stores are loaded once at
+  startup. The Settings UI shows a "Restart Seriesly to apply"
+  status message.
+- **Existing files are not migrated.** Moving the config pointer is
+  separate from moving the files themselves; copy profiles.json /
+  themes / skins / settings.json over manually if you want to
+  preserve them. A fresh start at the new location is equally valid.
+
 ## Session logging
 
 - Per-profile toggle (`logEnabled`).
