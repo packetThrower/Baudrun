@@ -175,7 +175,7 @@ Prerequisites:
 - [Wails v2.12](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0`)
 
 ```bash
-git clone git@github.com:packetThrower/Seriesly.git
+git clone git@github.com:packetThrower/Baudrun.git
 cd Baudrun
 wails build                               # production build for host OS
 wails build -platform windows/amd64       # cross-compile to Windows from macOS

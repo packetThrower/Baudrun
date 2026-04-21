@@ -3,8 +3,8 @@
 ## Supported versions
 
 Only the most recent tagged release receives security updates. Tags
-follow CalVer (`YYYY.MM.DD-patch`); grab the latest from the
-[Releases page](https://github.com/packetThrower/Seriesly/releases).
+follow SemVer (`vX.Y.Z`); grab the latest from the
+[Releases page](https://github.com/packetThrower/Baudrun/releases).
 
 ## Reporting a vulnerability
 

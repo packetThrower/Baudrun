@@ -212,7 +212,7 @@ jobs:
             --depends "libgtk-3-0 | libgtk-3-0t64" \
             --depends "libwebkit2gtk-4.1-0" \
             --description "A serial terminal for network devices" \
-            --url "https://github.com/packetThrower/Seriesly" \
+            --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             --deb-no-default-config-files \
@@ -232,7 +232,7 @@ jobs:
             --depends "gtk3" \
             --depends "webkit2gtk4.1" \
             --description "A serial terminal for network devices" \
-            --url "https://github.com/packetThrower/Seriesly" \
+            --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             -C pkg \
@@ -253,7 +253,7 @@ jobs:
             --depends "gtk3" \
             --depends "webkit2gtk-4.1" \
             --description "A serial terminal for network devices" \
-            --url "https://github.com/packetThrower/Seriesly" \
+            --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             -C pkg \

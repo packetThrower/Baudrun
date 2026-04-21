@@ -110,7 +110,7 @@ high-effort or niche enough that priority tracks real demand.
          ```yaml
          repository: otec-it/downloads
          token: ${{ secrets.RELEASES_REPO_TOKEN }}
-         tag_name: seriesly-${{ github.ref_name }}      # or portfinder-
+         tag_name: baudrun-${{ github.ref_name }}       # or portfinder-
          name: Baudrun ${{ github.ref_name }}
          ```
       Do this **after** signing is in place so the first public release
