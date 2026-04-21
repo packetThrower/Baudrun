@@ -149,13 +149,15 @@ jobs:
       # Wails' Linux backend links against GTK3 + WebKit2GTK at cgo time.
       # libwebkit2gtk-4.1-dev is the right flavor on Ubuntu 24.04 (the
       # 4.0 series was deprecated upstream in 2024). file + fuse3 are
-      # needed downstream by appimagetool.
+      # needed downstream by appimagetool. libarchive-tools provides
+      # bsdtar, which fpm's pacman target shells out to when building
+      # .pkg.tar.zst — Ubuntu's default tar isn't bsdtar.
       - name: Install Linux build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config \
-            ruby-dev build-essential file libfuse2t64 rpm
+            ruby-dev build-essential file libfuse2t64 rpm libarchive-tools
 
       - name: Install fpm (drives both .deb and .rpm packaging)
         run: sudo gem install --no-document fpm
