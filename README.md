@@ -17,6 +17,9 @@ Built for connecting to switch consoles, router CLIs, and other serial-attached
 network gear without the ritual of remembering baud rates, fiddling with
 `screen /dev/cu.usbserial-...`, or opening three different apps.
 
+Developed in close collaboration with Claude (Anthropic) — see
+[AI-USAGE.md](AI-USAGE.md) for how that split works.
+
 ## Features
 
 - **Profile-based connections** — named settings per device (port, baud,
