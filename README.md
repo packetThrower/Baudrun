@@ -138,16 +138,18 @@ a driver is missing.
 
 ## Releases
 
-Tagged pushes (CalVer `YYYY.MM.DD-patch`) produce a GitHub Release with
-artifacts for five targets:
+Tagged pushes (SemVer with leading `v`: `v0.4.0`, `v1.0.0`) produce a
+GitHub Release with artifacts for five targets. The `v` prefix is
+only on the git tag — package filenames and `--version` strings drop
+it so dpkg / rpm / pacman read the SemVer natively.
 
 | Platform | Artifact | Notes |
 |---|---|---|
 | **macOS** | `Seriesly-macOS-<version>.zip` (contains `.app`) | **Universal binary** — one `.app` with both Intel (x86_64) and Apple Silicon (arm64) slices fused via `lipo`. macOS picks the matching slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. Trade-off is roughly 2× the download size of a single-arch build. |
 | **Windows amd64** | `Seriesly-Windows-amd64-<version>.zip` (contains `.exe`) | Standard 64-bit x86 Windows 10/11. |
 | **Windows arm64** | `Seriesly-Windows-arm64-<version>.zip` (contains `.exe`) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
-| **Linux amd64** | `seriesly_<version>_amd64.deb`, `seriesly-<version>.x86_64.rpm`, `seriesly-<version>-x86_64.pkg.tar.zst`, `Seriesly-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. |
-| **Linux arm64** | `seriesly_<version>_arm64.deb`, `seriesly-<version>.aarch64.rpm`, `seriesly-<version>-aarch64.pkg.tar.zst`, `Seriesly-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
+| **Linux amd64** | `seriesly_<version>-1_amd64.deb`, `seriesly-<version>-1.x86_64.rpm`, `seriesly-<version>-1-x86_64.pkg.tar.zst`, `Seriesly-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. The trailing `-1` is fpm's packaging revision — bumps only if the same upstream version needs to ship again with packaging-only fixes. |
+| **Linux arm64** | `seriesly_<version>-1_arm64.deb`, `seriesly-<version>-1.aarch64.rpm`, `seriesly-<version>-1-aarch64.pkg.tar.zst`, `Seriesly-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
 
 Arch users can install the `.pkg.tar.zst` directly with
 `pacman -U`. The [packaging/arch/](packaging/arch/) directory holds
@@ -188,9 +190,9 @@ builds have to run on Linux (or in CI). On a Linux host, install
 
 CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-26`,
 `windows-latest`, `windows-11-arm`, `ubuntu-latest`, and `ubuntu-24.04-arm`
-on each push to `main`. Tagged pushes matching CalVer `20*.*.*-*` fire
-`.github/workflows/release.yml`, which produces a GitHub Release with all
-five platform artifacts attached.
+on each push to `main`. Tagged pushes matching SemVer `v[0-9]+.[0-9]+.[0-9]+`
+fire `.github/workflows/release.yml`, which produces a GitHub Release
+with all five platform artifacts attached.
 
 ## Architecture
 

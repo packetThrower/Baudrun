@@ -1,9 +1,6 @@
 # Maintainer: Will Lehnertz <lehnertz85@gmail.com>
 pkgname=seriesly-bin
-_tag=2026.04.18-4
-# Arch pkgver can't contain '-'; swap to .r<n> (AUR convention for
-# upstream tags with a release suffix). 2026.04.18-4 -> 2026.04.18.r4
-pkgver="${_tag//-/.r}"
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="A serial terminal for network devices"
 arch=('x86_64' 'aarch64')
@@ -14,8 +11,10 @@ conflicts=('seriesly')
 provides=("seriesly=${pkgver}")
 options=(!strip)
 
-source_x86_64=("seriesly-${_tag}-amd64.deb::${url}/releases/download/${_tag}/seriesly_${_tag}_amd64.deb")
-source_aarch64=("seriesly-${_tag}-arm64.deb::${url}/releases/download/${_tag}/seriesly_${_tag}_arm64.deb")
+# Upstream releases as vX.Y.Z; the .deb filename itself drops the v
+# and appends -1 (fpm's --iteration). Keep these in sync when bumping.
+source_x86_64=("seriesly-${pkgver}-amd64.deb::${url}/releases/download/v${pkgver}/seriesly_${pkgver}-1_amd64.deb")
+source_aarch64=("seriesly-${pkgver}-arm64.deb::${url}/releases/download/v${pkgver}/seriesly_${pkgver}-1_arm64.deb")
 # Replace with real sums when updating:
 #   sha256sum seriesly_*.deb
 sha256sums_x86_64=('SKIP')
@@ -26,5 +25,5 @@ package() {
     # .deb is an ar archive containing data.tar.{gz,xz,zst}. bsdtar
     # reads both ar format and the inner compression, so a two-stage
     # pipe extracts the payload directly into ${pkgdir}.
-    bsdtar -xOf seriesly-${_tag}-*.deb 'data.tar.*' | bsdtar -xf - -C "${pkgdir}"
+    bsdtar -xOf seriesly-${pkgver}-*.deb 'data.tar.*' | bsdtar -xf - -C "${pkgdir}"
 }

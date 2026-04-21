@@ -3,8 +3,10 @@ name: Release
 on:
   push:
     tags:
-      # CalVer: YYYY.MM.DD-patch, e.g. 2026.04.17-1
-      - "20*.*.*-*"
+      # SemVer with leading v: v0.4.0, v1.2.3. Pre-release suffixes
+      # (v0.4.0-rc.1) don't fire automatically — add a separate
+      # trigger when that becomes a real need.
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
@@ -39,7 +41,7 @@ jobs:
 
       - name: Patch productVersion from tag
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
           jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp
           mv wails.json.tmp wails.json
           echo "Using version: $VERSION"
@@ -57,7 +59,7 @@ jobs:
 
       - name: Package
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
           cd build/bin
           zip -r "../../Seriesly-macOS-${VERSION}.zip" Seriesly.app
 
@@ -92,7 +94,7 @@ jobs:
       - name: Patch productVersion from tag
         shell: powershell
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = "${{ github.ref_name }}" -replace '^v', ''
           $json = Get-Content wails.json -Raw | ConvertFrom-Json
           $json.info.productVersion = $version
           $json | ConvertTo-Json -Depth 10 | Set-Content wails.json
@@ -112,7 +114,7 @@ jobs:
       - name: Package
         shell: powershell
         run: |
-          $version = "${{ github.ref_name }}"
+          $version = "${{ github.ref_name }}" -replace '^v', ''
           $arch = "${{ matrix.arch }}"
           Compress-Archive -Path build\bin\Seriesly.exe -DestinationPath "Seriesly-Windows-$arch-$version.zip"
 
@@ -164,7 +166,7 @@ jobs:
 
       - name: Patch productVersion from tag
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
           jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp
           mv wails.json.tmp wails.json
           echo "Using version: $VERSION"
@@ -196,12 +198,16 @@ jobs:
           install -m 644 packaging/linux/seriesly.desktop pkg/usr/share/applications/seriesly.desktop
           install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/seriesly.png
 
+      # SemVer goes straight into fpm's --version. --iteration stays at 1
+      # unless the same SemVer needs to ship again with packaging-only
+      # changes, which would be a manual bump.
       - name: Build .deb
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
           fpm -s dir -t deb \
             --name seriesly \
             --version "${VERSION}" \
+            --iteration "1" \
             --architecture "${{ matrix.arch }}" \
             --depends "libgtk-3-0 | libgtk-3-0t64" \
             --depends "libwebkit2gtk-4.1-0" \
@@ -211,21 +217,17 @@ jobs:
             --license "GPL-3.0-or-later" \
             --deb-no-default-config-files \
             -C pkg \
-            --package "seriesly_${VERSION}_${{ matrix.arch }}.deb" \
+            --package "seriesly_${VERSION}-1_${{ matrix.arch }}.deb" \
             .
 
-      # RPM's Version field forbids hyphens, so split the CalVer tag:
-      # "2026.04.18-3" → Version 2026.04.18, Release 3. Fedora 40+
-      # package names for the GTK/WebKit deps differ from Debian's.
+      # Fedora 40+ package names for GTK/WebKit differ from Debian's.
       - name: Build .rpm
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          RPM_VERSION="${VERSION%-*}"
-          RPM_RELEASE="${VERSION##*-}"
+          VERSION="${GITHUB_REF_NAME#v}"
           fpm -s dir -t rpm \
             --name seriesly \
-            --version "${RPM_VERSION}" \
-            --iteration "${RPM_RELEASE}" \
+            --version "${VERSION}" \
+            --iteration "1" \
             --architecture "${{ matrix.appimage_arch }}" \
             --depends "gtk3" \
             --depends "webkit2gtk4.1" \
@@ -234,22 +236,19 @@ jobs:
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             -C pkg \
-            --package "seriesly-${RPM_VERSION}-${RPM_RELEASE}.${{ matrix.appimage_arch }}.rpm" \
+            --package "seriesly-${VERSION}-1.${{ matrix.appimage_arch }}.rpm" \
             .
 
       # Arch Linux package. fpm's pacman target builds the archive
       # directly without needing makepkg or a native Arch runner. Arch
       # package names for the GTK/WebKit deps match Fedora's here.
-      # pacman pkgver can't contain hyphens; reuse the RPM-style split.
       - name: Build .pkg.tar.zst
         run: |
-          VERSION="${GITHUB_REF_NAME}"
-          PKG_VERSION="${VERSION%-*}"
-          PKG_RELEASE="${VERSION##*-}"
+          VERSION="${GITHUB_REF_NAME#v}"
           fpm -s dir -t pacman \
             --name seriesly \
-            --version "${PKG_VERSION}" \
-            --iteration "${PKG_RELEASE}" \
+            --version "${VERSION}" \
+            --iteration "1" \
             --architecture "${{ matrix.appimage_arch }}" \
             --depends "gtk3" \
             --depends "webkit2gtk-4.1" \
@@ -258,7 +257,7 @@ jobs:
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             -C pkg \
-            --package "seriesly-${PKG_VERSION}-${PKG_RELEASE}-${{ matrix.appimage_arch }}.pkg.tar.zst" \
+            --package "seriesly-${VERSION}-1-${{ matrix.appimage_arch }}.pkg.tar.zst" \
             .
 
       # AppImage is a self-contained bundle; reuses the same staging
@@ -267,7 +266,7 @@ jobs:
       # appimagetool's validator.
       - name: Build AppImage
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p AppDir
           cp -r pkg/usr AppDir/
           cp packaging/linux/seriesly.desktop AppDir/seriesly.desktop
