@@ -206,8 +206,8 @@ jobs:
             --depends "libgtk-3-0 | libgtk-3-0t64" \
             --depends "libwebkit2gtk-4.1-0" \
             --description "A serial terminal for network devices" \
-            --url "https://github.com/otec-it/Seriesly" \
-            --maintainer "Will Lehnertz <wlehnertz@otec.coop>" \
+            --url "https://github.com/packetThrower/Seriesly" \
+            --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --deb-no-default-config-files \
             -C pkg \
             --package "seriesly_${VERSION}_${{ matrix.arch }}.deb" \
@@ -229,8 +229,8 @@ jobs:
             --depends "gtk3" \
             --depends "webkit2gtk4.1" \
             --description "A serial terminal for network devices" \
-            --url "https://github.com/otec-it/Seriesly" \
-            --maintainer "Will Lehnertz <wlehnertz@otec.coop>" \
+            --url "https://github.com/packetThrower/Seriesly" \
+            --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             -C pkg \
             --package "seriesly-${RPM_VERSION}-${RPM_RELEASE}.${{ matrix.appimage_arch }}.rpm" \
             .
@@ -252,8 +252,8 @@ jobs:
             --depends "gtk3" \
             --depends "webkit2gtk-4.1" \
             --description "A serial terminal for network devices" \
-            --url "https://github.com/otec-it/Seriesly" \
-            --maintainer "Will Lehnertz <wlehnertz@otec.coop>" \
+            --url "https://github.com/packetThrower/Seriesly" \
+            --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             -C pkg \
             --package "seriesly-${PKG_VERSION}-${PKG_RELEASE}-${{ matrix.appimage_arch }}.pkg.tar.zst" \
             .

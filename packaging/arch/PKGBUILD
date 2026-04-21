@@ -1,4 +1,4 @@
-# Maintainer: Will Lehnertz <wlehnertz@otec.coop>
+# Maintainer: Will Lehnertz <lehnertz85@gmail.com>
 pkgname=seriesly-bin
 _tag=2026.04.18-4
 # Arch pkgver can't contain '-'; swap to .r<n> (AUR convention for
@@ -7,7 +7,7 @@ pkgver="${_tag//-/.r}"
 pkgrel=1
 pkgdesc="A serial terminal for network devices"
 arch=('x86_64' 'aarch64')
-url="https://github.com/otec-it/Seriesly"
+url="https://github.com/packetThrower/Seriesly"
 license=('custom:unknown')
 depends=('gtk3' 'webkit2gtk-4.1')
 conflicts=('seriesly')
