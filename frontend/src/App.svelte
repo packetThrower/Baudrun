@@ -818,7 +818,7 @@
           <div class="empty-inner">
             <div class="brand">Seriesly</div>
             <p>A serial terminal for network devices.</p>
-            <button class="primary" on:click={handleCreate}>
+            <button class="primary" onclick={handleCreate}>
               Create a Profile
             </button>
           </div>
@@ -866,7 +866,7 @@
               <button
                 class="overflow-btn"
                 class:open={overflowOpen}
-                on:click|stopPropagation={toggleOverflow}
+                onclick={(e) => { e.stopPropagation(); toggleOverflow(); }}
                 disabled={isReconnecting}
                 title="More actions"
                 aria-label="More actions"
@@ -878,22 +878,22 @@
                   class="overflow-menu"
                   role="menu"
                   tabindex="-1"
-                  on:click|stopPropagation
-                  on:keydown={(e) => { if (e.key === "Escape") overflowOpen = false; }}
+                  onclick={(e) => e.stopPropagation()}
+                  onkeydown={(e) => { if (e.key === "Escape") overflowOpen = false; }}
                 >
                   <button
                     role="menuitem"
-                    on:click={() => runFromOverflow(sendBreak)}
+                    onclick={() => runFromOverflow(sendBreak)}
                     title="~300ms serial break (Cisco ROMMON, Juniper diag, boot-loader interrupt)"
                   >Send Break</button>
                   <button
                     role="menuitem"
-                    on:click={() => runFromOverflow(openHexSend)}
+                    onclick={() => runFromOverflow(openHexSend)}
                     title="Send raw bytes as hex (Modbus, firmware bootloaders, binary protocols)"
                   >Send Hex…</button>
                   <button
                     role="menuitem"
-                    on:click={() => runFromOverflow(openTransfer)}
+                    onclick={() => runFromOverflow(openTransfer)}
                     title="Send a file via XMODEM or YMODEM (firmware uploads, embedded bootloaders)"
                   >Send File…</button>
                 </div>
@@ -902,7 +902,7 @@
             <button
               class="line-btn"
               class:asserted={ctrlDTR}
-              on:click={toggleDTR}
+              onclick={toggleDTR}
               disabled={isReconnecting}
               title="Toggle DTR line ({ctrlDTR ? 'asserted' : 'deasserted'})"
             >
@@ -911,17 +911,17 @@
             <button
               class="line-btn"
               class:asserted={ctrlRTS}
-              on:click={toggleRTS}
+              onclick={toggleRTS}
               disabled={isReconnecting}
               title="Toggle RTS line ({ctrlRTS ? 'asserted' : 'deasserted'})"
             >
               <span class="line-dot"></span>RTS
             </button>
-            <button on:click={() => terminalRef?.clear()}>Clear</button>
-            <button on:click={handleSuspend} title="Keep session alive; return to profile">
+            <button onclick={() => terminalRef?.clear()}>Clear</button>
+            <button onclick={handleSuspend} title="Keep session alive; return to profile">
               Suspend
             </button>
-            <button class="primary" on:click={handleDisconnect}>Disconnect</button>
+            <button class="primary" onclick={handleDisconnect}>Disconnect</button>
           </div>
         </header>
         <Terminal
@@ -955,7 +955,7 @@
       {#if pendingDelete}
         <button
           class="undo-btn"
-          on:click={undoDelete}
+          onclick={undoDelete}
           title="Restore {pendingDelete.profile.name}"
         >
           Undo <span class="undo-countdown">({pendingDeleteSecondsLeft}s)</span>
@@ -968,17 +968,17 @@
 {#if transferOpen}
   <div
     class="modal-backdrop"
-    on:click={closeTransfer}
-    on:keydown={(e) => { if (e.key === "Escape") closeTransfer(); }}
+    onclick={closeTransfer}
+    onkeydown={(e) => { if (e.key === "Escape") closeTransfer(); }}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
   >
-    <div class="transfer-modal" on:click|stopPropagation role="presentation">
+    <div class="transfer-modal" onclick={(e) => e.stopPropagation()} role="presentation">
       <header class="hex-header">
         <strong>Send file</strong>
         <button
-          on:click={closeTransfer}
+          onclick={closeTransfer}
           disabled={transferState.status === "sending"}
           aria-label="Close"
         >×</button>
@@ -1005,7 +1005,7 @@
               value={transferPath || ""}
               placeholder="No file selected"
             />
-            <button on:click={pickTransferFile}>Choose…</button>
+            <button onclick={pickTransferFile}>Choose…</button>
           </div>
         </div>
 
@@ -1017,8 +1017,8 @@
         </p>
 
         <div class="hex-actions">
-          <button on:click={closeTransfer}>Cancel</button>
-          <button class="primary" on:click={startTransfer} disabled={!transferPath}>
+          <button onclick={closeTransfer}>Cancel</button>
+          <button class="primary" onclick={startTransfer} disabled={!transferPath}>
             Send
           </button>
         </div>
@@ -1042,18 +1042,18 @@
           </div>
         </div>
         <div class="hex-actions">
-          <button on:click={cancelTransfer}>Cancel transfer</button>
+          <button onclick={cancelTransfer}>Cancel transfer</button>
         </div>
       {:else if transferState.status === "done"}
         <p class="transfer-done">✓ Sent {transferState.filename}</p>
         <div class="hex-actions">
-          <button class="primary" on:click={closeTransfer}>Close</button>
+          <button class="primary" onclick={closeTransfer}>Close</button>
         </div>
       {:else if transferState.status === "error"}
         <div class="hex-error">{transferState.reason}</div>
         <div class="hex-actions">
-          <button on:click={() => (transferState = { status: "picking" })}>Try again</button>
-          <button class="primary" on:click={closeTransfer}>Close</button>
+          <button onclick={() => (transferState = { status: "picking" })}>Try again</button>
+          <button class="primary" onclick={closeTransfer}>Close</button>
         </div>
       {/if}
     </div>
@@ -1063,27 +1063,27 @@
 {#if hexSendOpen}
   <div
     class="modal-backdrop"
-    on:click={closeHexSend}
-    on:keydown={onHexKeydown}
+    onclick={closeHexSend}
+    onkeydown={onHexKeydown}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
   >
     <div
       class="hex-modal"
-      on:click|stopPropagation
-      on:keydown|stopPropagation={onHexKeydown}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => { e.stopPropagation(); onHexKeydown(e); }}
       role="presentation"
     >
       <header class="hex-header">
         <strong>Send hex bytes</strong>
-        <button on:click={closeHexSend} aria-label="Close">×</button>
+        <button onclick={closeHexSend} aria-label="Close">×</button>
       </header>
       <p class="hex-hint">
         Space-separated, compact, or 0x-prefixed — all equivalent:
         <code>02 FF AA 55</code>, <code>02FFAA55</code>, <code>0x02 0xFF 0xAA 0x55</code>.
       </p>
-      <!-- svelte-ignore a11y-autofocus -->
+      <!-- svelte-ignore a11y_autofocus -->
       <input
         type="text"
         class="hex-input"
@@ -1095,8 +1095,8 @@
         <div class="hex-error">Invalid: {hexError}</div>
       {/if}
       <div class="hex-actions">
-        <button on:click={closeHexSend}>Cancel</button>
-        <button class="primary" on:click={submitHex}>Send</button>
+        <button onclick={closeHexSend}>Cancel</button>
+        <button class="primary" onclick={submitHex}>Send</button>
       </div>
     </div>
   </div>

@@ -56,7 +56,7 @@
     onResume,
   }: Props = $props();
 
-  let draft = $state<Profile>({ ...profile });
+  let draft = $state<Profile>({ ...profile } as Profile);
   // syncedFrom deliberately NOT $state — writing to it inside $effect
   // where the effect also reads it would otherwise retrigger the
   // effect (even though the condition self-stabilizes, cleaner to
@@ -71,7 +71,7 @@
 
   $effect(() => {
     if (profile !== syncedFrom) {
-      draft = { ...profile };
+      draft = { ...profile } as Profile;
       syncedFrom = profile;
       dirty = false;
       error = "";
@@ -143,7 +143,7 @@
     saving = true;
     error = "";
     try {
-      onSave({ ...draft });
+      onSave({ ...draft } as Profile);
     } catch (e) {
       error = String(e);
     } finally {
@@ -199,7 +199,7 @@
         class="name-input"
         type="text"
         bind:value={draft.name}
-        on:input={markDirty}
+        oninput={markDirty}
         placeholder="Profile name"
         disabled={locked}
       />
@@ -215,26 +215,26 @@
       {#if !isNew}
         <button
           class="danger"
-          on:click={() => onDelete(draft.id)}
+          onclick={() => onDelete(draft.id)}
           disabled={locked}
         >
           Delete
         </button>
       {/if}
-      <button on:click={save} disabled={!dirty || saving || locked}>
+      <button onclick={save} disabled={!dirty || saving || locked}>
         {isNew ? "Create" : "Save"}
       </button>
       {#if isConnected}
-        <button on:click={onDisconnect}>
+        <button onclick={onDisconnect}>
           Disconnect
         </button>
-        <button class="primary" on:click={onResume}>
+        <button class="primary" onclick={onResume}>
           Resume
         </button>
       {:else}
         <button
           class="primary"
-          on:click={onConnect}
+          onclick={onConnect}
           disabled={!canConnect || isConnecting}
         >
           {isConnecting ? "Connecting…" : "Connect"}
@@ -277,13 +277,13 @@
               </div>
             </div>
             {#if d.driverURL}
-              <button on:click={() => BrowserOpenURL(d.driverURL)}>
+              <button onclick={() => BrowserOpenURL(d.driverURL!)}>
                 Install driver…
               </button>
             {/if}
             <button
               class="driver-close"
-              on:click={() => dismissDriver(driverKey(d))}
+              onclick={() => dismissDriver(driverKey(d))}
               title="Dismiss"
               aria-label="Dismiss driver notice"
             >
@@ -301,7 +301,7 @@
           <select
             id="port"
             bind:value={draft.portName}
-            on:change={markDirty}
+            onchange={markDirty}
             disabled={locked}
           >
             <option value="">— Select a port —</option>
@@ -316,7 +316,7 @@
           </select>
           <button
             class="icon-btn"
-            on:click={refreshPorts}
+            onclick={refreshPorts}
             disabled={loadingPorts || locked}
             title="Rescan ports"
             aria-label="Rescan ports"
@@ -339,7 +339,7 @@
         <select
           id="baud"
           value={baudIsCustom ? "custom" : draft.baudRate}
-          on:change={onBaudChange}
+          onchange={onBaudChange}
           disabled={locked}
         >
           {#each BAUD_RATES as rate}
@@ -355,7 +355,7 @@
             step="1"
             placeholder="baud (e.g. 500000)"
             bind:value={draft.baudRate}
-            on:input={markDirty}
+            oninput={markDirty}
             disabled={locked}
           />
           <span class="inline-hint">Any positive integer the adapter supports.</span>
@@ -367,7 +367,7 @@
         <select
           id="databits"
           bind:value={draft.dataBits}
-          on:change={markDirty}
+          onchange={markDirty}
           disabled={locked}
         >
           {#each DATA_BITS as b}
@@ -381,7 +381,7 @@
         <select
           id="parity"
           bind:value={draft.parity}
-          on:change={markDirty}
+          onchange={markDirty}
           disabled={locked}
         >
           {#each PARITIES as opt}
@@ -395,7 +395,7 @@
         <select
           id="stopbits"
           bind:value={draft.stopBits}
-          on:change={markDirty}
+          onchange={markDirty}
           disabled={locked}
         >
           {#each STOP_BITS as opt}
@@ -409,7 +409,7 @@
         <select
           id="flow"
           bind:value={draft.flowControl}
-          on:change={markDirty}
+          onchange={markDirty}
           disabled={locked}
         >
           {#each FLOW_CONTROL as opt}
@@ -428,7 +428,7 @@
         <select
           id="lineending"
           bind:value={draft.lineEnding}
-          on:change={markDirty}
+          onchange={markDirty}
           disabled={locked}
         >
           {#each LINE_ENDINGS as opt}
@@ -442,7 +442,7 @@
         <select
           id="backspace"
           bind:value={draft.backspaceKey}
-          on:change={markDirty}
+          onchange={markDirty}
           disabled={locked}
         >
           <option value="del">DEL (0x7F) — VT100 / xterm / most modern</option>
@@ -455,7 +455,7 @@
           <input
             type="checkbox"
             bind:checked={draft.localEcho}
-            on:change={markDirty}
+            onchange={markDirty}
             disabled={locked}
           />
           Local echo
@@ -467,7 +467,7 @@
           <input
             type="checkbox"
             bind:checked={draft.highlight}
-            on:change={markDirty}
+            onchange={markDirty}
           />
           Syntax highlighting
         </label>
@@ -483,7 +483,7 @@
         <select
           id="theme"
           bind:value={draft.themeId}
-          on:change={markDirty}
+          onchange={markDirty}
         >
           <option value="">Default — {defaultThemeName}</option>
           {#if themes.some((t) => t.source === "builtin")}
@@ -524,7 +524,7 @@
             <select
               id="dtr-connect"
               bind:value={draft.dtrOnConnect}
-              on:change={markDirty}
+              onchange={markDirty}
               disabled={locked}
             >
               {#each LINE_POLICIES as opt}
@@ -538,7 +538,7 @@
             <select
               id="rts-connect"
               bind:value={draft.rtsOnConnect}
-              on:change={markDirty}
+              onchange={markDirty}
               disabled={locked}
             >
               {#each LINE_POLICIES as opt}
@@ -552,7 +552,7 @@
             <select
               id="dtr-disconnect"
               bind:value={draft.dtrOnDisconnect}
-              on:change={markDirty}
+              onchange={markDirty}
               disabled={locked}
             >
               {#each LINE_POLICIES as opt}
@@ -566,7 +566,7 @@
             <select
               id="rts-disconnect"
               bind:value={draft.rtsOnDisconnect}
-              on:change={markDirty}
+              onchange={markDirty}
               disabled={locked}
             >
               {#each LINE_POLICIES as opt}
@@ -585,7 +585,7 @@
               <input
                 type="checkbox"
                 bind:checked={draft.hexView}
-                on:change={markDirty}
+                onchange={markDirty}
               />
               Hex view
               <span class="inline-hint">show incoming bytes as hex dump</span>
@@ -597,7 +597,7 @@
               <input
                 type="checkbox"
                 bind:checked={draft.timestamps}
-                on:change={markDirty}
+                onchange={markDirty}
               />
               Line timestamps
               <span class="inline-hint">prefix each line with wall-clock time</span>
@@ -609,7 +609,7 @@
               <input
                 type="checkbox"
                 bind:checked={draft.logEnabled}
-                on:change={markDirty}
+                onchange={markDirty}
               />
               Record session to file
               <span class="inline-hint">raw bytes; destination set in Settings → Advanced</span>
@@ -621,7 +621,7 @@
               <input
                 type="checkbox"
                 bind:checked={draft.autoReconnect}
-                on:change={markDirty}
+                onchange={markDirty}
               />
               Auto-reconnect on drop
               <span class="inline-hint">poll for the port to reappear (up to 30s) and reopen transparently</span>
@@ -642,7 +642,7 @@
               <input
                 type="checkbox"
                 bind:checked={draft.pasteWarnMultiline}
-                on:change={markDirty}
+                onchange={markDirty}
               />
               Confirm multi-line pastes
               <span class="inline-hint">prompt before sending pasted text that contains line breaks</span>
@@ -654,7 +654,7 @@
               <input
                 type="checkbox"
                 bind:checked={draft.pasteSlow}
-                on:change={markDirty}
+                onchange={markDirty}
               />
               Slow paste
               <span class="inline-hint">send one char at a time with a delay</span>
@@ -669,7 +669,7 @@
               min="0"
               max="500"
               bind:value={draft.pasteCharDelayMs}
-              on:change={markDirty}
+              onchange={markDirty}
               disabled={!draft.pasteSlow}
             />
           </div>
