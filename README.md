@@ -1,5 +1,15 @@
 # Seriesly
 
+[![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
+[![Windows 10 21H2+](https://img.shields.io/badge/Windows-10%2021H2%2B-0078D4?style=flat-square&logo=windows11&logoColor=white)](docs/REQUIREMENTS.md#windows)
+[![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?style=flat-square&logo=ubuntu&logoColor=white)](docs/REQUIREMENTS.md#linux)
+[![Debian 13+](https://img.shields.io/badge/Debian-13%2B-A81D33?style=flat-square&logo=debian&logoColor=white)](docs/REQUIREMENTS.md#linux)
+[![Fedora 40+](https://img.shields.io/badge/Fedora-40%2B-294172?style=flat-square&logo=fedora&logoColor=white)](docs/REQUIREMENTS.md#linux)
+
+[![Arch](https://img.shields.io/badge/Arch-1793D1?style=flat-square&logo=archlinux&logoColor=white)](docs/REQUIREMENTS.md#linux)
+[![openSUSE Tumbleweed](https://img.shields.io/badge/openSUSE-Tumbleweed-73BA25?style=flat-square&logo=opensuse&logoColor=white)](docs/REQUIREMENTS.md#linux)
+[![AppImage: libwebkit2gtk-4.1 + FUSE](https://img.shields.io/badge/AppImage-libwebkit2gtk--4.1%20%2B%20FUSE-2166B7?style=flat-square&logo=appimage&logoColor=white)](docs/REQUIREMENTS.md#linux)
+
 A cross-platform (macOS + Windows + Linux) serial terminal for network devices —
 profile-based like SSH, with a built-in xterm terminal and native-feeling UI.
 
@@ -93,24 +103,20 @@ Full reference docs under [docs/](docs/):
 
 ## Requirements
 
-### macOS
-- macOS 11 or later. Universal binary; runs natively on both Intel and
-  Apple Silicon.
+Released builds target recent mainstream OS releases:
 
-### Windows
-- Windows 10 21H2+ or Windows 11.
-- amd64 (x86_64) and arm64 (Snapdragon X / Surface Pro X / Copilot+ PCs)
-  builds shipped; pick the matching artifact for your hardware.
-- [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
-  — already installed on Windows 11 and recent Windows 10. The app will
-  complain if it's missing.
+- **macOS 11 Big Sur or later** — universal binary, runs natively on
+  Intel and Apple Silicon.
+- **Windows 10 21H2+ or 11** — needs the [Microsoft Edge WebView2
+  Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/),
+  preinstalled on Windows 11 and recent 10 builds. amd64 and arm64
+  artifacts shipped.
+- **Linux with GTK3 + WebKit2GTK 4.1** — Ubuntu 24.04+, Fedora 40+,
+  Debian 13+, or current Arch. amd64 and arm64 artifacts shipped in
+  `.deb`, `.rpm`, `.pkg.tar.zst`, and `.AppImage` formats.
 
-### Linux
-- `libgtk-3-0` and `libwebkit2gtk-4.1-0` at runtime (default on Ubuntu
-  24.04+, Fedora 40+, recent Debian; the `.deb` and `.rpm` declare them
-  as dependencies so `apt install` / `dnf install` pulls them in).
-- amd64 and arm64 builds shipped. `.deb`, `.rpm`, and `.AppImage`
-  formats available per arch.
+See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) for the detailed
+breakdown, including everything you need to build from source.
 
 ### USB-to-serial adapter drivers
 
@@ -161,7 +167,7 @@ Prerequisites:
 
 - Go 1.23+
 - Node 20+
-- [Wails v2](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
+- [Wails v2.12](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0`)
 
 ```bash
 git clone git@github.com:otec-it/Seriesly.git
@@ -177,7 +183,7 @@ builds have to run on Linux (or in CI). On a Linux host, install
 `libgtk-3-dev` + `libwebkit2gtk-4.1-dev` + `pkg-config` first, then
 `wails build -platform linux/amd64` (or `linux/arm64`).
 
-CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-latest`,
+CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-26`,
 `windows-latest`, `windows-11-arm`, `ubuntu-latest`, and `ubuntu-24.04-arm`
 on each push to `main`. Tagged pushes matching CalVer `20*.*.*-*` fire
 `.github/workflows/release.yml`, which produces a GitHub Release with all
