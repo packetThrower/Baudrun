@@ -21,7 +21,11 @@ jobs:
 
   build-macos:
     needs: [ci]
-    runs-on: macos-latest
+    # Pin to macos-26 so the binary links against the Tahoe SDK and
+    # picks up the new window chrome. macos-latest lags a release or
+    # two behind, which surfaces as older, sharper window corners on
+    # Tahoe hosts.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
 
