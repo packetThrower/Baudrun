@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Subtle vignette on the navy background -->
+    <radialGradient id="bgGrad" cx="30%" cy="25%" r="95%">
+      <stop offset="0%" stop-color="#152849"/>
+      <stop offset="100%" stop-color="#0A1426"/>
+    </radialGradient>
+
+    <!-- Metallic shell: light from above -->
+    <linearGradient id="shellGrad" x1="0" y1="320" x2="0" y2="712" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#DCE0E9"/>
+      <stop offset="50%" stop-color="#99A1B2"/>
+      <stop offset="100%" stop-color="#676F80"/>
+    </linearGradient>
+
+    <!-- Hairline highlight across the top chamfered edge -->
+    <linearGradient id="topEdgeHighlight" x1="0" y1="320" x2="0" y2="345" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Dark inside of port: darker at top from the shell overhang -->
+    <linearGradient id="portInside" x1="0" y1="340" x2="0" y2="692" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#050A1A"/>
+      <stop offset="100%" stop-color="#0E1A30"/>
+    </linearGradient>
+
+    <!-- Pin socket well -->
+    <radialGradient id="socketGrad" cx="50%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#02050F"/>
+      <stop offset="100%" stop-color="#0B1628"/>
+    </radialGradient>
+
+    <!-- Amber pin: polished metal with highlight upper-left -->
+    <radialGradient id="pinGrad" cx="35%" cy="28%" r="80%">
+      <stop offset="0%" stop-color="#FFF3D2"/>
+      <stop offset="22%" stop-color="#F8D79A"/>
+      <stop offset="60%" stop-color="#E8B46C"/>
+      <stop offset="100%" stop-color="#A87B42"/>
+    </radialGradient>
+
+    <!-- Soft drop shadow for connector -->
+    <filter id="connectorShadow" x="-15%" y="-15%" width="130%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dx="0" dy="22"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.45"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <clipPath id="squircleClip">
+      <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230"/>
+    </clipPath>
+
+    <!-- Shell outer: rounded trapezoid (r=50 at corners) -->
+    <clipPath id="shellClip">
+      <path d="M 252 320 L 772 320 Q 822 320 816.9 369.8 L 787.1 662.3 Q 782 712 732 712 L 292 712 Q 242 712 236.9 662.3 L 207.1 369.8 Q 202 320 252 320 Z"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircleClip)">
+    <rect width="1024" height="1024" fill="url(#bgGrad)"/>
+
+    <g filter="url(#connectorShadow)">
+      <!-- Shell outer: rounded trapezoid (wider top, narrower bottom) -->
+      <path d="M 252 320 L 772 320 Q 822 320 816.9 369.8 L 787.1 662.3 Q 782 712 732 712 L 292 712 Q 242 712 236.9 662.3 L 207.1 369.8 Q 202 320 252 320 Z" fill="url(#shellGrad)"/>
+
+      <!-- Inner port cavity: rounded trapezoid (r=35) -->
+      <path d="M 257 340 L 767 340 Q 802 340 798.5 374.8 L 770.5 657.2 Q 767 692 732 692 L 292 692 Q 257 692 253.5 657.2 L 225.5 374.8 Q 222 340 257 340 Z" fill="url(#portInside)"/>
+
+      <!-- Top-edge hairline highlight (clipped to shell shape) -->
+      <rect x="150" y="320" width="724" height="32" fill="url(#topEdgeHighlight)" clip-path="url(#shellClip)"/>
+
+      <!-- Pin sockets (wells) -->
+      <g>
+        <circle cx="288" cy="445" r="35" fill="url(#socketGrad)"/>
+        <circle cx="400" cy="445" r="35" fill="url(#socketGrad)"/>
+        <circle cx="512" cy="445" r="35" fill="url(#socketGrad)"/>
+        <circle cx="624" cy="445" r="35" fill="url(#socketGrad)"/>
+        <circle cx="736" cy="445" r="35" fill="url(#socketGrad)"/>
+        <circle cx="344" cy="580" r="35" fill="url(#socketGrad)"/>
+        <circle cx="456" cy="580" r="35" fill="url(#socketGrad)"/>
+        <circle cx="568" cy="580" r="35" fill="url(#socketGrad)"/>
+        <circle cx="680" cy="580" r="35" fill="url(#socketGrad)"/>
+      </g>
+
+      <!-- Amber pins -->
+      <g>
+        <circle cx="288" cy="445" r="27" fill="url(#pinGrad)"/>
+        <circle cx="400" cy="445" r="27" fill="url(#pinGrad)"/>
+        <circle cx="512" cy="445" r="27" fill="url(#pinGrad)"/>
+        <circle cx="624" cy="445" r="27" fill="url(#pinGrad)"/>
+        <circle cx="736" cy="445" r="27" fill="url(#pinGrad)"/>
+        <circle cx="344" cy="580" r="27" fill="url(#pinGrad)"/>
+        <circle cx="456" cy="580" r="27" fill="url(#pinGrad)"/>
+        <circle cx="568" cy="580" r="27" fill="url(#pinGrad)"/>
+        <circle cx="680" cy="580" r="27" fill="url(#pinGrad)"/>
+      </g>
+    </g>
+  </g>
+</svg>

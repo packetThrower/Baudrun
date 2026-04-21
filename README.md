@@ -226,9 +226,10 @@ Baudrun/
 │       └── stores/                # Svelte stores (profiles, themes, skins,
 │                                  # settings, session, appearance, dismissed-drivers)
 ├── build/                         # Wails build inputs (read at wails build)
-│   ├── appicon.png                # source icon (Wails generates .icns)
-│   ├── make-icon.sh               # ImageMagick script — regenerates the
-│   │                              # .png + a multi-resolution Windows .ico
+│   ├── appicon.svg                # source of truth — run make-icon.sh after edits
+│   ├── appicon.png                # rasterized; Wails reads this to emit .icns
+│   ├── make-icon.sh               # regenerates appicon.png + Windows .ico
+│   │                              # (needs rsvg-convert + ImageMagick 7)
 │   ├── darwin/Info.plist          # macOS bundle metadata
 │   └── windows/                   # Windows .ico + manifest + installer
 ├── packaging/                     # downstream packaging metadata

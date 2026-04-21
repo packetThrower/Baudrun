@@ -8,6 +8,7 @@ on:
       - "LICENSE"
       - ".gitignore"
       - "build/appicon.png"
+      - "build/appicon.svg"
       - "build/make-icon.sh"
   pull_request:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - "LICENSE"
       - ".gitignore"
       - "build/appicon.png"
+      - "build/appicon.svg"
       - "build/make-icon.sh"
   workflow_call:
 
