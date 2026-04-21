@@ -90,3 +90,6 @@ jobs:
 
       - name: Build
         run: go build -tags webkit2_41 ./...
+
+      - name: Test
+        run: go test -tags webkit2_41 ./...
