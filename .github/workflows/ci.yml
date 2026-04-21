@@ -38,6 +38,10 @@ jobs:
           npm ci
           npm run build
 
+      - name: svelte-check
+        working-directory: frontend
+        run: npm run check
+
       # The Go build embeds frontend/dist via //go:embed, so downstream
       # matrix jobs need it.
       - name: Upload frontend dist
@@ -90,3 +94,6 @@ jobs:
 
       - name: Build
         run: go build -tags webkit2_41 ./...
+
+      - name: Test
+        run: go test -tags webkit2_41 ./...

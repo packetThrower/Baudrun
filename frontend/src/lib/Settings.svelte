@@ -171,7 +171,7 @@
         <select
           id="skin"
           value={settings.skinId || "seriesly"}
-          on:change={onSkinChange}
+          onchange={onSkinChange}
         >
           {#if skins.some((s) => s.source === "builtin")}
             <optgroup label="Built-in">
@@ -195,7 +195,7 @@
         <select
           id="appearance"
           value={settings.appearance || "auto"}
-          on:change={onAppearanceChange}
+          onchange={onAppearanceChange}
         >
           <option value="auto">Auto (Follow System)</option>
           <option value="light">Light</option>
@@ -208,7 +208,7 @@
   <section class="flat">
     <div class="section-head">
       <h3>Installed Skins</h3>
-      <button on:click={handleSkinImport} disabled={importingSkin}>
+      <button onclick={handleSkinImport} disabled={importingSkin}>
         {importingSkin ? "Importing…" : "Import skin…"}
       </button>
     </div>
@@ -228,7 +228,7 @@
             </div>
             <button
               class="danger small"
-              on:click={() => onDeleteSkin(s.id)}
+              onclick={() => onDeleteSkin(s.id)}
               title="Remove skin"
               aria-label="Remove skin"
             >
@@ -257,7 +257,7 @@
         <select
           id="default-theme"
           value={settings.defaultThemeId}
-          on:change={onDefaultChange}
+          onchange={onDefaultChange}
         >
           {#if builtinThemes.length > 0}
             <optgroup label="Built-in">
@@ -284,7 +284,7 @@
           min="8"
           max="28"
           value={settings.fontSize || 13}
-          on:change={onFontSizeChange}
+          onchange={onFontSizeChange}
         />
       </div>
     </div>
@@ -293,7 +293,7 @@
   <section class="flat">
     <div class="section-head">
       <h3>Installed Themes</h3>
-      <button on:click={handleImport} disabled={importing}>
+      <button onclick={handleImport} disabled={importing}>
         {importing ? "Importing…" : "Import .itermcolors…"}
       </button>
     </div>
@@ -320,7 +320,7 @@
           </div>
           <button
             class="small"
-            on:click={() => openPreview(t)}
+            onclick={() => openPreview(t)}
             title="Preview theme"
             aria-label="Preview theme"
           >
@@ -329,7 +329,7 @@
           {#if t.source === "user"}
             <button
               class="danger small"
-              on:click={() => onDelete(t.id)}
+              onclick={() => onDelete(t.id)}
               title="Delete theme"
               aria-label="Delete theme"
             >
@@ -359,15 +359,15 @@
             type="text"
             value={settings.logDir || ""}
             placeholder={defaultLogDir}
-            on:change={onLogDirChange}
+            onchange={onLogDirChange}
           />
           <button
-            on:click={() => openInFileManager(settings.logDir || defaultLogDir)}
+            onclick={() => openInFileManager(settings.logDir || defaultLogDir)}
             title="Open this folder in Finder / Explorer"
           >Open</button>
-          <button on:click={onPickLogDir}>Choose…</button>
+          <button onclick={onPickLogDir}>Choose…</button>
           {#if settings.logDir}
-            <button on:click={() => onSetLogDir("")} title="Reset to default">
+            <button onclick={() => onSetLogDir("")} title="Reset to default">
               Reset
             </button>
           {/if}
@@ -384,7 +384,7 @@
           <input
             type="checkbox"
             checked={!settings.disableDriverDetection}
-            on:change={onDetectDriversChange}
+            onchange={onDetectDriversChange}
           />
           Detect un-drivered USB adapters
         </label>
@@ -401,7 +401,7 @@
           <input
             type="checkbox"
             checked={settings.copyOnSelect ?? false}
-            on:change={onCopyOnSelectChange}
+            onchange={onCopyOnSelectChange}
           />
           Copy terminal selection to clipboard automatically
         </label>
@@ -418,7 +418,7 @@
           <input
             type="checkbox"
             checked={settings.screenReaderMode ?? false}
-            on:change={onScreenReaderModeChange}
+            onchange={onScreenReaderModeChange}
           />
           Enable xterm screen-reader mode
         </label>
@@ -436,12 +436,12 @@
         <div class="log-row">
           <input type="text" readonly value={configDir} />
           <button
-            on:click={() => openInFileManager(configDir)}
+            onclick={() => openInFileManager(configDir)}
             title="Open this folder in Finder / Explorer"
           >Open</button>
-          <button on:click={onPickConfigDir}>Choose…</button>
+          <button onclick={onPickConfigDir}>Choose…</button>
           {#if configIsCustom}
-            <button on:click={onResetConfigDir} title="Reset to default">
+            <button onclick={onResetConfigDir} title="Reset to default">
               Reset
             </button>
           {/if}
@@ -460,13 +460,13 @@
 {#if previewTheme}
   <div
     class="modal-backdrop"
-    on:click={closePreview}
-    on:keydown={onPreviewKeydown}
+    onclick={closePreview}
+    onkeydown={onPreviewKeydown}
     role="dialog"
     aria-modal="true"
     tabindex="-1"
   >
-    <div class="modal" on:click|stopPropagation on:keydown|stopPropagation role="presentation">
+    <div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
       <header class="modal-header">
         <div class="modal-title">
           <strong>{previewTheme.name}</strong>
@@ -474,7 +474,7 @@
             {previewTheme.source === "builtin" ? "Built-in theme" : "Custom theme"} · sample network-gear output
           </span>
         </div>
-        <button on:click={closePreview}>Close</button>
+        <button onclick={closePreview}>Close</button>
       </header>
       <PreviewTerminal theme={previewTheme} />
     </div>
