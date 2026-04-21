@@ -5,6 +5,12 @@ customization systems. For the product-level description,
 screenshots, and install instructions see the
 [top-level README](../README.md).
 
+## Install & build
+
+**[Requirements](REQUIREMENTS.md)** — minimum OS versions to run a
+released build, plus the toolchain needed to build from source.
+Running and building details are in separate sections.
+
 ## Feature reference
 
 **[Advanced features](ADVANCED.md)** — every feature beyond basic
