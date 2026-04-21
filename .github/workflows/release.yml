@@ -9,6 +9,12 @@ on:
 permissions:
   contents: write
 
+# Queue, don't cancel: a mid-flight release shouldn't be interrupted by a
+# retag of the same version — risk of half-uploaded artifacts.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
@@ -19,20 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: "1.23"
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Patch productVersion from tag
         run: |
@@ -41,12 +40,16 @@ jobs:
           mv wails.json.tmp wails.json
           echo "Using version: $VERSION"
 
-      - name: Install frontend deps
-        working-directory: frontend
-        run: npm ci
+      # Reuse the dist that ci.yml's frontend job already built; -s tells
+      # wails to skip the install+build phase and use what's on disk.
+      - name: Download frontend dist
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: frontend/dist
 
       - name: Build (universal)
-        run: wails build -platform darwin/universal
+        run: wails build -s -platform darwin/universal
 
       - name: Package
         run: |
@@ -74,20 +77,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version: "1.23"
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Patch productVersion from tag
         shell: powershell
@@ -98,12 +94,16 @@ jobs:
           $json | ConvertTo-Json -Depth 10 | Set-Content wails.json
           Write-Host "Using version: $version"
 
-      - name: Install frontend deps
-        working-directory: frontend
-        run: npm ci
+      # Reuse the dist that ci.yml's frontend job already built; -s tells
+      # wails to skip the install+build phase and use what's on disk.
+      - name: Download frontend dist
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: frontend/dist
 
       - name: Build
-        run: wails build -platform windows/${{ matrix.arch }}
+        run: wails build -s -platform windows/${{ matrix.arch }}
 
       - name: Package
         shell: powershell
@@ -134,13 +134,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
@@ -163,7 +156,7 @@ jobs:
         run: sudo gem install --no-document fpm
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 
       - name: Patch productVersion from tag
         run: |
@@ -172,14 +165,18 @@ jobs:
           mv wails.json.tmp wails.json
           echo "Using version: $VERSION"
 
-      - name: Install frontend deps
-        working-directory: frontend
-        run: npm ci
+      # Reuse the dist that ci.yml's frontend job already built; -s tells
+      # wails to skip the install+build phase and use what's on disk.
+      - name: Download frontend dist
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: frontend/dist
 
       # webkit2_41 flips Wails' pkg-config to webkit2gtk-4.1 (Ubuntu
       # 24.04 default) instead of the long-deprecated 4.0.
       - name: Build
-        run: wails build -platform linux/${{ matrix.arch }} -tags webkit2_41
+        run: wails build -s -platform linux/${{ matrix.arch }} -tags webkit2_41
 
       # Construct a FHS-style staging tree that both packagers consume.
       # The binary lives at /usr/bin/seriesly (lowercase — debian
@@ -295,10 +292,23 @@ jobs:
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
+      # Filter by *-package so we don't pull down ci.yml's frontend-dist,
+      # which isn't a user-facing release asset.
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
+          pattern: "*-package"
+
+      # Each subdir already holds only the packaged files; hash them with
+      # bare basenames (not their subdir paths) so the SHA256SUMS lines
+      # match the filenames users see on the release page.
+      - name: Generate SHA256SUMS
+        run: |
+          for dir in artifacts/*/; do
+            (cd "$dir" && sha256sum *)
+          done | sort > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
@@ -309,6 +319,7 @@ jobs:
             artifacts/windows-arm64-package/*
             artifacts/linux-amd64-package/*
             artifacts/linux-arm64-package/*
+            SHA256SUMS
           generate_release_notes: true
           draft: false
           prerelease: false
