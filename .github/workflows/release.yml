@@ -62,7 +62,7 @@ jobs:
           zip -r "../../Seriesly-macOS-${VERSION}.zip" Seriesly.app
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-package
           path: Seriesly-macOS-*.zip
@@ -117,7 +117,7 @@ jobs:
           Compress-Archive -Path build\bin\Seriesly.exe -DestinationPath "Seriesly-Windows-$arch-$version.zip"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-${{ matrix.arch }}-package
           path: Seriesly-Windows-*.zip
@@ -286,7 +286,7 @@ jobs:
             "Seriesly-${VERSION}-${{ matrix.appimage_arch }}.AppImage"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.arch }}-package
           path: |
