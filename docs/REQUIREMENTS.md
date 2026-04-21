@@ -24,7 +24,7 @@ and Apple Silicon's own 11.0 floor raise the effective minimum to 11.
   shipped separately; pick the matching artifact.
 - **[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)**
   — already installed on Windows 11 and most recent Windows 10
-  builds. Seriesly surfaces a pointer to the installer if it's
+  builds. Baudrun surfaces a pointer to the installer if it's
   missing.
 - **SmartScreen warning on first launch** — unsigned, so click "More
   info" → "Run anyway". Code signing is tracked in

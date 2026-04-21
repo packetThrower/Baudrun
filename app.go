@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"Seriesly/internal/appdata"
-	"Seriesly/internal/openpath"
-	"Seriesly/internal/profiles"
-	sserial "Seriesly/internal/serial"
-	"Seriesly/internal/settings"
-	"Seriesly/internal/skins"
-	"Seriesly/internal/themes"
-	"Seriesly/internal/transfer"
+	"Baudrun/internal/appdata"
+	"Baudrun/internal/openpath"
+	"Baudrun/internal/profiles"
+	sserial "Baudrun/internal/serial"
+	"Baudrun/internal/settings"
+	"Baudrun/internal/skins"
+	"Baudrun/internal/themes"
+	"Baudrun/internal/transfer"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -188,7 +188,7 @@ func (a *App) ImportSkin() (skins.Skin, error) {
 	path, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Import skin",
 		Filters: []runtime.FileFilter{
-			{DisplayName: "Seriesly skin (*.json)", Pattern: "*.json"},
+			{DisplayName: "Baudrun skin (*.json)", Pattern: "*.json"},
 		},
 		ShowHiddenFiles:            false,
 		CanCreateDirectories:       false,

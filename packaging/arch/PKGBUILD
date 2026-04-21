@@ -1,22 +1,22 @@
 # Maintainer: Will Lehnertz <lehnertz85@gmail.com>
-pkgname=seriesly-bin
+pkgname=baudrun-bin
 pkgver=0.4.0
 pkgrel=1
 pkgdesc="A serial terminal for network devices"
 arch=('x86_64' 'aarch64')
-url="https://github.com/packetThrower/Seriesly"
+url="https://github.com/packetThrower/Baudrun"
 license=('GPL-3.0-or-later')
 depends=('gtk3' 'webkit2gtk-4.1')
-conflicts=('seriesly')
-provides=("seriesly=${pkgver}")
+conflicts=('baudrun')
+provides=("baudrun=${pkgver}")
 options=(!strip)
 
 # Upstream releases as vX.Y.Z; the .deb filename itself drops the v
 # and appends -1 (fpm's --iteration). Keep these in sync when bumping.
-source_x86_64=("seriesly-${pkgver}-amd64.deb::${url}/releases/download/v${pkgver}/seriesly_${pkgver}-1_amd64.deb")
-source_aarch64=("seriesly-${pkgver}-arm64.deb::${url}/releases/download/v${pkgver}/seriesly_${pkgver}-1_arm64.deb")
+source_x86_64=("baudrun-${pkgver}-amd64.deb::${url}/releases/download/v${pkgver}/baudrun_${pkgver}-1_amd64.deb")
+source_aarch64=("baudrun-${pkgver}-arm64.deb::${url}/releases/download/v${pkgver}/baudrun_${pkgver}-1_arm64.deb")
 # Replace with real sums when updating:
-#   sha256sum seriesly_*.deb
+#   sha256sum baudrun_*.deb
 sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 
@@ -25,5 +25,5 @@ package() {
     # .deb is an ar archive containing data.tar.{gz,xz,zst}. bsdtar
     # reads both ar format and the inner compression, so a two-stage
     # pipe extracts the payload directly into ${pkgdir}.
-    bsdtar -xOf seriesly-${pkgver}-*.deb 'data.tar.*' | bsdtar -xf - -C "${pkgdir}"
+    bsdtar -xOf baudrun-${pkgver}-*.deb 'data.tar.*' | bsdtar -xf - -C "${pkgdir}"
 }

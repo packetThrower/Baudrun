@@ -170,7 +170,7 @@
         <label for="skin">Skin</label>
         <select
           id="skin"
-          value={settings.skinId || "seriesly"}
+          value={settings.skinId || "baudrun"}
           onchange={onSkinChange}
         >
           {#if skins.some((s) => s.source === "builtin")}
@@ -428,7 +428,7 @@
         <h4>Config Directory</h4>
         <p class="section-hint">
           Where profiles, themes, skins, and settings are stored.
-          Relocate to keep Seriesly's config alongside your other
+          Relocate to keep Baudrun's config alongside your other
           dotfiles. Takes effect on next app launch. <strong>Existing
           files are not moved</strong> — copy them over yourself to
           preserve profiles.

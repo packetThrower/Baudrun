@@ -61,13 +61,13 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cd build/bin
-          zip -r "../../Seriesly-macOS-${VERSION}.zip" Seriesly.app
+          zip -r "../../Baudrun-macOS-${VERSION}.zip" Baudrun.app
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-package
-          path: Seriesly-macOS-*.zip
+          path: Baudrun-macOS-*.zip
 
   build-windows:
     needs: [ci]
@@ -116,13 +116,13 @@ jobs:
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
           $arch = "${{ matrix.arch }}"
-          Compress-Archive -Path build\bin\Seriesly.exe -DestinationPath "Seriesly-Windows-$arch-$version.zip"
+          Compress-Archive -Path build\bin\Baudrun.exe -DestinationPath "Baudrun-Windows-$arch-$version.zip"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}-package
-          path: Seriesly-Windows-*.zip
+          path: Baudrun-Windows-*.zip
 
   build-linux:
     needs: [ci]
@@ -185,7 +185,7 @@ jobs:
         run: wails build -s -platform linux/${{ matrix.arch }} -tags webkit2_41
 
       # Construct a FHS-style staging tree that both packagers consume.
-      # The binary lives at /usr/bin/seriesly (lowercase — debian
+      # The binary lives at /usr/bin/baudrun (lowercase — debian
       # convention); the .desktop + icon go to their standard
       # freedesktop locations so the installed app shows up in
       # application launchers and gets a proper icon.
@@ -194,9 +194,9 @@ jobs:
           mkdir -p pkg/usr/bin
           mkdir -p pkg/usr/share/applications
           mkdir -p pkg/usr/share/icons/hicolor/256x256/apps
-          install -m 755 build/bin/Seriesly pkg/usr/bin/seriesly
-          install -m 644 packaging/linux/seriesly.desktop pkg/usr/share/applications/seriesly.desktop
-          install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/seriesly.png
+          install -m 755 build/bin/Baudrun pkg/usr/bin/baudrun
+          install -m 644 packaging/linux/baudrun.desktop pkg/usr/share/applications/baudrun.desktop
+          install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/baudrun.png
 
       # SemVer goes straight into fpm's --version. --iteration stays at 1
       # unless the same SemVer needs to ship again with packaging-only
@@ -205,7 +205,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           fpm -s dir -t deb \
-            --name seriesly \
+            --name baudrun \
             --version "${VERSION}" \
             --iteration "1" \
             --architecture "${{ matrix.arch }}" \
@@ -217,7 +217,7 @@ jobs:
             --license "GPL-3.0-or-later" \
             --deb-no-default-config-files \
             -C pkg \
-            --package "seriesly_${VERSION}-1_${{ matrix.arch }}.deb" \
+            --package "baudrun_${VERSION}-1_${{ matrix.arch }}.deb" \
             .
 
       # Fedora 40+ package names for GTK/WebKit differ from Debian's.
@@ -225,7 +225,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           fpm -s dir -t rpm \
-            --name seriesly \
+            --name baudrun \
             --version "${VERSION}" \
             --iteration "1" \
             --architecture "${{ matrix.appimage_arch }}" \
@@ -236,7 +236,7 @@ jobs:
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             -C pkg \
-            --package "seriesly-${VERSION}-1.${{ matrix.appimage_arch }}.rpm" \
+            --package "baudrun-${VERSION}-1.${{ matrix.appimage_arch }}.rpm" \
             .
 
       # Arch Linux package. fpm's pacman target builds the archive
@@ -246,7 +246,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           fpm -s dir -t pacman \
-            --name seriesly \
+            --name baudrun \
             --version "${VERSION}" \
             --iteration "1" \
             --architecture "${{ matrix.appimage_arch }}" \
@@ -257,7 +257,7 @@ jobs:
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             -C pkg \
-            --package "seriesly-${VERSION}-1-${{ matrix.appimage_arch }}.pkg.tar.zst" \
+            --package "baudrun-${VERSION}-1-${{ matrix.appimage_arch }}.pkg.tar.zst" \
             .
 
       # AppImage is a self-contained bundle; reuses the same staging
@@ -269,30 +269,30 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p AppDir
           cp -r pkg/usr AppDir/
-          cp packaging/linux/seriesly.desktop AppDir/seriesly.desktop
-          cp build/appicon.png AppDir/seriesly.png
-          ln -sf seriesly.png AppDir/.DirIcon
+          cp packaging/linux/baudrun.desktop AppDir/baudrun.desktop
+          cp build/appicon.png AppDir/baudrun.png
+          ln -sf baudrun.png AppDir/.DirIcon
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
           HERE="$(dirname "$(readlink -f "${0}")")"
-          exec "${HERE}/usr/bin/seriesly" "$@"
+          exec "${HERE}/usr/bin/baudrun" "$@"
           EOF
           chmod +x AppDir/AppRun
           wget -q -O appimagetool \
             "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.appimage_arch }}.AppImage"
           chmod +x appimagetool
           ./appimagetool --appimage-extract-and-run AppDir \
-            "Seriesly-${VERSION}-${{ matrix.appimage_arch }}.AppImage"
+            "Baudrun-${VERSION}-${{ matrix.appimage_arch }}.AppImage"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}-package
           path: |
-            seriesly_*.deb
-            seriesly-*.rpm
-            seriesly-*.pkg.tar.zst
-            Seriesly-*.AppImage
+            baudrun_*.deb
+            baudrun-*.rpm
+            baudrun-*.pkg.tar.zst
+            Baudrun-*.AppImage
 
   release:
     needs: [build-macos, build-windows, build-linux]

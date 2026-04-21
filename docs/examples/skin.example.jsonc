@@ -1,15 +1,15 @@
 // ============================================================================
-// Reference skin — every CSS custom property Seriesly reads, grouped and
+// Reference skin — every CSS custom property Baudrun reads, grouped and
 // annotated. This is a .jsonc file (JSON with comments) for humans to read;
-// Seriesly's importer only eats strict JSON, so import skin.example.json
+// Baudrun's importer only eats strict JSON, so import skin.example.json
 // instead, or strip the // comments from this file before importing.
 //
 // Use as a template: copy, rename, change "id" + "name", tweak the values
 // you care about, save as <id>.json in your skins directory (Settings →
 // Installed Skins → shows the location, or platform default is:
-//   macOS:   ~/Library/Application Support/Seriesly/skins/
-//   Windows: %APPDATA%\Seriesly\skins\
-//   Linux:   $XDG_CONFIG_HOME/Seriesly/skins/
+//   macOS:   ~/Library/Application Support/Baudrun/skins/
+//   Windows: %APPDATA%\Baudrun\skins\
+//   Linux:   $XDG_CONFIG_HOME/Baudrun/skins/
 // ).
 //
 // Variables you don't set fall back to the defaults in frontend/src/style.css.
@@ -18,7 +18,7 @@
 
 {
   // Stable slug. Must be unique; on import, clashes get a -2, -3 suffix.
-  // Omit this and Seriesly will derive one from "name".
+  // Omit this and Baudrun will derive one from "name".
   "id": "graphite-teal-example",
 
   // Display name shown in the Skin picker. Required.

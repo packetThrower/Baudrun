@@ -7,13 +7,13 @@ Two paths are supported:
    `.rpm`, and `.AppImage` artifacts. Arch users can install it
    directly:
    ```bash
-   sudo pacman -U seriesly-<version>-<arch>.pkg.tar.zst
+   sudo pacman -U baudrun-<version>-<arch>.pkg.tar.zst
    ```
    This is the zero-setup path.
 
-2. **AUR `seriesly-bin`** — the `PKGBUILD` in this directory is for
+2. **AUR `baudrun-bin`** — the `PKGBUILD` in this directory is for
    submission to the Arch User Repository. `pacman -U` works, but
-   AUR integration gives users `yay -S seriesly-bin` and automatic
+   AUR integration gives users `yay -S baudrun-bin` and automatic
    update notifications. The PKGBUILD downloads the `.deb` from the
    GitHub release and extracts it, so there's no Go / Node / Wails
    toolchain required on the user's machine.
@@ -31,7 +31,7 @@ After a new tag ships:
 2. **Update the SHA-256 sums.** Download the two `.deb` files from
    the GitHub release and compute sums:
    ```bash
-   sha256sum seriesly_<VERSION>_amd64.deb seriesly_<VERSION>_arm64.deb
+   sha256sum baudrun_<VERSION>_amd64.deb baudrun_<VERSION>_arm64.deb
    ```
    Replace the `'SKIP'` entries with the real sums in the
    corresponding `sha256sums_<arch>` arrays. `SKIP` during local
@@ -48,11 +48,11 @@ After a new tag ships:
 5. **Commit to the AUR** — AUR hosts each package in its own git
    repo. First time:
    ```bash
-   git clone ssh://aur@aur.archlinux.org/seriesly-bin.git aur-seriesly-bin
-   cp PKGBUILD .SRCINFO aur-seriesly-bin/
-   cd aur-seriesly-bin
+   git clone ssh://aur@aur.archlinux.org/baudrun-bin.git aur-baudrun-bin
+   cp PKGBUILD .SRCINFO aur-baudrun-bin/
+   cd aur-baudrun-bin
    git add PKGBUILD .SRCINFO
-   git commit -m "seriesly-bin <version>"
+   git commit -m "baudrun-bin <version>"
    git push origin master
    ```
 
@@ -73,7 +73,7 @@ minutes and adds a much larger build-deps footprint.
 
 The `-bin` pattern is canonical for Wails apps on the AUR — Wails'
 own reference apps follow it. If demand for a from-source package
-shows up, a second PKGBUILD (plain `seriesly`) can live next to
+shows up, a second PKGBUILD (plain `baudrun`) can live next to
 this one.
 
 ## Namcap
@@ -81,7 +81,7 @@ this one.
 Before pushing to AUR, run:
 ```bash
 namcap PKGBUILD
-namcap seriesly-bin-<version>-x86_64.pkg.tar.zst
+namcap baudrun-bin-<version>-x86_64.pkg.tar.zst
 ```
 
 Expect a warning about the binary not being stripped (we pass

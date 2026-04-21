@@ -21,7 +21,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:     "Seriesly",
+		Title:     "Baudrun",
 		Width:     1100,
 		Height:    720,
 		MinWidth:  780,
@@ -39,11 +39,11 @@ func main() {
 		// wonders why they're seeing a warning on their own app.
 		EnableFraudulentWebsiteDetection: false,
 		// Hardware access doesn't coordinate between processes — two
-		// Seriesly instances trying to open the same /dev/cu.* or COM
+		// Baudrun instances trying to open the same /dev/cu.* or COM
 		// would fight over the port. Single-instance lock makes the
 		// second launch surface the existing window instead.
 		SingleInstanceLock: &options.SingleInstanceLock{
-			UniqueId: "seriesly",
+			UniqueId: "baudrun",
 			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
 				runtime.WindowUnminimise(app.ctx)
 				runtime.WindowShow(app.ctx)
@@ -53,7 +53,7 @@ func main() {
 			TitleBar: mac.TitleBarHiddenInset(),
 			// Pin the window to the dark system appearance so the
 			// NSVisualEffectView behind translucent skins (Liquid Glass,
-			// Seriesly) renders on a dark frosted material. Wails v2.12's
+			// Baudrun) renders on a dark frosted material. Wails v2.12's
 			// runtime theme setters are empty stubs on macOS, so this has
 			// to be decided at startup. Until live-switch is wired up,
 			// the app presents as dark-only regardless of the CSS
@@ -62,13 +62,13 @@ func main() {
 			WindowIsTranslucent:  true,
 			WebviewIsTransparent: true,
 			About: &mac.AboutInfo{
-				Title:   "Seriesly",
+				Title:   "Baudrun",
 				Message: "A serial terminal for network devices.",
 			},
 		},
 		Linux: &linux.Options{
 			Icon:             appIcon,
-			ProgramName:      "Seriesly",
+			ProgramName:      "Baudrun",
 			WebviewGpuPolicy: linux.WebviewGpuPolicyOnDemand,
 		},
 	})

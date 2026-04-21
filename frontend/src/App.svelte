@@ -122,7 +122,7 @@
   const effectiveThemeID = $derived(
     (activeProfile?.themeId || currentProfile?.themeId) ||
       $settings.defaultThemeId ||
-      "seriesly",
+      "baudrun",
   );
   const effectiveTheme = $derived(resolveTheme(effectiveThemeID, $themes));
   const termFontSize = $derived($settings.fontSize || 13);
@@ -142,7 +142,7 @@
   function resolveTheme(id: string, all: Theme[]): Theme | undefined {
     return (
       all.find((t) => t.id === id) ??
-      all.find((t) => t.id === "seriesly") ??
+      all.find((t) => t.id === "baudrun") ??
       all[0]
     );
   }
@@ -202,7 +202,7 @@
       loadSkins(),
       loadSettings(),
     ]);
-    activeSkinID.set($settings.skinId || "seriesly");
+    activeSkinID.set($settings.skinId || "baudrun");
     appearance.set(($settings.appearance as Appearance) || "auto");
     applySkin(resolveSkin($activeSkinID, $skins), $appearance, $systemIsDark);
 
@@ -712,7 +712,7 @@
       if (!dir) return;
       await api.setConfigDirectory(dir);
       configDir = dir;
-      statusMsg = "Config directory updated — restart Seriesly to apply";
+      statusMsg = "Config directory updated — restart Baudrun to apply";
     } catch (e) {
       statusMsg = `Config directory change failed: ${e}`;
     }
@@ -722,7 +722,7 @@
     try {
       await api.setConfigDirectory("");
       configDir = defaultConfigDir;
-      statusMsg = "Config directory reset — restart Seriesly to apply";
+      statusMsg = "Config directory reset — restart Baudrun to apply";
     } catch (e) {
       statusMsg = `Reset failed: ${e}`;
     }
@@ -751,7 +751,7 @@
   async function handleDeleteSkin(id: string) {
     try {
       await deleteSkin(id);
-      if ($activeSkinID === id) await handleSetSkin("seriesly");
+      if ($activeSkinID === id) await handleSetSkin("baudrun");
       statusMsg = "Skin removed";
     } catch (e) {
       statusMsg = `Delete failed: ${e}`;
@@ -816,7 +816,7 @@
         <div class="titlebar" style="--wails-draggable: drag;"></div>
         <div class="empty-main">
           <div class="empty-inner">
-            <div class="brand">Seriesly</div>
+            <div class="brand">Baudrun</div>
             <p>A serial terminal for network devices.</p>
             <button class="primary" onclick={handleCreate}>
               Create a Profile

@@ -1,7 +1,7 @@
 # Authoring profiles
 
 Profiles are named serial-connection settings — port, baud, framing,
-and the various per-session toggles. Seriesly stores every profile in
+and the various per-session toggles. Baudrun stores every profile in
 a single JSON file, which makes them easy to hand-edit, version-
 control, or generate programmatically from inventory data.
 
@@ -9,12 +9,12 @@ control, or generate programmatically from inventory data.
 
 All profiles live in one file:
 
-- **macOS**: `~/Library/Application Support/Seriesly/profiles.json`
-- **Windows**: `%APPDATA%\Seriesly\profiles.json`
-- **Linux**: `$XDG_CONFIG_HOME/Seriesly/profiles.json` (usually
-  `~/.config/Seriesly/profiles.json`)
+- **macOS**: `~/Library/Application Support/Baudrun/profiles.json`
+- **Windows**: `%APPDATA%\Baudrun\profiles.json`
+- **Linux**: `$XDG_CONFIG_HOME/Baudrun/profiles.json` (usually
+  `~/.config/Baudrun/profiles.json`)
 
-The file is a JSON array. Seriesly loads it once at startup; changes
+The file is a JSON array. Baudrun loads it once at startup; changes
 made while the app is running are not picked up until the next
 launch. Use the app UI for interactive edits, hand-edit only while
 the app is closed.
@@ -291,7 +291,7 @@ Close the app, drop `profiles.json` into the config dir, relaunch.
 
 ## Hand-editing etiquette
 
-- **Quit Seriesly first.** The app reads once at startup and
+- **Quit Baudrun first.** The app reads once at startup and
   rewrites the whole file on every save. Hand-edits during a running
   session will be clobbered on the next UI edit.
 - **Validation is strict.** The app refuses to load a profile whose

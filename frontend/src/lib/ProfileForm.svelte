@@ -47,7 +47,7 @@
     isConnecting,
     suspended = false,
     themes = [],
-    defaultThemeID = "seriesly",
+    defaultThemeID = "baudrun",
     detectDrivers = true,
     onSave,
     onDelete,
@@ -186,7 +186,7 @@
   }
 
   const defaultThemeName = $derived(
-    themes.find((t) => t.id === defaultThemeID)?.name ?? "Seriesly",
+    themes.find((t) => t.id === defaultThemeID)?.name ?? "Baudrun",
   );
 </script>
 

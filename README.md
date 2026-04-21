@@ -1,4 +1,4 @@
-# Seriesly
+# Baudrun
 
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
 [![Windows 10 21H2+](https://img.shields.io/badge/Windows-10%2021H2%2B-0078D4?style=flat-square&logo=windows11&logoColor=white)](docs/REQUIREMENTS.md#windows)
@@ -70,7 +70,7 @@ Developed in close collaboration with Claude (Anthropic) — see
 
   | Category | Skins |
   |---|---|
-  | Default | **Seriesly** |
+  | Default | **Baudrun** |
   | Modern OS | **macOS 26 (Liquid Glass)**, **Windows 11 (Fluent)**, **GNOME (Adwaita)**, **KDE (Breeze)**, **elementary (Pantheon)**, **Xfce (Greybird)** |
   | Retro OS | **macOS Classic**, **Windows XP (Luna)** |
   | Aesthetic | **CRT (Green Phosphor)**, **Cyberpunk (Synthwave)**, **Blueprint**, **E-Ink (Paper)** |
@@ -133,7 +133,7 @@ Required when using an adapter rather than a device's built-in USB console:
 | **WCH CH340/CH341** (cheap clones, Arduino knockoffs) | [wch-ic.com](https://www.wch-ic.com) |
 | **USB-C consoles** (HPE/Aruba, newer Cisco, RuggedCom RST2228) | None — CDC-ACM is built into macOS and Windows |
 
-Seriesly will detect known chipsets and point you at the right download when
+Baudrun will detect known chipsets and point you at the right download when
 a driver is missing.
 
 ## Releases
@@ -145,22 +145,22 @@ it so dpkg / rpm / pacman read the SemVer natively.
 
 | Platform | Artifact | Notes |
 |---|---|---|
-| **macOS** | `Seriesly-macOS-<version>.zip` (contains `.app`) | **Universal binary** — one `.app` with both Intel (x86_64) and Apple Silicon (arm64) slices fused via `lipo`. macOS picks the matching slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. Trade-off is roughly 2× the download size of a single-arch build. |
-| **Windows amd64** | `Seriesly-Windows-amd64-<version>.zip` (contains `.exe`) | Standard 64-bit x86 Windows 10/11. |
-| **Windows arm64** | `Seriesly-Windows-arm64-<version>.zip` (contains `.exe`) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
-| **Linux amd64** | `seriesly_<version>-1_amd64.deb`, `seriesly-<version>-1.x86_64.rpm`, `seriesly-<version>-1-x86_64.pkg.tar.zst`, `Seriesly-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. The trailing `-1` is fpm's packaging revision — bumps only if the same upstream version needs to ship again with packaging-only fixes. |
-| **Linux arm64** | `seriesly_<version>-1_arm64.deb`, `seriesly-<version>-1.aarch64.rpm`, `seriesly-<version>-1-aarch64.pkg.tar.zst`, `Seriesly-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
+| **macOS** | `Baudrun-macOS-<version>.zip` (contains `.app`) | **Universal binary** — one `.app` with both Intel (x86_64) and Apple Silicon (arm64) slices fused via `lipo`. macOS picks the matching slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. Trade-off is roughly 2× the download size of a single-arch build. |
+| **Windows amd64** | `Baudrun-Windows-amd64-<version>.zip` (contains `.exe`) | Standard 64-bit x86 Windows 10/11. |
+| **Windows arm64** | `Baudrun-Windows-arm64-<version>.zip` (contains `.exe`) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
+| **Linux amd64** | `baudrun_<version>-1_amd64.deb`, `baudrun-<version>-1.x86_64.rpm`, `baudrun-<version>-1-x86_64.pkg.tar.zst`, `Baudrun-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. The trailing `-1` is fpm's packaging revision — bumps only if the same upstream version needs to ship again with packaging-only fixes. |
+| **Linux arm64** | `baudrun_<version>-1_arm64.deb`, `baudrun-<version>-1.aarch64.rpm`, `baudrun-<version>-1-aarch64.pkg.tar.zst`, `Baudrun-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
 
 Arch users can install the `.pkg.tar.zst` directly with
 `pacman -U`. The [packaging/arch/](packaging/arch/) directory holds
-a PKGBUILD for AUR submission (`seriesly-bin`) — not yet published.
+a PKGBUILD for AUR submission (`baudrun-bin`) — not yet published.
 
-Download, unpack, and run. On macOS, drag `Seriesly.app` into `/Applications`.
+Download, unpack, and run. On macOS, drag `Baudrun.app` into `/Applications`.
 
 The app is currently unsigned on all platforms. First-launch friction:
 - **macOS**: right-click → Open to bypass Gatekeeper.
 - **Windows**: SmartScreen will warn; click "More info" → "Run anyway".
-- **Linux**: `chmod +x Seriesly && ./Seriesly`. You'll need `libwebkit2gtk-4.1`
+- **Linux**: `chmod +x Baudrun && ./Baudrun`. You'll need `libwebkit2gtk-4.1`
   and `libgtk-3` installed (default on Ubuntu 24.04+, Fedora 40+, and recent
   Debian).
 
@@ -176,7 +176,7 @@ Prerequisites:
 
 ```bash
 git clone git@github.com:packetThrower/Seriesly.git
-cd Seriesly
+cd Baudrun
 wails build                               # production build for host OS
 wails build -platform windows/amd64       # cross-compile to Windows from macOS
 wails build -platform darwin/universal    # universal macOS binary
@@ -197,7 +197,7 @@ with all five platform artifacts attached.
 ## Architecture
 
 ```
-Seriesly/
+Baudrun/
 ├── main.go                        # Wails entrypoint + per-OS window options
 ├── app.go                         # Wails-bound App struct (API surface)
 ├── internal/
@@ -232,8 +232,8 @@ Seriesly/
 │   ├── darwin/Info.plist          # macOS bundle metadata
 │   └── windows/                   # Windows .ico + manifest + installer
 ├── packaging/                     # downstream packaging metadata
-│   ├── linux/seriesly.desktop     # freedesktop entry shipped inside .deb/.rpm/AppImage
-│   └── arch/                      # AUR PKGBUILD for seriesly-bin
+│   ├── linux/baudrun.desktop     # freedesktop entry shipped inside .deb/.rpm/AppImage
+│   └── arch/                      # AUR PKGBUILD for baudrun-bin
 └── .github/workflows/
     ├── ci.yml                     # native Go + frontend checks across
     │                              # macOS, Windows (amd64/arm64), Linux (amd64/arm64)

@@ -93,7 +93,7 @@ see [PROFILES.md](PROFILES.md).
 2. Tell the boot loader to start its receiver (`loady`, `rx`, menu
    selection, etc.). It starts sending `C` (or `NAK` for plain
    XMODEM) to the serial line.
-3. Open Send File in Seriesly, pick the matching protocol, choose
+3. Open Send File in Baudrun, pick the matching protocol, choose
    the binary.
 4. Click Send. The modal shows progress; the boot loader's status
    updates on the terminal are suspended during the transfer.
@@ -114,10 +114,10 @@ see [PROFILES.md](PROFILES.md).
 - Settings → Advanced → **Config Directory**.
 - Changes where the app reads profiles, themes, skins, and settings
   from. The default is platform-idiomatic
-  (`~/Library/Application Support/Seriesly` on macOS,
-  `%APPDATA%\Seriesly` on Windows, `$XDG_CONFIG_HOME/Seriesly` on
+  (`~/Library/Application Support/Baudrun` on macOS,
+  `%APPDATA%\Baudrun` on Windows, `$XDG_CONFIG_HOME/Baudrun` on
   Linux); relocation lets users who keep their dotfiles in a single
-  tree (e.g. `~/dotfiles/seriesly/`) store Seriesly's config
+  tree (e.g. `~/dotfiles/baudrun/`) store Baudrun's config
   alongside.
 - Implementation: a single-line redirect file
   (`config_dir_override`) lives at the platform default location
@@ -125,7 +125,7 @@ see [PROFILES.md](PROFILES.md).
   `appdata.SupportDir()` reads it; if absent, falls back to the
   default. Deleting the file resets to default.
 - **Takes effect on next launch** — stores are loaded once at
-  startup. The Settings UI shows a "Restart Seriesly to apply"
+  startup. The Settings UI shows a "Restart Baudrun to apply"
   status message.
 - **Existing files are not migrated.** Moving the config pointer is
   separate from moving the files themselves; copy profiles.json /

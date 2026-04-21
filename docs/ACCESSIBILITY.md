@@ -1,6 +1,6 @@
 # Accessibility
 
-Reference for the accessibility features Seriesly ships with, the
+Reference for the accessibility features Baudrun ships with, the
 OS settings they interact with, and the known gaps.
 
 ## Screen reader support
@@ -28,7 +28,7 @@ If it returns an element, xterm is in screen-reader mode. If
 
 ## Reduced motion
 
-Seriesly respects the OS-level `prefers-reduced-motion` preference.
+Baudrun respects the OS-level `prefers-reduced-motion` preference.
 
 **Where the setting lives:**
 
@@ -50,9 +50,9 @@ Seriesly respects the OS-level `prefers-reduced-motion` preference.
 
 **Caveat:** WKWebView on macOS sometimes caches the
 `prefers-reduced-motion` value at page load. If the setting is
-toggled while Seriesly is open, the animations may not change
+toggled while Baudrun is open, the animations may not change
 until the app is quit and relaunched. This is an upstream
-Wails/WebKit behavior, not something Seriesly can work around.
+Wails/WebKit behavior, not something Baudrun can work around.
 
 ## Terminal zoom
 

@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"Seriesly/internal/winconsole"
+	"Baudrun/internal/winconsole"
 
 	"go.bug.st/serial/enumerator"
 )

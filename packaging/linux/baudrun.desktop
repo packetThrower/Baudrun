@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=Seriesly
+Name=Baudrun
 GenericName=Serial Terminal
 Comment=A serial terminal for network devices
-Exec=seriesly
-Icon=seriesly
+Exec=baudrun
+Icon=baudrun
 Terminal=false
-StartupWMClass=Seriesly
+StartupWMClass=Baudrun
 Categories=Network;TerminalEmulator;System;
 Keywords=serial;terminal;tty;console;network;switch;router;

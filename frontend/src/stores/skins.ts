@@ -2,7 +2,7 @@ import { writable, get } from "svelte/store";
 import { api, type Skin } from "../lib/api";
 
 export const skins = writable<Skin[]>([]);
-export const activeSkinID = writable<string>("seriesly");
+export const activeSkinID = writable<string>("baudrun");
 
 // "auto" follows `prefers-color-scheme`; "light" / "dark" pin.
 export type Appearance = "auto" | "light" | "dark";
@@ -81,7 +81,7 @@ export function applySkin(
 export function resolveSkin(id: string, all: Skin[]): Skin | undefined {
   return (
     all.find((s) => s.id === id) ??
-    all.find((s) => s.id === "seriesly") ??
+    all.find((s) => s.id === "baudrun") ??
     all[0]
   );
 }

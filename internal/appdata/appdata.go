@@ -8,16 +8,16 @@ import (
 )
 
 // DefaultSupportDir returns the OS-idiomatic config directory for
-// Seriesly, without considering any user override:
-//   - macOS:   ~/Library/Application Support/Seriesly
-//   - Windows: %APPDATA%\Seriesly
-//   - Linux:   $XDG_CONFIG_HOME/Seriesly (or ~/.config/Seriesly)
+// Baudrun, without considering any user override:
+//   - macOS:   ~/Library/Application Support/Baudrun
+//   - Windows: %APPDATA%\Baudrun
+//   - Linux:   $XDG_CONFIG_HOME/Baudrun (or ~/.config/Baudrun)
 func DefaultSupportDir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "Seriesly"), nil
+	return filepath.Join(base, "Baudrun"), nil
 }
 
 // OverrideFile is the bootstrap redirect file — a single-line text

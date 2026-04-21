@@ -1,6 +1,6 @@
-# Seriesly documentation
+# Baudrun documentation
 
-Reference material for Seriesly's advanced features and
+Reference material for Baudrun's advanced features and
 customization systems. For the product-level description,
 screenshots, and install instructions see the
 [top-level README](../README.md).

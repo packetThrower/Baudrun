@@ -1,6 +1,6 @@
 # Authoring custom skins
 
-Skins swap Seriesly's app chrome — colors, typography, radii, elevation,
+Skins swap Baudrun's app chrome — colors, typography, radii, elevation,
 layout shape. Distinct from **themes**, which only recolor the terminal
 viewport. A skin is a flat map of CSS custom-property values applied to
 `document.documentElement`.
@@ -9,10 +9,10 @@ viewport. A skin is a flat map of CSS custom-property values applied to
 
 Custom skins live under the user config dir, not inside the app bundle:
 
-- **macOS**: `~/Library/Application Support/Seriesly/skins/<id>.json`
-- **Windows**: `%APPDATA%\Seriesly\skins\<id>.json`
-- **Linux**: `$XDG_CONFIG_HOME/Seriesly/skins/<id>.json` (usually
-  `~/.config/Seriesly/skins/`)
+- **macOS**: `~/Library/Application Support/Baudrun/skins/<id>.json`
+- **Windows**: `%APPDATA%\Baudrun\skins\<id>.json`
+- **Linux**: `$XDG_CONFIG_HOME/Baudrun/skins/<id>.json` (usually
+  `~/.config/Baudrun/skins/`)
 
 Drop a JSON file there manually, or use **Settings → App Skin → Import**
 which runs a native file-picker and copies it into the directory. Deleting
@@ -198,7 +198,7 @@ comment on what it does, see:
 
 - [`docs/examples/skin.example.jsonc`](examples/skin.example.jsonc) —
   annotated version, for reading and learning. Not directly
-  importable (Seriesly's JSON parser doesn't accept comments).
+  importable (Baudrun's JSON parser doesn't accept comments).
 - [`docs/examples/skin.example.json`](examples/skin.example.json) —
   stripped version with the same values, importable via
   **Settings → Installed Skins → Import skin…** or by dropping into

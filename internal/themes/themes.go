@@ -39,7 +39,7 @@ type Theme struct {
 	BrightWhite   string `json:"brightWhite"`
 }
 
-const DefaultThemeID = "seriesly"
+const DefaultThemeID = "baudrun"
 
 type Store struct {
 	dir  string

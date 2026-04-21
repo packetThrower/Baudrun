@@ -26,7 +26,7 @@ project's `wails.json` under `author.email`.
 - **Acknowledgement** within a few business days.
 - **Initial assessment** (confirmed / not-a-bug / won't-fix-and-why)
   within two weeks.
-- **Fix timeline** scaled to severity. Seriesly doesn't run a paid
+- **Fix timeline** scaled to severity. Baudrun doesn't run a paid
   SLA; fixes ship when they're ready and tested.
 - **Credit** in the release notes if you'd like it. Say so in your
   report.
@@ -35,7 +35,7 @@ project's `wails.json` under `author.email`.
 
 In scope:
 
-- The Seriesly desktop app (Go backend, Svelte frontend, Wails
+- The Baudrun desktop app (Go backend, Svelte frontend, Wails
   runtime integration).
 - The GitHub Actions workflows that build the release artifacts.
 - Configuration file handling (profiles, themes, skins, settings
@@ -49,12 +49,12 @@ Out of scope (report to the respective upstream):
   third-party dependency — report upstream.
 - Vulnerabilities in USB-serial chipset vendor drivers — those are
   vendor issues (SiLabs, FTDI, Prolific, etc.).
-- Physical-access attacks on the machine running Seriesly. A serial
+- Physical-access attacks on the machine running Baudrun. A serial
   terminal is a trust-the-operator tool by design.
 
 ## Hardening notes
 
-Seriesly is unsigned on all platforms today; verifying a release
+Baudrun is unsigned on all platforms today; verifying a release
 means checking the GitHub Actions run that produced it. Signed
 releases are on the roadmap (see [TODO.md](TODO.md)).
 

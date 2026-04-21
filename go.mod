@@ -1,4 +1,4 @@
-module Seriesly
+module Baudrun
 
 go 1.23.0
 

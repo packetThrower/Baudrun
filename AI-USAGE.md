@@ -1,6 +1,6 @@
 # AI usage
 
-Seriesly was developed in close collaboration with
+Baudrun was developed in close collaboration with
 [Claude (Anthropic)](https://www.anthropic.com/claude), primarily
 through [Claude Code](https://claude.com/claude-code). This page
 records what that collaboration looks like so contributors and users

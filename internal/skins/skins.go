@@ -38,7 +38,7 @@ type Skin struct {
 	SupportsLight bool              `json:"supportsLight"`
 }
 
-const DefaultSkinID = "seriesly"
+const DefaultSkinID = "baudrun"
 
 type Store struct {
 	dir  string

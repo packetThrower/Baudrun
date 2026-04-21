@@ -99,7 +99,7 @@ high-effort or niche enough that priority tracks real demand.
       skips SmartScreen warmup). Add as secrets, sign the .exe with
       `signtool` in the `build-windows` job.
 - [ ] **Public downloads for a private source repo.** Shared
-      downloads repo serving both Seriesly and get_switch_info:
+      downloads repo serving both Baudrun and get_switch_info:
       1. Create public `otec-it/downloads` (empty, README listing
          apps + links to their Releases pages).
       2. Generate one fine-grained PAT scoped to that repo with
@@ -111,7 +111,7 @@ high-effort or niche enough that priority tracks real demand.
          repository: otec-it/downloads
          token: ${{ secrets.RELEASES_REPO_TOKEN }}
          tag_name: seriesly-${{ github.ref_name }}      # or portfinder-
-         name: Seriesly ${{ github.ref_name }}
+         name: Baudrun ${{ github.ref_name }}
          ```
       Do this **after** signing is in place so the first public release
       is already a trustworthy binary.
@@ -122,7 +122,7 @@ Current highlighter is a line-buffered regex rule engine baked into the
 binary. Tier 2 is making it data-driven + shareable:
 
 - [ ] **User-editable rule file** at
-      `~/Library/Application Support/Seriesly/highlight-rules.json`.
+      `~/Library/Application Support/Baudrun/highlight-rules.json`.
       Format: array of `{ pattern, open, close, group? }` objects.
       Ship current built-in rules as the default file on first run;
       users can add patterns without rebuilding.
@@ -153,14 +153,14 @@ cranking out more presets.
       border, floating-panel controls).
 - [x] **Skin JSON format + store** (`internal/skins`). Built-ins via
       `//go:embed`, user-added at `~/Library/Application Support/
-      Seriesly/skins/<id>.json`.
+      Baudrun/skins/<id>.json`.
 - [x] **Svelte store + applier** — sets properties on
       `document.documentElement`, tracks what it wrote to cleanly
       unset before applying a new skin.
 - [x] **Settings UI** — Skin picker above the theme picker.
 - [x] **Import from user-drop'd JSON** — file dialog + store.
 
-- [x] **Seriesly** — the default, flush-edge layout, iOS-style labels.
+- [x] **Baudrun** — the default, flush-edge layout, iOS-style labels.
 - [x] **macOS 26 (Liquid Glass)** — floating sidebar/main bubbles,
       backdrop blur, sentence-case labels, brighter accents, bigger
       continuous radii.

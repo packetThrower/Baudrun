@@ -1,7 +1,7 @@
 // ============================================================================
-// Reference theme — every color slot Seriesly / xterm.js reads, grouped and
+// Reference theme — every color slot Baudrun / xterm.js reads, grouped and
 // annotated. This is a .jsonc file (JSON with comments) for humans to read;
-// Seriesly's importer only eats strict JSON, so import theme.example.json
+// Baudrun's importer only eats strict JSON, so import theme.example.json
 // instead, or strip the // comments from this file before importing.
 //
 // Themes control the *terminal viewport* — the 16 ANSI color slots plus
@@ -13,9 +13,9 @@
 // importer in Settings → Installed Themes → Import).
 //
 // Theme directories per OS:
-//   macOS:   ~/Library/Application Support/Seriesly/themes/
-//   Windows: %APPDATA%\Seriesly\themes\
-//   Linux:   $XDG_CONFIG_HOME/Seriesly/themes/
+//   macOS:   ~/Library/Application Support/Baudrun/themes/
+//   Windows: %APPDATA%\Baudrun\themes\
+//   Linux:   $XDG_CONFIG_HOME/Baudrun/themes/
 //
 // See docs/THEMES.md for the full reference.
 // ============================================================================
@@ -28,7 +28,7 @@
   // Display name shown in the theme picker. Required.
   "name": "Graphite Teal (Example)",
 
-  // Seriesly writes this automatically on import; you can leave it off.
+  // Baudrun writes this automatically on import; you can leave it off.
   // Possible values: "builtin" or "user".
   "source": "user",
 
@@ -58,7 +58,7 @@
   "selectionForeground": "#ffffff",
 
   // ─── ANSI palette — normal intensity (SGR 30-37 / 40-47) ─────────────
-  // Devices pick colors by SGR code; Seriesly's syntax highlighter also
+  // Devices pick colors by SGR code; Baudrun's syntax highlighter also
   // uses these slots by name:
   //   red    → `down`, `failed`, errors
   //   green  → `up`, `ok`, `active`

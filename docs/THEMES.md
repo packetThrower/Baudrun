@@ -10,10 +10,10 @@ whatever skin is active.
 
 Custom themes live under the user config dir:
 
-- **macOS**: `~/Library/Application Support/Seriesly/themes/<id>.json`
-- **Windows**: `%APPDATA%\Seriesly\themes\<id>.json`
-- **Linux**: `$XDG_CONFIG_HOME/Seriesly/themes/<id>.json` (usually
-  `~/.config/Seriesly/themes/`)
+- **macOS**: `~/Library/Application Support/Baudrun/themes/<id>.json`
+- **Windows**: `%APPDATA%\Baudrun\themes\<id>.json`
+- **Linux**: `$XDG_CONFIG_HOME/Baudrun/themes/<id>.json` (usually
+  `~/.config/Baudrun/themes/`)
 
 Two ways to add a custom theme:
 
@@ -31,7 +31,7 @@ Deleting a user theme from Settings also removes its file.
 
 | ID                | Name                  | Pairs nicely with skin     |
 | ----------------- | --------------------- | -------------------------- |
-| `seriesly`        | Seriesly              | Seriesly (default)         |
+| `baudrun`        | Baudrun              | Baudrun (default)         |
 | `dracula`         | Dracula               | any dark skin              |
 | `solarized-dark`  | Solarized Dark        | any dark skin              |
 | `solarized-light` | Solarized Light       | any light skin             |
@@ -125,7 +125,7 @@ All color values accept any format xterm.js understands — `#rrggbb`,
 | 9-14  | `brightRed`…`brightCyan` | 91-96 / 101-106 — bright variants            |
 | 15    | `brightWhite`    | 97 / 107                                      |
 
-Seriesly's **syntax highlighter** uses the ANSI slots by name — if
+Baudrun's **syntax highlighter** uses the ANSI slots by name — if
 you change `red` you change what `down` looks like. Device-sourced
 colors (ANSI CSI sequences in the serial stream) also map to the
 ANSI slots, so themes affect both highlighter output and raw device
@@ -156,7 +156,7 @@ per-field comment on what it does, see:
 
 - [`docs/examples/theme.example.jsonc`](examples/theme.example.jsonc) —
   annotated version, for reading and learning. Not directly
-  importable (Seriesly's JSON parser doesn't accept comments).
+  importable (Baudrun's JSON parser doesn't accept comments).
 - [`docs/examples/theme.example.json`](examples/theme.example.json) —
   stripped version with the same values, importable by dropping
   into the themes directory.

@@ -1,13 +1,13 @@
 package skins
 
 // Built-in skins. Every variable present in style.css :root should have an
-// entry in seriesly (the default), so swapping to seriesly resets everything
+// entry in baudrun (the default), so swapping to baudrun resets everything
 // to known good values. Other skins only need to override what differs —
-// unset variables fall back to the seriesly defaults via the cascade.
+// unset variables fall back to the baudrun defaults via the cascade.
 var builtins = []Skin{
 	{
-		ID:            "seriesly",
-		Name:          "Seriesly",
+		ID:            "baudrun",
+		Name:          "Baudrun",
 		Source:        "builtin",
 		Description:   "The default look with translucent panels and compact iOS-style labels. Adapts to system light/dark.",
 		SupportsLight: true,

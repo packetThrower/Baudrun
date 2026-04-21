@@ -4,7 +4,7 @@ package themes
 // canonical palettes published by each theme's author.
 var builtins = []Theme{
 	{
-		ID: "seriesly", Name: "Seriesly", Source: "builtin",
+		ID: "baudrun", Name: "Baudrun", Source: "builtin",
 		Background: "#0b0b0d", Foreground: "#e4e4e7",
 		Cursor: "#ffffff", CursorAccent: "#0b0b0d",
 		Selection: "#1a3a5c",

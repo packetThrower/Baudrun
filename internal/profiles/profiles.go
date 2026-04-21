@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"Seriesly/internal/appdata"
+	"Baudrun/internal/appdata"
 
 	"github.com/google/uuid"
 )

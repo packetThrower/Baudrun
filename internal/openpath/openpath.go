@@ -10,7 +10,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	"Seriesly/internal/winconsole"
+	"Baudrun/internal/winconsole"
 )
 
 // Open launches the OS's default handler for path. path should be a
