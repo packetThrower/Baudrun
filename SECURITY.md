@@ -4,7 +4,7 @@
 
 Only the most recent tagged release receives security updates. Tags
 follow CalVer (`YYYY.MM.DD-patch`); grab the latest from the
-[Releases page](https://github.com/otec-it/Seriesly/releases).
+[Releases page](https://github.com/packetThrower/Seriesly/releases).
 
 ## Reporting a vulnerability
 
