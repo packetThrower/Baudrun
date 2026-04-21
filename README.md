@@ -267,4 +267,6 @@ then applies the new set. Live-swap, no reload.
 
 ## License
 
-TBD
+[GNU General Public License v3.0 or later](LICENSE). Forks are
+welcome; derivative works must stay open under the same license.
+Commercial use is permitted but can't close the source.
