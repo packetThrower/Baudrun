@@ -1,11 +1,28 @@
+<p align="center">
+  <img src="build/appicon.png" alt="Baudrun" width="128">
+</p>
+
 # Baudrun
 
+[![CI](https://img.shields.io/github/actions/workflow/status/packetThrower/Baudrun/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/packetThrower/Baudrun/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/packetThrower/Baudrun?style=flat-square&logo=github&label=release)](https://github.com/packetThrower/Baudrun/releases/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/packetThrower/Baudrun?style=flat-square&logo=go&logoColor=white&label=Go&color=00ADD8)](go.mod)
+[![Wails](https://img.shields.io/badge/Wails-v2.12.0-D4263E?style=flat-square)](https://wails.io)
+[![Svelte](https://img.shields.io/github/package-json/dependency-version/packetThrower/Baudrun/dev/svelte?filename=frontend/package.json&style=flat-square&logo=svelte&logoColor=white&label=Svelte&color=FF3E00)](https://svelte.dev)
+
+**macOS** — universal binary (Intel + Apple Silicon)  
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
-[![Windows 10 21H2+](https://img.shields.io/badge/Windows-10%2021H2%2B-0078D4?style=flat-square&logo=windows11&logoColor=white)](docs/REQUIREMENTS.md#windows)
+[![Universal binary](https://img.shields.io/badge/Universal-Intel%20%2B%20Apple%20Silicon-333?style=flat-square)](docs/REQUIREMENTS.md#macos)
+
+**Windows** — x64 + ARM64  
+[![Windows 10 21H2+ x64](https://img.shields.io/badge/Windows%2010%2021H2%2B-x64-0078D4?style=flat-square&logo=windows&logoColor=white)](docs/REQUIREMENTS.md#windows)
+[![Windows 11 x64](https://img.shields.io/badge/Windows%2011-x64-0078D4?style=flat-square&logo=windows11&logoColor=white)](docs/REQUIREMENTS.md#windows)
+[![Windows 11 ARM64](https://img.shields.io/badge/Windows%2011-ARM64-0078D4?style=flat-square&logo=windows11&logoColor=white)](docs/REQUIREMENTS.md#windows)
+
+**Linux** — amd64 + arm64  
 [![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?style=flat-square&logo=ubuntu&logoColor=white)](docs/REQUIREMENTS.md#linux)
 [![Debian 13+](https://img.shields.io/badge/Debian-13%2B-A81D33?style=flat-square&logo=debian&logoColor=white)](docs/REQUIREMENTS.md#linux)
 [![Fedora 40+](https://img.shields.io/badge/Fedora-40%2B-294172?style=flat-square&logo=fedora&logoColor=white)](docs/REQUIREMENTS.md#linux)
-
 [![Arch](https://img.shields.io/badge/Arch-1793D1?style=flat-square&logo=archlinux&logoColor=white)](docs/REQUIREMENTS.md#linux)
 [![openSUSE Tumbleweed](https://img.shields.io/badge/openSUSE-Tumbleweed-73BA25?style=flat-square&logo=opensuse&logoColor=white)](docs/REQUIREMENTS.md#linux)
 [![AppImage: libwebkit2gtk-4.1 + FUSE](https://img.shields.io/badge/AppImage-libwebkit2gtk--4.1%20%2B%20FUSE-2166B7?style=flat-square&logo=appimage&logoColor=white)](docs/REQUIREMENTS.md#linux)
