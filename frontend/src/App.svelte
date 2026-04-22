@@ -412,6 +412,33 @@
   let hexInput = $state("");
   let hexError = $state("");
 
+  // Paste-confirm modal. Terminal.svelte awaits handlePasteConfirm()
+  // when a multi-line paste arrives and pasteWarnMultiline is on.
+  // We can't use window.confirm here — Wails v2's WKWebView doesn't
+  // wire a UI delegate through, so the native JS confirm dialog
+  // returns false immediately. Custom modal it is.
+  let pasteConfirmOpen = $state(false);
+  let pasteConfirmLines = $state(0);
+  let pasteConfirmPreview = $state("");
+  let pasteConfirmResolver: ((ok: boolean) => void) | null = null;
+
+  function handlePasteConfirm(data: string): Promise<boolean> {
+    const parts = data.split(/\r\n|\r|\n/);
+    pasteConfirmLines = parts.length;
+    pasteConfirmPreview = parts[0].slice(0, 80);
+    pasteConfirmOpen = true;
+    return new Promise<boolean>((resolve) => {
+      pasteConfirmResolver = resolve;
+    });
+  }
+
+  function resolvePasteConfirm(ok: boolean) {
+    pasteConfirmOpen = false;
+    const r = pasteConfirmResolver;
+    pasteConfirmResolver = null;
+    r?.(ok);
+  }
+
   function openHexSend() {
     hexSendOpen = true;
     hexError = "";
@@ -940,6 +967,7 @@
           pasteSlow={termPasteSlow}
           pasteCharDelayMs={termPasteCharDelayMs}
           onStatus={(m) => (statusMsg = m)}
+          onPasteConfirm={handlePasteConfirm}
         />
       </div>
     {/if}
@@ -1056,6 +1084,46 @@
           <button class="primary" onclick={closeTransfer}>Close</button>
         </div>
       {/if}
+    </div>
+  </div>
+{/if}
+
+{#if pasteConfirmOpen}
+  <div
+    class="modal-backdrop"
+    onclick={() => resolvePasteConfirm(false)}
+    onkeydown={(e) => {
+      if (e.key === "Escape") resolvePasteConfirm(false);
+      else if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); resolvePasteConfirm(true); }
+    }}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
+    <div
+      class="hex-modal"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="presentation"
+    >
+      <header class="hex-header">
+        <strong>Confirm paste</strong>
+        <button onclick={() => resolvePasteConfirm(false)} aria-label="Close">×</button>
+      </header>
+      <p class="hex-hint">
+        Send <strong>{pasteConfirmLines}</strong>
+        {pasteConfirmLines === 1 ? "line" : "lines"} to the session?
+        Multi-line pastes can execute partial commands on network gear
+        before the device has a chance to echo them back.
+      </p>
+      <div class="paste-preview">
+        <div class="paste-preview-label">First line</div>
+        <code>{pasteConfirmPreview || "(empty)"}</code>
+      </div>
+      <div class="hex-actions">
+        <button onclick={() => resolvePasteConfirm(false)}>Cancel</button>
+        <button class="primary" onclick={() => resolvePasteConfirm(true)}>Send</button>
+      </div>
     </div>
   </div>
 {/if}
@@ -1442,6 +1510,30 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  .paste-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+  }
+
+  .paste-preview-label {
+    font-size: var(--font-size-label);
+    text-transform: var(--label-transform);
+    letter-spacing: var(--label-letter-spacing);
+    font-weight: var(--label-weight);
+    color: var(--fg-tertiary);
+  }
+
+  .paste-preview code {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-primary);
+    word-break: break-all;
   }
 
   .transfer-modal {

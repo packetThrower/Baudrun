@@ -503,17 +503,20 @@ func (a *App) Disconnect() error {
 }
 
 func (a *App) Send(data string) error {
+	// go.bug.st/serial's Write is not thread-safe, so concurrent Send
+	// calls — e.g. the frontend firing per-byte sends from a slow-paste
+	// loop — would race at the syscall layer and drop or interleave
+	// bytes. Hold sessMu across the Write to serialize them.
 	a.sessMu.Lock()
-	sess := a.session
-	a.sessMu.Unlock()
-	if sess == nil {
+	defer a.sessMu.Unlock()
+	if a.session == nil {
 		return errors.New("not connected")
 	}
 	bytes, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		return fmt.Errorf("decode send payload: %w", err)
 	}
-	_, err = sess.Write(bytes)
+	_, err = a.session.Write(bytes)
 	return err
 }
 

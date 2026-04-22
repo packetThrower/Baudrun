@@ -30,6 +30,12 @@
     pasteCharDelayMs?: number;
     screenReaderMode?: boolean;
     onStatus?: (msg: string) => void;
+    // Called when a multi-line paste arrives and pasteWarnMultiline is
+    // enabled. Host app is expected to render a modal (window.confirm
+    // is a no-op in WKWebView since Wails v2 doesn't wire WKUIDelegate
+    // through) and resolve true/false with the user's choice. If not
+    // provided, multi-line pastes go through without confirmation.
+    onPasteConfirm?: (data: string) => Promise<boolean> | boolean;
   };
 
   let {
@@ -47,6 +53,7 @@
     pasteCharDelayMs = 10,
     screenReaderMode = false,
     onStatus = () => {},
+    onPasteConfirm,
   }: Props = $props();
 
   let hostEl: HTMLDivElement;
@@ -95,7 +102,14 @@
   const PASTE_THRESHOLD = 20;
 
   function isPaste(data: string): boolean {
-    return data.length >= PASTE_THRESHOLD || /[\r\n]/.test(data);
+    // A single character is always a keystroke, including the lone
+    // "\r" from the Enter key. Without this guard, every Enter press
+    // trips the multi-line paste warning when it's enabled (since
+    // "\r" matches the newline regex below), making the terminal
+    // feel broken.
+    if (data.length < 2) return false;
+    if (data.length >= PASTE_THRESHOLD) return true;
+    return /[\r\n]/.test(data);
   }
 
   function sendByte(byte: number) {
@@ -105,7 +119,19 @@
   async function sendSlow(data: string) {
     const bytes = new TextEncoder().encode(data);
     for (const b of bytes) {
-      sendByte(b);
+      // Await each send so the next byte doesn't fire until the
+      // previous one has been acknowledged by the Go side. Without
+      // this, N fire-and-forget calls would queue up concurrently on
+      // the Go side and race on the serial port's Write. The per-
+      // character delay below isn't enough to serialize them —
+      // pasteCharDelayMs is about UART buffer drain pacing, not
+      // JS-to-Go call ordering.
+      try {
+        await api.sendBytes(new Uint8Array([b]));
+      } catch (e) {
+        onStatus(`send failed: ${e}`);
+        return;
+      }
       if (localEcho && term) {
         term.write(String.fromCharCode(b));
       }
@@ -115,7 +141,7 @@
     }
   }
 
-  function handleInput(data: string) {
+  async function handleInput(data: string) {
     // xterm emits 0x7f for the Backspace key. Swap to 0x08 when the
     // profile asks for BS-style backspace so devices wanting that
     // don't see ^H echoed back at them.
@@ -128,11 +154,8 @@
     // fall through to the normal path.
     if (isPaste(data)) {
       const multiline = /[\r\n]/.test(data);
-      if (pasteWarnMultiline && multiline) {
-        const lines = data.split(/\r\n|\r|\n/).length;
-        const ok = window.confirm(
-          `Send ${lines} lines to the session?\n\nFirst line: ${data.split(/\r\n|\r|\n/)[0].slice(0, 80)}`,
-        );
+      if (pasteWarnMultiline && multiline && onPasteConfirm) {
+        const ok = await onPasteConfirm(data);
         if (!ok) {
           onStatus("Paste cancelled");
           return;
