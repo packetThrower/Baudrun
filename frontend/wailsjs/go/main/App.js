@@ -126,6 +126,10 @@ export function SetRTS(arg1) {
   return window['go']['main']['App']['SetRTS'](arg1);
 }
 
+export function SystemTheme() {
+  return window['go']['main']['App']['SystemTheme']();
+}
+
 export function UpdateProfile(arg1) {
   return window['go']['main']['App']['UpdateProfile'](arg1);
 }

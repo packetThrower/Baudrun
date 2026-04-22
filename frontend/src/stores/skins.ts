@@ -8,17 +8,32 @@ export const activeSkinID = writable<string>("baudrun");
 export type Appearance = "auto" | "light" | "dark";
 export const appearance = writable<Appearance>("auto");
 
-// Tracks the system preference via matchMedia; updates whenever the OS flips
-// between light and dark while the app is running.
-export const systemIsDark = writable<boolean>(
-  typeof window !== "undefined"
-    ? window.matchMedia("(prefers-color-scheme: dark)").matches
-    : true,
-);
+// Tracks the OS-level appearance preference. Seeded synchronously to
+// dark so the initial render doesn't flash; initSystemTheme() corrects
+// it shortly after mount and subscribes to change events.
+//
+// NOTE: we don't use window.matchMedia("(prefers-color-scheme: dark)")
+// here because on macOS the window's NSAppearance is pinned dark (see
+// main.go) for translucent-skin vibrancy, which locks the WebView's
+// prefers-color-scheme media query to dark regardless of the OS
+// setting. The Go side queries the actual OS prefs via
+// internal/ostheme and emits them on EVT_SYSTEM_THEME.
+export const systemIsDark = writable<boolean>(true);
 
-if (typeof window !== "undefined") {
-  const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  mq.addEventListener("change", (e) => systemIsDark.set(e.matches));
+// initSystemTheme seeds systemIsDark with the current OS preference and
+// subscribes to changes for the rest of the app lifetime. Call once
+// from App.svelte's onMount.
+export async function initSystemTheme(): Promise<void> {
+  try {
+    const value = await api.getSystemTheme();
+    systemIsDark.set(value === "dark");
+  } catch {
+    // Keep the initial dark guess; the event subscription below still
+    // catches any later changes.
+  }
+  api.onSystemTheme((value) => {
+    systemIsDark.set(value === "dark");
+  });
 }
 
 // Track which CSS custom-property names we've written, so we can reliably

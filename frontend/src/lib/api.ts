@@ -24,6 +24,7 @@ export const EVT_RECONNECTED = "serial:reconnected";
 export const EVT_TRANSFER_PROGRESS = "transfer:progress";
 export const EVT_TRANSFER_COMPLETE = "transfer:complete";
 export const EVT_TRANSFER_ERROR = "transfer:error";
+export const EVT_SYSTEM_THEME = "system:theme";
 
 export type TransferProgress = { sent: number; total: number };
 export type TransferProtocol = "xmodem" | "xmodem-crc" | "xmodem-1k" | "ymodem";
@@ -65,6 +66,8 @@ export const api = {
   setConfigDirectory: App.SetConfigDirectory,
   openPath: App.OpenPath,
 
+  getSystemTheme: App.SystemTheme,
+
   getControlLines: App.GetControlLines,
 
   sendBytes(bytes: Uint8Array): Promise<void> {
@@ -94,6 +97,11 @@ export const api = {
   onReconnected(handler: (profileID: string) => void): () => void {
     EventsOn(EVT_RECONNECTED, handler);
     return () => EventsOff(EVT_RECONNECTED);
+  },
+
+  onSystemTheme(handler: (value: "light" | "dark") => void): () => void {
+    EventsOn(EVT_SYSTEM_THEME, handler);
+    return () => EventsOff(EVT_SYSTEM_THEME);
   },
 
   onTransferProgress(handler: (p: TransferProgress) => void): () => void {

@@ -32,6 +32,7 @@
     resolveSkin,
     importSkin,
     deleteSkin,
+    initSystemTheme,
     type Appearance,
   } from "./stores/skins";
   import { session } from "./stores/session";
@@ -201,6 +202,7 @@
       loadThemes(),
       loadSkins(),
       loadSettings(),
+      initSystemTheme(),
     ]);
     activeSkinID.set($settings.skinId || "baudrun");
     appearance.set(($settings.appearance as Appearance) || "auto");

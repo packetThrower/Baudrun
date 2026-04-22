@@ -13,6 +13,7 @@ import (
 
 	"Baudrun/internal/appdata"
 	"Baudrun/internal/openpath"
+	"Baudrun/internal/ostheme"
 	"Baudrun/internal/profiles"
 	sserial "Baudrun/internal/serial"
 	"Baudrun/internal/settings"
@@ -31,6 +32,11 @@ const (
 	EventTransferProgress   = "transfer:progress"
 	EventTransferComplete   = "transfer:complete"
 	EventTransferError      = "transfer:error"
+	// EventSystemTheme fires when the OS-level dark/light preference
+	// changes. Payload is "light" or "dark". Bypasses the webview's
+	// prefers-color-scheme (which reflects our pinned NSAppearance on
+	// macOS, not the OS setting) — see internal/ostheme.
+	EventSystemTheme = "system:theme"
 
 	reconnectInterval = 1 * time.Second
 	reconnectTimeout  = 30 * time.Second
@@ -60,6 +66,10 @@ type App struct {
 	// Checked to block concurrent transfers and called by
 	// CancelTransfer to abort mid-flight.
 	transferCancel context.CancelFunc
+	// stopThemeWatch tears down the OS-theme watcher started in
+	// startup. Wails doesn't call us on shutdown, so today this is
+	// here for completeness; the goroutine dies with the process.
+	stopThemeWatch func()
 }
 
 func NewApp() *App {
@@ -98,6 +108,25 @@ func (a *App) startup(ctx context.Context) {
 	} else {
 		runtime.LogErrorf(ctx, "settings store init: %v", err)
 	}
+
+	// Start the OS-theme watcher. Emits EventSystemTheme on every change
+	// so the frontend's `systemIsDark` store stays in sync with the
+	// actual OS setting (rather than the WKWebView-reported
+	// prefers-color-scheme, which is locked to our pinned NSAppearance).
+	if stop, err := ostheme.Watch(func(t ostheme.Theme) {
+		runtime.EventsEmit(a.ctx, EventSystemTheme, t.String())
+	}); err == nil {
+		a.stopThemeWatch = stop
+	} else {
+		runtime.LogErrorf(ctx, "start OS theme watcher: %v", err)
+	}
+}
+
+// SystemTheme returns the current OS-level appearance preference as
+// "light" or "dark". The frontend calls this on mount to seed its
+// systemIsDark store; subsequent changes arrive via EventSystemTheme.
+func (a *App) SystemTheme() string {
+	return ostheme.Current().String()
 }
 
 // Profile API
