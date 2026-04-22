@@ -10,16 +10,16 @@
 [![Wails](https://img.shields.io/badge/Wails-v2.12.0-D4263E?style=flat-square)](https://wails.io)
 [![Svelte](https://img.shields.io/github/package-json/dependency-version/packetThrower/Baudrun/dev/svelte?filename=frontend/package.json&style=flat-square&logo=svelte&logoColor=white&label=Svelte&color=FF3E00)](https://svelte.dev)
 
-**macOS** — universal binary (Intel + Apple Silicon)  
+**macOS** (universal binary: Intel + Apple Silicon)  
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
 [![Universal binary](https://img.shields.io/badge/Universal-Intel%20%2B%20Apple%20Silicon-333?style=flat-square)](docs/REQUIREMENTS.md#macos)
 
-**Windows** — x64 + ARM64  
+**Windows** (x64 and ARM64)  
 [![Windows 10 21H2+ x64](https://img.shields.io/badge/Windows%2010%2021H2%2B-x64-0078D4?style=flat-square&logo=windows&logoColor=white)](docs/REQUIREMENTS.md#windows)
 [![Windows 11 x64](https://img.shields.io/badge/Windows%2011-x64-0078D4?style=flat-square&logo=windows11&logoColor=white)](docs/REQUIREMENTS.md#windows)
 [![Windows 11 ARM64](https://img.shields.io/badge/Windows%2011-ARM64-0078D4?style=flat-square&logo=windows11&logoColor=white)](docs/REQUIREMENTS.md#windows)
 
-**Linux** — amd64 + arm64  
+**Linux** (amd64 and arm64)  
 [![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?style=flat-square&logo=ubuntu&logoColor=white)](docs/REQUIREMENTS.md#linux)
 [![Debian 13+](https://img.shields.io/badge/Debian-13%2B-A81D33?style=flat-square&logo=debian&logoColor=white)](docs/REQUIREMENTS.md#linux)
 [![Fedora 40+](https://img.shields.io/badge/Fedora-40%2B-294172?style=flat-square&logo=fedora&logoColor=white)](docs/REQUIREMENTS.md#linux)
@@ -27,21 +27,23 @@
 [![openSUSE Tumbleweed](https://img.shields.io/badge/openSUSE-Tumbleweed-73BA25?style=flat-square&logo=opensuse&logoColor=white)](docs/REQUIREMENTS.md#linux)
 [![AppImage: libwebkit2gtk-4.1 + FUSE](https://img.shields.io/badge/AppImage-libwebkit2gtk--4.1%20%2B%20FUSE-2166B7?style=flat-square&logo=appimage&logoColor=white)](docs/REQUIREMENTS.md#linux)
 
-A cross-platform (macOS + Windows + Linux) serial terminal for network devices —
-profile-based like SSH, with a built-in xterm terminal and native-feeling UI.
+A cross-platform (macOS + Windows + Linux) serial terminal for network devices.
 
-Built for connecting to switch consoles, router CLIs, and other serial-attached
-network gear without the ritual of remembering baud rates, fiddling with
-`screen /dev/cu.usbserial-...`, or opening three different apps.
+It's built for switch consoles, router CLIs, and other serial-attached network
+gear. Baudrun is profile-based: each device gets a named profile storing port,
+baud rate, framing, flow control, line ending, and optional send-on-connect
+sequences. You connect with one click instead of retyping `screen /dev/cu.usbserial-...`
+from memory, hunting for the baud rate a specific switch expects, or opening a
+different terminal app for each kind of adapter.
 
-Developed in close collaboration with Claude (Anthropic) — see
+Developed in close collaboration with Claude (Anthropic). See
 [AI-USAGE.md](AI-USAGE.md) for how that split works.
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/macos-dark-baudrun.png">
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/screenshots/macos-light-baudrun.png">
-    <img src="docs/assets/screenshots/macos-dark-baudrun.png" alt="Baudrun — default skin" width="720">
+    <img src="docs/assets/screenshots/macos-dark-baudrun.png" alt="Baudrun in its default skin" width="720">
   </picture>
 </p>
 
@@ -101,9 +103,9 @@ Developed in close collaboration with Claude (Anthropic) — see
   | Aesthetic | **CRT (Green Phosphor)**, **Cyberpunk (Synthwave)**, **Blueprint**, **E-Ink (Paper)** |
   | Accessibility | **High Contrast** |
 
-  Skins and themes are orthogonal — mix freely (Liquid Glass skin +
-  Solarized Dark theme, CRT skin + CRT Phosphor theme, etc.). Author
-  your own via [docs/SKINS.md](docs/SKINS.md).
+  Skins and themes are independent, so you can mix them freely
+  (Liquid Glass skin + Solarized Dark theme, CRT skin + CRT Phosphor
+  theme, etc.). Author your own via [docs/SKINS.md](docs/SKINS.md).
 - **Accessibility** — xterm screen-reader mode, `prefers-reduced-motion`
   respected, Cmd/Ctrl +/- terminal zoom, ARIA labels on every icon-only
   control. Details in [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md).
@@ -111,7 +113,7 @@ Developed in close collaboration with Claude (Anthropic) — see
   settings alongside your dotfiles; Settings → Advanced picks the
   target.
 
-Everything above is documented in depth under [docs/](docs/) — see
+Everything above is documented in depth under [docs/](docs/). See
 [docs/ADVANCED.md](docs/ADVANCED.md) for the feature reference covering
 Send Break, hex send/view, file transfer, auto-reconnect, control-line
 policies, session logging, driver detection, and config-directory
@@ -122,7 +124,7 @@ Full reference docs under [docs/](docs/):
 
 | File | Covers |
 |---|---|
-| [ADVANCED.md](docs/ADVANCED.md) | Every advanced feature — Send Break, hex send/view, file transfer, auto-reconnect, control-line policies, session logging, driver detection, config-directory relocation, and more. Reference, not how-to. |
+| [ADVANCED.md](docs/ADVANCED.md) | Every advanced feature: Send Break, hex send/view, file transfer, auto-reconnect, control-line policies, session logging, driver detection, config-directory relocation, and more. It's a reference, not a how-to. |
 | [ACCESSIBILITY.md](docs/ACCESSIBILITY.md) | Screen-reader mode, reduced-motion, terminal zoom shortcuts, ARIA-label coverage, and known caveats. |
 | [PROFILES.md](docs/PROFILES.md) | Profile JSON schema + bulk provisioning from CSV inventory via jq/Python. |
 | [THEMES.md](docs/THEMES.md) | Theme JSON schema, ANSI-slot reference, `.itermcolors` import ecosystem. |
@@ -163,22 +165,22 @@ a driver is missing.
 
 ## Releases
 
-Tagged pushes (SemVer with leading `v`: `v0.4.0`, `v1.0.0`) produce a
-GitHub Release with artifacts for five targets. The `v` prefix is
-only on the git tag — package filenames and `--version` strings drop
-it so dpkg / rpm / pacman read the SemVer natively.
+Tagged pushes with a SemVer tag like `v0.4.0` or `v1.0.0` produce a
+GitHub Release with artifacts for five targets. The leading `v` only
+lives on the git tag; package filenames and `--version` strings drop
+it so dpkg, rpm, and pacman read the version natively.
 
 | Platform | Artifact | Notes |
 |---|---|---|
-| **macOS** | `Baudrun-macOS-<version>.zip` (contains `.app`) | **Universal binary** — one `.app` with both Intel (x86_64) and Apple Silicon (arm64) slices fused via `lipo`. macOS picks the matching slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. Trade-off is roughly 2× the download size of a single-arch build. |
+| **macOS** | `Baudrun-macOS-<version>.zip` (contains `.app`) | **Universal binary.** One `.app` containing both Intel (x86_64) and Apple Silicon (arm64) builds, combined with `lipo`. macOS picks the right slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. The trade-off is that it's roughly twice the size of a single-architecture build. |
 | **Windows amd64** | `Baudrun-Windows-amd64-<version>.zip` (contains `.exe`) | Standard 64-bit x86 Windows 10/11. |
 | **Windows arm64** | `Baudrun-Windows-arm64-<version>.zip` (contains `.exe`) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
-| **Linux amd64** | `baudrun_<version>-1_amd64.deb`, `baudrun-<version>-1.x86_64.rpm`, `baudrun-<version>-1-x86_64.pkg.tar.zst`, `Baudrun-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. The trailing `-1` is fpm's packaging revision — bumps only if the same upstream version needs to ship again with packaging-only fixes. |
+| **Linux amd64** | `baudrun_<version>-1_amd64.deb`, `baudrun-<version>-1.x86_64.rpm`, `baudrun-<version>-1-x86_64.pkg.tar.zst`, `Baudrun-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. The trailing `-1` is fpm's packaging revision; it bumps only when the same upstream version needs to ship again with packaging-only fixes. |
 | **Linux arm64** | `baudrun_<version>-1_arm64.deb`, `baudrun-<version>-1.aarch64.rpm`, `baudrun-<version>-1-aarch64.pkg.tar.zst`, `Baudrun-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
 
 Arch users can install the `.pkg.tar.zst` directly with
 `pacman -U`. The [packaging/arch/](packaging/arch/) directory holds
-a PKGBUILD for AUR submission (`baudrun-bin`) — not yet published.
+a PKGBUILD for AUR submission as `baudrun-bin`, not yet published.
 
 Download, unpack, and run. On macOS, drag `Baudrun.app` into `/Applications`.
 
@@ -189,7 +191,7 @@ The app is currently unsigned on all platforms. First-launch friction:
   and `libgtk-3` installed (default on Ubuntu 24.04+, Fedora 40+, and recent
   Debian).
 
-Code signing and notarization are planned — see `TODO.md`.
+Code signing and notarization are planned; see `TODO.md`.
 
 ## Building from source
 
@@ -208,15 +210,15 @@ wails build -platform darwin/universal    # universal macOS binary
 wails dev                                 # hot-reload dev mode
 ```
 
-Cross-compiling to Linux from macOS is **not** supported by Wails — Linux
+Cross-compiling to Linux from macOS isn't supported by Wails, so Linux
 builds have to run on Linux (or in CI). On a Linux host, install
-`libgtk-3-dev` + `libwebkit2gtk-4.1-dev` + `pkg-config` first, then
+`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, and `pkg-config` first, then
 `wails build -platform linux/amd64` (or `linux/arm64`).
 
 CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-26`,
 `windows-latest`, `windows-11-arm`, `ubuntu-latest`, and `ubuntu-24.04-arm`
 on each push to `main`. Tagged pushes matching SemVer `v[0-9]+.[0-9]+.[0-9]+`
-fire `.github/workflows/release.yml`, which produces a GitHub Release
+trigger `.github/workflows/release.yml`, which produces a GitHub Release
 with all five platform artifacts attached.
 
 ## Architecture
