@@ -38,6 +38,7 @@ theme:
 
 nav:
   - Home: index.md
+  - Screenshots: screenshots.md
   - Install & Build:
       - Requirements: REQUIREMENTS.md
   - Features:

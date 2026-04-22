@@ -37,6 +37,10 @@ network gear without the ritual of remembering baud rates, fiddling with
 Developed in close collaboration with Claude (Anthropic) — see
 [AI-USAGE.md](AI-USAGE.md) for how that split works.
 
+<p align="center">
+  <img src="docs/assets/screenshots/macos-profiles-dark-baudrun.png" alt="Baudrun profile list — dark appearance, default skin" width="720">
+</p>
+
 ## Features
 
 - **Profile-based connections** — named settings per device (port, baud,
