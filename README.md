@@ -38,7 +38,11 @@ Developed in close collaboration with Claude (Anthropic) — see
 [AI-USAGE.md](AI-USAGE.md) for how that split works.
 
 <p align="center">
-  <img src="docs/assets/screenshots/macos-profiles-dark-baudrun.png" alt="Baudrun profile list — dark appearance, default skin" width="720">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshots/macos-dark-baudrun.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/screenshots/macos-light-baudrun.png">
+    <img src="docs/assets/screenshots/macos-dark-baudrun.png" alt="Baudrun — default skin" width="720">
+  </picture>
 </p>
 
 ## Features
