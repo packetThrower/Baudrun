@@ -51,7 +51,7 @@ this or has an empty name / no variables.
 
 Skins can override any CSS custom property the app's stylesheet reads.
 The full list lives in
-[`frontend/src/style.css`](../frontend/src/style.css) under `:root`.
+[`frontend/src/style.css`](https://github.com/packetThrower/Baudrun/blob/main/frontend/src/style.css) under `:root`.
 Grouped for navigation:
 
 ### Typography
@@ -269,7 +269,7 @@ Skin dropdown.
 - **Start from a built-in.** Inspect a skin you like with
   `getComputedStyle(document.documentElement).getPropertyValue("--bg-main")`
   to capture the applied values, or read the Go struct definitions
-  in [`internal/skins/builtins.go`](../internal/skins/builtins.go).
+  in [`internal/skins/builtins.go`](https://github.com/packetThrower/Baudrun/blob/main/internal/skins/builtins.go).
 - **Test both appearances** if you set `supportsLight: true`. The
   Appearance dropdown in Settings flips modes without reload.
 - **Skins vs. themes.** The terminal viewport is styled by the active

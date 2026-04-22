@@ -14,7 +14,7 @@ These are the floors for end users downloading from the Releases page.
 - **Gatekeeper warning on first launch** — the app is unsigned for
   now. Right-click → Open to bypass.
 - **USB-to-serial drivers** where applicable — see the chipset table
-  in [README.md](../README.md#usb-to-serial-adapter-drivers).
+  in [README.md](https://github.com/packetThrower/Baudrun/blob/main/README.md#usb-to-serial-adapter-drivers).
 
 Upstream Wails v2 supports macOS 10.13+, but Go 1.23's macOS floor
 and Apple Silicon's own 11.0 floor raise the effective minimum to 11.
@@ -28,7 +28,7 @@ and Apple Silicon's own 11.0 floor raise the effective minimum to 11.
   missing.
 - **SmartScreen warning on first launch** — unsigned, so click "More
   info" → "Run anyway". Code signing is tracked in
-  [TODO.md](../TODO.md).
+  [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md).
 - Windows 10 1803–21H1 will technically run WebView2, but nothing
   older than 21H2 is tested or supported here.
 

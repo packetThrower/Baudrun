@@ -66,9 +66,8 @@ registered.
 
 Zoom writes through to `Settings.fontSize`, so it persists across
 app launches. The xterm instance rebuilds on each change to pick
-up the new cell metrics (see
-[ADVANCED.md](ADVANCED.md#terminal-zoom) for the implementation
-note on why a full rebuild is needed).
+up the new cell metrics — xterm caches glyph dimensions at
+construction, so an in-place font-size change wouldn't re-measure.
 
 ## ARIA labels
 
@@ -88,7 +87,7 @@ text.
 ## Not yet supported
 
 - **Keyboard shortcuts for Break / Clear / Suspend.** Tracked in
-  [TODO.md](../TODO.md) with an `[on request]` marker. The gating
+  [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md) with an `[on request]` marker. The gating
   isn't difficulty — it's picking a modifier scheme that doesn't
   step on control sequences that serial devices care about (Ctrl+C,
   Ctrl+Z, etc.). Waiting on real-user input before committing to

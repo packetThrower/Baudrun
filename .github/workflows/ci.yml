@@ -10,6 +10,8 @@ on:
       - "build/appicon.png"
       - "build/appicon.svg"
       - "build/make-icon.sh"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
   pull_request:
     branches: [main]
     paths-ignore:
@@ -19,6 +21,8 @@ on:
       - "build/appicon.png"
       - "build/appicon.svg"
       - "build/make-icon.sh"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
   workflow_call:
 
 jobs:

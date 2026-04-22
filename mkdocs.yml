@@ -1,0 +1,77 @@
+site_name: Baudrun
+site_description: A cross-platform serial terminal for network devices — profile-based like SSH.
+site_url: https://packetthrower.github.io/Baudrun/
+repo_url: https://github.com/packetThrower/Baudrun
+repo_name: packetThrower/Baudrun
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  logo: https://raw.githubusercontent.com/packetThrower/Baudrun/main/build/appicon.png
+  favicon: https://raw.githubusercontent.com/packetThrower/Baudrun/main/build/appicon.png
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+nav:
+  - Home: index.md
+  - Install & Build:
+      - Requirements: REQUIREMENTS.md
+  - Features:
+      - Advanced: ADVANCED.md
+  - Customization:
+      - Profiles: PROFILES.md
+      - Themes: THEMES.md
+      - Skins: SKINS.md
+      - Accessibility: ACCESSIBILITY.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+      # GitHub-compatible anchor slugs so existing deep links
+      # (e.g. #light--dark-handling) keep working here too.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/packetThrower/Baudrun

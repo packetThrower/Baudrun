@@ -3,7 +3,7 @@
 Reference material for Baudrun's advanced features and
 customization systems. For the product-level description,
 screenshots, and install instructions see the
-[top-level README](../README.md).
+[top-level README](https://github.com/packetThrower/Baudrun/blob/main/README.md).
 
 ## Install & build
 
@@ -50,7 +50,7 @@ with DevTools.
 
 ## Project
 
-**[TODO](../TODO.md)** — roadmap. Items tagged **[on request]** are
+**[TODO](https://github.com/packetThrower/Baudrun/blob/main/TODO.md)** — roadmap. Items tagged **[on request]** are
 features that would be implemented if someone asks for them (macros,
 file transfer over XMODEM/YMODEM/ZMODEM, keyboard-shortcut scheme
 for Break / Clear / Suspend). Everything else is either done or
