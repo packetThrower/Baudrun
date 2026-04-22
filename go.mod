@@ -3,9 +3,11 @@ module Baudrun
 go 1.23.0
 
 require (
+	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 	github.com/wailsapp/wails/v2 v2.12.0
 	go.bug.st/serial v1.6.4
+	golang.org/x/term v0.29.0
 	howett.net/plist v1.0.2-0.20250314012144-ee69052608d9
 )
 
