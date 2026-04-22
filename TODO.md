@@ -100,7 +100,7 @@ high-effort or niche enough that priority tracks real demand.
       `signtool` in the `build-windows` job.
 - [ ] **Public downloads for a private source repo.** Shared
       downloads repo serving both Baudrun and get_switch_info:
-      1. Create public `otec-it/downloads` (empty, README listing
+      1. Create public `packetThrower/downloads` (empty, README listing
          apps + links to their Releases pages).
       2. Generate one fine-grained PAT scoped to that repo with
          `Contents: Read and write`. Add to *each* private source
@@ -108,7 +108,7 @@ high-effort or niche enough that priority tracks real demand.
       3. In each `release.yml`, point `softprops/action-gh-release` at
          the shared repo with prefixed tags:
          ```yaml
-         repository: otec-it/downloads
+         repository: packetThrower/downloads
          token: ${{ secrets.RELEASES_REPO_TOKEN }}
          tag_name: baudrun-${{ github.ref_name }}       # or portfinder-
          name: Baudrun ${{ github.ref_name }}
