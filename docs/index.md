@@ -55,3 +55,11 @@ features that would be implemented if someone asks for them (macros,
 file transfer over XMODEM/YMODEM/ZMODEM, keyboard-shortcut scheme
 for Break / Clear / Suspend). Everything else is either done or
 in the active backlog.
+
+## Sponsor development
+
+Baudrun is developed in spare time. If it saves you from the
+`screen /dev/cu.usbserial-…` / baud-rate-lookup / three-terminal-apps
+dance, you can support further work via GitHub Sponsors:
+
+<iframe src="https://github.com/sponsors/packetThrower/card" title="Sponsor packetThrower" height="225" width="600" style="border: 0;"></iframe>
