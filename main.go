@@ -51,16 +51,17 @@ func main() {
 		},
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
-			// Pin the window to the dark system appearance so the
-			// NSVisualEffectView behind translucent skins (Liquid Glass,
-			// Baudrun) renders on a dark frosted material. Wails v2.12's
-			// runtime theme setters are empty stubs on macOS, so this has
-			// to be decided at startup. Until live-switch is wired up,
-			// the app presents as dark-only regardless of the CSS
-			// Appearance preference.
-			Appearance:           mac.NSAppearanceNameDarkAqua,
-			WindowIsTranslucent:  true,
-			WebviewIsTransparent: true,
+			// Intentionally no Appearance / WindowIsTranslucent /
+			// WebviewIsTransparent here. Translucent vibrancy would look
+			// nice for the Baudrun and Liquid Glass skins, but Wails v2.12
+			// can't change NSAppearance at runtime — so enabling
+			// translucency forces pinning the window to dark to keep
+			// NSVisualEffectView's vibrancy on a dark material, which in
+			// turn locks WKWebView's prefers-color-scheme to dark and
+			// breaks the app's own light/dark tracking of the OS setting.
+			// Wails v3 is expected to land runtime NSAppearance switching;
+			// revisit translucency once that's available. Shelved
+			// alternative: branch `shelved/ostheme-watcher`.
 			About: &mac.AboutInfo{
 				Title:   "Baudrun",
 				Message: "A serial terminal for network devices.",
