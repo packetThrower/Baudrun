@@ -98,8 +98,15 @@ var builtins = []Skin{
 			"--shadow-panel":    "none",
 			"--shadow-floating": "none",
 
-			// Backdrop blur — off in the default skin
-			"--blur-strength": "0px",
+			// Backdrop blur — enabled so the Baudrun skin's overlay
+			// surfaces (Settings sections, dropdown popovers, ProfileForm
+			// sub-panels, modals) get a frosted-glass pass via
+			// backdrop-filter over whatever content sits behind them.
+			// Not visible on siblings like the sidebar (no content
+			// behind to blur) — Wails v2.12 has no runtime NSAppearance
+			// switching, so the native NSVisualEffectView vibrancy that
+			// would have covered those cases is off (see main.go).
+			"--blur-strength": "24px",
 
 			// Scrollbar
 			"--scrollbar-thumb":       "rgba(255, 255, 255, 0.18)",
@@ -123,15 +130,16 @@ var builtins = []Skin{
 		Description:   "Frosted surfaces, larger squircle radii, sentence-case labels, brighter accents. Evokes the Liquid Glass design language.",
 		SupportsLight: true,
 		LightVars: map[string]string{
-			// Liquid Glass in light mode paints the shell backdrop opaque
-			// (--shell-bg) so the floating-bubble gaps aren't framed by
-			// the dark NSVisualEffectView that's pinned behind the window.
-			// Surfaces are opaque light for the same reason — any alpha
-			// would reveal dark vibrancy and muddy the look.
-			"--shell-bg":       "#e8e8ea",
-			"--bg-sidebar":     "#ffffff",
-			"--bg-main":        "#ffffff",
-			"--bg-panel":       "#ffffff",
+			// Native NSVisualEffectView vibrancy is off (Wails v2.12 can't
+			// live-switch NSAppearance — see main.go), so the Liquid Glass
+			// effect is simulated entirely in CSS. The shell gets a subtle
+			// gradient that gives backdrop-filter something to frost; the
+			// sidebar and main surfaces are translucent so the blurred
+			// gradient shows through.
+			"--shell-bg":       "linear-gradient(135deg, #e6e9f2 0%, #eef1f8 45%, #e3e7f1 100%)",
+			"--bg-sidebar":     "rgba(255, 255, 255, 0.55)",
+			"--bg-main":        "rgba(255, 255, 255, 0.72)",
+			"--bg-panel":       "rgba(255, 255, 255, 0.72)",
 			"--bg-hover":       "rgba(0, 0, 0, 0.06)",
 			"--bg-active":      "rgba(0, 122, 255, 0.22)",
 			"--bg-input":       "rgba(0, 0, 0, 0.05)",
@@ -208,7 +216,9 @@ var builtins = []Skin{
 
 			// The floating-bubble layout: detach sidebar and main from the
 			// window edges, round their corners, drop shadows underneath.
-			// The window's vibrancy shows through the gap around them.
+			// The gradient --shell-bg frames them and gives the sidebar +
+			// panels' backdrop-filter something interesting to frost.
+			"--shell-bg":        "linear-gradient(135deg, #1b1d2e 0%, #242743 45%, #1a1d33 100%)",
 			"--shell-padding":   "10px",
 			"--shell-gap":       "10px",
 			"--panel-radius":    "18px",

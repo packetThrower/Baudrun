@@ -99,6 +99,12 @@
     border-radius: var(--panel-radius);
     box-shadow: var(--panel-shadow);
     overflow: hidden;
+    /* Only visible when the active skin sets --blur-strength to > 0
+       AND --bg-sidebar is translucent AND something with visual
+       interest sits behind it (e.g. a gradient --shell-bg). Default
+       skins set --blur-strength: 0 so this costs nothing for them. */
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
   }
 
   .titlebar {
