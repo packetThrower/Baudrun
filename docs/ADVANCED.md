@@ -147,10 +147,15 @@ see [PROFILES.md](PROFILES.md).
 
 ## Auto-reconnect
 
-- Per-profile toggle (`autoReconnect`).
+- Per-profile toggle (`autoReconnect`, default `true`).
 - Triggered when the session's read pump exits with an error —
   typically "port disappeared" after a USB-serial adapter
   re-enumerates.
+- Runs in the Go backend, independent of UI state, so it keeps
+  working while the session is suspended (the user won't see the
+  "reconnecting" chrome because the terminal is hidden, but the
+  status bar still updates and the session is already reconnected
+  on resume).
 - Poll interval: 1 s. Timeout: 30 s.
 - Reopens with the config snapshotted at Connect time, not the
   current profile state. Edits to the profile during reconnect

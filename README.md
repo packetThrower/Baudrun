@@ -62,8 +62,10 @@ Developed in close collaboration with Claude (Anthropic). See
   ending translation, local echo, hex view / send, line timestamps,
   session logging to file, copy-on-select, custom baud rates, and
   Backspace/Delete mapping.
-- **Auto-reconnect** — opt-in per profile; USB adapter drops recover
+- **Auto-reconnect** — on by default; USB adapter drops recover
   transparently with the xterm buffer preserved across the gap.
+  Keeps working while the session is suspended. Disable per profile
+  if you'd rather see drops surface immediately.
 - **Send Break** — 300 ms TX-low pulse for Cisco ROMMON, Juniper
   diagnostic mode, and boot-loader interrupts.
 - **Paste safety** — multi-line confirmation prompt + configurable slow

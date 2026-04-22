@@ -857,6 +857,7 @@
           canConnect={!!currentProfile.id && !!currentProfile.portName}
           {isConnected}
           {isConnecting}
+          {isReconnecting}
           {suspended}
           themes={$themes}
           defaultThemeID={$settings.defaultThemeId}

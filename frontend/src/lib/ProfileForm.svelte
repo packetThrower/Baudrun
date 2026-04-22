@@ -28,6 +28,7 @@
     canConnect: boolean;
     isConnected: boolean;
     isConnecting: boolean;
+    isReconnecting?: boolean;
     suspended?: boolean;
     themes?: Theme[];
     defaultThemeID?: string;
@@ -45,6 +46,7 @@
     canConnect,
     isConnected,
     isConnecting,
+    isReconnecting = false,
     suspended = false,
     themes = [],
     defaultThemeID = "baudrun",
@@ -204,7 +206,9 @@
         disabled={locked}
       />
       <span class="subtitle">
-        {#if isConnected}
+        {#if isReconnecting}
+          <span class="dot-pill reconnecting"></span> Session reconnecting…
+        {:else if isConnected}
           <span class="dot-pill"></span> Session suspended
         {:else}
           {isNew ? "New profile" : "Edit profile"}
@@ -755,6 +759,21 @@
     border-radius: 50%;
     background: var(--success);
     box-shadow: 0 0 6px var(--success);
+  }
+
+  .dot-pill.reconnecting {
+    background: var(--warn);
+    box-shadow: 0 0 6px var(--warn);
+    animation: dot-reconnect-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes dot-reconnect-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot-pill.reconnecting { animation: none; }
   }
 
   .header-actions {

@@ -81,6 +81,13 @@ func Defaults() Profile {
 		PasteWarnMultiline: true,
 		PasteSlow:          true,
 		PasteCharDelayMs:   10,
+		// Auto-reconnect is on by default. Cheap USB-serial adapters
+		// routinely re-enumerate under load or when the attached
+		// device power-cycles; having the session reopen on its own
+		// rather than forcing a manual click is the kinder default.
+		// Off-by-default would also confuse the Suspend flow, where
+		// the user explicitly wants the session to outlive a drop.
+		AutoReconnect: true,
 	}
 }
 
