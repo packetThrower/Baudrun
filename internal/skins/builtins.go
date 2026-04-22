@@ -136,10 +136,10 @@ var builtins = []Skin{
 			// gradient that gives backdrop-filter something to frost; the
 			// sidebar and main surfaces are translucent so the blurred
 			// gradient shows through.
-			"--shell-bg":       "linear-gradient(135deg, #e6e9f2 0%, #eef1f8 45%, #e3e7f1 100%)",
-			"--bg-sidebar":     "rgba(255, 255, 255, 0.55)",
-			"--bg-main":        "rgba(255, 255, 255, 0.72)",
-			"--bg-panel":       "rgba(255, 255, 255, 0.72)",
+			"--shell-bg":       "linear-gradient(135deg, #ebebf0 0%, #f2f2f7 45%, #e8e8ed 100%)",
+			"--bg-sidebar":     "rgba(255, 255, 255, 0.5)",
+			"--bg-main":        "rgba(255, 255, 255, 0.7)",
+			"--bg-panel":       "rgba(255, 255, 255, 0.8)",
 			"--bg-hover":       "rgba(0, 0, 0, 0.06)",
 			"--bg-active":      "rgba(0, 122, 255, 0.22)",
 			"--bg-input":       "rgba(0, 0, 0, 0.05)",
@@ -159,7 +159,11 @@ var builtins = []Skin{
 			"--accent":       "#007aff",
 			"--accent-hover": "#2a93ff",
 
-			"--panel-shadow":          "0 10px 40px rgba(0, 0, 0, 0.12), 0 1px 0 rgba(255, 255, 255, 0.8) inset",
+			// Drop shadow beneath + top highlight for floating feel, plus
+			// a subtle 1px inset outline all the way around — the glass
+			// bezel that catches light along the rounded edges on
+			// macOS 26 Control Center pills.
+			"--panel-shadow":          "0 10px 40px rgba(0, 0, 0, 0.12), 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 0 0 1px rgba(0, 0, 0, 0.08) inset",
 			"--scrollbar-thumb":       "rgba(0, 0, 0, 0.22)",
 			"--scrollbar-thumb-hover": "rgba(0, 0, 0, 0.35)",
 		},
@@ -175,15 +179,18 @@ var builtins = []Skin{
 			"--label-weight":         "500",
 			"--font-size-label":      "12px",
 
-			// Brighter, more translucent panels. The window background
-			// bleeds through more; surfaces feel like frosted overlays.
-			"--bg-sidebar":     "rgba(255, 255, 255, 0.10)",
-			"--bg-main":        "rgba(18, 20, 28, 0.35)",
-			"--bg-panel":       "rgba(255, 255, 255, 0.12)",
-			"--bg-hover":       "rgba(255, 255, 255, 0.16)",
-			"--bg-active":      "rgba(10, 132, 255, 0.32)",
-			"--bg-input":       "rgba(255, 255, 255, 0.12)",
-			"--bg-input-focus": "rgba(255, 255, 255, 0.18)",
+			// Surface hierarchy matches the macOS 26 System Settings look:
+			// sidebar is the quietest, main panel sits slightly brighter
+			// above it, and inner panels (cards inside main) are brighter
+			// still. All three are white-alpha so backdrop-filter frosts
+			// the underlying --shell-bg gradient through them.
+			"--bg-sidebar":     "rgba(255, 255, 255, 0.05)",
+			"--bg-main":        "rgba(255, 255, 255, 0.08)",
+			"--bg-panel":       "rgba(255, 255, 255, 0.14)",
+			"--bg-hover":       "rgba(255, 255, 255, 0.12)",
+			"--bg-active":      "rgba(10, 132, 255, 0.28)",
+			"--bg-input":       "rgba(255, 255, 255, 0.10)",
+			"--bg-input-focus": "rgba(255, 255, 255, 0.16)",
 
 			// Foreground gets a touch more contrast
 			"--fg-primary":   "rgba(255, 255, 255, 0.98)",
@@ -194,9 +201,12 @@ var builtins = []Skin{
 			"--border-subtle": "rgba(255, 255, 255, 0.14)",
 			"--border-strong": "rgba(255, 255, 255, 0.22)",
 
-			// Brighter accent
-			"--accent":       "#2a93ff",
-			"--accent-hover": "#5aa9ff",
+			// macOS 26 system blue (dark). System Settings highlights use
+			// the user's chosen accent color (orange in the reference
+			// screenshot); we stick with the stock blue since the user's
+			// accent picker isn't something Baudrun mirrors.
+			"--accent":       "#0a84ff",
+			"--accent-hover": "#409cff",
 
 			// Bigger continuous radii
 			"--radius-sm": "7px",
@@ -218,11 +228,17 @@ var builtins = []Skin{
 			// window edges, round their corners, drop shadows underneath.
 			// The gradient --shell-bg frames them and gives the sidebar +
 			// panels' backdrop-filter something interesting to frost.
-			"--shell-bg":        "linear-gradient(135deg, #1b1d2e 0%, #242743 45%, #1a1d33 100%)",
+			// Truly neutral dark gradient (pure grays, no blue cast).
+			// Shows through the translucent surfaces and gives
+			// backdrop-filter something to frost.
+			"--shell-bg":        "linear-gradient(135deg, #1d1d1d 0%, #292929 45%, #1f1f1f 100%)",
 			"--shell-padding":   "10px",
 			"--shell-gap":       "10px",
 			"--panel-radius":    "18px",
-			"--panel-shadow":    "0 10px 40px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.06) inset",
+			// Drop shadow + top highlight + 1px inset outline for the
+			// glass bezel that catches light along the rounded edges —
+			// the macOS 26 Control Center pill look.
+			"--panel-shadow":    "0 10px 40px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.14) inset",
 			"--sidebar-divider": "none",
 
 			// Slightly taller titlebar region
