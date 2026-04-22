@@ -175,7 +175,7 @@ at least 20 characters long OR contains `\r` / `\n`. Typed input
 never crosses lines in a single callback and typing bursts top out
 well below 20 characters.
 
-**`pasteWarnMultiline`** (profile field, default `false`)
+**`pasteWarnMultiline`** (profile field, default `true`)
 
 - Only applies to pastes that contain a line break.
 - Prompts via `window.confirm` with the line count plus a truncated
@@ -183,7 +183,7 @@ well below 20 characters.
 - On cancel, the paste is discarded and a "Paste cancelled" status
   message is shown.
 
-**`pasteSlow`** (profile field, default `false`) + **`pasteCharDelayMs`** (profile field, default `10`, valid range 0-500)
+**`pasteSlow`** (profile field, default `true`) + **`pasteCharDelayMs`** (profile field, default `10`, valid range 0-500)
 
 - When enabled, pasted bytes are sent one at a time with
   `pasteCharDelayMs` between each.

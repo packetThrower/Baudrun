@@ -73,7 +73,14 @@ func Defaults() Profile {
 		DTROnDisconnect:  "default",
 		RTSOnDisconnect:  "default",
 		BackspaceKey:     "del",
-		PasteCharDelayMs: 10,
+		// Paste safety is on by default — this is a serial-console
+		// app, and a surprise multi-line paste into a router CLI can
+		// execute partial commands before the user sees what's
+		// happening. Users can flip either off per-profile for known
+		// fast/forgiving devices.
+		PasteWarnMultiline: true,
+		PasteSlow:          true,
+		PasteCharDelayMs:   10,
 	}
 }
 
