@@ -6,6 +6,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/packetThrower/Baudrun/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/packetThrower/Baudrun/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/packetThrower/Baudrun?style=flat-square&logo=github&label=release)](https://github.com/packetThrower/Baudrun/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/packetThrower/Baudrun/total?style=flat-square&logo=github&label=downloads)](https://github.com/packetThrower/Baudrun/releases)
 [![Go](https://img.shields.io/github/go-mod/go-version/packetThrower/Baudrun?style=flat-square&logo=go&logoColor=white&label=Go&color=00ADD8)](go.mod)
 [![Wails](https://img.shields.io/badge/Wails-v2.12.0-D4263E?style=flat-square)](https://wails.io)
 [![Svelte](https://img.shields.io/github/package-json/dependency-version/packetThrower/Baudrun/dev/svelte?filename=frontend/package.json&style=flat-square&logo=svelte&logoColor=white&label=Svelte&color=FF3E00)](https://svelte.dev)
