@@ -25,7 +25,6 @@
   type Props = {
     profile: Profile;
     isNew: boolean;
-    canConnect: boolean;
     isConnected: boolean;
     isConnecting: boolean;
     isReconnecting?: boolean;
@@ -33,7 +32,7 @@
     themes?: Theme[];
     defaultThemeID?: string;
     detectDrivers?: boolean;
-    onSave: (p: Profile) => void;
+    onSave: (p: Profile) => void | Promise<void>;
     onDelete: (id: string) => void;
     onConnect: () => void;
     onDisconnect: () => void;
@@ -43,7 +42,6 @@
   let {
     profile,
     isNew,
-    canConnect,
     isConnected,
     isConnecting,
     isReconnecting = false,
@@ -86,6 +84,13 @@
   // just writes JSON; the live session keeps its old settings until
   // the user disconnects and reconnects.
   const locked = $derived((isConnected && !suspended) || isConnecting);
+
+  // Connect enablement reads the live draft, not the parent's saved
+  // profile — so picking a port in the dropdown immediately enables
+  // the button without requiring a save first. id being empty means
+  // the profile has never been saved; those have to go through Save
+  // first (handleConnectClick does that transparently).
+  const canConnect = $derived(!!draft.id && !!draft.portName);
 
   // customMode sticks after the user picks "Custom…" from the dropdown,
   // even if their typed value happens to coincide with a preset. Cleared
@@ -145,12 +150,27 @@
     saving = true;
     error = "";
     try {
-      onSave({ ...draft } as Profile);
+      await onSave({ ...draft } as Profile);
     } catch (e) {
       error = String(e);
     } finally {
       saving = false;
     }
+  }
+
+  // Save-then-connect if the user has unsaved changes. This keeps the
+  // Connect button matching user intent: "I picked a port, take me
+  // there" — rather than forcing them to discover a separate Save
+  // step first. The backend's Connect reads from the store, so we
+  // have to persist before opening the port or we'd connect with
+  // stale config.
+  async function handleConnectClick() {
+    if (!canConnect || isConnecting) return;
+    if (dirty) {
+      await save();
+      if (error) return;
+    }
+    onConnect();
   }
 
   const SUSPECT_PRODUCT_RE =
@@ -238,8 +258,8 @@
       {:else}
         <button
           class="primary"
-          onclick={onConnect}
-          disabled={!canConnect || isConnecting}
+          onclick={handleConnectClick}
+          disabled={!canConnect || isConnecting || saving}
         >
           {isConnecting ? "Connecting…" : "Connect"}
         </button>

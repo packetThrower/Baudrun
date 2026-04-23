@@ -865,7 +865,6 @@
         <ProfileForm
           profile={currentProfile}
           {isNew}
-          canConnect={!!currentProfile.id && !!currentProfile.portName}
           {isConnected}
           {isConnecting}
           {isReconnecting}
