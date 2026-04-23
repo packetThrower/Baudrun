@@ -298,6 +298,13 @@ jobs:
     needs: [build-macos, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
+      # Full history + tags so the release-notes step below can
+      # resolve the previous tag and list commits between it and
+      # the current tag.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       # Filter by *-package so we don't pull down ci.yml's frontend-dist,
       # which isn't a user-facing release asset.
       - name: Download artifacts
@@ -316,6 +323,35 @@ jobs:
           done | sort > SHA256SUMS
           cat SHA256SUMS
 
+      # Build a "What's Changed" body from the commit log between the
+      # previous tag and this one. GitHub's built-in
+      # generate_release_notes only lists PR-merged commits, and
+      # direct-to-main commits (our default workflow) would be
+      # invisible there — hence the custom body. Falls back to the
+      # full commit log if this is the very first tag.
+      - name: Build release notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+
+          {
+            echo "## What's Changed"
+            echo
+            if [ -n "$PREV_TAG" ]; then
+              git log --no-merges --format='* %s (%h)' "${PREV_TAG}..${CURRENT_TAG}"
+              echo
+              echo "**Full Changelog**: ${REPO_URL}/compare/${PREV_TAG}...${CURRENT_TAG}"
+            else
+              git log --no-merges --format='* %s (%h)' "${CURRENT_TAG}"
+              echo
+              echo "**Full Changelog**: ${REPO_URL}/commits/${CURRENT_TAG}"
+            fi
+          } > release-notes.md
+
+          echo "--- Generated release notes ---"
+          cat release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -326,6 +362,6 @@ jobs:
             artifacts/linux-amd64-package/*
             artifacts/linux-arm64-package/*
             SHA256SUMS
-          generate_release_notes: true
+          body_path: release-notes.md
           draft: false
           prerelease: false
