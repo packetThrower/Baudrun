@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, type Theme, type Settings, type Skin } from "./api";
   import PreviewTerminal from "./PreviewTerminal.svelte";
+  import Select, { type SelectItems } from "./Select.svelte";
 
   type Props = {
     themes?: Theme[];
@@ -99,8 +100,8 @@
     }
   }
 
-  function onDefaultChange(e: Event) {
-    onSetDefault((e.target as HTMLSelectElement).value);
+  function onDefaultChangeValue(v: string | number) {
+    onSetDefault(String(v));
   }
 
   function onFontSizeChange(e: Event) {
@@ -114,9 +115,26 @@
   const scrollbackValue = $derived(settings.scrollbackLines || 10000);
   const scrollbackIsCustom = $derived(!SCROLLBACK_PRESETS.includes(scrollbackValue));
 
-  function onScrollbackChange(e: Event) {
-    onSetScrollback(Number((e.target as HTMLSelectElement).value));
+  function onScrollbackChangeValue(v: string | number) {
+    onSetScrollback(Number(v));
   }
+
+  const scrollbackOptions: SelectItems = $derived.by(() => {
+    const base: SelectItems = [
+      { value: 1000, label: "1,000 lines (~0.4 MB)" },
+      { value: 5000, label: "5,000 lines (~2 MB)" },
+      { value: 10000, label: "10,000 lines (~4 MB) · default" },
+      { value: 50000, label: "50,000 lines (~20 MB)" },
+      { value: 100000, label: "100,000 lines (~40 MB)" },
+    ];
+    if (scrollbackIsCustom) {
+      base.push({
+        value: scrollbackValue,
+        label: `${scrollbackValue.toLocaleString()} lines (custom)`,
+      });
+    }
+    return base;
+  });
 
   function onLogDirChange(e: Event) {
     onSetLogDir((e.target as HTMLInputElement).value.trim());
@@ -145,12 +163,11 @@
     }
   }
 
-  function onSkinChange(e: Event) {
-    onSetSkin((e.target as HTMLSelectElement).value);
+  function onSkinChangeValue(v: string | number) {
+    onSetSkin(String(v));
   }
 
-  function onAppearanceChange(e: Event) {
-    const v = (e.target as HTMLSelectElement).value;
+  function onAppearanceChangeValue(v: string | number) {
     if (v === "auto" || v === "light" || v === "dark") {
       onSetAppearance(v);
     }
@@ -158,6 +175,50 @@
 
   const builtinThemes = $derived(themes.filter((t) => t.source === "builtin"));
   const userThemes = $derived(themes.filter((t) => t.source === "user"));
+
+  // Option arrays for the skin / appearance / default-theme pickers.
+  // Grouped shape for pickers that separate built-in vs. user entries.
+  const skinOptions: SelectItems = $derived.by(() => {
+    const out: SelectItems = [];
+    const builtins = skins.filter((s) => s.source === "builtin");
+    const users = skins.filter((s) => s.source === "user");
+    if (builtins.length) {
+      out.push({
+        label: "Built-in",
+        options: builtins.map((s) => ({ value: s.id, label: s.name })),
+      });
+    }
+    if (users.length) {
+      out.push({
+        label: "Custom",
+        options: users.map((s) => ({ value: s.id, label: s.name })),
+      });
+    }
+    return out;
+  });
+
+  const appearanceOptions: SelectItems = [
+    { value: "auto", label: "Auto (Follow System)" },
+    { value: "light", label: "Light" },
+    { value: "dark", label: "Dark" },
+  ];
+
+  const defaultThemeOptions: SelectItems = $derived.by(() => {
+    const out: SelectItems = [];
+    if (builtinThemes.length) {
+      out.push({
+        label: "Built-in",
+        options: builtinThemes.map((t) => ({ value: t.id, label: t.name })),
+      });
+    }
+    if (userThemes.length) {
+      out.push({
+        label: "Custom",
+        options: userThemes.map((t) => ({ value: t.id, label: t.name })),
+      });
+    }
+    return out;
+  });
 </script>
 
 <div class="settings">
@@ -181,39 +242,22 @@
     <div class="grid">
       <div class="field">
         <label for="skin">Skin</label>
-        <select
+        <Select
           id="skin"
           value={settings.skinId || "baudrun"}
-          onchange={onSkinChange}
-        >
-          {#if skins.some((s) => s.source === "builtin")}
-            <optgroup label="Built-in">
-              {#each skins.filter((s) => s.source === "builtin") as s (s.id)}
-                <option value={s.id}>{s.name}</option>
-              {/each}
-            </optgroup>
-          {/if}
-          {#if skins.some((s) => s.source === "user")}
-            <optgroup label="Custom">
-              {#each skins.filter((s) => s.source === "user") as s (s.id)}
-                <option value={s.id}>{s.name}</option>
-              {/each}
-            </optgroup>
-          {/if}
-        </select>
+          onchange={onSkinChangeValue}
+          options={skinOptions}
+        />
       </div>
 
       <div class="field">
         <label for="appearance">Appearance</label>
-        <select
+        <Select
           id="appearance"
           value={settings.appearance || "auto"}
-          onchange={onAppearanceChange}
-        >
-          <option value="auto">Auto (Follow System)</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
+          onchange={onAppearanceChangeValue}
+          options={appearanceOptions}
+        />
       </div>
     </div>
   </section>
@@ -267,26 +311,12 @@
     <div class="grid">
       <div class="field">
         <label for="default-theme">Theme</label>
-        <select
+        <Select
           id="default-theme"
           value={settings.defaultThemeId}
-          onchange={onDefaultChange}
-        >
-          {#if builtinThemes.length > 0}
-            <optgroup label="Built-in">
-              {#each builtinThemes as t (t.id)}
-                <option value={t.id}>{t.name}</option>
-              {/each}
-            </optgroup>
-          {/if}
-          {#if userThemes.length > 0}
-            <optgroup label="Custom">
-              {#each userThemes as t (t.id)}
-                <option value={t.id}>{t.name}</option>
-              {/each}
-            </optgroup>
-          {/if}
-        </select>
+          onchange={onDefaultChangeValue}
+          options={defaultThemeOptions}
+        />
       </div>
 
       <div class="field">
@@ -303,22 +333,12 @@
 
       <div class="field">
         <label for="scrollback-lines">Scrollback</label>
-        <select
+        <Select
           id="scrollback-lines"
           value={scrollbackValue}
-          onchange={onScrollbackChange}
-        >
-          <option value={1000}>1,000 lines (~0.4 MB)</option>
-          <option value={5000}>5,000 lines (~2 MB)</option>
-          <option value={10000}>10,000 lines (~4 MB) · default</option>
-          <option value={50000}>50,000 lines (~20 MB)</option>
-          <option value={100000}>100,000 lines (~40 MB)</option>
-          {#if scrollbackIsCustom}
-            <option value={scrollbackValue}>
-              {scrollbackValue.toLocaleString()} lines (custom)
-            </option>
-          {/if}
-        </select>
+          onchange={onScrollbackChangeValue}
+          options={scrollbackOptions}
+        />
       </div>
     </div>
   </section>
@@ -608,7 +628,8 @@
     gap: 14px 20px;
   }
 
-  .field select,
+  /* Custom Select trigger is already width: 100% inside its own
+     component CSS; inputs still need the explicit rule. */
   .field input {
     width: 100%;
   }

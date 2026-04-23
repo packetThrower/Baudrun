@@ -6,6 +6,7 @@
   import Settings from "./lib/Settings.svelte";
   import { api, type Profile, type Theme, type TransferProtocol } from "./lib/api";
   import { formatPortName } from "./lib/ports";
+  import Select from "./lib/Select.svelte";
   import {
     profiles,
     selectedProfileID,
@@ -1028,12 +1029,16 @@
       {#if transferState.status === "picking"}
         <div class="field">
           <label for="transfer-protocol">Protocol</label>
-          <select id="transfer-protocol" bind:value={transferProtocol}>
-            <option value="ymodem">YMODEM — 1024-byte blocks with filename + size</option>
-            <option value="xmodem-1k">XMODEM-1K — 1024-byte blocks, CRC-16</option>
-            <option value="xmodem-crc">XMODEM-CRC — 128-byte blocks, CRC-16</option>
-            <option value="xmodem">XMODEM — 128-byte blocks, 8-bit checksum (legacy)</option>
-          </select>
+          <Select
+            id="transfer-protocol"
+            bind:value={transferProtocol as any}
+            options={[
+              { value: "ymodem", label: "YMODEM — 1024-byte blocks with filename + size" },
+              { value: "xmodem-1k", label: "XMODEM-1K — 1024-byte blocks, CRC-16" },
+              { value: "xmodem-crc", label: "XMODEM-CRC — 128-byte blocks, CRC-16" },
+              { value: "xmodem", label: "XMODEM — 128-byte blocks, 8-bit checksum (legacy)" },
+            ]}
+          />
         </div>
 
         <div class="field">

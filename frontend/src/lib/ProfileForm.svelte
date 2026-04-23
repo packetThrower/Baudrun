@@ -22,6 +22,7 @@
     type USBSerialCandidate,
   } from "./api";
   import { formatPortName } from "./ports";
+  import Select, { type SelectItems } from "./Select.svelte";
 
   type Props = {
     profile: Profile;
@@ -194,8 +195,7 @@
     return !!name && !ports.some((p) => p.name === name);
   }
 
-  function onBaudChange(e: Event) {
-    const v = (e.target as HTMLSelectElement).value;
+  function onBaudChangeValue(v: string | number) {
     if (v === "custom") {
       // Keep the current baud as the starting point so the user has
       // something sensible to edit from; flipping customMode reveals
@@ -211,6 +211,58 @@
   const defaultThemeName = $derived(
     themes.find((t) => t.id === defaultThemeID)?.name ?? "Baudrun",
   );
+
+  // Options for the custom <Select> in place of native <select> —
+  // derived so ports, themes, and "missing port" entries stay
+  // live without us having to push imperatively.
+  const portOptions = $derived<SelectItems>([
+    { value: "", label: "— Select a port —" },
+    ...ports.map((p) => ({ value: p.name, label: formatPortLabel(p) })),
+    ...(portMissing(draft.portName)
+      ? [
+          {
+            value: draft.portName,
+            label: `${formatPortName(draft.portName)} (not connected)`,
+          },
+        ]
+      : []),
+  ]);
+
+  const baudOptions = $derived<SelectItems>([
+    ...BAUD_RATES.map((r) => ({ value: r, label: String(r) })),
+    { value: "custom", label: "Custom…" },
+  ]);
+
+  const dataBitsOptions = $derived<SelectItems>(
+    DATA_BITS.map((b) => ({ value: b, label: String(b) })),
+  );
+
+  const backspaceOptions: SelectItems = [
+    { value: "del", label: "DEL (0x7F) — VT100 / xterm / most modern" },
+    { value: "bs", label: "BS (0x08) — some older Cisco / Foundry gear" },
+  ];
+
+  // Theme picker: groups for built-in vs. user, default sentinel on top.
+  const themeOptions: SelectItems = $derived.by(() => {
+    const builtins = themes.filter((t) => t.source === "builtin");
+    const users = themes.filter((t) => t.source === "user");
+    const out: SelectItems = [
+      { value: "", label: `Default — ${defaultThemeName}` },
+    ];
+    if (builtins.length) {
+      out.push({
+        label: "Built-in",
+        options: builtins.map((t) => ({ value: t.id, label: t.name })),
+      });
+    }
+    if (users.length) {
+      out.push({
+        label: "Custom",
+        options: users.map((t) => ({ value: t.id, label: t.name })),
+      });
+    }
+    return out;
+  });
 </script>
 
 <div class="form">
@@ -323,22 +375,14 @@
       <div class="field full">
         <label for="port">Serial Port</label>
         <div class="port-row">
-          <select
+          <Select
             id="port"
             bind:value={draft.portName}
             onchange={markDirty}
             disabled={locked}
-          >
-            <option value="">— Select a port —</option>
-            {#each ports as p}
-              <option value={p.name}>{formatPortLabel(p)}</option>
-            {/each}
-            {#if portMissing(draft.portName)}
-              <option value={draft.portName}>
-                {formatPortName(draft.portName)} (not connected)
-              </option>
-            {/if}
-          </select>
+            options={portOptions}
+          />
+
           <button
             class="icon-btn"
             onclick={refreshPorts}
@@ -361,17 +405,13 @@
 
       <div class="field">
         <label for="baud">Baud Rate</label>
-        <select
+        <Select
           id="baud"
           value={baudIsCustom ? "custom" : draft.baudRate}
-          onchange={onBaudChange}
+          onchange={onBaudChangeValue}
           disabled={locked}
-        >
-          {#each BAUD_RATES as rate}
-            <option value={rate}>{rate}</option>
-          {/each}
-          <option value="custom">Custom…</option>
-        </select>
+          options={baudOptions}
+        />
         {#if baudIsCustom}
           <input
             class="mt-4"
@@ -389,58 +429,46 @@
 
       <div class="field">
         <label for="databits">Data Bits</label>
-        <select
+        <Select
           id="databits"
           bind:value={draft.dataBits}
           onchange={markDirty}
           disabled={locked}
-        >
-          {#each DATA_BITS as b}
-            <option value={b}>{b}</option>
-          {/each}
-        </select>
+          options={dataBitsOptions}
+        />
       </div>
 
       <div class="field">
         <label for="parity">Parity</label>
-        <select
+        <Select
           id="parity"
           bind:value={draft.parity}
           onchange={markDirty}
           disabled={locked}
-        >
-          {#each PARITIES as opt}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
+          options={PARITIES}
+        />
       </div>
 
       <div class="field">
         <label for="stopbits">Stop Bits</label>
-        <select
+        <Select
           id="stopbits"
           bind:value={draft.stopBits}
           onchange={markDirty}
           disabled={locked}
-        >
-          {#each STOP_BITS as opt}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
+          options={STOP_BITS}
+        />
       </div>
 
       <div class="field">
         <label for="flow">Flow Control</label>
-        <select
+        <Select
           id="flow"
           bind:value={draft.flowControl}
           onchange={markDirty}
           disabled={locked}
-        >
-          {#each FLOW_CONTROL as opt}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
+          options={FLOW_CONTROL}
+        />
       </div>
     </div>
   </section>
@@ -450,29 +478,24 @@
     <div class="grid">
       <div class="field">
         <label for="lineending">Send Line Ending</label>
-        <select
+        <Select
           id="lineending"
           bind:value={draft.lineEnding}
           onchange={markDirty}
           disabled={locked}
-        >
-          {#each LINE_ENDINGS as opt}
-            <option value={opt.value}>{opt.label}</option>
-          {/each}
-        </select>
+          options={LINE_ENDINGS}
+        />
       </div>
 
       <div class="field">
         <label for="backspace">Backspace sends</label>
-        <select
+        <Select
           id="backspace"
           bind:value={draft.backspaceKey}
           onchange={markDirty}
           disabled={locked}
-        >
-          <option value="del">DEL (0x7F) — VT100 / xterm / most modern</option>
-          <option value="bs">BS (0x08) — some older Cisco / Foundry gear</option>
-        </select>
+          options={backspaceOptions}
+        />
       </div>
 
       <div class="field checkbox">
@@ -505,27 +528,12 @@
     <div class="grid">
       <div class="field full">
         <label for="theme">Theme</label>
-        <select
+        <Select
           id="theme"
           bind:value={draft.themeId}
           onchange={markDirty}
-        >
-          <option value="">Default — {defaultThemeName}</option>
-          {#if themes.some((t) => t.source === "builtin")}
-            <optgroup label="Built-in">
-              {#each themes.filter((t) => t.source === "builtin") as t (t.id)}
-                <option value={t.id}>{t.name}</option>
-              {/each}
-            </optgroup>
-          {/if}
-          {#if themes.some((t) => t.source === "user")}
-            <optgroup label="Custom">
-              {#each themes.filter((t) => t.source === "user") as t (t.id)}
-                <option value={t.id}>{t.name}</option>
-              {/each}
-            </optgroup>
-          {/if}
-        </select>
+          options={themeOptions}
+        />
       </div>
     </div>
   </section>
@@ -546,58 +554,46 @@
         <div class="grid">
           <div class="field">
             <label for="dtr-connect">DTR on connect</label>
-            <select
+            <Select
               id="dtr-connect"
               bind:value={draft.dtrOnConnect}
               onchange={markDirty}
               disabled={locked}
-            >
-              {#each LINE_POLICIES as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
+              options={LINE_POLICIES}
+            />
           </div>
 
           <div class="field">
             <label for="rts-connect">RTS on connect</label>
-            <select
+            <Select
               id="rts-connect"
               bind:value={draft.rtsOnConnect}
               onchange={markDirty}
               disabled={locked}
-            >
-              {#each LINE_POLICIES as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
+              options={LINE_POLICIES}
+            />
           </div>
 
           <div class="field">
             <label for="dtr-disconnect">DTR on disconnect</label>
-            <select
+            <Select
               id="dtr-disconnect"
               bind:value={draft.dtrOnDisconnect}
               onchange={markDirty}
               disabled={locked}
-            >
-              {#each LINE_POLICIES as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
+              options={LINE_POLICIES}
+            />
           </div>
 
           <div class="field">
             <label for="rts-disconnect">RTS on disconnect</label>
-            <select
+            <Select
               id="rts-disconnect"
               bind:value={draft.rtsOnDisconnect}
               onchange={markDirty}
               disabled={locked}
-            >
-              {#each LINE_POLICIES as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
+              options={LINE_POLICIES}
+            />
           </div>
         </div>
       </section>
@@ -843,8 +839,10 @@
     grid-column: 1 / -1;
   }
 
-  .field input,
-  .field select {
+  /* Custom Select renders a full-width trigger by default (see
+     .select-wrap in Select.svelte); inputs still need the explicit
+     rule. */
+  .field input {
     width: 100%;
   }
 
@@ -870,7 +868,10 @@
     gap: 6px;
   }
 
-  .port-row select {
+  /* Select replaces what used to be a flexed <select> here. Its
+     trigger is width: 100%, so wrap in a flex: 1 container and the
+     refresh button sits beside it naturally. */
+  .port-row :global(.select-wrap) {
     flex: 1;
   }
 
