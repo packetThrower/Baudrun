@@ -3,6 +3,7 @@
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
+  import { SerializeAddon } from "@xterm/addon-serialize";
   import "@xterm/xterm/css/xterm.css";
   import { BrowserOpenURL } from "../../wailsjs/runtime/runtime";
   import { api, themeToXterm, type Theme } from "./api";
@@ -61,6 +62,12 @@
   let hostEl: HTMLDivElement;
   let term: Terminal | null = null;
   let fit: FitAddon | null = null;
+  // SerializeAddon is what lets recreateTerminal round-trip the
+  // existing buffer through an ANSI-encoded snapshot on font-size
+  // / scrollback changes, preserving syntax-highlighting SGR
+  // attributes across the disposal + rebuild. Without it we'd have
+  // to fall back to translateToString(true) which strips colors.
+  let serializer: SerializeAddon | null = null;
   let unsubData: (() => void) | null = null;
   let ro: ResizeObserver | null = null;
   let highlighter: TerminalHighlighter | null = null;
@@ -232,12 +239,12 @@
   // instance and creating a fresh one with the new fontSize in its
   // constructor options.
   //
-  // Tradeoff: the recreated xterm starts with an empty buffer, so
-  // we snapshot plain text from the old buffer and write it back.
-  // ANSI color attributes and the current selection are lost in
-  // that transition — users changing zoom mid-session pay one
-  // flicker and one palette-flatten on the existing scrollback.
-  // New output after the resize is fully colored as normal.
+  // The scrollback is snapshotted through @xterm/addon-serialize
+  // before disposal (see recreateTerminal), which re-emits SGR
+  // sequences for each styled region — so syntax-highlight colors
+  // survive the rebuild. The current selection is not serialised
+  // and is lost across zoom; that's the only remaining visual
+  // glitch users pay for a mid-session resize.
   // Seed with the initial prop value so the effect's first run sees
   // fontSize === lastAppliedFontSize and skips the recreate — onMount
   // has already built xterm with this size.
@@ -294,32 +301,53 @@
   function recreateTerminal() {
     if (!term) return;
 
-    // Snapshot buffer content as plain text lines.
-    const buf = term.buffer.active;
-    const lines: string[] = [];
-    for (let y = 0; y < buf.length; y++) {
-      const line = buf.getLine(y);
-      if (line) lines.push(line.translateToString(true));
+    // Snapshot buffer content as an ANSI-encoded string. SerializeAddon
+    // walks the cell grid and emits SGR escape sequences for every
+    // styled region it encounters, so colors from the syntax-highlight
+    // pipeline survive the xterm dispose/rebuild. Falls back to a
+    // plain-text translateToString sweep if serialization throws (the
+    // addon occasionally trips on unusual buffer states) so we don't
+    // blank the scrollback either way.
+    let snapshot = "";
+    try {
+      if (serializer) {
+        snapshot = serializer.serialize({ scrollback: term.buffer.active.length });
+      }
+    } catch (e) {
+      onStatus(`serialize fallback: ${e}`);
     }
-    while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+    if (!snapshot) {
+      const buf = term.buffer.active;
+      const lines: string[] = [];
+      for (let y = 0; y < buf.length; y++) {
+        const line = buf.getLine(y);
+        if (line) lines.push(line.translateToString(true));
+      }
+      while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+      snapshot = lines.join("\r\n");
+    }
 
     const hadFocus = !!term.element && term.element.contains(document.activeElement);
 
     term.dispose();
     term = null;
     fit = null;
+    serializer = null;
 
     const fresh = buildTerminal();
     term = fresh.term;
     fit = fresh.fit;
+    serializer = fresh.serializer;
 
-    if (lines.length > 0) {
-      term.write(lines.join("\r\n") + "\r\n");
+    if (snapshot.length > 0) {
+      // Trailing newline so any existing prompt sits at the start of
+      // a fresh row rather than glued to the last scrollback line.
+      term.write(snapshot + "\r\n");
     }
     if (hadFocus) term.focus();
   }
 
-  function buildTerminal(): { term: Terminal; fit: FitAddon } {
+  function buildTerminal(): { term: Terminal; fit: FitAddon; serializer: SerializeAddon } {
     const t = new Terminal({
       fontFamily:
         getComputedStyle(document.documentElement)
@@ -335,7 +363,9 @@
       screenReaderMode,
     });
     const f = new FitAddon();
+    const s = new SerializeAddon();
     t.loadAddon(f);
+    t.loadAddon(s);
     t.loadAddon(
       new WebLinksAddon((_event, uri) => {
         BrowserOpenURL(uri);
@@ -355,7 +385,7 @@
     // keyed to the *last id we applied*, which is still set. Reset
     // it so the next theme change re-runs against the new instance.
     lastAppliedThemeId = t.options.theme && theme ? theme.id : undefined;
-    return { term: t, fit: f };
+    return { term: t, fit: f, serializer: s };
   }
   $effect(() => {
     // Read the prop first so the tracker picks it up regardless of
@@ -371,6 +401,7 @@
     const fresh = buildTerminal();
     term = fresh.term;
     fit = fresh.fit;
+    serializer = fresh.serializer;
     term.focus();
 
     highlighter = new TerminalHighlighter((text) => {
