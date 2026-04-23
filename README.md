@@ -229,7 +229,7 @@ webview + libusb deps listed above first, then `wails build -platform
 linux/amd64` (or `linux/arm64`).
 
 CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-26`,
-`macos-13`, `windows-latest`, `windows-11-arm`, `ubuntu-latest`, and
+`macos-15-intel`, `windows-latest`, `windows-11-arm`, `ubuntu-latest`, and
 `ubuntu-24.04-arm` on each push to `main`. Tagged pushes matching SemVer
 `v[0-9]+.[0-9]+.[0-9]+` trigger `.github/workflows/release.yml`, which
 produces a GitHub Release with all six platform artifacts attached

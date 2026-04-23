@@ -124,7 +124,7 @@ high-effort or niche enough that priority tracks real demand.
         `LD_LIBRARY_PATH` so the bundled copy is found ahead of any
         system path.
       - **macOS:** dropped the darwin/universal build in favour of
-        per-arch matrix jobs (macos-26 arm64 + macos-13 amd64),
+        per-arch matrix jobs (macos-26 arm64 + macos-15-intel amd64),
         which sidesteps the "brew libusb is per-arch only" problem.
         Each build bundles libusb into the .app under
         `Contents/Frameworks/libusb-1.0.0.dylib` via

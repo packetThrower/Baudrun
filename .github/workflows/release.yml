@@ -28,11 +28,13 @@ jobs:
       matrix:
         include:
           # macos-26 is Apple Silicon only (Tahoe SDK, latest window
-          # chrome). macos-13 is the last runner with Intel hardware
-          # still in the Actions fleet.
+          # chrome). macos-15-intel is GitHub's replacement for the
+          # retired macos-13 image — x86_64 hardware running Sequoia,
+          # supported through fall 2027 when Apple's Intel transition
+          # wraps up and GitHub retires it too.
           - runner: macos-26
             arch: arm64
-          - runner: macos-13
+          - runner: macos-15-intel
             arch: amd64
     runs-on: ${{ matrix.runner }}
     steps:
@@ -45,13 +47,13 @@ jobs:
 
       # libusb-1.0 is needed at cgo link time by gousb (used by
       # usbserial-go for CP210x / CH34x / etc.). Homebrew on each
-      # runner ships the matching native arch — amd64 on macos-13,
-      # arm64 on macos-26 — so no Rosetta dance is needed. The
-      # split matrix replaces the older darwin/universal build for
-      # exactly this reason: a single binary would need both arch
-      # libusb slices lipo'd into a universal dylib, which is more
-      # moving parts than it's worth for the handful of Intel Mac
-      # users left.
+      # runner ships the matching native arch — amd64 on
+      # macos-15-intel, arm64 on macos-26 — so no Rosetta dance is
+      # needed. The split matrix replaces the older darwin/universal
+      # build for exactly this reason: a single binary would need
+      # both arch libusb slices lipo'd into a universal dylib, which
+      # is more moving parts than it's worth for the handful of Intel
+      # Mac users left.
       - name: Install libusb
         run: brew install libusb pkg-config
 
