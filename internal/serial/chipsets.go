@@ -97,8 +97,15 @@ var driverURLs = map[string]string{
 // bridge chip reprogrammed with the vendor's own USB-IF VID. Add entries here
 // as they come up.
 var knownRebrands = map[string]ChipsetInfo{
-	// Siemens RUGGEDCOM USB Serial console (RST2228 and similar).
-	// Uses a CP210x under a Siemens VID; still needs the SiLabs VCP driver.
+	// Siemens RUGGEDCOM USB Serial console (RST2228 and similar). The chip
+	// inside is a CP210x — the device exposes "USB Vendor Name" = "Silicon
+	// Labs" in its descriptors — but Siemens ships it with their own USB-IF
+	// VID and a vendor-specific (non-CDC) interface, so macOS's built-in
+	// CDC-ACM driver doesn't match it and no /dev/cu.* node is created
+	// without the SiLabs VCP driver. The manufacturer-string heuristic would
+	// also catch this, but pinning VID:PID keeps the banner label accurate
+	// and avoids false matches if Siemens ever ships a non-serial product
+	// under the same VID.
 	"0908:01ff": {Name: "CP210x (Siemens RUGGEDCOM)", DriverURL: silabsDriverURL},
 }
 
