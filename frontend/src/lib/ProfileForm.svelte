@@ -21,6 +21,7 @@
     type Theme,
     type USBSerialCandidate,
   } from "./api";
+  import { formatPortName } from "./ports";
 
   type Props = {
     profile: Profile;
@@ -183,7 +184,7 @@
     if (product && SUSPECT_PRODUCT_RE.test(product)) {
       product = "driver issue";
     }
-    const parts: string[] = [p.name];
+    const parts: string[] = [formatPortName(p.name, p.vid, p.pid)];
     const detail = [product, p.chipset].filter(Boolean).join(" · ");
     if (detail) parts.push(detail);
     return parts.join(" — ");
@@ -334,7 +335,7 @@
             {/each}
             {#if portMissing(draft.portName)}
               <option value={draft.portName}>
-                {draft.portName} (not connected)
+                {formatPortName(draft.portName)} (not connected)
               </option>
             {/if}
           </select>

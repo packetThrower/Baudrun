@@ -50,6 +50,12 @@ type Config struct {
 // so devices without USB ancestry (Bluetooth SPP, built-in serial, some adapters) still appear.
 // On macOS, /dev/tty.* entries are filtered out — they're the blocking twin of the
 // /dev/cu.* callout device and terminal apps should always use the cu.* path.
+//
+// Libusb-direct entries from usbserial-go are appended for devices
+// that don't already have an OS-provided device node (CP210x with
+// no SiLabs driver, vendor-rebranded VIDs the kernel's id_tables
+// don't cover, etc.). Dedupe by VID:PID+Serial so a device that
+// has both paths only shows up once, with the OS path preferred.
 func ListPorts() ([]PortInfo, error) {
 	names, err := serial.GetPortsList()
 	if err != nil {
@@ -64,6 +70,11 @@ func ListPorts() ([]PortInfo, error) {
 	}
 
 	out := make([]PortInfo, 0, len(names))
+	// drivered tracks (vid:pid:serial) triples that already surface
+	// through the OS enumerator. A libusb-direct entry with the
+	// same triple would be a duplicate of the same physical device,
+	// so we suppress it in favour of the native /dev/* path.
+	drivered := map[string]bool{}
 	for _, n := range names {
 		if strings.HasPrefix(n, "/dev/tty.") {
 			continue
@@ -76,15 +87,54 @@ func ListPorts() ([]PortInfo, error) {
 			p.SerialNumber = d.SerialNumber
 			p.Product = d.Product
 			p.Chipset = Chipset(d.VID)
+			if d.IsUSB {
+				drivered[deviceKey(d.VID, d.PID, d.SerialNumber)] = true
+			}
 		}
 		out = append(out, p)
+	}
+
+	// Merge libusb-direct entries for devices that aren't already
+	// accessible via /dev/*. Enumeration failures here are
+	// non-fatal — the user can still pick any OS port we already
+	// surfaced above.
+	if direct, err := listDirectUSB(); err == nil {
+		for _, p := range direct {
+			if drivered[deviceKey(p.VID, p.PID, p.SerialNumber)] {
+				continue
+			}
+			out = append(out, p)
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
+// deviceKey builds the triple we use to dedupe the same physical
+// adapter across the OS-enumerator and libusb-direct paths. VID
+// and PID are lower-cased so comparisons are case-insensitive.
+func deviceKey(vid, pid, serial string) string {
+	return strings.ToLower(vid) + ":" + strings.ToLower(pid) + ":" + serial
+}
+
+// portBackend is the minimal surface Session needs from whichever
+// library is driving the underlying transport. Two implementations
+// satisfy it today: go.bug.st/serial.Port for native /dev/* and
+// COM ports, and a thin wrapper around usbserial.Port for direct-
+// USB access to chipsets the OS has no driver for.
+//
+// serial.Port's own method signatures already match this interface
+// exactly, so no adapter is needed on that side; the usbserial-go
+// adapter lives in direct.go.
+type portBackend interface {
+	io.ReadWriteCloser
+	SetDTR(bool) error
+	SetRTS(bool) error
+	Break(time.Duration) error
+}
+
 type Session struct {
-	port     serial.Port
+	port     portBackend
 	mu       sync.Mutex
 	closed   atomic.Bool
 	wg       sync.WaitGroup
@@ -117,7 +167,25 @@ func (s *Session) SetLogWriter(w io.WriteCloser) {
 	s.logWriter = w
 }
 
+// Open opens the port identified by cfg.PortName and starts a read
+// pump. The backend is chosen from the port name shape:
+//
+//   - "usb:VID:PID[:serial]" → libusb-direct via usbserial-go. Used
+//     for chipsets the OS has no driver for (CP210x on macOS, and
+//     vendor-rebranded VIDs the kernel's id_tables don't cover).
+//   - anything else → go.bug.st/serial on the given device path or
+//     COM name. This is the common path for every adapter the OS
+//     already knows how to talk to.
 func Open(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error) {
+	if isDirectUSBPortName(cfg.PortName) {
+		return openDirectUSB(cfg, onRead, onExit)
+	}
+	return openBugST(cfg, onRead, onExit)
+}
+
+// openBugST is the go.bug.st/serial backed path — every native
+// /dev/* or COM port flows through here.
+func openBugST(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error) {
 	mode, err := buildMode(cfg)
 	if err != nil {
 		return nil, err
@@ -141,8 +209,15 @@ func Open(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error)
 		rts = v
 	}
 
+	return newSession(port, cfg, dtr, rts, onRead, onExit), nil
+}
+
+// newSession finalises a Session around a ready portBackend. Kept
+// separate so both openBugST and openDirectUSB share the same
+// read-pump bring-up and on-close policy plumbing.
+func newSession(p portBackend, cfg Config, dtr, rts bool, onRead func([]byte), onExit func(error)) *Session {
 	s := &Session{
-		port:       port,
+		port:       p,
 		onRead:     onRead,
 		onExit:     onExit,
 		dtrOnClose: cfg.DTROnDisconnect,
@@ -152,7 +227,7 @@ func Open(cfg Config, onRead func([]byte), onExit func(error)) (*Session, error)
 	s.rtsState.Store(rts)
 	s.wg.Add(1)
 	go s.readPump()
-	return s, nil
+	return s
 }
 
 // applyLine honors a policy ("assert"/"deassert"/"default"/"") by calling the

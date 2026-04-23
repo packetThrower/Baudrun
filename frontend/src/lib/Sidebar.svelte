@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Profile } from "./api";
+  import { formatPortName } from "./ports";
 
   type Props = {
     profiles: Profile[];
@@ -68,7 +69,7 @@
             <span class="row-body">
               <span class="row-name">{p.name}</span>
               <span class="row-meta">
-                {p.portName || "no port"} · {p.baudRate}
+                {p.portName ? formatPortName(p.portName) : "no port"} · {p.baudRate}
               </span>
             </span>
           </button>

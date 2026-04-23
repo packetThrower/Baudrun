@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
+	github.com/packetThrower/usbserial-go v0.0.0-20260423213002-053c3951d5c3
 	github.com/wailsapp/wails/v2 v2.12.0
 	go.bug.st/serial v1.6.4
 	golang.org/x/term v0.29.0
@@ -17,6 +18,7 @@ require (
 	github.com/creack/goselect v0.1.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/google/gousb v1.1.3 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
 	github.com/labstack/echo/v4 v4.13.3 // indirect

@@ -25,6 +25,18 @@ func DetectMissingDrivers() ([]USBSerialCandidate, error) {
 		}
 	}
 
+	// usbHandled is VID:PID pairs we can open via libusb without
+	// the vendor driver — CP210x today, more as chipset subpackages
+	// land in usbserial-go. Treat those the same as "drivered": the
+	// user doesn't need to install anything, they'll pick the port
+	// straight out of the picker.
+	usbHandled := map[string]bool{}
+	if direct, err := listDirectUSB(); err == nil {
+		for _, p := range direct {
+			usbHandled[strings.ToLower(p.VID)+":"+strings.ToLower(p.PID)] = true
+		}
+	}
+
 	devices, err := readIoregUSB()
 	if err != nil {
 		return nil, err
@@ -43,6 +55,9 @@ func DetectMissingDrivers() ([]USBSerialCandidate, error) {
 		}
 		seen[key] = true
 		if drivered[d.VID+":"+d.PID] {
+			continue
+		}
+		if usbHandled[d.VID+":"+d.PID] {
 			continue
 		}
 		missing = append(missing, USBSerialCandidate{

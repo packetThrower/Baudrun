@@ -5,6 +5,7 @@
   import Terminal from "./lib/Terminal.svelte";
   import Settings from "./lib/Settings.svelte";
   import { api, type Profile, type Theme, type TransferProtocol } from "./lib/api";
+  import { formatPortName } from "./lib/ports";
   import {
     profiles,
     selectedProfileID,
@@ -224,7 +225,7 @@
             : "";
         return { status: "reconnecting", profileID: id };
       });
-      statusMsg = `Reconnecting to ${portName}…`;
+      statusMsg = `Reconnecting to ${formatPortName(portName)}…`;
     });
 
     offReconnected = api.onReconnected((profileID) => {
@@ -360,7 +361,7 @@
     try {
       await api.connect(id);
       session.set({ status: "connected", profileID: id });
-      statusMsg = `Connected to ${currentProfile.portName} @ ${currentProfile.baudRate}`;
+      statusMsg = `Connected to ${formatPortName(currentProfile.portName)} @ ${currentProfile.baudRate}`;
       await refreshControlLines();
       await tick();
       terminalRef?.focus();
@@ -890,7 +891,7 @@
             <div class="session-text">
               <strong>{activeProfile?.name ?? currentProfile?.name ?? ""}</strong>
               <span class="session-sub">
-                {activeProfile?.portName ?? currentProfile?.portName ?? ""} ·
+                {formatPortName(activeProfile?.portName ?? currentProfile?.portName ?? "")} ·
                 {activeProfile?.baudRate ?? currentProfile?.baudRate ?? ""}
                 /{activeProfile?.dataBits ?? currentProfile?.dataBits ?? ""}
                 {((activeProfile?.parity ?? currentProfile?.parity) || " ")[0].toUpperCase()}
