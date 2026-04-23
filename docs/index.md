@@ -11,6 +11,15 @@ screenshots, and install instructions see the
 released build, plus the toolchain needed to build from source.
 Running and building details are in separate sections.
 
+## Hardware
+
+**[USB-serial adapters](ADAPTERS.md)** — which chipsets work on
+which OS, which path picks them up (OS kernel module, Apple DEXT,
+vendor driver, or Baudrun's libusb-direct backend), and a short
+buying guide for cables that work everywhere. Covers the vendor-
+rebrand cases (Siemens RUGGEDCOM, counterfeit-flagged Prolific)
+and the specific VID:PID values Apple's bundled DEXTs cover.
+
 ## Feature reference
 
 **[Advanced features](ADVANCED.md)** — every feature beyond basic

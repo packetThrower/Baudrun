@@ -41,6 +41,8 @@ nav:
   - Screenshots: screenshots.md
   - Install & Build:
       - Requirements: REQUIREMENTS.md
+  - Hardware:
+      - USB-serial adapters: ADAPTERS.md
   - Features:
       - Advanced: ADVANCED.md
   - Customization:

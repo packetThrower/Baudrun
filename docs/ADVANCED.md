@@ -322,11 +322,16 @@ scale linearly with line count.
 
 ## USB-serial driver detection
 
+> For the full per-chipset × per-OS support matrix and cable-buying
+> guidance, see [USB-serial adapters](ADAPTERS.md). This section
+> covers the in-app banner behaviour only.
+
 - Global setting (Settings → Advanced): "Detect un-drivered USB
   adapters." Default on.
 - Shows a yellow banner above the port dropdown when a USB-serial
   chipset is plugged in but no corresponding serial port is
-  enumerated by the OS.
+  enumerated by the OS **and** Baudrun's direct-USB backend
+  (usbserial-go) can't open it either.
 - Banner includes a link to the vendor driver download and a
   Refresh action.
 - Dismissal via × is session-scoped; the banner re-shows on the
