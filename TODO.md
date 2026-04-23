@@ -115,36 +115,26 @@ high-effort or niche enough that priority tracks real demand.
          ```
       Do this **after** signing is in place so the first public release
       is already a trustworthy binary.
-- [ ] **Bundle libusb with the shipped binaries** (only when Baudrun
-      starts depending on `usbserial-go` for CP210x / FTDI / etc.
-      userspace access; pre-requisite of the driverless-adapter work).
-      Platform breakdown:
-      - **Linux:** one-line fpm tweak per target. Declare
-        `libusb-1.0-0` (Debian / Ubuntu), `libusb-1.0` (Fedora), or
-        `libusb` (Arch) as a package dependency and the distro
-        installer pulls it in. AppImage needs a real bundle step —
-        `cp /usr/lib/*/libusb-1.0.so.0 AppDir/usr/lib/` and make sure
-        the binary's RUNPATH points there.
-      - **macOS:** build a universal `libusb-1.0.0.dylib` (brew's is
-        per-arch on Apple Silicon vs. Intel; either install both
-        prefixes on the runner or compile from source twice and
-        `lipo -create` into one fat dylib). Copy into the app bundle
-        at `Contents/Frameworks/libusb-1.0.0.dylib`. Retarget the
-        binary's dylib reference with `install_name_tool -change`
-        or run the whole bundle through `macdylibbundler`. Verify
-        with `otool -L Contents/MacOS/Baudrun` — every entry should
-        be `/System/` or `@executable_path/`, zero Homebrew paths.
-        Add `macdylibbundler` to the brew install list in the
-        macOS release job. Re-sign after bundling (when signing is
-        live).
-      - **Windows:** nothing. Windows build uses `CGO_ENABLED=0`
-        and falls through to `go.bug.st/serial`; no libusb linked.
-
-      Rough scope: Linux ≈ 10 lines of workflow changes. macOS ≈
-      30-50 lines plus the first-time debugging pass. Do this
-      immediately before the first Baudrun release that consumes
-      `usbserial-go`, so users never see a release that assumes
-      libusb is pre-installed.
+- [x] **Bundle libusb with the shipped binaries.** Done as part of
+      the `usbserial-go` integration. Approach per platform:
+      - **Linux:** runtime dep declared in the fpm output
+        (`libusb-1.0-0` for .deb, `libusbx` for .rpm, `libusb` for
+        pacman). AppImage copies `/usr/lib/*/libusb-1.0.so.0*` into
+        `AppDir/usr/lib/` and AppRun prepends that to
+        `LD_LIBRARY_PATH` so the bundled copy is found ahead of any
+        system path.
+      - **macOS:** dropped the darwin/universal build in favour of
+        per-arch matrix jobs (macos-26 arm64 + macos-13 amd64),
+        which sidesteps the "brew libusb is per-arch only" problem.
+        Each build bundles libusb into the .app under
+        `Contents/Frameworks/libusb-1.0.0.dylib` via
+        `install_name_tool -change` against the path `otool -L`
+        reports. A guard fails the step loudly if any Homebrew
+        path remains so a broken bundle can't silently ship.
+      - **Windows:** nothing. `usbserial-go` on Windows falls
+        through to `go.bug.st/serial` — its gousb imports are all
+        behind `//go:build linux || darwin` file tags, so the
+        Windows build has no libusb dependency.
 
 ## Syntax highlighting — Tier 2
 

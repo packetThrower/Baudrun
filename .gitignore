@@ -24,8 +24,9 @@ site/
 *.swp
 *.swo
 
-# Claude Code local settings
+# Claude Code local settings + ephemeral worktree clones
 .claude/settings.local.json
+.claude/worktrees/
 
 # Logs & temp
 *.log

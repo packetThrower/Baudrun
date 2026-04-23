@@ -23,11 +23,18 @@ jobs:
 
   build-macos:
     needs: [ci]
-    # Pin to macos-26 so the binary links against the Tahoe SDK and
-    # picks up the new window chrome. macos-latest lags a release or
-    # two behind, which surfaces as older, sharper window corners on
-    # Tahoe hosts.
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-26 is Apple Silicon only (Tahoe SDK, latest window
+          # chrome). macos-13 is the last runner with Intel hardware
+          # still in the Actions fleet.
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-13
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
@@ -35,6 +42,18 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.23"
+
+      # libusb-1.0 is needed at cgo link time by gousb (used by
+      # usbserial-go for CP210x / CH34x / etc.). Homebrew on each
+      # runner ships the matching native arch — amd64 on macos-13,
+      # arm64 on macos-26 — so no Rosetta dance is needed. The
+      # split matrix replaces the older darwin/universal build for
+      # exactly this reason: a single binary would need both arch
+      # libusb slices lipo'd into a universal dylib, which is more
+      # moving parts than it's worth for the handful of Intel Mac
+      # users left.
+      - name: Install libusb
+        run: brew install libusb pkg-config
 
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
@@ -54,19 +73,57 @@ jobs:
           name: frontend-dist
           path: frontend/dist
 
-      - name: Build (universal)
-        run: wails build -s -platform darwin/universal
+      - name: Build
+        run: wails build -s -platform darwin/${{ matrix.arch }}
+
+      # Bundle libusb into the .app so downloaded builds don't assume
+      # the user has Homebrew. `install_name_tool -change` rewrites
+      # the binary's dylib reference from its absolute Homebrew path
+      # to an @executable_path-relative one pointing at the bundled
+      # copy. `otool -L` after the rewrite should show only system
+      # paths (/usr/lib/...) and @executable_path/... — any remaining
+      # /opt/homebrew/... or /usr/local/... line would mean a user
+      # without Homebrew would see a dyld "image not found" on launch.
+      - name: Bundle libusb into .app
+        run: |
+          APP="build/bin/Baudrun.app"
+          BIN="$APP/Contents/MacOS/Baudrun"
+          FRAMEWORKS="$APP/Contents/Frameworks"
+          mkdir -p "$FRAMEWORKS"
+
+          # Resolve the libusb the binary was linked against from the
+          # loader commands — otool is more reliable than guessing the
+          # Homebrew prefix by arch.
+          LIBUSB_SRC=$(otool -L "$BIN" | awk '/libusb-1\.0/ {print $1; exit}')
+          if [ -z "$LIBUSB_SRC" ]; then
+            echo "binary has no libusb dependency — unexpected"
+            otool -L "$BIN"
+            exit 1
+          fi
+          cp "$LIBUSB_SRC" "$FRAMEWORKS/libusb-1.0.0.dylib"
+          chmod 644 "$FRAMEWORKS/libusb-1.0.0.dylib"
+
+          install_name_tool -change "$LIBUSB_SRC" \
+            "@executable_path/../Frameworks/libusb-1.0.0.dylib" "$BIN"
+
+          echo "--- otool after bundle ---"
+          otool -L "$BIN"
+          # Fail the build loudly if a Homebrew path is still referenced.
+          if otool -L "$BIN" | grep -qE '(/opt/homebrew|/usr/local/)'; then
+            echo "binary still references a Homebrew path; bundling failed"
+            exit 1
+          fi
 
       - name: Package
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           cd build/bin
-          zip -r "../../Baudrun-macOS-${VERSION}.zip" Baudrun.app
+          zip -r "../../Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip" Baudrun.app
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: macos-package
+          name: macos-${{ matrix.arch }}-package
           path: Baudrun-macOS-*.zip
 
   build-windows:
@@ -151,11 +208,13 @@ jobs:
       # needed downstream by appimagetool. libarchive-tools provides
       # bsdtar, which fpm's pacman target shells out to when building
       # .pkg.tar.zst — Ubuntu's default tar isn't bsdtar.
+      # libusb-1.0-0-dev is pulled in for usbserial-go's gousb cgo link.
       - name: Install Linux build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config \
+            libusb-1.0-0-dev \
             ruby-dev build-essential file libfuse2t64 rpm libarchive-tools
 
       - name: Install fpm (drives both .deb and .rpm packaging)
@@ -211,6 +270,7 @@ jobs:
             --architecture "${{ matrix.arch }}" \
             --depends "libgtk-3-0 | libgtk-3-0t64" \
             --depends "libwebkit2gtk-4.1-0" \
+            --depends "libusb-1.0-0" \
             --description "A serial terminal for network devices" \
             --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
@@ -231,6 +291,7 @@ jobs:
             --architecture "${{ matrix.appimage_arch }}" \
             --depends "gtk3" \
             --depends "webkit2gtk4.1" \
+            --depends "libusbx" \
             --description "A serial terminal for network devices" \
             --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
@@ -252,6 +313,7 @@ jobs:
             --architecture "${{ matrix.appimage_arch }}" \
             --depends "gtk3" \
             --depends "webkit2gtk-4.1" \
+            --depends "libusb" \
             --description "A serial terminal for network devices" \
             --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
@@ -264,17 +326,33 @@ jobs:
       # tree under AppDir/. AppRun is the entrypoint the runtime
       # invokes; the top-level .desktop + .DirIcon are required by
       # appimagetool's validator.
+      #
+      # libusb-1.0.so.0 is bundled under AppDir/usr/lib so the
+      # AppImage doesn't assume the target system has a runtime
+      # libusb installed. AppRun prepends that dir to
+      # LD_LIBRARY_PATH so the dynamic linker finds it before
+      # falling through to system paths. Glob by arch triplet
+      # rather than hardcoding /usr/lib/x86_64-linux-gnu to keep
+      # this step arm64-clean (aarch64-linux-gnu on the ARM
+      # runner).
       - name: Build AppImage
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p AppDir
-          cp -r pkg/usr AppDir/
+          mkdir -p AppDir/usr/lib
+          cp -r pkg/usr/bin AppDir/usr/
+          cp -r pkg/usr/share AppDir/usr/
+          cp /usr/lib/*/libusb-1.0.so.0* AppDir/usr/lib/ 2>/dev/null || {
+            echo "libusb-1.0.so.0 not found in /usr/lib/*/"
+            ls -la /usr/lib/
+            exit 1
+          }
           cp packaging/linux/baudrun.desktop AppDir/baudrun.desktop
           cp build/appicon.png AppDir/baudrun.png
           ln -sf baudrun.png AppDir/.DirIcon
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
           HERE="$(dirname "$(readlink -f "${0}")")"
+          export LD_LIBRARY_PATH="${HERE}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
           exec "${HERE}/usr/bin/baudrun" "$@"
           EOF
           chmod +x AppDir/AppRun
@@ -356,7 +434,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            artifacts/macos-package/*
+            artifacts/macos-arm64-package/*
+            artifacts/macos-amd64-package/*
             artifacts/windows-amd64-package/*
             artifacts/windows-arm64-package/*
             artifacts/linux-amd64-package/*

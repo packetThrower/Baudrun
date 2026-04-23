@@ -11,9 +11,10 @@
 [![Wails](https://img.shields.io/badge/Wails-v2.12.0-D4263E?style=flat-square)](https://wails.io)
 [![Svelte](https://img.shields.io/github/package-json/dependency-version/packetThrower/Baudrun/dev/svelte?filename=frontend/package.json&style=flat-square&logo=svelte&logoColor=white&label=Svelte&color=FF3E00)](https://svelte.dev)
 
-**macOS** (universal binary: Intel + Apple Silicon)  
+**macOS** (Apple Silicon and Intel)  
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
-[![Universal binary](https://img.shields.io/badge/Universal-Intel%20%2B%20Apple%20Silicon-333?style=flat-square)](docs/REQUIREMENTS.md#macos)
+[![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
+[![Intel](https://img.shields.io/badge/Intel-x86__64-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
 
 **Windows** (x64 and ARM64)  
 [![Windows 10 21H2+ x64](https://img.shields.io/badge/Windows%2010%2021H2%2B-x64-0078D4?style=flat-square&logo=windows&logoColor=white)](docs/REQUIREMENTS.md#windows)
@@ -175,7 +176,7 @@ it so dpkg, rpm, and pacman read the version natively.
 
 | Platform | Artifact | Notes |
 |---|---|---|
-| **macOS** | `Baudrun-macOS-<version>.zip` (contains `.app`) | **Universal binary.** One `.app` containing both Intel (x86_64) and Apple Silicon (arm64) builds, combined with `lipo`. macOS picks the right slice at launch, so the same download runs natively on M1/M2/M3 without Rosetta. The trade-off is that it's roughly twice the size of a single-architecture build. |
+| **macOS** | `Baudrun-macOS-<arch>-<version>.zip` (contains `.app`) | Per-arch builds: `arm64` for Apple Silicon (M1/M2/M3+), `amd64` for Intel Macs. Pick the one matching your CPU. Each bundle is a self-contained `.app` with `libusb-1.0.0.dylib` bundled under `Contents/Frameworks` so there's no Homebrew dependency. |
 | **Windows amd64** | `Baudrun-Windows-amd64-<version>.zip` (contains `.exe`) | Standard 64-bit x86 Windows 10/11. |
 | **Windows arm64** | `Baudrun-Windows-arm64-<version>.zip` (contains `.exe`) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
 | **Linux amd64** | `baudrun_<version>-1_amd64.deb`, `baudrun-<version>-1.x86_64.rpm`, `baudrun-<version>-1-x86_64.pkg.tar.zst`, `Baudrun-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. The trailing `-1` is fpm's packaging revision; it bumps only when the same upstream version needs to ship again with packaging-only fixes. |
@@ -204,25 +205,35 @@ Prerequisites:
 - Node 20+
 - [Wails v2.12](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0`)
 
+Before the first `wails build` on macOS or Linux, install `libusb-1.0`
+(pulled in by `usbserial-go` for direct CP210x / CH340 / etc. access):
+
+- macOS: `brew install libusb pkg-config`
+- Debian / Ubuntu: `sudo apt install libusb-1.0-0-dev pkg-config`
+- Fedora: `sudo dnf install libusb1-devel pkgconf-pkg-config`
+- Arch: `sudo pacman -S libusb pkgconf`
+
 ```bash
 git clone git@github.com:packetThrower/Baudrun.git
 cd Baudrun
 wails build                               # production build for host OS
 wails build -platform windows/amd64       # cross-compile to Windows from macOS
-wails build -platform darwin/universal    # universal macOS binary
+wails build -platform darwin/arm64        # Apple Silicon
+wails build -platform darwin/amd64        # Intel Mac
 wails dev                                 # hot-reload dev mode
 ```
 
 Cross-compiling to Linux from macOS isn't supported by Wails, so Linux
-builds have to run on Linux (or in CI). On a Linux host, install
-`libgtk-3-dev`, `libwebkit2gtk-4.1-dev`, and `pkg-config` first, then
-`wails build -platform linux/amd64` (or `linux/arm64`).
+builds have to run on Linux (or in CI). On a Linux host, install the
+webview + libusb deps listed above first, then `wails build -platform
+linux/amd64` (or `linux/arm64`).
 
 CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-26`,
-`windows-latest`, `windows-11-arm`, `ubuntu-latest`, and `ubuntu-24.04-arm`
-on each push to `main`. Tagged pushes matching SemVer `v[0-9]+.[0-9]+.[0-9]+`
-trigger `.github/workflows/release.yml`, which produces a GitHub Release
-with all five platform artifacts attached.
+`macos-13`, `windows-latest`, `windows-11-arm`, `ubuntu-latest`, and
+`ubuntu-24.04-arm` on each push to `main`. Tagged pushes matching SemVer
+`v[0-9]+.[0-9]+.[0-9]+` trigger `.github/workflows/release.yml`, which
+produces a GitHub Release with all six platform artifacts attached
+(macOS arm64/amd64, Windows x64/arm64, Linux amd64/arm64).
 
 ## Architecture
 
