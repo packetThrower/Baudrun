@@ -231,6 +231,47 @@ well below 20 characters.
   opening Settings, or creating a new profile) triggers an automatic
   Disconnect.
 
+## Scrollback
+
+- Global setting (`scrollbackLines`, default `10000`). Applied via
+  xterm.js's constructor `scrollback` option.
+- Settings UI ships five presets (1k / 5k / 10k / 50k / 100k) with
+  approximate memory cost annotated inline. Custom values can be set
+  by editing `settings.json` directly and are preserved, surfaced in
+  the dropdown as `N lines (custom)` so they don't silently reset.
+- Changing the setting tears down and rebuilds the `<Terminal>`
+  component — xterm doesn't resize the ring buffer in place. The
+  rebuild snapshots the existing buffer as plain text and writes it
+  back into the fresh instance. Tradeoffs on the existing scrollback:
+  plain text survives, ANSI color attributes are flattened, current
+  selection is lost. New output after the rebuild is colored as
+  normal. Same mechanism the font-size live-update uses.
+- The buffer is strictly in-memory. Independent of, and not
+  affected by, the Session logging feature — if you need permanent
+  history, enable `logEnabled` on the profile.
+
+**Memory cost (approximate, at a 200-column terminal):**
+
+| Scrollback | Memory |
+|---|---|
+| 1,000 lines | ~0.4 MB |
+| 5,000 lines | ~2 MB |
+| 10,000 lines (default) | ~4 MB |
+| 50,000 lines | ~20 MB |
+| 100,000 lines | ~40 MB |
+| 500,000 lines | ~200 MB |
+
+xterm.js stores each cell as an object (character + 24-bit fg/bg +
+attributes), so the per-line cost scales with column count.
+Narrower terminals cost proportionally less.
+
+Past ~100k lines, two things start to degrade: the WebKit garbage
+collector spends visibly more time on cleanup cycles, and the
+buffer-snapshot step inside the recreate path (font-size or
+scrollback change) takes noticeably longer because it linearly
+reads every cell. In-terminal search, if/when wired in, would also
+scale linearly with line count.
+
 ## Light / dark appearance
 
 - Global setting (`appearance`): `auto` / `light` / `dark`.

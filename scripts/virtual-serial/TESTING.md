@@ -352,6 +352,92 @@ Restart the bridge at 9600 baud and repeat T6 with a small file
 
 ---
 
+## Scrollback tests
+
+### T12 — scrollback retention limit
+
+Verifies the scrollback setting actually caps what the terminal keeps.
+
+**Setup:**
+
+Baudrun **Settings → Terminal → Scrollback** = `1,000 lines`.
+Restart the bridge at a fast rate so the flood doesn't take forever:
+
+```sh
+go run ./scripts/virtual-serial -baud 115200 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
+```
+
+Connect the virtual profile in Baudrun.
+
+**Flood:**
+
+In a scratch terminal:
+
+```sh
+seq 1 2000 > /tmp/baudrun-b
+```
+
+2000 newline-terminated numbers stream into endpoint B, the bridge
+forwards them to A, Baudrun renders them.
+
+**Expected:**
+
+- Scroll all the way up in Baudrun's terminal pane.
+- The oldest visible line is around `1001` — give or take a few
+  because xterm can trim up to one display row at the head during
+  reflow. Lines `1`–`~1000` have been pushed out of the 1000-line
+  buffer.
+- The newest line is `2000`.
+
+**Verify in settings.json:**
+
+```sh
+grep scrollbackLines "$HOME/Library/Application Support/Baudrun/settings.json"
+# "scrollbackLines": 1000
+```
+
+### T13 — live setting change, preserve plain-text scrollback
+
+Verifies changing the setting at runtime rebuilds `<Terminal>` without
+nuking the existing content.
+
+1. Continue from T12's state (buffer has lines roughly 1001–2000).
+2. Open **Settings**, change **Scrollback** to `10,000 lines`.
+3. Return to the terminal pane.
+
+**Expected:**
+
+- A brief flicker as `<Terminal>` rebuilds.
+- Existing lines 1001–2000 still visible when scrolling up.
+- ANSI color attributes on old output may be flattened to the default
+  palette (documented tradeoff — the recreate path snapshots as plain
+  text).
+- New data pushed through the bridge after the change is colored
+  normally.
+- Flood another batch (`seq 2001 12000 > /tmp/baudrun-b`) and verify
+  the buffer now retains ~10,000 lines instead of 1,000.
+
+### T14 — custom (non-preset) value preservation
+
+Confirms that hand-edited values survive a round-trip through the UI
+dropdown without being silently rounded to a preset.
+
+1. Close Baudrun.
+2. Edit `settings.json`, set `"scrollbackLines": 7777`.
+3. Reopen Baudrun.
+4. Open **Settings → Scrollback**.
+
+**Expected:**
+
+- Dropdown shows `7,777 lines (custom)` as the selected option on top
+  of the five preset rows.
+- Changing to a preset and back to the custom value isn't possible
+  from the UI (by design — custom values are display-only via the
+  dropdown). To preserve a custom value, don't touch the dropdown;
+  to set a new custom value, edit the JSON file.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |

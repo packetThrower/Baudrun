@@ -170,6 +170,7 @@ export namespace settings {
 	    appearance?: string;
 	    copyOnSelect?: boolean;
 	    screenReaderMode?: boolean;
+	    scrollbackLines?: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -185,6 +186,7 @@ export namespace settings {
 	        this.appearance = source["appearance"];
 	        this.copyOnSelect = source["copyOnSelect"];
 	        this.screenReaderMode = source["screenReaderMode"];
+	        this.scrollbackLines = source["scrollbackLines"];
 	    }
 	}
 

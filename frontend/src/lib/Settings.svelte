@@ -13,6 +13,7 @@
     onImport: () => void;
     onDelete: (id: string) => void;
     onSetFontSize: (size: number) => void;
+    onSetScrollback: (lines: number) => void;
     onSetLogDir: (dir: string) => void;
     onPickLogDir: () => void;
     onSetDetectDrivers: (enabled: boolean) => void;
@@ -37,6 +38,7 @@
     onImport,
     onDelete,
     onSetFontSize,
+    onSetScrollback,
     onSetLogDir,
     onPickLogDir,
     onSetDetectDrivers,
@@ -103,6 +105,17 @@
 
   function onFontSizeChange(e: Event) {
     onSetFontSize(Number((e.target as HTMLInputElement).value));
+  }
+
+  // Scrollback presets. Custom values (set by editing settings.json
+  // directly) are preserved and shown as "N lines (custom)" in the
+  // dropdown so they don't silently reset.
+  const SCROLLBACK_PRESETS = [1000, 5000, 10000, 50000, 100000];
+  const scrollbackValue = $derived(settings.scrollbackLines || 10000);
+  const scrollbackIsCustom = $derived(!SCROLLBACK_PRESETS.includes(scrollbackValue));
+
+  function onScrollbackChange(e: Event) {
+    onSetScrollback(Number((e.target as HTMLSelectElement).value));
   }
 
   function onLogDirChange(e: Event) {
@@ -286,6 +299,26 @@
           value={settings.fontSize || 13}
           onchange={onFontSizeChange}
         />
+      </div>
+
+      <div class="field">
+        <label for="scrollback-lines">Scrollback</label>
+        <select
+          id="scrollback-lines"
+          value={scrollbackValue}
+          onchange={onScrollbackChange}
+        >
+          <option value={1000}>1,000 lines (~0.4 MB)</option>
+          <option value={5000}>5,000 lines (~2 MB)</option>
+          <option value={10000}>10,000 lines (~4 MB) · default</option>
+          <option value={50000}>50,000 lines (~20 MB)</option>
+          <option value={100000}>100,000 lines (~40 MB)</option>
+          {#if scrollbackIsCustom}
+            <option value={scrollbackValue}>
+              {scrollbackValue.toLocaleString()} lines (custom)
+            </option>
+          {/if}
+        </select>
       </div>
     </div>
   </section>

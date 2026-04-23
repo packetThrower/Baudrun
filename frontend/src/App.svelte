@@ -126,6 +126,7 @@
   );
   const effectiveTheme = $derived(resolveTheme(effectiveThemeID, $themes));
   const termFontSize = $derived($settings.fontSize || 13);
+  const termScrollback = $derived($settings.scrollbackLines || 10000);
 
   // Re-apply skin whenever the active selection, loaded list, appearance
   // preference, or system color scheme changes. The window's own NSAppearance
@@ -684,6 +685,15 @@
     }
   }
 
+  async function handleSetScrollback(lines: number) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, scrollbackLines: lines });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Scrollback update failed: ${e}`;
+    }
+  }
+
   async function handleSetLogDir(dir: string) {
     try {
       const updated = await api.updateSettings({ ...$settings, logDir: dir });
@@ -827,6 +837,7 @@
           onImport={handleImportTheme}
           onDelete={handleDeleteTheme}
           onSetFontSize={handleSetFontSize}
+          onSetScrollback={handleSetScrollback}
           onSetLogDir={handleSetLogDir}
           onPickLogDir={handlePickLogDir}
           onSetDetectDrivers={handleSetDetectDrivers}
@@ -958,6 +969,7 @@
           localEcho={termLocalEcho}
           theme={effectiveTheme}
           fontSize={termFontSize}
+          scrollback={termScrollback}
           highlight={termHighlight}
           hexView={termHexView}
           timestamps={termTimestamps}

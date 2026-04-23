@@ -14,6 +14,7 @@
     localEcho?: boolean;
     theme?: Theme | undefined;
     fontSize?: number;
+    scrollback?: number;
     highlight?: boolean;
     hexView?: boolean;
     timestamps?: boolean;
@@ -43,6 +44,7 @@
     localEcho = false,
     theme = undefined,
     fontSize = 13,
+    scrollback = 10000,
     highlight = true,
     hexView = false,
     timestamps = false,
@@ -262,14 +264,34 @@
     pendingFontResize = setTimeout(() => {
       pendingFontResize = null;
       try {
-        recreateWithNewFontSize();
+        recreateTerminal();
       } catch (e) {
         onStatus(`xterm rebuild failed: ${e}`);
       }
     }, FONT_RECREATE_DEBOUNCE_MS);
   });
 
-  function recreateWithNewFontSize() {
+  // Scrollback live update. Same recreate path as font-size — xterm
+  // doesn't resize the ring buffer in place, so changing this tears
+  // down and rebuilds the instance. Since scrollback changes come
+  // from a dropdown selection (not rapid keyboard presses), no
+  // debounce is needed here.
+  let lastAppliedScrollback: number = scrollback || 10000;
+
+  $effect(() => {
+    const sb = scrollback;
+    if (!sb || sb <= 0) return;
+    if (!term) return;
+    if (sb === lastAppliedScrollback) return;
+    lastAppliedScrollback = sb;
+    try {
+      recreateTerminal();
+    } catch (e) {
+      onStatus(`xterm rebuild failed: ${e}`);
+    }
+  });
+
+  function recreateTerminal() {
     if (!term) return;
 
     // Snapshot buffer content as plain text lines.
@@ -307,7 +329,7 @@
       cursorBlink: true,
       cursorStyle: "block",
       allowProposedApi: true,
-      scrollback: 10000,
+      scrollback: scrollback || 10000,
       convertEol: false,
       theme: theme ? themeToXterm(theme) : fallbackTheme,
       screenReaderMode,

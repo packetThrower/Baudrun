@@ -25,6 +25,13 @@ type Settings struct {
 	// xterm exposes incoming output to assistive tech through a live
 	// DOM region. Small perf cost on heavy output; off by default.
 	ScreenReaderMode bool `json:"screenReaderMode,omitempty"`
+	// ScrollbackLines is how many rows xterm retains in its scrollback
+	// buffer. Each line is ~400 bytes at a typical 200-col width, so
+	// 10k ≈ 4 MB, 100k ≈ 40 MB. xterm doesn't resize the buffer in
+	// place — changing this live tears down and rebuilds the <Terminal>
+	// component, preserving plain text but dropping ANSI color
+	// attributes on the existing scrollback. Default 10000.
+	ScrollbackLines int `json:"scrollbackLines,omitempty"`
 }
 
 type Store struct {
@@ -65,14 +72,14 @@ func (st *Store) Update(s Settings) (Settings, error) {
 func (st *Store) load() error {
 	data, err := os.ReadFile(st.path)
 	if errors.Is(err, os.ErrNotExist) {
-		st.s = Settings{DefaultThemeID: "baudrun", FontSize: 13, SkinID: "baudrun", Appearance: "auto"}
+		st.s = Settings{DefaultThemeID: "baudrun", FontSize: 13, SkinID: "baudrun", Appearance: "auto", ScrollbackLines: 10000}
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("read settings: %w", err)
 	}
 	if len(data) == 0 {
-		st.s = Settings{DefaultThemeID: "baudrun", FontSize: 13, SkinID: "baudrun", Appearance: "auto"}
+		st.s = Settings{DefaultThemeID: "baudrun", FontSize: 13, SkinID: "baudrun", Appearance: "auto", ScrollbackLines: 10000}
 		return nil
 	}
 	return json.Unmarshal(data, &st.s)
