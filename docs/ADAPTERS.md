@@ -36,6 +36,37 @@ distro that matters (Ubuntu 22.04+, Debian 12+, Fedora 40+, Arch,
 openSUSE Tumbleweed) ships them loaded. Plug in a stock-VID device,
 `/dev/ttyUSB*` or `/dev/ttyACM*` appears. No user action required.
 
+*Permissions:* `/dev/tty*` device nodes are owned by `root:dialout`
+(Debian/Ubuntu) or `root:uucp` (some others). Opening them as a regular
+user traditionally means adding yourself to `dialout` and logging out:
+
+```sh
+sudo usermod -aG dialout $USER
+# log out and back in
+```
+
+Baudrun's `.deb`, `.rpm`, and `.pkg.tar.zst` packages skip that dance
+by shipping a udev rule
+([`/usr/lib/udev/rules.d/60-baudrun-serial.rules`](https://github.com/packetThrower/Baudrun/blob/main/packaging/linux/60-baudrun-serial.rules))
+that tags USB-backed TTYs and known USB-serial VIDs with
+`TAG+="uaccess"`. systemd-logind turns that into an ACL entry for
+whoever is currently logged in at the console, so Baudrun can open the
+port with no group membership and no logout. The package post-install
+reloads udev so the rule applies immediately — no re-plug needed for
+already-attached devices.
+
+The AppImage doesn't install system files, so the dialout path is the
+only option there. If you want the udev-rule convenience on an
+AppImage-based install, grab the rule file from the repo and drop it
+in place yourself:
+
+```sh
+sudo curl -fsSL -o /usr/lib/udev/rules.d/60-baudrun-serial.rules \
+  https://raw.githubusercontent.com/packetThrower/Baudrun/main/packaging/linux/60-baudrun-serial.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=tty --subsystem-match=usb --action=change
+```
+
 The rebrand cases are the exception: the kernel's id_table for each
 driver is an explicit list of `(VID, PID)` pairs. Siemens's RUGGEDCOM
 under `0908:01FF` isn't in that list, so `cp210x` doesn't claim the

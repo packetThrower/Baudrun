@@ -1,0 +1,44 @@
+# udev rules shipped with Baudrun to let the currently-logged-in
+# console user open USB-to-serial adapters without being root and
+# without needing to join the `dialout` / `plugdev` groups.
+#
+# Relies on systemd-logind's uaccess mechanism: devices tagged with
+# `uaccess` get ACL entries granting read/write to whoever is
+# currently seated at the local console. Permissions follow
+# login sessions — plug a device in, log out, the next user
+# gets access instead. No group adds, no reboots, no logout/login
+# dance that "add yourself to dialout" needs.
+#
+# Installed to /usr/lib/udev/rules.d/ so it sits alongside vendor
+# rules. Fires immediately on plug after `udevadm control
+# --reload-rules && udevadm trigger` (the .deb / .rpm / pacman
+# post-install runs both).
+#
+# Covers both paths Baudrun uses to open a serial device:
+#   1. /dev/ttyUSB* and /dev/ttyACM* — the OS kernel driver's
+#      device node (cp210x.ko, ftdi_sio.ko, pl2303.ko, ch341.ko,
+#      cdc_acm.ko, and other USB-backed tty drivers).
+#   2. /dev/bus/usb/*/* — the raw USB device node used by
+#      usbserial-go's libusb-direct backend for vendor-rebranded
+#      VIDs and chipsets the in-kernel driver's id_table misses.
+
+# ── Rule 1: TTY access (kernel-driver path) ──────────────────────────
+# Any TTY whose ancestor chain contains a USB device. Catches
+# /dev/ttyUSB*, /dev/ttyACM*, and anything behind a USB hub.
+SUBSYSTEM=="tty", SUBSYSTEMS=="usb", TAG+="uaccess"
+
+# ── Rule 2: libusb access (usbserial-go direct path) ────────────────
+# Enumerated by VID where we have a chipset implementation in
+# usbserial-go today (CP210x, FTDI, Prolific, CH34x). Add new
+# entries as chipset subpackages land.
+#
+# Silicon Labs CP210x — stock.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="10c4", TAG+="uaccess"
+# Siemens RUGGEDCOM — CP210x reflashed under Siemens USB-IF VID.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0908", ATTRS{idProduct}=="01ff", TAG+="uaccess"
+# FTDI — stock + common rebrands share VID 0403.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0403", TAG+="uaccess"
+# Prolific PL2303.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="067b", TAG+="uaccess"
+# WCH CH340 / CH341.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1a86", TAG+="uaccess"

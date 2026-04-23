@@ -192,7 +192,7 @@ func openBugST(cfg Config, onRead func([]byte), onExit func(error)) (*Session, e
 	}
 	port, err := serial.Open(cfg.PortName, mode)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", cfg.PortName, err)
+		return nil, enrichOpenError(cfg.PortName, err)
 	}
 	if err := port.SetReadTimeout(readTimeout); err != nil {
 		_ = port.Close()

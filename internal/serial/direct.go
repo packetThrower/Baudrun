@@ -153,7 +153,7 @@ func openDirectUSB(cfg Config, onRead func([]byte), onExit func(error)) (*Sessio
 
 	up, err := usbserial.Open(d)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", cfg.PortName, err)
+		return nil, enrichOpenError(cfg.PortName, err)
 	}
 
 	if err := up.SetBaudRate(cfg.BaudRate); err != nil {

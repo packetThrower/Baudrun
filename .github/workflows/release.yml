@@ -250,14 +250,25 @@ jobs:
       # convention); the .desktop + icon go to their standard
       # freedesktop locations so the installed app shows up in
       # application launchers and gets a proper icon.
+      #
+      # The udev rule installed under /usr/lib/udev/rules.d/ grants
+      # the currently-logged-in console user ACL-based access to
+      # USB-serial adapters via systemd-logind's uaccess tag — so
+      # Baudrun can open /dev/ttyUSB* without sudo and without the
+      # user having to join `dialout` first. See
+      # packaging/linux/60-baudrun-serial.rules for the full rule
+      # and packaging/linux/baudrun-postinstall.sh for the
+      # reload-udev hook fpm runs after install.
       - name: Stage install tree
         run: |
           mkdir -p pkg/usr/bin
           mkdir -p pkg/usr/share/applications
           mkdir -p pkg/usr/share/icons/hicolor/256x256/apps
+          mkdir -p pkg/usr/lib/udev/rules.d
           install -m 755 build/bin/Baudrun pkg/usr/bin/baudrun
           install -m 644 packaging/linux/baudrun.desktop pkg/usr/share/applications/baudrun.desktop
           install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/baudrun.png
+          install -m 644 packaging/linux/60-baudrun-serial.rules pkg/usr/lib/udev/rules.d/60-baudrun-serial.rules
 
       # SemVer goes straight into fpm's --version. --iteration stays at 1
       # unless the same SemVer needs to ship again with packaging-only
@@ -278,6 +289,8 @@ jobs:
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
             --deb-no-default-config-files \
+            --after-install packaging/linux/baudrun-postinstall.sh \
+            --after-upgrade packaging/linux/baudrun-postinstall.sh \
             -C pkg \
             --package "baudrun_${VERSION}-1_${{ matrix.arch }}.deb" \
             .
@@ -298,6 +311,8 @@ jobs:
             --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
+            --after-install packaging/linux/baudrun-postinstall.sh \
+            --after-upgrade packaging/linux/baudrun-postinstall.sh \
             -C pkg \
             --package "baudrun-${VERSION}-1.${{ matrix.appimage_arch }}.rpm" \
             .
@@ -320,6 +335,8 @@ jobs:
             --url "https://github.com/packetThrower/Baudrun" \
             --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
             --license "GPL-3.0-or-later" \
+            --after-install packaging/linux/baudrun-postinstall.sh \
+            --after-upgrade packaging/linux/baudrun-postinstall.sh \
             -C pkg \
             --package "baudrun-${VERSION}-1-${{ matrix.appimage_arch }}.pkg.tar.zst" \
             .
