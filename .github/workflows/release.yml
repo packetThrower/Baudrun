@@ -250,6 +250,9 @@ jobs:
       # transfers. file + fuse3 are needed by appimagetool. fpm
       # (via ruby-dev) builds the .pkg.tar.zst since Tauri's
       # bundler doesn't handle pacman packages.
+      # xdg-utils provides /usr/bin/xdg-open which Tauri's AppImage
+      # bundler copies into the AppImage so plugin-opener works on
+      # target systems without xdg-utils installed.
       - name: Install Linux build deps
         run: |
           sudo apt-get update
@@ -257,6 +260,7 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
             libayatana-appindicator3-dev librsvg2-dev \
             libusb-1.0-0-dev libudev-dev pkg-config \
+            xdg-utils \
             ruby-dev build-essential file libfuse2t64 libarchive-tools
 
       - name: Install fpm
