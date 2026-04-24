@@ -125,32 +125,60 @@
     api.sendBytes(new Uint8Array([byte])).catch((e) => onStatus(`send failed: ${e}`));
   }
 
+  // Slow-paste abort: Esc during an in-flight sendSlow() sets this
+  // flag; the loop checks it each iteration. Also backs the "Esc to
+  // cancel" progress pill below.
+  let pasteSending = $state(false);
+  let pasteSent = $state(0);
+  let pasteTotal = $state(0);
+  let pasteAbortRequested = false;
+
   async function sendSlow(data: string) {
     const bytes = new TextEncoder().encode(data);
-    for (const b of bytes) {
-      // Await each send so the next byte doesn't fire until the
-      // previous one has been acknowledged by the Go side. Without
-      // this, N fire-and-forget calls would queue up concurrently on
-      // the Go side and race on the serial port's Write. The per-
-      // character delay below isn't enough to serialize them —
-      // pasteCharDelayMs is about UART buffer drain pacing, not
-      // JS-to-Go call ordering.
-      try {
-        await api.sendBytes(new Uint8Array([b]));
-      } catch (e) {
-        onStatus(`send failed: ${e}`);
-        return;
+    pasteSending = true;
+    pasteAbortRequested = false;
+    pasteSent = 0;
+    pasteTotal = bytes.length;
+    try {
+      for (const b of bytes) {
+        if (pasteAbortRequested) {
+          onStatus(`Paste aborted after ${pasteSent}/${bytes.length} bytes`);
+          return;
+        }
+        // Await each send so the next byte doesn't fire until the
+        // previous one has been acknowledged by the backend. Without
+        // this, N fire-and-forget calls would queue up concurrently
+        // and race on the serial port's Write. The per-character
+        // delay below isn't enough to serialize them —
+        // pasteCharDelayMs is about UART buffer drain pacing, not
+        // JS-to-backend call ordering.
+        try {
+          await api.sendBytes(new Uint8Array([b]));
+        } catch (e) {
+          onStatus(`send failed: ${e}`);
+          return;
+        }
+        pasteSent += 1;
+        if (localEcho && term) {
+          term.write(String.fromCharCode(b));
+        }
+        if (pasteCharDelayMs > 0) {
+          await new Promise((r) => setTimeout(r, pasteCharDelayMs));
+        }
       }
-      if (localEcho && term) {
-        term.write(String.fromCharCode(b));
-      }
-      if (pasteCharDelayMs > 0) {
-        await new Promise((r) => setTimeout(r, pasteCharDelayMs));
-      }
+    } finally {
+      pasteSending = false;
     }
   }
 
   async function handleInput(data: string) {
+    // Esc during an in-flight slow-paste aborts it. Swallow the Esc
+    // so the device doesn't see a stray escape mid-stream.
+    if (pasteSending && data === "\x1b") {
+      pasteAbortRequested = true;
+      return;
+    }
+
     // xterm emits 0x7f for the Backspace key. Swap to 0x08 when the
     // profile asks for BS-style backspace so devices wanting that
     // don't see ^H echoed back at them.
@@ -467,6 +495,20 @@
 
 <div class="wrap" style:background-color={theme?.background ?? "#0b0b0d"}>
   <div class="host" bind:this={hostEl}></div>
+  {#if pasteSending}
+    <div
+      class="paste-progress"
+      role="status"
+      aria-live="polite"
+      aria-label="Pasting {pasteSent} of {pasteTotal} bytes. Press Escape to cancel."
+      style:color={theme?.foreground ?? "rgba(255,255,255,0.95)"}
+      style:background={theme?.selection ?? "rgba(0,0,0,0.55)"}
+    >
+      <span class="paste-progress-label">Paste</span>
+      <span class="paste-progress-count">{pasteSent}/{pasteTotal} bytes</span>
+      <span class="paste-progress-hint">Esc to cancel</span>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -476,6 +518,49 @@
     display: flex;
     padding: 10px 8px 8px 12px;
     overflow: hidden;
+    position: relative;
+  }
+
+  /* Floating paste-progress pill. Top-right of the terminal,
+     positioned over the xterm but with pointer-events:none so it
+     never swallows clicks meant for the terminal surface. Color
+     and background come from the active theme (foreground + selection)
+     so it reads correctly on every palette. */
+  .paste-progress {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font: 500 11px/1.2 var(--font-ui, system-ui, sans-serif);
+    letter-spacing: 0.01em;
+    pointer-events: none;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    user-select: none;
+    z-index: 2;
+  }
+
+  .paste-progress-label {
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    opacity: 0.7;
+  }
+
+  .paste-progress-count {
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono, Menlo, monospace);
+    font-size: 12px;
+  }
+
+  .paste-progress-hint {
+    opacity: 0.6;
+    font-size: 10px;
   }
 
   .host {
