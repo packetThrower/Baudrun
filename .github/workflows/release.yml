@@ -116,6 +116,22 @@ jobs:
             exit 1
           fi
 
+          # install_name_tool rewrites invalidate any signature
+          # tauri-action applied during the build, and Gatekeeper
+          # rejects unsigned-after-modification binaries with the
+          # "damaged" message rather than the milder "unidentified
+          # developer" prompt. Re-sign the bundled dylib + the
+          # binary + the whole .app ad-hoc (`-` codesigning identity)
+          # so the signatures cover the post-rewrite bytes. Users
+          # without paid Apple Developer accounts still need to
+          # right-click → Open or run `xattr -cr Baudrun.app` to
+          # bypass the quarantine prompt, but they don't see
+          # "damaged" anymore.
+          codesign --force --sign - "$FRAMEWORKS/libusb-1.0.0.dylib"
+          codesign --force --sign - "$BIN"
+          codesign --force --deep --sign - "$APP_DIR"
+          codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+
       # Tauri produces a .dmg already; we additionally zip the .app
       # so users who prefer "drag to /Applications" don't have to
       # mount the DMG.
