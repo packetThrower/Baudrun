@@ -28,7 +28,7 @@
 </script>
 
 <aside class="sidebar">
-  <div class="titlebar" style="--wails-draggable: drag;"></div>
+  <div class="titlebar" data-tauri-drag-region></div>
 
   <div class="header">
     <span class="title">Profiles</span>

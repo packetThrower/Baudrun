@@ -251,7 +251,7 @@
 </script>
 
 <div class="settings">
-  <div class="titlebar" style="--wails-draggable: drag;"></div>
+  <div class="titlebar" data-tauri-drag-region></div>
 
   <header>
     <div class="header-left">
