@@ -7,6 +7,12 @@ and on the GitHub [Releases](https://github.com/packetThrower/Baudrun/releases)
 page's auto-generated "What's Changed" lists; this file is the curated
 view of what actually matters to a user reading release notes.
 
+Pre-release tags (`vX.Y.Z-beta.N`, `vX.Y.Z-rc.N`) trigger the same
+release workflow but publish under GitHub's "Pre-release" badge and
+don't displace the "Latest release" pointer. The `[Unreleased]`
+section collects changes as they land on main; it becomes the
+final stable entry at tag time.
+
 ## [Unreleased]
 
 ### Added
