@@ -312,7 +312,7 @@ jobs:
             --depends "libusb" \
             --description "A serial terminal for network devices" \
             --url "https://github.com/packetThrower/Baudrun" \
-            --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
+            --maintainer "Will Lehnertz <6597817+packetThrower@users.noreply.github.com>" \
             --license "GPL-3.0-or-later" \
             --after-install packaging/linux/baudrun-postinstall.sh \
             --after-upgrade packaging/linux/baudrun-postinstall.sh \
