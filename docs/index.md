@@ -59,11 +59,13 @@ with DevTools.
 
 ## Project
 
+**[CHANGELOG](https://github.com/packetThrower/Baudrun/blob/main/CHANGELOG.md)** — notable user-facing changes per release. Reads as the curated
+complement to GitHub's per-commit "What's Changed" lists.
+
 **[TODO](https://github.com/packetThrower/Baudrun/blob/main/TODO.md)** — roadmap. Items tagged **[on request]** are
 features that would be implemented if someone asks for them (macros,
-file transfer over XMODEM/YMODEM/ZMODEM, keyboard-shortcut scheme
-for Break / Clear / Suspend). Everything else is either done or
-in the active backlog.
+keyboard-shortcut scheme for Break / Clear / Suspend, ZMODEM file
+transfer). Everything else is either done or in the active backlog.
 
 ## Sponsor development
 
