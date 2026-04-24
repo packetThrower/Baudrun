@@ -135,12 +135,23 @@ jobs:
       # Tauri produces a .dmg already; we additionally zip the .app
       # so users who prefer "drag to /Applications" don't have to
       # mount the DMG.
+      #
+      # `ditto -c -k --keepParent`, NOT `zip -r`. macOS code
+      # signatures live in xattrs (com.apple.cs.*), and standard
+      # zip strips them — so a .app round-tripped through plain
+      # zip → unzip launches with EXC_BAD_ACCESS / Code Signature
+      # Invalid at runtime even when the signature was perfectly
+      # valid pre-zip. ditto preserves xattrs + resource forks +
+      # symlinks; macOS Finder + `ditto -x -k` on the receiving end
+      # restore them on unpack.
       - name: Package .app as zip
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
           mkdir -p release-artifacts
-          (cd "$BUNDLE_DIR/macos" && zip -r "$GITHUB_WORKSPACE/release-artifacts/Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip" Baudrun.app)
+          ditto -c -k --keepParent \
+            "$BUNDLE_DIR/macos/Baudrun.app" \
+            "release-artifacts/Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip"
           cp "$BUNDLE_DIR/dmg"/*.dmg release-artifacts/ 2>/dev/null || true
 
       - name: Upload artifacts
