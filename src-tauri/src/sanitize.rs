@@ -1,41 +1,55 @@
 //! Session-log sanitizer — wraps an `io::Write` to strip ANSI CSI /
-//! OSC escape sequences and normalize CR-heavy line endings into
-//! plain LF-separated text, so a `.log` file matches what the user
-//! sees in the terminal instead of the raw wire output.
+//! OSC escape sequences and apply in-line terminal mutations (BS,
+//! CR-overwrite, CR-heavy line endings) so a `.log` file matches
+//! what the user sees in the terminal emulator instead of the raw
+//! bytes that came over the wire.
 //!
-//! Device-specific quirks this handles:
-//!   - Cisco IOS / Cisco Small Business firmware emits `\r\r\n` at
-//!     every line break, which text editors render as extra blank
-//!     lines.
-//!   - `\rESC[K<text>` ("carriage return, clear line, overwrite")
-//!     is a very common prompt-redraw sequence. The raw bytes look
-//!     like `^M^M\e[Kprompt` in a .log.
-//!   - Many devices send `ESC[0m` / `ESC[?25h` / etc. for color +
-//!     cursor attributes that a plain-text log can't display.
+//! Implementation is a tiny line-buffered terminal model:
+//!  - **BS** (`0x08`) pops the last byte of the current line — this
+//!    covers both "user typed a character and hit backspace" and
+//!    the `BS SP BS` "overwrite to erase" pattern many CLIs use
+//!    while cycling through tab-complete suggestions (Aruba, JunOS,
+//!    HP/Aruba AOS-CX).
+//!  - **CR alone** clears the line buffer — terminals return the
+//!    cursor to column 0 on CR and any subsequent write overwrites.
+//!    The `\r\e[K` prompt-redraw combo collapses cleanly this way.
+//!  - **CR + LF** (or a run of CRs followed by LF, as emitted by
+//!    Cisco IOS / Cisco Small Business firmware with its signature
+//!    `\r\r\n`) emits the current line + a single `\n`.
+//!  - **LF alone** emits the current line + `\n`.
+//!  - CSI (`ESC[…final`), OSC (`ESC]…BEL/ST`), and short two-byte
+//!    escapes (`ESC 7`, `ESC c`, …) are stripped entirely.
+//!  - BEL is stripped.
+//!  - TAB, UTF-8, everything else passes through.
+//!
+//! Limitations: cursor movement escapes (`ESC[H`, `ESC[A/B/C/D`)
+//! are dropped, not honored. For a fully accurate render you'd
+//! need a real terminal model — see `vte` or `alacritty_terminal`
+//! crates. This sanitizer is "good enough for the common session-log
+//! case" and orders of magnitude simpler.
 
 use std::io::{self, Write};
 
-/// A [`Write`] adapter that filters terminal control sequences on
-/// the way through. See module docs for the specific transformations.
 pub struct SanitizingLogWriter<W: Write> {
     inner: W,
     state: State,
-    /// `true` when we've consumed one or more CR bytes and are
-    /// waiting to decide whether to emit a newline (depends on the
-    /// next byte).
+    /// Bytes accumulated for the current line (not yet flushed).
+    line: Vec<u8>,
+    /// `true` once we've seen one or more CR bytes and are waiting
+    /// to classify what follows.
     pending_cr: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
     Normal,
-    /// Just saw ESC (0x1B); waiting to classify the sequence.
+    /// Just saw ESC (0x1B); waiting to classify.
     Esc,
     /// Saw ESC `[` — inside a CSI. Consume parameter + intermediate
     /// bytes until a final byte in 0x40..=0x7E.
     Csi,
     /// Saw ESC `]` — inside an OSC. Terminated by BEL (0x07) or ST
-    /// (ESC `\`).
+    /// (`ESC \`).
     Osc,
     /// Inside OSC, just saw ESC — might be ST.
     OscEsc,
@@ -46,13 +60,17 @@ impl<W: Write> SanitizingLogWriter<W> {
         Self {
             inner,
             state: State::Normal,
+            line: Vec::with_capacity(256),
             pending_cr: false,
         }
     }
 
-    fn flush_pending_cr(&mut self, out: &mut Vec<u8>) {
+    /// If a CR is pending, cursor is at column 0 — a subsequent
+    /// byte means the existing line content is about to be
+    /// overwritten. Clear the buffer.
+    fn commit_cr_overwrite(&mut self) {
         if self.pending_cr {
-            out.push(b'\n');
+            self.line.clear();
             self.pending_cr = false;
         }
     }
@@ -60,57 +78,57 @@ impl<W: Write> SanitizingLogWriter<W> {
 
 impl<W: Write> Write for SanitizingLogWriter<W> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut out = Vec::with_capacity(buf.len());
         for &b in buf {
             match self.state {
                 State::Normal => match b {
                     0x1B => {
-                        // If we're in the middle of a CR run and the
-                        // next thing is an ESC, it's almost always
-                        // part of a "carriage return + clear line +
-                        // overwrite" redraw (`\r\x1b[K`). Swallow
-                        // the CRs — the incoming sequence will paint
-                        // the new line contents in place.
-                        self.pending_cr = false;
+                        // `\r\e[K` is the prompt-redraw combo: treat
+                        // the pending CR as the intended overwrite,
+                        // clear the line, then enter escape parsing.
+                        self.commit_cr_overwrite();
                         self.state = State::Esc;
                     }
                     b'\r' => {
-                        // Accumulate; decide on the next byte.
+                        // Accumulate — Cisco `\r\r\n` runs are common.
                         self.pending_cr = true;
                     }
                     b'\n' => {
-                        // CR+LF, CR CR+LF, or plain LF — all collapse
-                        // to a single newline.
-                        out.push(b'\n');
+                        // LF (with or without preceding CRs) finishes
+                        // the line. Emit buffered content + a single
+                        // LF.
+                        self.inner.write_all(&self.line)?;
+                        self.inner.write_all(b"\n")?;
+                        self.line.clear();
                         self.pending_cr = false;
                     }
+                    0x08 => {
+                        // Backspace: pop the last byte of the line.
+                        // At column 0 (pending_cr) the real terminal
+                        // no-ops, so do the same here.
+                        if !self.pending_cr {
+                            self.line.pop();
+                        }
+                    }
                     0x07 => {
-                        // BEL has no place in a text log.
-                        self.flush_pending_cr(&mut out);
+                        // BEL has no place in a text log. Don't let
+                        // it commit a pending CR either.
                     }
                     _ => {
-                        // A run of CRs NOT followed by LF / ESC / BEL
-                        // is a real line break (e.g. Mac-classic line
-                        // endings, or a device that emits `\r` alone
-                        // to separate fields).
-                        self.flush_pending_cr(&mut out);
-                        out.push(b);
+                        self.commit_cr_overwrite();
+                        self.line.push(b);
                     }
                 },
-                State::Esc => {
-                    match b {
-                        b'[' => self.state = State::Csi,
-                        b']' => self.state = State::Osc,
-                        // Two-byte escape sequences (ESC c, ESC 7,
-                        // ESC 8, …). Swallow.
-                        _ => self.state = State::Normal,
-                    }
-                }
+                State::Esc => match b {
+                    b'[' => self.state = State::Csi,
+                    b']' => self.state = State::Osc,
+                    // Two-byte escapes (ESC 7, ESC c, ESC =, …) —
+                    // swallow and return to Normal.
+                    _ => self.state = State::Normal,
+                },
                 State::Csi => {
-                    // CSI: parameter bytes (0x30..=0x3F) then
-                    // intermediate (0x20..=0x2F), terminated by a
-                    // final byte (0x40..=0x7E). We don't care about
-                    // the distinctions — just wait for the final.
+                    // Consume parameter (0x30..=0x3F) + intermediate
+                    // (0x20..=0x2F) bytes until the final byte
+                    // (0x40..=0x7E).
                     if (0x40..=0x7E).contains(&b) {
                         self.state = State::Normal;
                     }
@@ -121,43 +139,28 @@ impl<W: Write> Write for SanitizingLogWriter<W> {
                     _ => {}
                 },
                 State::OscEsc => {
-                    if b == b'\\' {
-                        // ST (ESC \) — OSC done.
-                        self.state = State::Normal;
+                    // `ESC \` (ST) ends the OSC; anything else is a
+                    // malformed sequence — return to Osc consumption.
+                    self.state = if b == b'\\' {
+                        State::Normal
                     } else {
-                        // Stray ESC inside OSC — bail to Normal and
-                        // re-process this byte as if fresh. Avoids
-                        // eating real content if a device misbehaves.
-                        self.state = State::Normal;
-                        // Re-process by falling through? Rust doesn't
-                        // support; simulate via continuing the loop.
-                        // Mark it as Normal handling:
-                        match b {
-                            0x1B => self.state = State::Esc,
-                            b'\r' => self.pending_cr = true,
-                            b'\n' => {
-                                out.push(b'\n');
-                                self.pending_cr = false;
-                            }
-                            0x07 => self.flush_pending_cr(&mut out),
-                            _ => {
-                                self.flush_pending_cr(&mut out);
-                                out.push(b);
-                            }
-                        }
-                    }
+                        State::Osc
+                    };
                 }
             }
         }
-        self.inner.write_all(&out)?;
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if self.pending_cr {
-            self.inner.write_all(b"\n")?;
-            self.pending_cr = false;
+        // Emit whatever's in the buffer (without adding a trailing
+        // LF — the caller didn't ask for one). Subsequent writes
+        // just extend a fresh buffer; output stream stays coherent.
+        if !self.line.is_empty() {
+            self.inner.write_all(&self.line)?;
+            self.line.clear();
         }
+        self.pending_cr = false;
         self.inner.flush()
     }
 }
@@ -190,16 +193,15 @@ mod tests {
 
     #[test]
     fn collapses_cisco_line_endings() {
-        // "foo\r\r\nbar\r\r\nbaz" → three lines separated by LF
         let input = b"foo\r\r\nbar\r\r\nbaz";
         assert_eq!(sanitize(input), b"foo\nbar\nbaz");
     }
 
     #[test]
-    fn cr_before_esc_is_swallowed() {
-        // Classic Cisco prompt redraw: existing-line \r\r ESC[K replacement
+    fn cr_esc_k_is_prompt_redraw() {
+        // `before \r \r \e[K after` — classic CLI prompt redraw.
         let input = b"before\r\r\x1b[Kafter";
-        assert_eq!(sanitize(input), b"beforeafter");
+        assert_eq!(sanitize(input), b"after");
     }
 
     #[test]
@@ -209,10 +211,33 @@ mod tests {
     }
 
     #[test]
-    fn lone_cr_becomes_newline() {
-        // Mac-classic line ending, or field separator.
-        let input = b"x\ry";
-        assert_eq!(sanitize(input), b"x\ny");
+    fn lone_cr_overwrites_line() {
+        // Progress-bar style: each write-over collapses via CR.
+        let input = b"  0%\r 50%\r100%\n";
+        assert_eq!(sanitize(input), b"100%\n");
+    }
+
+    #[test]
+    fn backspace_pops_previous_byte() {
+        let input = b"ab\x08c";
+        assert_eq!(sanitize(input), b"ac");
+    }
+
+    #[test]
+    fn backspace_space_backspace_erase() {
+        // The `BS SP BS` pattern terminals use to visually erase a
+        // single glyph. Here we erase "b" from "ab" and get "a".
+        let input = b"ab\x08 \x08";
+        assert_eq!(sanitize(input), b"a");
+    }
+
+    #[test]
+    fn aruba_tab_cycle_ends_on_final_suggestion() {
+        // Real byte pattern captured from an Aruba AOS-CX session —
+        // user typed "run", cycled tab-complete through "route",
+        // "for==" back to "route".
+        let input = b"sho ip run\x08 \x08\x08 \x08\x08 \x08route\x08 \x08\x08 \x08\x08 \x08\x08 \x08\x08 \x08for==\x08 \x08\x08 \x08\x08 \x08\x08 \x08\x08 \x08route";
+        assert_eq!(sanitize(input), b"sho ip route");
     }
 
     #[test]
@@ -223,21 +248,18 @@ mod tests {
 
     #[test]
     fn osc_is_stripped_through_bel_terminator() {
-        // OSC 0 ; "title" BEL  — xterm window-title update
         let input = b"hello\x1b]0;my title\x07there";
         assert_eq!(sanitize(input), b"hellothere");
     }
 
     #[test]
     fn osc_is_stripped_through_st_terminator() {
-        // OSC ... ESC \
         let input = b"hello\x1b]0;my title\x1b\\there";
         assert_eq!(sanitize(input), b"hellothere");
     }
 
     #[test]
     fn two_byte_esc_sequences_are_stripped() {
-        // ESC 7 is "save cursor" — no following params.
         let input = b"foo\x1b7bar";
         assert_eq!(sanitize(input), b"foobar");
     }
@@ -246,5 +268,12 @@ mod tests {
     fn preserves_utf8_and_tab() {
         let input = "héllo\tworld\n".as_bytes();
         assert_eq!(sanitize(input), input);
+    }
+
+    #[test]
+    fn inline_color_escape_does_not_clear_line() {
+        // ESC without a preceding CR must not drop prior content.
+        let input = b"prompt> \x1b[32mok\x1b[0m\n";
+        assert_eq!(sanitize(input), b"prompt> ok\n");
     }
 }
