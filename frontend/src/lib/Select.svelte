@@ -306,10 +306,23 @@
   }
 
   // Close on window events so the popover doesn't float over stale
-  // trigger positions when the user scrolls or resizes.
+  // trigger positions when the user scrolls or resizes. Scroll
+  // listener needs capture-phase handling (see $effect below) —
+  // scroll events from a scrollable ancestor (.scroll in Settings /
+  // ProfileForm) don't bubble to window, so the svelte:window
+  // handler alone would miss them and the popover would hang
+  // around while the trigger scrolls out from under it.
   function onWindowEvent() {
     if (open) closeList();
   }
+
+  $effect(() => {
+    const handler = () => {
+      if (open) closeList();
+    };
+    window.addEventListener("scroll", handler, true);
+    return () => window.removeEventListener("scroll", handler, true);
+  });
 
   // Only one listbox should be open at a time; selecting via mouse
   // also commits.
@@ -341,7 +354,6 @@
 
 <svelte:window
   onmousedown={onOutsidePointer}
-  onscroll={onWindowEvent}
   onresize={onWindowEvent}
 />
 
