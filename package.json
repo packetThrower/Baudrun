@@ -1,0 +1,38 @@
+{
+  "name": "baudrun",
+  "private": true,
+  "version": "0.7.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.0.0",
+    "@tauri-apps/cli": "^2",
+    "@tsconfig/svelte": "^5.0.0",
+    "prettier": "^3.3.0",
+    "prettier-plugin-svelte": "^3.2.0",
+    "svelte": "^5.55.4",
+    "svelte-check": "^4.4.6",
+    "svelte-preprocess": "^6.0.3",
+    "tslib": "^2.4.0",
+    "typescript": "^5.0.0",
+    "vite": "^8.0.8"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-log": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0"
+  }
+}

@@ -16,6 +16,7 @@ mouse-only. The session shortcuts are user-editable — see
 | Send Break        | `⌘⇧B` | `Ctrl+Shift+B`     | Active session       |
 | Suspend session   | `⌘⇧S` | `Ctrl+Shift+S`     | Active session, not already suspended |
 | Cancel overflow menu / modal | `Escape` | `Escape` | When open |
+| Abort in-flight slow paste | `Escape` | `Escape` | While a slow paste is sending |
 
 ## Why the split scheme
 

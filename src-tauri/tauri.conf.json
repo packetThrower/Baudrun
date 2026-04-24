@@ -1,0 +1,81 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Baudrun",
+  "version": "0.9.0",
+  "identifier": "io.github.packetThrower.Baudrun",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Baudrun",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 800,
+        "minHeight": 500,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "Copyright © 2026 Will Lehnertz",
+    "category": "Utility",
+    "shortDescription": "A serial terminal for network devices.",
+    "longDescription": "Baudrun is a cross-platform serial terminal for interacting with network devices like switches, routers, and console servers.",
+    "homepage": "https://github.com/packetThrower/Baudrun",
+    "licenseFile": "../LICENSE",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libgtk-3-0 | libgtk-3-0t64",
+          "libwebkit2gtk-4.1-0",
+          "libusb-1.0-0"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-baudrun-serial.rules": "../packaging/linux/60-baudrun-serial.rules"
+        },
+        "postInstallScript": "../packaging/linux/baudrun-postinstall.sh",
+        "postRemoveScript": "../packaging/linux/baudrun-postinstall.sh"
+      },
+      "rpm": {
+        "depends": [
+          "gtk3",
+          "webkit2gtk4.1",
+          "libusbx"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-baudrun-serial.rules": "../packaging/linux/60-baudrun-serial.rules"
+        },
+        "postInstallScript": "../packaging/linux/baudrun-postinstall.sh",
+        "postRemoveScript": "../packaging/linux/baudrun-postinstall.sh"
+      },
+      "appimage": {
+        "bundleMediaFramework": true,
+        "files": {
+          "/usr/lib/udev/rules.d/60-baudrun-serial.rules": "../packaging/linux/60-baudrun-serial.rules"
+        }
+      }
+    }
+  }
+}

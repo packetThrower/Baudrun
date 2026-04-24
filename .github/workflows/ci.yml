@@ -36,38 +36,44 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+      - name: Install dependencies
+        run: npm ci
 
       - name: svelte-check
-        working-directory: frontend
         run: npm run check
 
-      # The Go build embeds frontend/dist via //go:embed, so downstream
-      # matrix jobs need it.
+      - name: Build frontend
+        run: npm run build
+
+      # tauri::generate_context! embeds dist/ at compile time, so the
+      # Rust matrix below needs this output. Uploading once instead
+      # of rebuilding per-platform cuts ~15s × 6 runners.
       - name: Upload frontend dist
         uses: actions/upload-artifact@v4
         with:
           name: frontend-dist
-          path: frontend/dist
+          path: dist
 
-  go:
+  rust:
     needs: [frontend]
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-26, macos-15-intel, windows-latest, windows-11-arm, ubuntu-latest, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.os }}
-    # The enumerator package's usb_darwin.go uses #cgo LDFLAGS, so without
-    # cgo it gets excluded and nativeGetDetailedPortsList goes undefined.
-    # setup-go@v6 doesn't force CGO=1 the way v5 did, so pin it here.
-    env:
-      CGO_ENABLED: "1"
+        include:
+          - runner: macos-26
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+          - runner: windows-latest
+            arch: amd64
+          - runner: windows-11-arm
+            arch: arm64
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
@@ -75,40 +81,44 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: frontend-dist
-          path: frontend/dist
+          path: dist
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: "1.23"
+          components: clippy
 
-      # Wails' Linux bindings pull in webkit2gtk + gtk3 at cgo link time.
-      # Without these packages `go build` fails on the main module. macOS
-      # and Windows runners have their webview deps preinstalled.
-      #
-      # libusb-1.0 is pulled in transitively via usbserial-go's gousb
-      # dependency on linux/darwin. Windows skips it — usbserial-go's
-      # Windows build path uses go.bug.st/serial and its gousb imports
-      # are all behind `//go:build linux || darwin` file tags.
-      - name: Install Linux webview + libusb deps
-        if: startsWith(matrix.os, 'ubuntu-')
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Linux: Tauri needs GTK + WebKit2 for wry to link. libusb is
+      # linked by rusb (usbserial CP210x backend). libsoup3-dev
+      # became a transitive requirement on WebKit2GTK 4.1+.
+      - name: Install Linux deps
+        if: startsWith(matrix.runner, 'ubuntu-')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config libusb-1.0-0-dev
+          sudo apt-get install -y \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev \
+            libusb-1.0-0-dev pkg-config
 
-      - name: Install macOS libusb deps
-        if: startsWith(matrix.os, 'macos-')
+      # macOS: libusb for rusb's bulk transfers. pkg-config so the
+      # build script can locate it via Homebrew's prefix.
+      - name: Install macOS deps
+        if: startsWith(matrix.runner, 'macos-')
         run: brew install libusb pkg-config
 
-      # webkit2_41 tells Wails to pkg-config against webkit2gtk-4.1
-      # instead of the default 4.0 (which Ubuntu 24.04 no longer ships).
-      # The tag is a no-op on non-Linux matrix entries because the
-      # webkit2_4x.go files are all //go:build linux-gated.
-      - name: Vet
-        run: go vet -tags webkit2_41 ./...
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check
 
-      - name: Build
-        run: go build -tags webkit2_41 ./...
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy -- -D warnings
 
-      - name: Test
-        run: go test -tags webkit2_41 ./...
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --lib

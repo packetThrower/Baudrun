@@ -6,17 +6,17 @@ on:
       # Stable SemVer: v0.4.0, v1.2.3.
       - "v[0-9]+.[0-9]+.[0-9]+"
       # Pre-release SemVer: v0.8.0-beta.1, v1.0.0-rc.2, etc. The
-      # release job inspects the tag name and flips prerelease=true
-      # on the GitHub Release when a hyphen is present, so these
-      # show up in the UI with the "Pre-release" label and don't
-      # displace the "Latest release" pointer.
+      # release job inspects the tag and flips prerelease=true on
+      # the GitHub Release when a hyphen is present, so these show
+      # up with the "Pre-release" label and don't displace the
+      # "Latest release" pointer.
       - "v[0-9]+.[0-9]+.[0-9]+-*"
 
 permissions:
   contents: write
 
-# Queue, don't cancel: a mid-flight release shouldn't be interrupted by a
-# retag of the same version — risk of half-uploaded artifacts.
+# Queue, don't cancel: a mid-flight release shouldn't be interrupted
+# by a retag of the same version — risk of half-uploaded artifacts.
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -31,75 +31,72 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macos-26 is Apple Silicon only (Tahoe SDK, latest window
-          # chrome). macos-15-intel is GitHub's replacement for the
-          # retired macos-13 image — x86_64 hardware running Sequoia,
-          # supported through fall 2027 when Apple's Intel transition
-          # wraps up and GitHub retires it too.
+          # macos-26 is Apple Silicon only (Tahoe SDK). macos-15-intel
+          # is GitHub's replacement for the retired macos-13 image —
+          # x86_64 hardware running Sequoia, supported through 2027
+          # while Apple's Intel transition wraps up.
           - runner: macos-26
             arch: arm64
+            target: aarch64-apple-darwin
           - runner: macos-15-intel
             arch: amd64
+            target: x86_64-apple-darwin
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
-          go-version: "1.23"
+          node-version: "20"
+          cache: "npm"
 
-      # libusb-1.0 is needed at cgo link time by gousb (used by
-      # usbserial-go for CP210x / CH34x / etc.). Homebrew on each
-      # runner ships the matching native arch — amd64 on
-      # macos-15-intel, arm64 on macos-26 — so no Rosetta dance is
-      # needed. The split matrix replaces the older darwin/universal
-      # build for exactly this reason: a single binary would need
-      # both arch libusb slices lipo'd into a universal dylib, which
-      # is more moving parts than it's worth for the handful of Intel
-      # Mac users left.
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # libusb is needed at link time by rusb (CP210x direct-USB
+      # backend). Each runner ships its native arch Homebrew slice —
+      # amd64 on macos-15-intel, arm64 on macos-26 — so no Rosetta
+      # dance required.
       - name: Install libusb
         run: brew install libusb pkg-config
 
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Install npm dependencies
+        run: npm ci
 
-      - name: Patch productVersion from tag
+      - name: Patch version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp
-          mv wails.json.tmp wails.json
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
           echo "Using version: $VERSION"
 
-      # Reuse the dist that ci.yml's frontend job already built; -s tells
-      # wails to skip the install+build phase and use what's on disk.
-      - name: Download frontend dist
-        uses: actions/download-artifact@v8
+      - name: Build Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: frontend-dist
-          path: frontend/dist
+          args: --target ${{ matrix.target }} --bundles app dmg
 
-      - name: Build
-        run: wails build -s -platform darwin/${{ matrix.arch }}
-
-      # Bundle libusb into the .app so downloaded builds don't assume
-      # the user has Homebrew. `install_name_tool -change` rewrites
-      # the binary's dylib reference from its absolute Homebrew path
-      # to an @executable_path-relative one pointing at the bundled
-      # copy. `otool -L` after the rewrite should show only system
-      # paths (/usr/lib/...) and @executable_path/... — any remaining
-      # /opt/homebrew/... or /usr/local/... line would mean a user
-      # without Homebrew would see a dyld "image not found" on launch.
+      # rusb links against Homebrew's libusb via an absolute path;
+      # ship a bundled copy inside .app/Contents/Frameworks so
+      # downloaded builds don't require Homebrew on the user's
+      # machine. Rewrites the load command via install_name_tool and
+      # fails loudly if any /opt/homebrew or /usr/local path remains.
       - name: Bundle libusb into .app
         run: |
-          APP="build/bin/Baudrun.app"
-          BIN="$APP/Contents/MacOS/Baudrun"
-          FRAMEWORKS="$APP/Contents/Frameworks"
+          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Baudrun.app"
+          BIN="$APP_DIR/Contents/MacOS/Baudrun"
+          FRAMEWORKS="$APP_DIR/Contents/Frameworks"
           mkdir -p "$FRAMEWORKS"
 
-          # Resolve the libusb the binary was linked against from the
-          # loader commands — otool is more reliable than guessing the
-          # Homebrew prefix by arch.
           LIBUSB_SRC=$(otool -L "$BIN" | awk '/libusb-1\.0/ {print $1; exit}')
           if [ -z "$LIBUSB_SRC" ]; then
             echo "binary has no libusb dependency — unexpected"
@@ -114,23 +111,27 @@ jobs:
 
           echo "--- otool after bundle ---"
           otool -L "$BIN"
-          # Fail the build loudly if a Homebrew path is still referenced.
           if otool -L "$BIN" | grep -qE '(/opt/homebrew|/usr/local/)'; then
             echo "binary still references a Homebrew path; bundling failed"
             exit 1
           fi
 
-      - name: Package
+      # Tauri produces a .dmg already; we additionally zip the .app
+      # so users who prefer "drag to /Applications" don't have to
+      # mount the DMG.
+      - name: Package .app as zip
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          cd build/bin
-          zip -r "../../Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip" Baudrun.app
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          mkdir -p release-artifacts
+          (cd "$BUNDLE_DIR/macos" && zip -r "$GITHUB_WORKSPACE/release-artifacts/Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip" Baudrun.app)
+          cp "$BUNDLE_DIR/dmg"/*.dmg release-artifacts/ 2>/dev/null || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.arch }}-package
-          path: Baudrun-macOS-*.zip
+          path: release-artifacts/*
 
   build-windows:
     needs: [ci]
@@ -140,52 +141,73 @@ jobs:
         include:
           - runner: windows-latest
             arch: amd64
+            target: x86_64-pc-windows-msvc
           - runner: windows-11-arm
             arch: arm64
+            target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
-          go-version: "1.23"
+          node-version: "20"
+          cache: "npm"
 
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
-      - name: Patch productVersion from tag
-        shell: powershell
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Patch version from tag
+        shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
-          $json = Get-Content wails.json -Raw | ConvertFrom-Json
-          $json.info.productVersion = $version
-          $json | ConvertTo-Json -Depth 10 | Set-Content wails.json
+          $json = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $json.version = $version
+          $json | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
           Write-Host "Using version: $version"
 
-      # Reuse the dist that ci.yml's frontend job already built; -s tells
-      # wails to skip the install+build phase and use what's on disk.
-      - name: Download frontend dist
-        uses: actions/download-artifact@v8
+      - name: Build Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: frontend-dist
-          path: frontend/dist
+          args: --target ${{ matrix.target }} --bundles msi nsis
 
-      - name: Build
-        run: wails build -s -platform windows/${{ matrix.arch }}
-
-      - name: Package
-        shell: powershell
+      # Collect the MSI (WiX) + NSIS .exe + a portable zip of the
+      # bare Baudrun.exe for users who don't want an installer.
+      - name: Package artifacts
+        shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
           $arch = "${{ matrix.arch }}"
-          Compress-Archive -Path build\bin\Baudrun.exe -DestinationPath "Baudrun-Windows-$arch-$version.zip"
+          $bundle = "src-tauri/target/${{ matrix.target }}/release/bundle"
+          New-Item -ItemType Directory -Force release-artifacts | Out-Null
+          if (Test-Path "$bundle/msi") {
+            Copy-Item "$bundle/msi/*.msi" release-artifacts/
+          }
+          if (Test-Path "$bundle/nsis") {
+            Copy-Item "$bundle/nsis/*.exe" release-artifacts/
+          }
+          Compress-Archive `
+            -Path "src-tauri/target/${{ matrix.target }}/release/Baudrun.exe" `
+            -DestinationPath "release-artifacts/Baudrun-Windows-$arch-$version.zip"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-${{ matrix.arch }}-package
-          path: Baudrun-Windows-*.zip
+          path: release-artifacts/*
 
   build-linux:
     needs: [ci]
@@ -195,158 +217,87 @@ jobs:
         include:
           - runner: ubuntu-latest
             arch: amd64
+            target: x86_64-unknown-linux-gnu
             appimage_arch: x86_64
           - runner: ubuntu-24.04-arm
             arch: arm64
+            target: aarch64-unknown-linux-gnu
             appimage_arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
-          go-version: "1.23"
+          node-version: "20"
+          cache: "npm"
 
-      # Wails' Linux backend links against GTK3 + WebKit2GTK at cgo time.
-      # libwebkit2gtk-4.1-dev is the right flavor on Ubuntu 24.04 (the
-      # 4.0 series was deprecated upstream in 2024). file + fuse3 are
-      # needed downstream by appimagetool. libarchive-tools provides
-      # bsdtar, which fpm's pacman target shells out to when building
-      # .pkg.tar.zst — Ubuntu's default tar isn't bsdtar.
-      # libusb-1.0-0-dev is pulled in for usbserial-go's gousb cgo link.
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Tauri's Linux build links against GTK3 + WebKit2GTK 4.1 +
+      # libsoup3. libayatana-appindicator for system-tray (Tauri
+      # dependency even if we don't use it today). librsvg for
+      # .AppImage + .deb icon scaling. libusb for rusb's bulk
+      # transfers. file + fuse3 are needed by appimagetool. fpm
+      # (via ruby-dev) builds the .pkg.tar.zst since Tauri's
+      # bundler doesn't handle pacman packages.
       - name: Install Linux build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config \
-            libusb-1.0-0-dev \
-            ruby-dev build-essential file libfuse2t64 rpm libarchive-tools
+            libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev \
+            libusb-1.0-0-dev pkg-config \
+            ruby-dev build-essential file libfuse2t64 libarchive-tools
 
-      - name: Install fpm (drives both .deb and .rpm packaging)
+      - name: Install fpm
         run: sudo gem install --no-document fpm
 
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Install npm dependencies
+        run: npm ci
 
-      - name: Patch productVersion from tag
+      - name: Patch version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.tmp
-          mv wails.json.tmp wails.json
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json
+          mv tmp.json src-tauri/tauri.conf.json
           echo "Using version: $VERSION"
 
-      # Reuse the dist that ci.yml's frontend job already built; -s tells
-      # wails to skip the install+build phase and use what's on disk.
-      - name: Download frontend dist
-        uses: actions/download-artifact@v8
+      - name: Build Tauri bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          name: frontend-dist
-          path: frontend/dist
+          args: --target ${{ matrix.target }} --bundles deb rpm appimage
 
-      # webkit2_41 flips Wails' pkg-config to webkit2gtk-4.1 (Ubuntu
-      # 24.04 default) instead of the long-deprecated 4.0.
-      - name: Build
-        run: wails build -s -platform linux/${{ matrix.arch }} -tags webkit2_41
-
-      # Construct a FHS-style staging tree that both packagers consume.
-      # The binary lives at /usr/bin/baudrun (lowercase — debian
-      # convention); the .desktop + icon go to their standard
-      # freedesktop locations so the installed app shows up in
-      # application launchers and gets a proper icon.
-      #
-      # The udev rule installed under /usr/lib/udev/rules.d/ grants
-      # the currently-logged-in console user ACL-based access to
-      # USB-serial adapters via systemd-logind's uaccess tag — so
-      # Baudrun can open /dev/ttyUSB* without sudo and without the
-      # user having to join `dialout` first. See
-      # packaging/linux/60-baudrun-serial.rules for the full rule
-      # and packaging/linux/baudrun-postinstall.sh for the
-      # reload-udev hook fpm runs after install.
-      - name: Stage install tree
+      # Tauri doesn't generate .pkg.tar.zst — fpm's pacman target
+      # does. Reuse the same binary + desktop file + icon + udev
+      # rule the .deb already bundled, staged into a fresh tree
+      # under pkg/ so fpm sees a clean layout.
+      - name: Stage install tree for pacman
         run: |
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release"
           mkdir -p pkg/usr/bin
           mkdir -p pkg/usr/share/applications
           mkdir -p pkg/usr/share/icons/hicolor/256x256/apps
           mkdir -p pkg/usr/lib/udev/rules.d
-          install -m 755 build/bin/Baudrun pkg/usr/bin/baudrun
+          install -m 755 "$BUNDLE_DIR/baudrun" pkg/usr/bin/baudrun
           install -m 644 packaging/linux/baudrun.desktop pkg/usr/share/applications/baudrun.desktop
           install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/baudrun.png
           install -m 644 packaging/linux/60-baudrun-serial.rules pkg/usr/lib/udev/rules.d/60-baudrun-serial.rules
 
-      # SemVer goes straight into fpm's --version. --iteration stays at 1
-      # unless the same SemVer needs to ship again with packaging-only
-      # changes, which would be a manual bump.
-      - name: Build .deb
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          fpm -s dir -t deb \
-            --name baudrun \
-            --version "${VERSION}" \
-            --iteration "1" \
-            --architecture "${{ matrix.arch }}" \
-            --depends "libgtk-3-0 | libgtk-3-0t64" \
-            --depends "libwebkit2gtk-4.1-0" \
-            --depends "libusb-1.0-0" \
-            --description "A serial terminal for network devices" \
-            --url "https://github.com/packetThrower/Baudrun" \
-            --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
-            --license "GPL-3.0-or-later" \
-            --deb-no-default-config-files \
-            --after-install packaging/linux/baudrun-postinstall.sh \
-            --after-upgrade packaging/linux/baudrun-postinstall.sh \
-            -C pkg \
-            --package "baudrun_${VERSION}-1_${{ matrix.arch }}.deb" \
-            .
-
-      # Fedora 40+ package names for GTK/WebKit differ from Debian's.
-      # RPM versions can't contain `-` (rpm's internal
-      # version/release separator). The canonical pre-release
-      # convention is `~` (sorts BEFORE the matching stable), but
-      # we hit two issues trying to use it:
-      #   1. fpm's Ruby File.expand_path mangles `~` mid-filename
-      #      ("0.8.0~beta.1-1" → "0.8.0/home/runnerbeta.1-1").
-      #   2. The fpm/rpmbuild combo on ubuntu-latest silently
-      #      rejected the `~`-form even once the filename was
-      #      clean, with no useful stderr surfaced.
-      # Falling back to `.` (dot-separator): rpm, rpmbuild, and
-      # fpm all accept `0.8.0.beta.1` without complaint. The
-      # tradeoff is that beta-to-stable upgrade ordering in rpm
-      # reads as a downgrade (0.8.0 < 0.8.0.beta.1 per lexicographic
-      # version compare), but that's fine for a pre-release flow
-      # where testers uninstall + reinstall between builds anyway.
-      # --debug on fpm so rpmbuild's actual stderr surfaces in CI
-      # on any future failure, instead of just a "rpmbuild failed
-      # (exit code 1)" summary.
-      - name: Build .rpm
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          RPM_VERSION="${VERSION//-/.}"
-          fpm --debug -s dir -t rpm \
-            --name baudrun \
-            --version "${RPM_VERSION}" \
-            --iteration "1" \
-            --architecture "${{ matrix.appimage_arch }}" \
-            --depends "gtk3" \
-            --depends "webkit2gtk4.1" \
-            --depends "libusbx" \
-            --description "A serial terminal for network devices" \
-            --url "https://github.com/packetThrower/Baudrun" \
-            --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
-            --license "GPL-3.0-or-later" \
-            --after-install packaging/linux/baudrun-postinstall.sh \
-            --after-upgrade packaging/linux/baudrun-postinstall.sh \
-            -C pkg \
-            --package "baudrun-${RPM_VERSION}-1.${{ matrix.appimage_arch }}.rpm" \
-            .
-
-      # Arch Linux package. fpm's pacman target builds the archive
-      # directly without needing makepkg or a native Arch runner. Arch
-      # package names for the GTK/WebKit deps match Fedora's here.
-      # Arch pkgver can't contain `-` either; the Arch convention is
-      # to collapse SemVer pre-release suffixes to `_` (Arch versions
-      # use `-` as the pkgver/pkgrel separator and treat everything
-      # before it as a single version token).
+      # Arch pkgver can't contain `-` — Arch uses `-` as the
+      # pkgver/pkgrel separator. Collapse SemVer pre-release
+      # suffixes to `_` so 0.8.0-beta.1 → 0.8.0_beta.1.
       - name: Build .pkg.tar.zst
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
@@ -361,7 +312,7 @@ jobs:
             --depends "libusb" \
             --description "A serial terminal for network devices" \
             --url "https://github.com/packetThrower/Baudrun" \
-            --maintainer "Will Lehnertz <lehnertz85@gmail.com>" \
+            --maintainer "Will Lehnertz <6597817+packetThrower@users.noreply.github.com>" \
             --license "GPL-3.0-or-later" \
             --after-install packaging/linux/baudrun-postinstall.sh \
             --after-upgrade packaging/linux/baudrun-postinstall.sh \
@@ -369,55 +320,20 @@ jobs:
             --package "baudrun-${ARCH_VERSION}-1-${{ matrix.appimage_arch }}.pkg.tar.zst" \
             .
 
-      # AppImage is a self-contained bundle; reuses the same staging
-      # tree under AppDir/. AppRun is the entrypoint the runtime
-      # invokes; the top-level .desktop + .DirIcon are required by
-      # appimagetool's validator.
-      #
-      # libusb-1.0.so.0 is bundled under AppDir/usr/lib so the
-      # AppImage doesn't assume the target system has a runtime
-      # libusb installed. AppRun prepends that dir to
-      # LD_LIBRARY_PATH so the dynamic linker finds it before
-      # falling through to system paths. Glob by arch triplet
-      # rather than hardcoding /usr/lib/x86_64-linux-gnu to keep
-      # this step arm64-clean (aarch64-linux-gnu on the ARM
-      # runner).
-      - name: Build AppImage
+      - name: Collect artifacts
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          mkdir -p AppDir/usr/lib
-          cp -r pkg/usr/bin AppDir/usr/
-          cp -r pkg/usr/share AppDir/usr/
-          cp /usr/lib/*/libusb-1.0.so.0* AppDir/usr/lib/ 2>/dev/null || {
-            echo "libusb-1.0.so.0 not found in /usr/lib/*/"
-            ls -la /usr/lib/
-            exit 1
-          }
-          cp packaging/linux/baudrun.desktop AppDir/baudrun.desktop
-          cp build/appicon.png AppDir/baudrun.png
-          ln -sf baudrun.png AppDir/.DirIcon
-          cat > AppDir/AppRun <<'EOF'
-          #!/bin/sh
-          HERE="$(dirname "$(readlink -f "${0}")")"
-          export LD_LIBRARY_PATH="${HERE}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
-          exec "${HERE}/usr/bin/baudrun" "$@"
-          EOF
-          chmod +x AppDir/AppRun
-          wget -q -O appimagetool \
-            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.appimage_arch }}.AppImage"
-          chmod +x appimagetool
-          ./appimagetool --appimage-extract-and-run AppDir \
-            "Baudrun-${VERSION}-${{ matrix.appimage_arch }}.AppImage"
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          mkdir -p release-artifacts
+          cp "$BUNDLE_DIR/deb"/*.deb release-artifacts/ 2>/dev/null || true
+          cp "$BUNDLE_DIR/rpm"/*.rpm release-artifacts/ 2>/dev/null || true
+          cp "$BUNDLE_DIR/appimage"/*.AppImage release-artifacts/ 2>/dev/null || true
+          cp *.pkg.tar.zst release-artifacts/ 2>/dev/null || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-${{ matrix.arch }}-package
-          path: |
-            baudrun_*.deb
-            baudrun-*.rpm
-            baudrun-*.pkg.tar.zst
-            Baudrun-*.AppImage
+          path: release-artifacts/*
 
   release:
     needs: [build-macos, build-windows, build-linux]
@@ -430,17 +346,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Filter by *-package so we don't pull down ci.yml's frontend-dist,
-      # which isn't a user-facing release asset.
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
           pattern: "*-package"
 
-      # Each subdir already holds only the packaged files; hash them with
-      # bare basenames (not their subdir paths) so the SHA256SUMS lines
-      # match the filenames users see on the release page.
+      # Hash with bare basenames (not their subdir paths) so SHA256SUMS
+      # lines match the filenames users see on the release page.
       - name: Generate SHA256SUMS
         run: |
           for dir in artifacts/*/; do
@@ -449,20 +362,14 @@ jobs:
           cat SHA256SUMS
 
       # Build a "What's Changed" body from the commit log between the
-      # previous tag and this one. GitHub's built-in
-      # generate_release_notes only lists PR-merged commits, and
-      # direct-to-main commits (our default workflow) would be
-      # invisible there — hence the custom body. Falls back to the
-      # full commit log if this is the very first tag.
-      # Previous-tag logic branches on release type:
-      #   - Pre-release (v*.*.*-*): find the most recent tag of any
-      #     kind. Each beta's changelog spans since the previous
-      #     beta (or since the last stable, whichever is closer),
-      #     so beta-to-beta deltas are easy to read.
-      #   - Stable (v*.*.*): skip pre-release tags so the final
-      #     release's "What's Changed" spans the whole stable-to-
+      # previous tag and this one. GitHub's generate_release_notes
+      # only lists PR-merged commits, which misses direct-to-main
+      # commits. Previous-tag logic branches on release type:
+      #   - Pre-release (v*.*.*-*): walk to the most recent tag of
+      #     any kind. Beta-to-beta deltas are easy to read.
+      #   - Stable (v*.*.*): --exclude='*-*' skips pre-release tags
+      #     so the final release's log spans the whole stable-to-
       #     stable window, not just the delta since the last beta.
-      #     --exclude='*-*' does that in one git describe call.
       - name: Build release notes
         run: |
           CURRENT_TAG="${GITHUB_REF_NAME}"
@@ -510,9 +417,7 @@ jobs:
             SHA256SUMS
           body_path: release-notes.md
           draft: false
-          # Any tag with a hyphen in the SemVer pre-release slot
-          # (v0.8.0-beta.1, v1.0.0-rc.2, etc.) gets flagged as a
-          # pre-release so GitHub shows the "Pre-release" badge
-          # and leaves the "Latest release" pointer on the most
-          # recent stable.
+          # Tags with a hyphen in the SemVer pre-release slot flag
+          # as pre-release so GitHub shows the "Pre-release" badge
+          # and leaves "Latest release" on the most recent stable.
           prerelease: ${{ contains(github.ref_name, '-') }}
