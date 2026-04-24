@@ -26,6 +26,8 @@ dirs = "5"
 plist = "1"
 thiserror = "1"
 anyhow = "1"
+serialport = "4"
+regex = "1"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

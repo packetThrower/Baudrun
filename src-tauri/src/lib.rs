@@ -2,6 +2,7 @@ use tauri::Manager;
 
 pub mod appdata;
 pub mod profiles;
+pub mod serial;
 pub mod settings;
 pub mod skins;
 pub mod themes;
