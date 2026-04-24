@@ -6,6 +6,7 @@ pub mod serial;
 pub mod settings;
 pub mod skins;
 pub mod themes;
+pub mod transfer;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
