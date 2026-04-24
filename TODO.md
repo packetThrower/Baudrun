@@ -74,13 +74,18 @@ high-effort or niche enough that priority tracks real demand.
       in App.svelte — `+` / `-` bump font size ±1, `0` resets to
       13. Clamped 8-28. Persisted to Settings.fontSize so zoom
       sticks across sessions.
-- [ ] **Keyboard shortcuts for Break / Clear / Suspend.** **[on request]**
-      Session-header buttons are currently mouse-only, which blocks
-      keyboard-only users from sending Break. Cmd/Ctrl+Shift+B is
-      the obvious default, but needs a scheme decision — some
-      modifier combinations collide with common control sequences
-      serial devices care about. Wait until someone asks so the
-      chosen shortcuts don't surprise the terminal-power-user crowd.
+- [x] **Keyboard shortcuts for Break / Clear / Suspend.** Session-
+      header actions bind as follows:
+      - macOS: `⌘K` Clear, `⌘⇧B` Send Break, `⌘⇧S` Suspend.
+      - Linux/Windows: `Ctrl+Shift+K/B/S` respectively.
+      Split modifier scheme is intentional — `Cmd+*` on macOS
+      doesn't touch the terminal byte stream, so plain `⌘K`
+      is safe; on other OSes `Ctrl+letter` has real device
+      meaning (XOFF at `Ctrl+S`, VT at `Ctrl+K`, etc.) so the
+      shortcuts add `Shift` to keep the plain `Ctrl+*`
+      passthroughs intact. Surfaced on the button tooltips and
+      via `aria-keyshortcuts` so screen readers announce them.
+      Documented in docs/ACCESSIBILITY.md.
 
 ## Distribution
 

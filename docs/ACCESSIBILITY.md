@@ -69,6 +69,32 @@ app launches. The xterm instance rebuilds on each change to pick
 up the new cell metrics — xterm caches glyph dimensions at
 construction, so an in-place font-size change wouldn't re-measure.
 
+## Session shortcuts
+
+For the three session-header buttons that are otherwise mouse-only:
+
+| Action | macOS | Linux / Windows |
+|---|---|---|
+| Clear terminal | `⌘K` | `Ctrl+Shift+K` |
+| Send Break | `⌘⇧B` | `Ctrl+Shift+B` |
+| Suspend session | `⌘⇧S` | `Ctrl+Shift+S` |
+
+The split modifier schemes are deliberate. On macOS, `Cmd` is never
+a terminal control character — `Cmd+K` won't collide with anything
+the device might receive, which is why it can stand alone. On
+Linux and Windows, `Ctrl+letter` has real meaning to serial devices
+(`Ctrl+B`, `Ctrl+K`, `Ctrl+S` are all bytes devices routinely
+process), so the shortcuts add `Shift` to keep the plain `Ctrl+*`
+passthroughs to the device intact.
+
+Each shortcut gates on the same enablement as the button it
+mirrors — Break and Suspend are no-ops without an active
+(unsuspended, not-reconnecting) session; Clear needs the terminal
+view to be up. The shortcuts also appear in each button's
+`title` tooltip and `aria-keyshortcuts` attribute so
+keyboard-first and screen-reader users discover them without
+having to read this page.
+
 ## ARIA labels
 
 Every icon-only or text-light control has an explicit `aria-label`:
@@ -86,12 +112,6 @@ text.
 
 ## Not yet supported
 
-- **Keyboard shortcuts for Break / Clear / Suspend.** Tracked in
-  [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md) with an `[on request]` marker. The gating
-  isn't difficulty — it's picking a modifier scheme that doesn't
-  step on control sequences that serial devices care about (Ctrl+C,
-  Ctrl+Z, etc.). Waiting on real-user input before committing to
-  defaults.
 - **High-contrast theme mode independent of skin.** Today the
   High Contrast skin is the explicit a11y surface; there's no
   per-user "force high contrast" toggle that overrides the chosen

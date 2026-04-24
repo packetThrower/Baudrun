@@ -600,6 +600,17 @@
     }
   }
 
+  // Platform detection drives the Break / Clear / Suspend shortcut
+  // scheme. macOS uses Cmd+* (Cmd is never a terminal control
+  // character so plain Cmd+K is safe). Linux + Windows use
+  // Ctrl+Shift+* — plain Ctrl+letter conflicts with real terminal
+  // control codes serial devices care about (Ctrl+B, Ctrl+K,
+  // Ctrl+S all have meanings the user might actually want to send).
+  // The Shift qualifier keeps those pass-throughs intact while
+  // reserving a dedicated UI layer.
+  const IS_MAC =
+    typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+
   function handleWindowKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && overflowOpen) {
       overflowOpen = false;
@@ -615,17 +626,76 @@
       e.stopPropagation();
       statusMsg = `Font size: ${Math.min(FONT_MAX, current + 1)}`;
       void applyFontSize(current + 1);
+      return;
     } else if (e.key === "-" || e.key === "_") {
       e.preventDefault();
       e.stopPropagation();
       statusMsg = `Font size: ${Math.max(FONT_MIN, current - 1)}`;
       void applyFontSize(current - 1);
+      return;
     } else if (e.key === "0") {
       e.preventDefault();
       e.stopPropagation();
       statusMsg = `Font size: ${FONT_DEFAULT}`;
       void applyFontSize(FONT_DEFAULT);
+      return;
     }
+
+    // Session-level shortcuts. Each one gates on the UI state
+    // where the underlying action would be available — if the
+    // action button is disabled or absent, the shortcut is a no-op.
+    const key = e.key.toLowerCase();
+    if (IS_MAC) {
+      // macOS: plain Cmd+K = Clear (matches Terminal.app /
+      // iTerm2); Cmd+Shift+B = Break; Cmd+Shift+S = Suspend.
+      if (e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (!e.shiftKey && key === "k") {
+          shortcutClear(e);
+        } else if (e.shiftKey && key === "b") {
+          shortcutBreak(e);
+        } else if (e.shiftKey && key === "s") {
+          shortcutSuspend(e);
+        }
+      }
+    } else {
+      // Linux / Windows: Ctrl+Shift+* across the board so
+      // plain Ctrl+letter passes through to the device.
+      if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
+        if (key === "k") {
+          shortcutClear(e);
+        } else if (key === "b") {
+          shortcutBreak(e);
+        } else if (key === "s") {
+          shortcutSuspend(e);
+        }
+      }
+    }
+  }
+
+  function shortcutClear(e: KeyboardEvent) {
+    if (!viewingTerminal || !terminalRef) return;
+    e.preventDefault();
+    e.stopPropagation();
+    terminalRef.clear();
+  }
+
+  function shortcutBreak(e: KeyboardEvent) {
+    // Break only makes sense against an actively-connected session —
+    // suspended sessions still hold the port but the user explicitly
+    // stepped away, so firing Break from there would be surprising.
+    if (!isConnected || suspended || isReconnecting) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void sendBreak();
+  }
+
+  function shortcutSuspend(e: KeyboardEvent) {
+    // Parallels the Suspend button's enablement: live session,
+    // currently looking at the terminal, not already suspended.
+    if (!isConnected || suspended || !viewingTerminal) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleSuspend();
   }
 
   async function handleDisconnect() {
@@ -924,7 +994,8 @@
                   <button
                     role="menuitem"
                     onclick={() => runFromOverflow(sendBreak)}
-                    title="~300ms serial break (Cisco ROMMON, Juniper diag, boot-loader interrupt)"
+                    title="~300ms serial break (Cisco ROMMON, Juniper diag, boot-loader interrupt). Shortcut: {IS_MAC ? '⌘⇧B' : 'Ctrl+Shift+B'}"
+                    aria-keyshortcuts={IS_MAC ? "Meta+Shift+B" : "Control+Shift+B"}
                   >Send Break</button>
                   <button
                     role="menuitem"
@@ -957,8 +1028,18 @@
             >
               <span class="line-dot"></span>RTS
             </button>
-            <button onclick={() => terminalRef?.clear()}>Clear</button>
-            <button onclick={handleSuspend} title="Keep session alive; return to profile">
+            <button
+              onclick={() => terminalRef?.clear()}
+              title="Clear the visible scrollback. Shortcut: {IS_MAC ? '⌘K' : 'Ctrl+Shift+K'}"
+              aria-keyshortcuts={IS_MAC ? "Meta+K" : "Control+Shift+K"}
+            >
+              Clear
+            </button>
+            <button
+              onclick={handleSuspend}
+              title="Keep session alive; return to profile. Shortcut: {IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'}"
+              aria-keyshortcuts={IS_MAC ? "Meta+Shift+S" : "Control+Shift+S"}
+            >
               Suspend
             </button>
             <button class="primary" onclick={handleDisconnect}>Disconnect</button>
