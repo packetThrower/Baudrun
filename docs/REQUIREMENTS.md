@@ -64,15 +64,22 @@ go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
 ### macOS host
 - **Xcode Command Line Tools** (`xcode-select --install`) for the cgo
   toolchain against WKWebView.
-- Producing the universal artifact requires either an Apple Silicon
-  host with a modern SDK or `lipo` on any host with the arm64 +
-  x86_64 SDKs installed. `wails build -platform darwin/universal`
-  handles the `lipo` step itself.
+- **libusb + pkg-config** (`brew install libusb pkg-config`) for the
+  cgo link against `gousb` inside `usbserial-go`. Omitted from the
+  build list until usbserial-go landed; now required for any host
+  build on macOS.
+- Producing a **universal** artifact is no longer in the build
+  flow — each release ships a native per-arch binary instead
+  (`wails build -platform darwin/arm64` on Apple Silicon,
+  `wails build -platform darwin/amd64` on Intel). Homebrew's libusb
+  is per-arch only, so a universal binary would need a hand-lipo'd
+  libusb dylib; splitting sidesteps that.
 - **SDK version matters for window chrome.** The release workflow
-  pins the `macos-26` runner so binaries link against the Tahoe SDK
-  and pick up macOS 26 window corners. Building on an older macOS
-  still works, but the resulting binary falls back to legacy window
-  chrome when run on macOS 26 hosts.
+  pins the `macos-26` runner (arm64) so binaries link against the
+  Tahoe SDK and pick up macOS 26 window corners. The Intel slot
+  uses `macos-15-intel`. Building on an older macOS still works,
+  but the resulting binary falls back to legacy window chrome when
+  run on macOS 26 hosts.
 
 ### Windows host
 - **Visual Studio Build Tools** (MSVC + Windows SDK) or **MSYS2** with

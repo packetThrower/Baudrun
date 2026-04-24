@@ -139,8 +139,8 @@ Full reference docs under [docs/](docs/):
 
 Released builds target recent mainstream OS releases:
 
-- **macOS 11 Big Sur or later** — universal binary, runs natively on
-  Intel and Apple Silicon.
+- **macOS 11 Big Sur or later** — separate arm64 (Apple Silicon)
+  and amd64 (Intel) builds. Pick the one matching your CPU.
 - **Windows 10 21H2+ or 11** — needs the [Microsoft Edge WebView2
   Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/),
   preinstalled on Windows 11 and recent 10 builds. amd64 and arm64
@@ -280,9 +280,9 @@ Baudrun/
     ├── ci.yml                     # native Go + frontend checks across
     │                              # macOS, Windows (amd64/arm64), Linux (amd64/arm64)
     └── release.yml                # tag-triggered build + GitHub Release;
-                                   # emits .app (macOS universal), .exe .zip
-                                   # per Windows arch, and .deb/.rpm/.AppImage
-                                   # per Linux arch
+                                   # emits .app per macOS arch (arm64/amd64),
+                                   # .exe .zip per Windows arch, and
+                                   # .deb/.rpm/.AppImage per Linux arch
 ```
 
 **Data flow.** Bytes from the serial port flow as base64-encoded Wails events

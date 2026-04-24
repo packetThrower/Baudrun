@@ -184,20 +184,29 @@ cranking out more presets.
 - [x] **macOS 26 (Liquid Glass)** — floating sidebar/main bubbles,
       backdrop blur, sentence-case labels, brighter accents, bigger
       continuous radii.
+- [x] **macOS Classic** — pre-Big Sur square style, no vibrancy.
+- [x] **Windows 11 (Fluent)** — Segoe UI Variable, 8px radii, solid
+      surfaces, Fluent accent palette.
+- [x] **Windows XP (Luna)** — Bliss-era teal chrome, rounded buttons,
+      Tahoma UI.
+- [x] **GNOME (Adwaita)** — Cantarell font, generous spacing, GNOME
+      green accent, flatter.
+- [x] **KDE (Breeze)** — Breeze palette, slightly more angular.
+- [x] **elementary OS (Pantheon)** — Open Sans, clean surfaces,
+      elementary blue.
+- [x] **Xfce (Greybird)** — Greybird grey palette, compact spacing.
+- [x] **Cyberpunk (Synthwave)** — neon magenta + cyan on deep
+      purple, 40px grid overlay, soft pink text glow.
+- [x] **Blueprint** — engineering-drawing blue + crisp white grid
+      (dark) / drafting paper with blue ink (light), monospace
+      typography.
+- [x] **CRT (Green Phosphor)** — green-on-black phosphor, monospace
+      everywhere, 2/3px scan-line overlay.
+- [x] **E-Ink (Paper)** — high-contrast paper-and-ink aesthetic.
 - [x] **High Contrast** — a11y: solid black, pure white, visible
       borders everywhere, WCAG-AAA accent colors.
-- [ ] **Windows 11** — Fluent/Mica: Segoe UI Variable, 8px radii,
-      solid surfaces, Fluent accent palette.
-- [ ] **GNOME Adwaita** — Cantarell font, generous spacing, GNOME
-      green accent, flatter.
-- [ ] **KDE Breeze** — Breeze palette, slightly more angular.
-- [ ] **macOS Classic** — pre-Big Sur square style, no vibrancy.
-- [ ] **CRT** — green phosphor on black, monospace everywhere.
 
 Known caveats to document in README (done):
-- Native `<select>` dropdowns stay OS-native regardless of skin
-  (Chromium delegates popup rendering to the OS). Close-but-not-exact
-  for Windows 11 / GNOME skins.
 - Window chrome (`mac.TitleBarHiddenInset`, Windows Mica backdrop,
   vibrancy) requires Wails startup config and relaunch. Skins can
   hint at this via an `.extras.requiresRelaunch` flag and prompt

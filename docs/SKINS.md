@@ -81,7 +81,7 @@ Grouped for navigation:
 | `--bg-input`       | Text + select inputs                                             |
 | `--bg-input-focus` | Focused input                                                    |
 | `--bg-terminal`    | Terminal viewport fill (fallback for themes that don't set one)  |
-| `--option-bg`      | `<select>` popup background                                      |
+| `--option-bg`      | Dropdown popover background (Select component, opaque)           |
 | `--shell-bg`       | Backdrop behind floating panels (Liquid Glass light uses this)   |
 
 ### Foreground (text)
@@ -91,8 +91,8 @@ Grouped for navigation:
 | `--fg-primary`      | Body text, strong labels                      |
 | `--fg-secondary`    | Section hints, secondary labels               |
 | `--fg-tertiary`     | Meta info (timestamps, footnotes)             |
-| `--option-fg`       | `<select>` popup text                         |
-| `--option-group-fg` | `<select>` `<optgroup>` label text            |
+| `--option-fg`       | Dropdown popover option text                  |
+| `--option-group-fg` | Dropdown popover group-header label text      |
 
 ### Borders
 
@@ -183,11 +183,7 @@ for those regardless of the user's Appearance preference.
 2. **Window chrome.** Title-bar style, translucency, vibrancy, and
    the Wails background color are set at `wails.Run` in `main.go`.
    No CSS variable can alter them.
-3. **Native OS popups.** `<select>` dropdowns open in OS-native
-   style (Chromium delegates popup rendering to the OS). The closed
-   control respects `--option-bg` / `--option-fg`, but the opened
-   menu is native.
-4. **Appearance modes beyond light / dark.** Only `lightVars` and
+3. **Appearance modes beyond light / dark.** Only `lightVars` and
    `darkVars` overlays are honored. No sepia, high-contrast, etc.
    beyond what one of those can express.
 
