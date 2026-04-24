@@ -165,6 +165,10 @@
       const multiline = /[\r\n]/.test(data);
       if (pasteWarnMultiline && multiline && onPasteConfirm) {
         const ok = await onPasteConfirm(data);
+        // The confirm modal pulled focus away from xterm; always
+        // return it here regardless of accept/cancel so the cursor
+        // stays live and the user doesn't have to click back in.
+        term?.focus();
         if (!ok) {
           onStatus("Paste cancelled");
           return;
