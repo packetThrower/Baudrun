@@ -317,8 +317,15 @@
   }
 
   $effect(() => {
-    const handler = () => {
-      if (open) closeList();
+    const handler = (e: Event) => {
+      if (!open) return;
+      // Scrolling inside the popover's own list (long option set
+      // with a scrollbar) is fine — only ancestor scrolls should
+      // close us, because those move the trigger out from under
+      // the popover. Check the target before closing.
+      const target = e.target as Node | null;
+      if (target && listEl?.contains(target)) return;
+      closeList();
     };
     window.addEventListener("scroll", handler, true);
     return () => window.removeEventListener("scroll", handler, true);
