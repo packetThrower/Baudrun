@@ -67,6 +67,65 @@
   let typeaheadBuffer = "";
   let typeaheadTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Popover position, computed from the trigger's viewport rect
+  // on open. The popover is portaled to document.body so it
+  // escapes every ancestor stacking context (panels with
+  // backdrop-filter, transforms, filters, etc. each create their
+  // own context that z-index can't climb out of) — hence the
+  // `position: fixed` + explicit coords. `placement` flips the
+  // popover above the trigger when there isn't room below.
+  type PopoverPos = {
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    placement: "bottom" | "top";
+  };
+  let pos = $state<PopoverPos>({
+    top: 0,
+    left: 0,
+    width: 0,
+    maxHeight: 240,
+    placement: "bottom",
+  });
+
+  function computePos() {
+    if (!triggerEl) return;
+    const r = triggerEl.getBoundingClientRect();
+    const gap = 4;
+    const desired = 240;
+    const below = window.innerHeight - r.bottom - gap - 8;
+    const above = r.top - gap - 8;
+    const placement: "bottom" | "top" =
+      below >= Math.min(desired, 120) || below >= above ? "bottom" : "top";
+    const avail = placement === "bottom" ? below : above;
+    const maxHeight = Math.max(120, Math.min(desired, avail));
+    const top =
+      placement === "bottom" ? r.bottom + gap : r.top - gap - maxHeight;
+    pos = {
+      top,
+      left: r.left,
+      width: r.width,
+      maxHeight,
+      placement,
+    };
+  }
+
+  // Action: move a node to document.body on mount, restore on
+  // destroy. Used on the popover so z-index can actually reach
+  // above other stacked content regardless of where the <Select>
+  // sits in the DOM tree.
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        if (node.parentNode === document.body) {
+          document.body.removeChild(node);
+        }
+      },
+    };
+  }
+
   // Flatten groups into a single ordered list for keyboard nav and
   // option lookup. Each entry remembers which group it came from so
   // the rendered list can still draw the group-label separators.
@@ -113,6 +172,7 @@
 
   async function openList() {
     if (disabled) return;
+    computePos();
     open = true;
     highlightedIndex = selectedIndex >= 0 ? selectedIndex : firstEnabledIndex();
     await tick();
@@ -306,38 +366,45 @@
     </svg>
   </button>
 
-  {#if open}
-    <ul
-      class="select-list"
-      role="listbox"
-      bind:this={listEl}
-      tabindex="-1"
-      aria-activedescendant={highlightedIndex >= 0 ? `opt-${highlightedIndex}` : undefined}
-    >
-      {#each flat as opt, i (i)}
-        {#if groupBoundaries.has(i)}
-          <li class="select-group" role="presentation">{opt.groupLabel}</li>
-        {/if}
-        <li
-          id={`opt-${i}`}
-          class="select-option"
-          class:selected={value === opt.value}
-          class:highlighted={highlightedIndex === i}
-          class:disabled={opt.disabled}
-          class:in-group={!!opt.groupLabel}
-          role="option"
-          aria-selected={value === opt.value}
-          aria-disabled={opt.disabled}
-          data-index={i}
-          onmousedown={(e) => onOptionMouseDown(e, i)}
-          onmouseenter={() => onOptionMouseEnter(i)}
-        >
-          {opt.label}
-        </li>
-      {/each}
-    </ul>
-  {/if}
 </div>
+
+{#if open}
+  <ul
+    class="select-list"
+    class:placement-top={pos.placement === "top"}
+    role="listbox"
+    bind:this={listEl}
+    tabindex="-1"
+    aria-activedescendant={highlightedIndex >= 0 ? `opt-${highlightedIndex}` : undefined}
+    use:portal
+    style:top="{pos.top}px"
+    style:left="{pos.left}px"
+    style:width="{pos.width}px"
+    style:max-height="{pos.maxHeight}px"
+  >
+    {#each flat as opt, i (i)}
+      {#if groupBoundaries.has(i)}
+        <li class="select-group" role="presentation">{opt.groupLabel}</li>
+      {/if}
+      <li
+        id={`opt-${i}`}
+        class="select-option"
+        class:selected={value === opt.value}
+        class:highlighted={highlightedIndex === i}
+        class:disabled={opt.disabled}
+        class:in-group={!!opt.groupLabel}
+        role="option"
+        aria-selected={value === opt.value}
+        aria-disabled={opt.disabled}
+        data-index={i}
+        onmousedown={(e) => onOptionMouseDown(e, i)}
+        onmouseenter={() => onOptionMouseEnter(i)}
+      >
+        {opt.label}
+      </li>
+    {/each}
+  </ul>
+{/if}
 
 <style>
   .select-wrap {
@@ -404,37 +471,42 @@
     transform: rotate(180deg);
   }
 
-  /* Popover. Sits directly below the trigger; width matches.
-     z-index above terminal/session overlays.
+  /* Popover. Portaled to document.body so z-index can actually
+     reach above adjacent stacked content (panels with
+     backdrop-filter create their own stacking contexts, and
+     z-index inside one of those can't climb out). position:
+     fixed + explicit top/left/width set via inline styles from
+     the trigger's viewport rect at open time; :global so the
+     scoped styles still apply once the node lives under <body>.
 
      Uses --option-bg / --option-fg / --option-group-fg — the
      existing skin-defined variables for dropdown popups. Every
      built-in and documented custom skin sets these to solid
      colors (they used to back the OS's native <option> popup
      fallback); using them here gives the custom listbox an
-     opaque, skin-appropriate surface automatically, with no
-     translucent-panel see-through. */
-  .select-list {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 120;
-    max-height: 240px;
+     opaque, skin-appropriate surface automatically. */
+  :global(.select-list) {
+    position: fixed;
+    z-index: 9999;
     overflow-y: auto;
     margin: 0;
     padding: 4px;
     list-style: none;
     background: var(--option-bg);
+    color: var(--option-fg, var(--fg-primary));
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-floating, var(--shadow-panel));
-  }
-
-  .select-option {
-    padding: 6px 8px;
+    box-shadow: var(--shadow-floating, 0 10px 30px rgba(0, 0, 0, 0.4));
     font-family: var(--font-ui);
     font-size: var(--font-size-base);
+  }
+
+  /* :global on every rule inside the portaled popover — the
+     listbox lives under <body> after the portal action moves it,
+     outside this component's scoped-style reach. Scoped rules
+     would emit a hashed selector that no longer matches. */
+  :global(.select-option) {
+    padding: 6px 8px;
     color: var(--option-fg, var(--fg-primary));
     border-radius: var(--radius-sm);
     cursor: pointer;
@@ -442,26 +514,26 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .select-option.in-group {
+  :global(.select-option.in-group) {
     padding-left: 18px;
   }
-  .select-option.highlighted {
+  :global(.select-option.highlighted) {
     background: var(--bg-hover);
   }
-  .select-option.selected {
+  :global(.select-option.selected) {
     color: var(--accent);
     font-weight: 500;
   }
-  .select-option.selected.highlighted {
+  :global(.select-option.selected.highlighted) {
     background: var(--accent-muted, var(--bg-hover));
     color: var(--accent);
   }
-  .select-option.disabled {
+  :global(.select-option.disabled) {
     color: var(--fg-tertiary);
     cursor: not-allowed;
   }
 
-  .select-group {
+  :global(.select-group) {
     padding: 8px 8px 4px 8px;
     font-family: var(--font-ui);
     font-size: 11px;
@@ -470,7 +542,7 @@
     color: var(--option-group-fg, var(--fg-tertiary));
     pointer-events: none;
   }
-  .select-group:first-child {
+  :global(.select-group:first-child) {
     padding-top: 4px;
   }
 
