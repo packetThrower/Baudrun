@@ -6,6 +6,7 @@ pub mod appdata;
 pub mod commands;
 pub mod events;
 pub mod profiles;
+pub mod sanitize;
 pub mod serial;
 pub mod settings;
 pub mod skins;

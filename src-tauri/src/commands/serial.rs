@@ -19,6 +19,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::appdata;
 use crate::events;
 use crate::profiles::Profile;
+use crate::sanitize::SanitizingLogWriter;
 use crate::serial::{self, Config, ControlLines, OnExit, OnRead, Session};
 use crate::state::AppState;
 
@@ -278,7 +279,9 @@ fn open_session_log(
     let stamp = Local::now().format("%Y-%m-%d_%H%M%S");
     let filename = format!("{}_{}.log", slugify_session_name(&profile.name), stamp);
     let file = File::create(dir_path.join(filename))?;
-    Ok(Box::new(file))
+    // Wrap so raw ANSI escapes + Cisco-style \r\r\n don't pollute
+    // the plain-text log — we want it to read like the xterm view.
+    Ok(Box::new(SanitizingLogWriter::new(file)))
 }
 
 /// Minimal slugify for log filenames — matches the Go version's
