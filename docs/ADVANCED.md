@@ -195,6 +195,14 @@ well below 20 characters.
 - Local echo (if the profile has it on) is applied per-byte.
 - The flag composes with `pasteWarnMultiline`: the confirmation
   runs first, then the slow send begins on approval.
+- A progress pill appears top-right of the terminal while a slow
+  paste is in flight (`PASTE  142/500 bytes  Esc to cancel`),
+  themed against the active palette.
+- Pressing `Escape` while the pill is visible aborts the paste;
+  any bytes already sent stay with the device, the remainder is
+  discarded, and a `Paste aborted after N/M bytes` status is
+  logged. The `Escape` keystroke itself is swallowed so the
+  device doesn't see a stray 0x1B mid-stream.
 
 ## Backspace key mapping
 
