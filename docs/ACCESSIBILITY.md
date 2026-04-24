@@ -52,7 +52,8 @@ Baudrun respects the OS-level `prefers-reduced-motion` preference.
 `prefers-reduced-motion` value at page load. If the setting is
 toggled while Baudrun is open, the animations may not change
 until the app is quit and relaunched. This is an upstream
-Wails/WebKit behavior, not something Baudrun can work around.
+WebKit behavior shared across Tauri / Electron / any embedded
+WebKit consumer, not something Baudrun can work around.
 
 ## Terminal zoom
 

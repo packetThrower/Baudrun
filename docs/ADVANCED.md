@@ -9,9 +9,10 @@ see [PROFILES.md](PROFILES.md).
 
 - Session-header **Break** button.
 - Sends a 300 ms break condition (TX line held low).
-- Implemented via `go.bug.st/serial`'s `Port.Break(duration)` —
-  `tcsendbreak` on Unix, `SetCommBreak` / `ClearCommBreak` on
-  Windows.
+- Implemented via the `serialport` crate's `set_break()` /
+  `clear_break()` pair (with a `sleep(duration)` between) — backed
+  by `tcsendbreak` on Unix, `SetCommBreak` / `ClearCommBreak` on
+  Windows. Direct-USB CP210x uses the SET_BREAK control transfer.
 - Disabled while the session is in the reconnecting state.
 - No keyboard shortcut: common modifier combinations collide with
   real terminal control characters.
@@ -288,9 +289,9 @@ scale linearly with line count.
   the OS flips.
 - Only swaps the CSS palette. The window's own
   `NSVisualEffectView` material on macOS is pinned to the dark
-  system appearance at startup — Wails v2.12's runtime theme
-  setters are no-ops on macOS, so the vibrancy material cannot
-  change after launch.
+  system appearance at startup — Tauri v2's runtime appearance
+  setters don't reliably swap NSAppearance live on macOS, so the
+  vibrancy material cannot change after launch.
 - Dark-only skins (CRT, Cyberpunk) ignore the preference and pin
   their palette to dark.
 
@@ -338,8 +339,8 @@ scale linearly with line count.
   adapters." Default on.
 - Shows a yellow banner above the port dropdown when a USB-serial
   chipset is plugged in but no corresponding serial port is
-  enumerated by the OS **and** Baudrun's direct-USB backend
-  (usbserial-go) can't open it either.
+  enumerated by the OS **and** Baudrun's vendored libusb-direct
+  backend (`src-tauri/src/usbserial/`) can't open it either.
 - Banner includes a link to the vendor driver download and a
   Refresh action.
 - Dismissal via × is session-scoped; the banner re-shows on the

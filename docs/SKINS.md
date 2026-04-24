@@ -51,7 +51,7 @@ this or has an empty name / no variables.
 
 Skins can override any CSS custom property the app's stylesheet reads.
 The full list lives in
-[`frontend/src/style.css`](https://github.com/packetThrower/Baudrun/blob/main/frontend/src/style.css) under `:root`.
+[`src/style.css`](https://github.com/packetThrower/Baudrun/blob/main/src/style.css) under `:root`.
 Grouped for navigation:
 
 ### Typography
@@ -151,11 +151,12 @@ Grouped for navigation:
 ## Light / dark handling
 
 The window's macOS `NSVisualEffectView` material is pinned dark at
-startup. Wails v2.12's runtime appearance setters are no-ops on
-macOS, so the vibrancy material can't swap live. Practical
-consequence for skin authors: **light-mode overlays need opaque or
-near-opaque surface colors** — translucent light CSS on a dark
-vibrancy backdrop reads as muddy gray.
+startup. Tauri v2's runtime appearance setters don't reliably swap
+NSAppearance live on macOS, so the vibrancy material can't follow
+the user's light/dark preference. Practical consequence for skin
+authors: **light-mode overlays need opaque or near-opaque surface
+colors** — translucent light CSS on a dark vibrancy backdrop reads
+as muddy gray.
 
 ```json
 {
@@ -180,9 +181,12 @@ for those regardless of the user's Appearance preference.
    the Windows XP Start-button look on the Settings footer). User
    skins get a unique DOM attribute but no matching rule, because
    the rule is gated on a built-in ID.
-2. **Window chrome.** Title-bar style, translucency, vibrancy, and
-   the Wails background color are set at `wails.Run` in `main.go`.
-   No CSS variable can alter them.
+2. **Window chrome.** Title-bar style, traffic-light position, and
+   bundle background are set in `src-tauri/tauri.conf.json` and the
+   `tauri::Builder` setup in `src-tauri/src/lib.rs`. macOS traffic
+   lights are repositioned at runtime via `tauri-plugin-decorum` to
+   match floating-bubble skin layouts (e.g. Liquid Glass). No CSS
+   variable can alter the native window chrome itself.
 3. **Appearance modes beyond light / dark.** Only `lightVars` and
    `darkVars` overlays are honored. No sepia, high-contrast, etc.
    beyond what one of those can express.
@@ -258,14 +262,16 @@ Skin dropdown.
 
 ## Development tips
 
-- **Iterate with DevTools.** `wails dev` opens the webview inspector.
+- **Iterate with DevTools.** `npm run tauri dev` opens the webview
+  inspector (right-click → Inspect Element on the running app).
   Live-tweak variables via
   `document.documentElement.style.setProperty("--bg-main", "#...")` in
   the console until values feel right, then copy into the JSON.
 - **Start from a built-in.** Inspect a skin you like with
   `getComputedStyle(document.documentElement).getPropertyValue("--bg-main")`
-  to capture the applied values, or read the Go struct definitions
-  in [`internal/skins/builtins.go`](https://github.com/packetThrower/Baudrun/blob/main/internal/skins/builtins.go).
+  to capture the applied values, or read the JSON for each built-in
+  skin directly in
+  [`src-tauri/resources/builtin_skins.json`](https://github.com/packetThrower/Baudrun/blob/main/src-tauri/resources/builtin_skins.json).
 - **Test both appearances** if you set `supportsLight: true`. The
   Appearance dropdown in Settings flips modes without reload.
 - **Skins vs. themes.** The terminal viewport is styled by the active

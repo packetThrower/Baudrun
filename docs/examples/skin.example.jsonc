@@ -12,7 +12,7 @@
 //   Linux:   $XDG_CONFIG_HOME/Baudrun/skins/
 // ).
 //
-// Variables you don't set fall back to the defaults in frontend/src/style.css.
+// Variables you don't set fall back to the defaults in src/style.css.
 // See docs/SKINS.md for the full reference and light/dark caveats.
 // ============================================================================
 

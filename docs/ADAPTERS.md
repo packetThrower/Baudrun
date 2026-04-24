@@ -10,11 +10,12 @@ industrial or rebranded gear.
 
 Legend: **✓** works out of the box, **✗** not supported through that
 path, **driver** means a user-installed vendor driver is required.
-"usbserial-go" is Baudrun's libusb-direct backend — when that column
-is ✓, Baudrun opens the device itself without any driver install
-regardless of what the OS does.
+"Direct USB" is Baudrun's vendored libusb-backed backend
+(`src-tauri/src/usbserial/`) — when that column is ✓, Baudrun opens
+the device itself without any driver install regardless of what the
+OS does.
 
-| Chipset / variant | Linux (mainline kernel module) | macOS 11+ (Apple-bundled DEXT) | Windows | `usbserial-go` |
+| Chipset / variant | Linux (mainline kernel module) | macOS 11+ (Apple-bundled DEXT) | Windows | Direct USB |
 |---|---|---|---|---|
 | **FTDI** — stock VIDs (`0403:*`, plus ~25 rebrand VIDs) | `ftdi_sio` ✓ | `AppleUSBFTDI` ✓ (97 PIDs covered) | FTDI VCP driver | Planned (parity) |
 | **Prolific PL2303** — modern PIDs (`067b:2303`, `067b:2304`, `067b:a100`, `067b:e1f1`, `0557:2008` ATEN) | `pl2303` ✓ | `AppleUSBPLCOM` ✓ | Prolific driver | Planned (parity) |
@@ -77,8 +78,8 @@ sudo modprobe cp210x
 echo 0908 01ff | sudo tee /sys/bus/usb-serial/drivers/cp210x/new_id
 ```
 
-Or you can let `usbserial-go` handle it — the direct-USB path picks up
-the device without any sysfs dance.
+Or you can let Baudrun's direct-USB backend handle it — the
+libusb path picks up the device without any sysfs dance.
 
 **macOS 11+ (Apple-bundled DEXT).** Apple ships four USB-serial
 DriverKit extensions in `/System/Library/DriverExtensions/`:
@@ -98,8 +99,8 @@ PL2303HXA chip revision that Prolific has stopped supporting.
 Anything outside those lists falls through to `AppleUSBHostCompositeDevice`
 — the generic composite-device shim that acknowledges the device exists
 but doesn't provide a `/dev/cu.*` node. That's when you'd see a
-"driver not loaded" banner before `usbserial-go` was wired in; now the
-library opens those devices directly.
+"driver not loaded" banner before the direct-USB backend was wired
+in; now the in-tree `usbserial` module opens those devices directly.
 
 Older macOS versions (pre-Big Sur) don't have these DEXTs at all; you'd
 install SiLabs VCP, FTDI VCP, and Prolific drivers the way everyone did
@@ -114,16 +115,19 @@ flow is well-trodden: every vendor ships a signed driver package that
 installs via double-click and the device appears as `COMn`.
 
 Because shipping a signed userspace USB driver on Windows is its own
-cottage industry, `usbserial-go` doesn't try — it falls through to
-`go.bug.st/serial` on Windows, which opens the `COMn` the vendor driver
-created.
+cottage industry, the direct-USB backend is a no-op there — it falls
+through to the `serialport` crate, which opens the `COMn` the vendor
+driver created.
 
-**`usbserial-go`** is the library Baudrun imports to talk to USB-serial
-devices directly via libusb. No vendor driver needed; no kext / DEXT /
-`.sys`. It shows up in the port picker as a separate entry labeled
-`USB · VID:PID — product name`. When both paths exist for the same
-device (e.g. Linux with `cp210x` already bound), the OS path wins in
-the UI — the library doesn't try to claim already-bound devices.
+**Direct USB** is the in-tree `src-tauri/src/usbserial/` module
+(originally vendored from
+[`packetThrower/usbserial-go`](https://github.com/packetThrower/usbserial-go)
+and ported to Rust on top of `rusb`). No vendor driver needed; no
+kext / DEXT / `.sys`. It shows up in the port picker as a separate
+entry labeled `USB · VID:PID — product name`. When both paths exist
+for the same device (e.g. Linux with `cp210x` already bound), the OS
+path wins in the UI — the library doesn't try to claim already-bound
+devices.
 
 Current status: **CP210x only**, including vendor rebrands. CH340 is
 next; FTDI and PL2303 are planned for API parity but those chipsets
