@@ -340,9 +340,11 @@
     serializer = fresh.serializer;
 
     if (snapshot.length > 0) {
-      // Trailing newline so any existing prompt sits at the start of
-      // a fresh row rather than glued to the last scrollback line.
-      term.write(snapshot + "\r\n");
+      // Write the snapshot verbatim — SerializeAddon already leaves
+      // the cursor where the prompt naturally ends, so appending an
+      // extra \r\n here would bump the prompt a row down every time
+      // the user hits Cmd +/-.
+      term.write(snapshot);
     }
     if (hadFocus) term.focus();
   }

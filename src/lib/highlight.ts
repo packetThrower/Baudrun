@@ -179,9 +179,49 @@ function plainLines(block: string, timestamps: boolean): string {
     const isLast = i === parts.length - 1;
     const raw = parts[i];
     if (raw === "" && isLast) break;
-    out.push(timestampPrefix() + raw + (isLast ? "" : "\n"));
+    const { leading, rest } = splitRedrawPrefix(raw);
+    // The redraw prefix (\r, optionally followed by ESC[K) has to
+    // run BEFORE the timestamp — otherwise the timestamp lands at
+    // the cursor's previous position (e.g. the tail of a paged
+    // "-- More --" prompt), CR then yanks the cursor to col 0 and
+    // the new content overwrites from there, leaving timestamp
+    // residue visible on the right half of the line.
+    out.push(leading + timestampPrefix() + rest + (isLast ? "" : "\n"));
   }
   return out.join("");
+}
+
+/// Pull cursor-home / erase-line bytes out of a line so a prefix
+/// (timestamp, highlight) doesn't get written BEFORE them. We split
+/// at the LAST redraw, not just the first, because the partial
+/// "-- More --" prompt from a paged CLI is often still sitting in
+/// the highlighter's buffer when the spacebar-reply bytes arrive —
+/// they get concatenated and the `\r\x1b[K` ends up mid-"line" (no
+/// `\n` between them).
+///
+/// Handles:
+///   - bare `\r` (cursor to col 0; new content overwrites in place)
+///   - `\r\x1b[K`, `\r\x1b[0K`, `\r\x1b[1K`, `\r\x1b[2K` (erase in line)
+function splitRedrawPrefix(raw: string): { leading: string; rest: string } {
+  let lastSplit = 0;
+  let i = 0;
+  while (i < raw.length) {
+    if (raw[i] !== "\r") {
+      i += 1;
+      continue;
+    }
+    let end = i + 1;
+    const match = raw.slice(end).match(/^\x1b\[[0-2]?K/);
+    if (match) {
+      end += match[0].length;
+    }
+    lastSplit = end;
+    i = end;
+  }
+  return {
+    leading: raw.slice(0, lastSplit),
+    rest: raw.slice(lastSplit),
+  };
 }
 
 function timestampPrefix(): string {
@@ -207,9 +247,10 @@ export function highlightLines(block: string, timestamps = false): string {
     }
     const cr = raw.endsWith("\r");
     const bare = cr ? raw.slice(0, -1) : raw;
-    const highlighted = highlightLine(bare);
+    const { leading, rest } = splitRedrawPrefix(bare);
+    const highlighted = highlightLine(rest);
     const prefix = timestamps ? timestampPrefix() : "";
-    out.push(prefix + highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
+    out.push(leading + prefix + highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
   }
   return out.join("");
 }
