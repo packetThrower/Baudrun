@@ -1,5 +1,11 @@
 use tauri::Manager;
 
+pub mod appdata;
+pub mod profiles;
+pub mod settings;
+pub mod skins;
+pub mod themes;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
