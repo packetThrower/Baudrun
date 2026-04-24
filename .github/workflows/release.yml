@@ -302,14 +302,19 @@ jobs:
       # Fedora 40+ package names for GTK/WebKit differ from Debian's.
       # RPM versions can't contain `-` (it's rpm's internal
       # version/release separator), so pre-release suffixes get
-      # remapped: SemVer `0.8.0-beta.1` becomes `0.8.0~beta.1`, where
-      # `~` is rpm's pre-release convention — sorts BEFORE the stable
-      # release in rpm's version comparison, so upgrades from beta
-      # to stable do the right thing.
+      # remapped to `~` in the version metadata — `~` is rpm's
+      # pre-release convention and sorts BEFORE the matching stable
+      # release, so upgrades from beta to stable do the right thing.
+      # The OUTPUT filename can't use `~` though: fpm's Ruby
+      # File.expand_path logic munges it mid-path ("0.8.0~beta.1-1"
+      # expanded to "0.8.0/home/runnerbeta.1-1" on the first try),
+      # so the filename uses a plain `_` substitution instead. The
+      # metadata inside the rpm still shows the correct `~` form.
       - name: Build .rpm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           RPM_VERSION="${VERSION//-/~}"
+          RPM_FILE_VERSION="${VERSION//-/_}"
           fpm -s dir -t rpm \
             --name baudrun \
             --version "${RPM_VERSION}" \
@@ -325,7 +330,7 @@ jobs:
             --after-install packaging/linux/baudrun-postinstall.sh \
             --after-upgrade packaging/linux/baudrun-postinstall.sh \
             -C pkg \
-            --package "baudrun-${RPM_VERSION}-1.${{ matrix.appimage_arch }}.rpm" \
+            --package "baudrun-${RPM_FILE_VERSION}-1.${{ matrix.appimage_arch }}.rpm" \
             .
 
       # Arch Linux package. fpm's pacman target builds the archive
