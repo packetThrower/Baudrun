@@ -177,15 +177,20 @@ jobs:
           $json | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
           Write-Host "Using version: $version"
 
+      # WiX (MSI) requires a numeric-only pre-release identifier and
+      # rejects alphanumeric ones like 0.9.0-alpha.3. NSIS has no
+      # such restriction. So pre-release tags ship NSIS only; stable
+      # tags ship both MSI + NSIS for corporate-deploy use cases.
       - name: Build Tauri bundle
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --target ${{ matrix.target }} --bundles msi nsis
+          args: --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis' || 'msi nsis' }}
 
-      # Collect the MSI (WiX) + NSIS .exe + a portable zip of the
-      # bare Baudrun.exe for users who don't want an installer.
+      # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
+      # portable zip of the bare Baudrun.exe for users who don't
+      # want an installer.
       - name: Package artifacts
         shell: pwsh
         run: |
