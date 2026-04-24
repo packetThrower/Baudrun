@@ -82,7 +82,7 @@ export function applySkin(
   // position matches macOS's hidden-inset style. No-op on other
   // platforms (the command is guarded server-side).
   const padding = skin.vars?.["--shell-padding"] ?? "0";
-  const offset = padding !== "0" && padding !== "0px" ? { x: 26, y: 24 } : { x: 14, y: 20 };
+  const offset = padding !== "0" && padding !== "0px" ? { x: 19, y: 28 } : { x: 10, y: 24 };
   void api.setTrafficLightsInset(offset.x, offset.y).catch((err) => {
     console.error("set traffic lights inset", err);
   });
