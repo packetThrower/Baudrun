@@ -8,6 +8,11 @@
   import { formatPortName } from "./lib/ports";
   import Select from "./lib/Select.svelte";
   import {
+    effectiveShortcut,
+    formatShortcut,
+    matchesShortcut,
+  } from "./lib/shortcuts";
+  import {
     profiles,
     selectedProfileID,
     loadProfiles,
@@ -600,75 +605,72 @@
     }
   }
 
-  // Platform detection drives the Break / Clear / Suspend shortcut
-  // scheme. macOS uses Cmd+* (Cmd is never a terminal control
-  // character so plain Cmd+K is safe). Linux + Windows use
-  // Ctrl+Shift+* — plain Ctrl+letter conflicts with real terminal
-  // control codes serial devices care about (Ctrl+B, Ctrl+K,
-  // Ctrl+S all have meanings the user might actually want to send).
-  // The Shift qualifier keeps those pass-throughs intact while
-  // reserving a dedicated UI layer.
+  // Platform detection drives the default shortcut scheme (users
+  // can override each one in Settings → Keyboard Shortcuts). macOS
+  // uses Cmd+* because Cmd is never a terminal control character,
+  // so plain Cmd+K is safe. Linux + Windows use Ctrl+Shift+* to
+  // keep plain Ctrl+letter passthroughs (Ctrl+B STX, Ctrl+K VT,
+  // Ctrl+S XOFF, etc.) intact for serial devices.
   const IS_MAC =
     typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+
+  // Effective shortcut specs reactively derived from settings so
+  // the keydown handler and button tooltips update live when the
+  // user edits a binding.
+  const shortcutClearSpec = $derived(
+    effectiveShortcut("clear", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutBreakSpec = $derived(
+    effectiveShortcut("break", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutSuspendSpec = $derived(
+    effectiveShortcut("suspend", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutClearLabel = $derived(formatShortcut(shortcutClearSpec, IS_MAC));
+  const shortcutBreakLabel = $derived(formatShortcut(shortcutBreakSpec, IS_MAC));
+  const shortcutSuspendLabel = $derived(
+    formatShortcut(shortcutSuspendSpec, IS_MAC),
+  );
 
   function handleWindowKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && overflowOpen) {
       overflowOpen = false;
       return;
     }
-    // Cmd on macOS, Ctrl elsewhere. metaKey is Cmd; ctrlKey is Ctrl.
+    // Zoom first — it hasn't moved to settings-driven config.
     const mod = e.metaKey || e.ctrlKey;
-    if (!mod) return;
-    // "=" with shift is "+", so accept both "=" and "+" as zoom-in.
-    const current = $settings.fontSize || FONT_DEFAULT;
-    if (e.key === "=" || e.key === "+") {
-      e.preventDefault();
-      e.stopPropagation();
-      statusMsg = `Font size: ${Math.min(FONT_MAX, current + 1)}`;
-      void applyFontSize(current + 1);
-      return;
-    } else if (e.key === "-" || e.key === "_") {
-      e.preventDefault();
-      e.stopPropagation();
-      statusMsg = `Font size: ${Math.max(FONT_MIN, current - 1)}`;
-      void applyFontSize(current - 1);
-      return;
-    } else if (e.key === "0") {
-      e.preventDefault();
-      e.stopPropagation();
-      statusMsg = `Font size: ${FONT_DEFAULT}`;
-      void applyFontSize(FONT_DEFAULT);
-      return;
+    if (mod) {
+      const current = $settings.fontSize || FONT_DEFAULT;
+      if (e.key === "=" || e.key === "+") {
+        e.preventDefault();
+        e.stopPropagation();
+        statusMsg = `Font size: ${Math.min(FONT_MAX, current + 1)}`;
+        void applyFontSize(current + 1);
+        return;
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        e.stopPropagation();
+        statusMsg = `Font size: ${Math.max(FONT_MIN, current - 1)}`;
+        void applyFontSize(current - 1);
+        return;
+      } else if (e.key === "0") {
+        e.preventDefault();
+        e.stopPropagation();
+        statusMsg = `Font size: ${FONT_DEFAULT}`;
+        void applyFontSize(FONT_DEFAULT);
+        return;
+      }
     }
 
-    // Session-level shortcuts. Each one gates on the UI state
-    // where the underlying action would be available — if the
-    // action button is disabled or absent, the shortcut is a no-op.
-    const key = e.key.toLowerCase();
-    if (IS_MAC) {
-      // macOS: plain Cmd+K = Clear (matches Terminal.app /
-      // iTerm2); Cmd+Shift+B = Break; Cmd+Shift+S = Suspend.
-      if (e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (!e.shiftKey && key === "k") {
-          shortcutClear(e);
-        } else if (e.shiftKey && key === "b") {
-          shortcutBreak(e);
-        } else if (e.shiftKey && key === "s") {
-          shortcutSuspend(e);
-        }
-      }
-    } else {
-      // Linux / Windows: Ctrl+Shift+* across the board so
-      // plain Ctrl+letter passes through to the device.
-      if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey) {
-        if (key === "k") {
-          shortcutClear(e);
-        } else if (key === "b") {
-          shortcutBreak(e);
-        } else if (key === "s") {
-          shortcutSuspend(e);
-        }
-      }
+    // Session shortcuts: match each binding against the event and
+    // dispatch to the gated action. Each helper no-ops when its
+    // underlying button would be disabled.
+    if (matchesShortcut(e, shortcutClearSpec)) {
+      shortcutClear(e);
+    } else if (matchesShortcut(e, shortcutBreakSpec)) {
+      shortcutBreak(e);
+    } else if (matchesShortcut(e, shortcutSuspendSpec)) {
+      shortcutSuspend(e);
     }
   }
 
@@ -867,6 +869,7 @@
     }
   }
 
+
   async function handleSetAppearance(mode: Appearance) {
     try {
       const updated = await api.updateSettings({ ...$settings, appearance: mode });
@@ -874,6 +877,15 @@
       appearance.set(mode);
     } catch (e) {
       statusMsg = `Appearance change failed: ${e}`;
+    }
+  }
+
+  async function handleSetShortcuts(shortcuts: Record<string, string>) {
+    try {
+      const updated = await api.updateSettings({ ...$settings, shortcuts });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Shortcut update failed: ${e}`;
     }
   }
 
@@ -921,6 +933,7 @@
           onImportSkin={handleImportSkin}
           onDeleteSkin={handleDeleteSkin}
           onSetAppearance={handleSetAppearance}
+          onSetShortcuts={handleSetShortcuts}
         />
       {:else if !currentProfile}
         <div class="titlebar" style="--wails-draggable: drag;"></div>
@@ -994,8 +1007,8 @@
                   <button
                     role="menuitem"
                     onclick={() => runFromOverflow(sendBreak)}
-                    title="~300ms serial break (Cisco ROMMON, Juniper diag, boot-loader interrupt). Shortcut: {IS_MAC ? '⌘⇧B' : 'Ctrl+Shift+B'}"
-                    aria-keyshortcuts={IS_MAC ? "Meta+Shift+B" : "Control+Shift+B"}
+                    title="~300ms serial break (Cisco ROMMON, Juniper diag, boot-loader interrupt). Shortcut: {shortcutBreakLabel}"
+                    aria-keyshortcuts={shortcutBreakSpec}
                   >Send Break</button>
                   <button
                     role="menuitem"
@@ -1030,15 +1043,15 @@
             </button>
             <button
               onclick={() => terminalRef?.clear()}
-              title="Clear the visible scrollback. Shortcut: {IS_MAC ? '⌘K' : 'Ctrl+Shift+K'}"
-              aria-keyshortcuts={IS_MAC ? "Meta+K" : "Control+Shift+K"}
+              title="Clear the visible scrollback. Shortcut: {shortcutClearLabel}"
+              aria-keyshortcuts={shortcutClearSpec}
             >
               Clear
             </button>
             <button
               onclick={handleSuspend}
-              title="Keep session alive; return to profile. Shortcut: {IS_MAC ? '⌘⇧S' : 'Ctrl+Shift+S'}"
-              aria-keyshortcuts={IS_MAC ? "Meta+Shift+S" : "Control+Shift+S"}
+              title="Keep session alive; return to profile. Shortcut: {shortcutSuspendLabel}"
+              aria-keyshortcuts={shortcutSuspendSpec}
             >
               Suspend
             </button>

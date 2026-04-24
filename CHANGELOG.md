@@ -39,6 +39,16 @@ view of what actually matters to a user reading release notes.
 - **Custom `Select` component** with full keyboard navigation
   (arrows, Home/End, Enter, Escape, typeahead), portaled popover that
   escapes stacking contexts, and automatic skin theming.
+- **Keyboard shortcuts for Clear / Send Break / Suspend.** Default
+  bindings are platform-appropriate: `⌘K` / `⌘⇧B` / `⌘⇧S` on macOS,
+  `Ctrl+Shift+K` / `Ctrl+Shift+B` / `Ctrl+Shift+S` on Linux and
+  Windows. The split scheme preserves plain `Ctrl+letter`
+  passthroughs (XOFF, VT, STX, etc.) to the serial device. Full
+  details in [docs/SHORTCUTS.md](docs/SHORTCUTS.md).
+- **Editable keyboard shortcuts.** Settings → Keyboard Shortcuts
+  lets you rebind each session-level action to any combo you want,
+  with a click-to-record widget and per-binding reset-to-default.
+  Overrides persist in `settings.json` under a `shortcuts` map.
 
 ### Changed
 

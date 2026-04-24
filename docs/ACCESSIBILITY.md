@@ -71,21 +71,11 @@ construction, so an in-place font-size change wouldn't re-measure.
 
 ## Session shortcuts
 
-For the three session-header buttons that are otherwise mouse-only:
-
-| Action | macOS | Linux / Windows |
-|---|---|---|
-| Clear terminal | `⌘K` | `Ctrl+Shift+K` |
-| Send Break | `⌘⇧B` | `Ctrl+Shift+B` |
-| Suspend session | `⌘⇧S` | `Ctrl+Shift+S` |
-
-The split modifier schemes are deliberate. On macOS, `Cmd` is never
-a terminal control character — `Cmd+K` won't collide with anything
-the device might receive, which is why it can stand alone. On
-Linux and Windows, `Ctrl+letter` has real meaning to serial devices
-(`Ctrl+B`, `Ctrl+K`, `Ctrl+S` are all bytes devices routinely
-process), so the shortcuts add `Shift` to keep the plain `Ctrl+*`
-passthroughs to the device intact.
+For the three session-header buttons that are otherwise mouse-only
+— **Clear**, **Send Break**, **Suspend**. See
+[Keyboard shortcuts](SHORTCUTS.md) for the default bindings table,
+the per-OS rationale, and how to rebind them via
+Settings → Keyboard Shortcuts.
 
 Each shortcut gates on the same enablement as the button it
 mirrors — Break and Suspend are no-ops without an active

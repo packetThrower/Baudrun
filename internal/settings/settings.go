@@ -32,6 +32,15 @@ type Settings struct {
 	// component, preserving plain text but dropping ANSI color
 	// attributes on the existing scrollback. Default 10000.
 	ScrollbackLines int `json:"scrollbackLines,omitempty"`
+	// Shortcuts override the default keyboard-shortcut bindings for
+	// session-level actions (Clear, Send Break, Suspend). Stored in
+	// W3C KeyboardEvent modifier+key string form ("Meta+K",
+	// "Control+Shift+B") so the format matches what the frontend puts
+	// in aria-keyshortcuts and what DOM events naturally produce.
+	// Unset / missing values fall back to a platform-appropriate
+	// default picked by the frontend — nil here doesn't mean
+	// "disabled," it means "use the default."
+	Shortcuts map[string]string `json:"shortcuts,omitempty"`
 }
 
 type Store struct {

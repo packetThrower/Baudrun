@@ -45,6 +45,7 @@ nav:
       - USB-serial adapters: ADAPTERS.md
   - Features:
       - Advanced: ADVANCED.md
+      - Keyboard shortcuts: SHORTCUTS.md
   - Customization:
       - Profiles: PROFILES.md
       - Themes: THEMES.md

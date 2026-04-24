@@ -171,6 +171,7 @@ export namespace settings {
 	    copyOnSelect?: boolean;
 	    screenReaderMode?: boolean;
 	    scrollbackLines?: number;
+	    shortcuts?: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -187,6 +188,7 @@ export namespace settings {
 	        this.copyOnSelect = source["copyOnSelect"];
 	        this.screenReaderMode = source["screenReaderMode"];
 	        this.scrollbackLines = source["scrollbackLines"];
+	        this.shortcuts = source["shortcuts"];
 	    }
 	}
 

@@ -29,6 +29,11 @@ reconnect, paste safety, suspend/resume, syntax highlighting, theme
 preview, light/dark appearance, and the USB-serial driver-detection
 banner.
 
+**[Keyboard shortcuts](SHORTCUTS.md)** — default bindings for zoom,
+Clear, Send Break, and Suspend. Session shortcuts are user-editable
+via Settings; the scheme differs per-OS so plain Ctrl-letter presses
+still reach the serial device on Linux and Windows.
+
 ## Customization
 
 **[Profiles](PROFILES.md)** — serial-connection settings. Full JSON

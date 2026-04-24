@@ -2,6 +2,13 @@
   import { api, type Theme, type Settings, type Skin } from "./api";
   import PreviewTerminal from "./PreviewTerminal.svelte";
   import Select, { type SelectItems } from "./Select.svelte";
+  import KeyCapture from "./KeyCapture.svelte";
+  import {
+    SHORTCUT_ACTIONS,
+    SHORTCUT_LABELS,
+    effectiveShortcut,
+    type ShortcutAction,
+  } from "./shortcuts";
 
   type Props = {
     themes?: Theme[];
@@ -26,6 +33,7 @@
     onImportSkin: () => void;
     onDeleteSkin: (id: string) => void;
     onSetAppearance: (mode: "auto" | "light" | "dark") => void;
+    onSetShortcuts: (shortcuts: Record<string, string>) => void;
   };
 
   let {
@@ -51,7 +59,28 @@
     onImportSkin,
     onDeleteSkin,
     onSetAppearance,
+    onSetShortcuts,
   }: Props = $props();
+
+  // Platform marker for formatShortcut() in the keyboard-shortcuts
+  // section. Same test App.svelte uses.
+  const IS_MAC =
+    typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+
+  function currentShortcut(action: ShortcutAction): string {
+    return effectiveShortcut(action, settings.shortcuts, IS_MAC);
+  }
+
+  function onShortcutChange(action: ShortcutAction, spec: string) {
+    const next = { ...(settings.shortcuts ?? {}), [action]: spec };
+    onSetShortcuts(next);
+  }
+
+  function onShortcutReset(action: ShortcutAction) {
+    const next = { ...(settings.shortcuts ?? {}) };
+    delete next[action];
+    onSetShortcuts(next);
+  }
 
   let previewTheme = $state<Theme | null>(null);
 
@@ -340,6 +369,32 @@
           options={scrollbackOptions}
         />
       </div>
+    </div>
+  </section>
+
+  <section>
+    <h3>Keyboard Shortcuts</h3>
+    <p class="section-hint">
+      Session-header actions. Click a binding to record a new key combo;
+      Escape cancels the recording. Use the ↺ button to reset to the
+      platform default. On macOS the defaults use ⌘ (Cmd is never a
+      terminal control character so plain ⌘K is safe); on Linux and
+      Windows the defaults use Ctrl+Shift so plain Ctrl+letter still
+      passes through to the serial device as a control byte.
+    </p>
+    <div class="shortcut-rows">
+      {#each SHORTCUT_ACTIONS as action (action)}
+        <div class="shortcut-row">
+          <label for={`shortcut-${action}`}>{SHORTCUT_LABELS[action]}</label>
+          <KeyCapture
+            id={`shortcut-${action}`}
+            value={currentShortcut(action)}
+            isMac={IS_MAC}
+            onchange={(spec) => onShortcutChange(action, spec)}
+            onreset={() => onShortcutReset(action)}
+          />
+        </div>
+      {/each}
     </div>
   </section>
 
@@ -632,6 +687,26 @@
      component CSS; inputs still need the explicit rule. */
   .field input {
     width: 100%;
+  }
+
+  .shortcut-rows {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    row-gap: 10px;
+    column-gap: 20px;
+    align-items: center;
+  }
+
+  .shortcut-row {
+    display: contents;
+  }
+
+  .shortcut-row label {
+    color: var(--fg-primary);
+    font-size: 13px;
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: normal;
   }
 
   .theme-list {
