@@ -159,6 +159,9 @@ export const api = {
 
   getControlLines: () => invoke<ControlLines>("get_control_lines"),
 
+  setTrafficLightsInset: (x: number, y: number) =>
+    invoke<void>("set_traffic_lights_inset", { x, y }),
+
   sendBytes(bytes: Uint8Array): Promise<void> {
     return invoke<void>("send", { data: base64Encode(bytes) });
   },

@@ -8,3 +8,4 @@ pub mod settings;
 pub mod skins;
 pub mod themes;
 pub mod transfer;
+pub mod window;

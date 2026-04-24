@@ -76,6 +76,16 @@ export function applySkin(
 
   write(skin.vars);
   write(mode === "dark" ? skin.darkVars : skin.lightVars);
+
+  // Nudge macOS traffic lights so they land inside the sidebar
+  // bubble for floating-panel skins (Liquid Glass). Default
+  // position matches macOS's hidden-inset style. No-op on other
+  // platforms (the command is guarded server-side).
+  const padding = skin.vars?.["--shell-padding"] ?? "0";
+  const offset = padding !== "0" && padding !== "0px" ? { x: 26, y: 24 } : { x: 14, y: 20 };
+  void api.setTrafficLightsInset(offset.x, offset.y).catch((err) => {
+    console.error("set traffic lights inset", err);
+  });
 }
 
 export function resolveSkin(id: string, all: Skin[]): Skin | undefined {

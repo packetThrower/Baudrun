@@ -34,6 +34,7 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_decorum::init())
         .setup(|app| {
             // Initialize stores and install shared state. A failure
             // here is fatal — the app can't run without at least the
@@ -60,6 +61,21 @@ pub fn run() {
                 session: Mutex::new(SessionHandle::default()),
             });
             app.manage(app_state);
+
+            // Wire decorum's overlay titlebar (injects an invisible
+            // drag strip at DOM page-load and subclasses NSWindow so
+            // traffic-light repositioning sticks across resizes).
+            // Initial inset matches the default Baudrun skin; skin
+            // changes adjust it via the set_traffic_lights_inset
+            // command.
+            if let Some(win) = app.get_webview_window("main") {
+                use tauri_plugin_decorum::WebviewWindowExt;
+                win.create_overlay_titlebar()
+                    .map_err(|e| format!("create_overlay_titlebar: {}", e))?;
+                #[cfg(target_os = "macos")]
+                win.set_traffic_lights_inset(14.0, 20.0)
+                    .map_err(|e| format!("set_traffic_lights_inset: {}", e))?;
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -102,6 +118,8 @@ pub fn run() {
             commands::transfer::pick_send_file,
             commands::transfer::send_file,
             commands::transfer::cancel_transfer,
+            // window chrome
+            commands::window::set_traffic_lights_inset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

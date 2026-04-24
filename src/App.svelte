@@ -896,15 +896,6 @@
   onkeydown={handleWindowKeydown}
 />
 
-<!-- Full-width drag strip at the top of the window. Sits behind app
-     content so interactive elements (sidebar, panels, buttons)
-     continue to receive clicks normally, while the shell-padding
-     gap + the bar above the sidebar/main-panel bubbles lets the
-     user drag the window. macOS-only in practice — on Windows and
-     Linux the native title bar handles drag, but the attribute is
-     harmless there. -->
-<div class="window-drag" data-tauri-drag-region aria-hidden="true"></div>
-
 <div class="shell">
   <Sidebar
     profiles={visibleProfiles}
@@ -1298,22 +1289,6 @@
 {/if}
 
 <style>
-  /* Fixed full-width drag strip across the top of the window. Lives
-     beneath all interactive content (z-index 0) so buttons/inputs in
-     the panels' titlebar areas still receive their clicks; only the
-     gaps (shell padding, blank space next to the traffic lights)
-     initiate a window drag. macOS-specific in effect — the
-     titleBarStyle: "Overlay" config that removes the native drag
-     handle only applies on macOS. */
-  .window-drag {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: var(--titlebar-height);
-    z-index: 0;
-  }
-
   .shell {
     display: flex;
     flex: 1;
