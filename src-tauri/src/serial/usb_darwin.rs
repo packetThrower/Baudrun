@@ -29,10 +29,18 @@ pub fn detect_missing_drivers() -> Result<Vec<USBSerialCandidate>, String> {
         }
     }
 
-    // libusb-direct stub returns empty today; once the CP210x-over-
-    // rusb backend lands this will also pre-mark those VID:PID as
-    // "handled without a driver."
-    let usb_handled: HashSet<String> = HashSet::new();
+    // Devices we can open via libusb-direct (CP210x today) don't
+    // need a vendor driver — the user picks them straight out of
+    // the port list. Treat them the same as drivered so we don't
+    // flash a "driver not loaded" banner for something that works.
+    let mut usb_handled: HashSet<String> = HashSet::new();
+    for p in super::direct::list_direct_usb() {
+        usb_handled.insert(format!(
+            "{}:{}",
+            p.vid.to_ascii_lowercase(),
+            p.pid.to_ascii_lowercase()
+        ));
+    }
 
     let devices = read_ioreg_usb()?;
     let mut missing = Vec::new();
