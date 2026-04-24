@@ -405,8 +405,15 @@
   }
 
   /* Popover. Sits directly below the trigger; width matches.
-     z-index above terminal/session overlays; shadow uses the same
-     panel-elevation variable as other floating UI. */
+     z-index above terminal/session overlays.
+
+     Uses --option-bg / --option-fg / --option-group-fg — the
+     existing skin-defined variables for dropdown popups. Every
+     built-in and documented custom skin sets these to solid
+     colors (they used to back the OS's native <option> popup
+     fallback); using them here gives the custom listbox an
+     opaque, skin-appropriate surface automatically, with no
+     translucent-panel see-through. */
   .select-list {
     position: absolute;
     top: calc(100% + 4px);
@@ -418,19 +425,17 @@
     margin: 0;
     padding: 4px;
     list-style: none;
-    background: var(--bg-popup, var(--bg-panel));
-    border: 1px solid var(--input-border-idle);
+    background: var(--option-bg);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-panel);
-    backdrop-filter: blur(var(--blur-strength));
-    -webkit-backdrop-filter: blur(var(--blur-strength));
+    box-shadow: var(--shadow-floating, var(--shadow-panel));
   }
 
   .select-option {
     padding: 6px 8px;
     font-family: var(--font-ui);
     font-size: var(--font-size-base);
-    color: var(--fg-primary);
+    color: var(--option-fg, var(--fg-primary));
     border-radius: var(--radius-sm);
     cursor: pointer;
     white-space: nowrap;
@@ -462,7 +467,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: var(--fg-tertiary);
+    color: var(--option-group-fg, var(--fg-tertiary));
     pointer-events: none;
   }
   .select-group:first-child {
