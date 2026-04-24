@@ -96,14 +96,18 @@ body {
 }
 
 /* Full-screen overlay slot. Most skins leave --overlay transparent so this
-   is a no-op. CRT skin uses it for scan lines. */
+   is a no-op. CRT skin uses it for scan lines; Cyberpunk and Blueprint
+   paint a subtle grid on top of the whole UI.
+   z-index sits above panels / main content but below portaled popovers
+   (Select at 9999) and any future modal layer — otherwise the grid /
+   scan-lines visually overlay dropdowns and become distracting. */
 body::after {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   background: var(--overlay, transparent);
-  z-index: 9999;
+  z-index: 50;
 }
 
 #app {

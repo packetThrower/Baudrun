@@ -1369,7 +1369,16 @@ var builtins = []Skin{
 			// A very subtle crossing grid of pink+cyan lines across the
 			// window, 40px cell size at 3-4% opacity. Reads as "synthwave
 			// backdrop grid" without fighting content legibility.
-			"--overlay": `repeating-linear-gradient(0deg, transparent 0 39px, rgba(255, 0, 110, 0.04) 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, rgba(0, 240, 255, 0.04) 39px 40px)`,
+			//
+			// Implemented as background shorthand (image / position /
+			// size) rather than repeating-linear-gradient with thin
+			// stop bands. WebKit2GTK on Linux renders 1px-wide stops
+			// in a repeating gradient inconsistently — cells flip
+			// between 40px and multi-hundred-px depending on DPR and
+			// subpixel alignment. The size-based pattern is a single
+			// linear-gradient tile repeated at a fixed background-size
+			// and behaves the same on every engine.
+			"--overlay": `linear-gradient(to right, rgba(255, 0, 110, 0.04) 1px, transparent 1px) 0 0 / 40px 40px repeat, linear-gradient(to bottom, rgba(0, 240, 255, 0.04) 1px, transparent 1px) 0 0 / 40px 40px repeat`,
 		},
 	},
 	{
@@ -1416,8 +1425,11 @@ var builtins = []Skin{
 			"--scrollbar-thumb-hover": "rgba(0, 61, 115, 0.42)",
 
 			// Blue grid on white paper — major lines every 40px, minor
-			// subdivisions every 8px. Reads as drafting paper.
-			"--overlay": `repeating-linear-gradient(0deg, transparent 0 39px, rgba(0, 61, 115, 0.06) 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, rgba(0, 61, 115, 0.06) 39px 40px), repeating-linear-gradient(0deg, transparent 0 7px, rgba(0, 61, 115, 0.025) 7px 8px), repeating-linear-gradient(90deg, transparent 0 7px, rgba(0, 61, 115, 0.025) 7px 8px)`,
+			// subdivisions every 8px. See the Cyberpunk overlay comment
+			// above for why this uses the size-based tile pattern rather
+			// than repeating-linear-gradient — WebKit2GTK on Linux
+			// renders 1px stop bands erratically.
+			"--overlay": `linear-gradient(to right, rgba(0, 61, 115, 0.06) 1px, transparent 1px) 0 0 / 40px 40px repeat, linear-gradient(to bottom, rgba(0, 61, 115, 0.06) 1px, transparent 1px) 0 0 / 40px 40px repeat, linear-gradient(to right, rgba(0, 61, 115, 0.025) 1px, transparent 1px) 0 0 / 8px 8px repeat, linear-gradient(to bottom, rgba(0, 61, 115, 0.025) 1px, transparent 1px) 0 0 / 8px 8px repeat`,
 		},
 		Vars: map[string]string{
 			// Technical monospace-forward typography — drafting-table feel.
@@ -1495,8 +1507,10 @@ var builtins = []Skin{
 			"--titlebar-height": "34px",
 
 			// Two-scale grid — major lines every 40px, minor subdivisions
-			// every 8px. Reads as classic engineering-drawing paper.
-			"--overlay": `repeating-linear-gradient(0deg, transparent 0 39px, rgba(255, 255, 255, 0.07) 39px 40px), repeating-linear-gradient(90deg, transparent 0 39px, rgba(255, 255, 255, 0.07) 39px 40px), repeating-linear-gradient(0deg, transparent 0 7px, rgba(255, 255, 255, 0.025) 7px 8px), repeating-linear-gradient(90deg, transparent 0 7px, rgba(255, 255, 255, 0.025) 7px 8px)`,
+			// every 8px. Size-based tile pattern (not
+			// repeating-linear-gradient) for WebKit2GTK compatibility —
+			// see the Cyberpunk overlay comment for the details.
+			"--overlay": `linear-gradient(to right, rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 40px 40px repeat, linear-gradient(to bottom, rgba(255, 255, 255, 0.07) 1px, transparent 1px) 0 0 / 40px 40px repeat, linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 8px 8px repeat, linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px) 0 0 / 8px 8px repeat`,
 		},
 	},
 	{
