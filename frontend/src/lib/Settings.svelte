@@ -294,7 +294,11 @@
   <section class="flat">
     <div class="section-head">
       <h3>Installed Skins</h3>
-      <button onclick={handleSkinImport} disabled={importingSkin}>
+      <button
+        onclick={handleSkinImport}
+        disabled={importingSkin}
+        title="Pick a skin JSON file to install as a custom skin. See docs/SKINS.md for the schema, or start from docs/examples/skin.example.json."
+      >
         {importingSkin ? "Importing…" : "Import skin…"}
       </button>
     </div>
@@ -401,7 +405,11 @@
   <section class="flat">
     <div class="section-head">
       <h3>Installed Themes</h3>
-      <button onclick={handleImport} disabled={importing}>
+      <button
+        onclick={handleImport}
+        disabled={importing}
+        title="Pick an .itermcolors file (iTerm2 color scheme) to install as a terminal theme. Baudrun maps the iTerm color slots onto its own palette automatically."
+      >
         {importing ? "Importing…" : "Import .itermcolors…"}
       </button>
     </div>

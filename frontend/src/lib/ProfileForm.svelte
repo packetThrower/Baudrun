@@ -195,6 +195,19 @@
     return !!name && !ports.some((p) => p.name === name);
   }
 
+  // Strip a driver-download URL down to its host for the banner's
+  // tooltip. Mostly cosmetic ("silabs.com" > full URL), but also
+  // lets screen-reader users preview the destination before
+  // activating the link via hover / focus.
+  function driverHost(url: string | undefined): string {
+    if (!url) return "the vendor's website";
+    try {
+      return new URL(url).host;
+    } catch {
+      return url;
+    }
+  }
+
   function onBaudChangeValue(v: string | number) {
     if (v === "custom") {
       // Keep the current baud as the starting point so the user has
@@ -294,6 +307,7 @@
           class="danger"
           onclick={() => onDelete(draft.id)}
           disabled={locked}
+          title="Delete this profile. A 10-second undo appears in the status bar."
         >
           Delete
         </button>
@@ -302,7 +316,10 @@
         {isNew ? "Create" : "Save"}
       </button>
       {#if isConnected}
-        <button onclick={onDisconnect}>
+        <button
+          onclick={onDisconnect}
+          title="Close the serial port and end this session. Use Suspend instead to keep the port open."
+        >
           Disconnect
         </button>
         <button class="primary" onclick={onResume}>
@@ -313,6 +330,9 @@
           class="primary"
           onclick={handleConnectClick}
           disabled={!canConnect || isConnecting || saving}
+          title={dirty
+            ? "Save pending changes and open the serial port."
+            : "Open the serial port and start the session."}
         >
           {isConnecting ? "Connecting…" : "Connect"}
         </button>
@@ -354,7 +374,10 @@
               </div>
             </div>
             {#if d.driverURL}
-              <button onclick={() => BrowserOpenURL(d.driverURL!)}>
+              <button
+                onclick={() => BrowserOpenURL(d.driverURL!)}
+                title={`Opens ${driverHost(d.driverURL)} in your default browser for the vendor driver download.`}
+              >
                 Install driver…
               </button>
             {/if}

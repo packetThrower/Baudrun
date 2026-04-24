@@ -1055,7 +1055,13 @@
             >
               Suspend
             </button>
-            <button class="primary" onclick={handleDisconnect}>Disconnect</button>
+            <button
+              class="primary"
+              onclick={handleDisconnect}
+              title="Close the serial port and end this session. Use Suspend to keep the port open instead."
+            >
+              Disconnect
+            </button>
           </div>
         </header>
         <Terminal
