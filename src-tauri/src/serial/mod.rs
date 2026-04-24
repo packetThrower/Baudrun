@@ -6,6 +6,11 @@
 //! Get-PnpDevice on Windows).
 
 pub mod chipsets;
+// detect.rs is only consumed by usb_darwin / usb_windows; on Linux
+// the missing-driver enumeration is a stub (usb_other.rs) so the
+// suspect-port helper would be dead code there. Gating the module
+// keeps clippy -D warnings happy.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod detect;
 mod direct;
 pub mod ports;
