@@ -37,7 +37,7 @@ func enrichOpenError(portName string, err error) error {
 		return fmt.Errorf("open %s: %w", portName, err)
 	}
 	return fmt.Errorf(
-		"open %s: permission denied. Fix: run `sudo usermod -aG dialout $USER`, then log out and back in. "+
+		"open %s: %w — fix: run `sudo usermod -aG dialout $USER`, then log out and back in. "+
 			"(Baudrun's .deb/.rpm/pacman packages also ship a udev rule that avoids this entirely — "+
 			"installed via AppImage or from source, you're on the manual path.)",
 		portName, err)
