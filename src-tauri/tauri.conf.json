@@ -44,6 +44,38 @@
     "licenseFile": "../LICENSE",
     "macOS": {
       "minimumSystemVersion": "11.0"
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libgtk-3-0 | libgtk-3-0t64",
+          "libwebkit2gtk-4.1-0",
+          "libusb-1.0-0"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-baudrun-serial.rules": "../packaging/linux/60-baudrun-serial.rules"
+        },
+        "postInstallScript": "../packaging/linux/baudrun-postinstall.sh",
+        "postRemoveScript": "../packaging/linux/baudrun-postinstall.sh"
+      },
+      "rpm": {
+        "depends": [
+          "gtk3",
+          "webkit2gtk4.1",
+          "libusbx"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-baudrun-serial.rules": "../packaging/linux/60-baudrun-serial.rules"
+        },
+        "postInstallScript": "../packaging/linux/baudrun-postinstall.sh",
+        "postRemoveScript": "../packaging/linux/baudrun-postinstall.sh"
+      },
+      "appimage": {
+        "bundleMediaFramework": true,
+        "files": {
+          "/usr/lib/udev/rules.d/60-baudrun-serial.rules": "../packaging/linux/60-baudrun-serial.rules"
+        }
+      }
     }
   }
 }
