@@ -5,11 +5,11 @@
 # Baudrun
 
 [![CI](https://img.shields.io/github/actions/workflow/status/packetThrower/Baudrun/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/packetThrower/Baudrun/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/packetThrower/Baudrun?style=flat-square&logo=github&label=release)](https://github.com/packetThrower/Baudrun/releases/latest)
+[![Release](https://img.shields.io/github/v/release/packetThrower/Baudrun?style=flat-square&logo=github&label=release&include_prereleases)](https://github.com/packetThrower/Baudrun/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/packetThrower/Baudrun/total?style=flat-square&logo=github&label=downloads)](https://github.com/packetThrower/Baudrun/releases)
-[![Go](https://img.shields.io/github/go-mod/go-version/packetThrower/Baudrun?style=flat-square&logo=go&logoColor=white&label=Go&color=00ADD8)](go.mod)
-[![Wails](https://img.shields.io/badge/Wails-v2.12.0-D4263E?style=flat-square)](https://wails.io)
-[![Svelte](https://img.shields.io/github/package-json/dependency-version/packetThrower/Baudrun/dev/svelte?filename=frontend/package.json&style=flat-square&logo=svelte&logoColor=white&label=Svelte&color=FF3E00)](https://svelte.dev)
+[![Rust](https://img.shields.io/badge/Rust-stable-CE422B?style=flat-square&logo=rust&logoColor=white)](src-tauri/Cargo.toml)
+[![Tauri](https://img.shields.io/badge/Tauri-v2-FFC131?style=flat-square&logo=tauri&logoColor=black)](https://tauri.app)
+[![Svelte](https://img.shields.io/github/package-json/dependency-version/packetThrower/Baudrun/dev/svelte?style=flat-square&logo=svelte&logoColor=white&label=Svelte&color=FF3E00)](https://svelte.dev)
 
 **macOS** (Apple Silicon and Intel)  
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
@@ -176,129 +176,194 @@ it so dpkg, rpm, and pacman read the version natively.
 
 | Platform | Artifact | Notes |
 |---|---|---|
-| **macOS** | `Baudrun-macOS-<arch>-<version>.zip` (contains `.app`) | Per-arch builds: `arm64` for Apple Silicon (M1/M2/M3+), `amd64` for Intel Macs. Pick the one matching your CPU. Each bundle is a self-contained `.app` with `libusb-1.0.0.dylib` bundled under `Contents/Frameworks` so there's no Homebrew dependency. |
-| **Windows amd64** | `Baudrun-Windows-amd64-<version>.zip` (contains `.exe`) | Standard 64-bit x86 Windows 10/11. |
-| **Windows arm64** | `Baudrun-Windows-arm64-<version>.zip` (contains `.exe`) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
-| **Linux amd64** | `baudrun_<version>-1_amd64.deb`, `baudrun-<version>-1.x86_64.rpm`, `baudrun-<version>-1-x86_64.pkg.tar.zst`, `Baudrun-<version>-x86_64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. The trailing `-1` is fpm's packaging revision; it bumps only when the same upstream version needs to ship again with packaging-only fixes. |
-| **Linux arm64** | `baudrun_<version>-1_arm64.deb`, `baudrun-<version>-1.aarch64.rpm`, `baudrun-<version>-1-aarch64.pkg.tar.zst`, `Baudrun-<version>-aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
+| **macOS** | `Baudrun-macOS-<arch>-<version>.zip` (contains `.app`), `Baudrun_<version>_<arch>.dmg` | Per-arch builds: `arm64` for Apple Silicon (M1/M2/M3+), `amd64` for Intel Macs. Pick the one matching your CPU. Each bundle is a self-contained `.app` with `libusb-1.0.0.dylib` bundled under `Contents/Frameworks` so there's no Homebrew dependency. The .zip is produced via `ditto -c -k --keepParent` to preserve code-signing xattrs. |
+| **Windows amd64** | `Baudrun_<version>_x64-setup.exe` (NSIS), `Baudrun_<version>_x64_en-US.msi` (stable releases only), `Baudrun-Windows-amd64-<version>.zip` (portable) | Standard 64-bit x86 Windows 10/11. NSIS is the modern Tauri default; MSI requires WiX with numeric-only pre-release identifiers, so pre-release tags ship NSIS only. |
+| **Windows arm64** | `Baudrun_<version>_arm64-setup.exe` (NSIS), `Baudrun_<version>_arm64_en-US.msi` (stable releases only), `Baudrun-Windows-arm64-<version>.zip` (portable) | Native Windows on ARM (Surface Pro X, Copilot+ PCs on Snapdragon X). No Prism emulation; runs at native speed. |
+| **Linux amd64** | `Baudrun_<version>_amd64.deb`, `Baudrun-<version>-1.x86_64.rpm`, `baudrun-<version>-1-x86_64.pkg.tar.zst`, `Baudrun_<version>_amd64.AppImage` | Standard 64-bit x86 desktop Linux. Pick the format your distro uses; AppImage works anywhere with FUSE. .deb / .rpm / .AppImage are produced by Tauri's bundler; .pkg.tar.zst is built via fpm since Tauri's bundler doesn't target pacman. |
+| **Linux arm64** | `Baudrun_<version>_arm64.deb`, `Baudrun-<version>-1.aarch64.rpm`, `baudrun-<version>-1-aarch64.pkg.tar.zst`, `Baudrun_<version>_aarch64.AppImage` | Raspberry Pi 4 / 5, ARM workstations, Apple Silicon Linux VMs. |
 
 Arch users can install the `.pkg.tar.zst` directly with
 `pacman -U`. The [packaging/arch/](packaging/arch/) directory holds
 a PKGBUILD for AUR submission as `baudrun-bin`, not yet published.
 
-Download, unpack, and run. On macOS, drag `Baudrun.app` into `/Applications`.
+Download, unpack, and run. On macOS, drag `Baudrun.app` into `/Applications`
+or open the `.dmg` and use the standard installer view.
 
-The app is currently unsigned on all platforms. First-launch friction:
-- **macOS**: right-click → Open to bypass Gatekeeper.
+The app is ad-hoc signed on macOS but not notarized, and unsigned on
+Windows. First-launch friction:
+- **macOS**: right-click → Open to bypass Gatekeeper. If macOS still
+  refuses with "damaged" or "unidentified developer," strip the
+  quarantine flag: `xattr -cr Baudrun.app`. The .dmg installer
+  handles signatures correctly out of the box; the .zip works once
+  unpacked with Finder or `ditto -x -k`.
 - **Windows**: SmartScreen will warn; click "More info" → "Run anyway".
-- **Linux**: `chmod +x Baudrun && ./Baudrun`. You'll need `libwebkit2gtk-4.1`
-  and `libgtk-3` installed (default on Ubuntu 24.04+, Fedora 40+, and recent
-  Debian).
+- **Linux**: `.deb` / `.rpm` / `.pkg.tar.zst` install via the package
+  manager and ship a udev rule that grants the console user ACL
+  access to `/dev/ttyUSB*` without the dialout-group dance. AppImage
+  needs FUSE; `chmod +x Baudrun.AppImage && ./Baudrun.AppImage`.
 
-Code signing and notarization are planned; see `TODO.md`.
+Apple Developer signing + notarization (and Windows code signing)
+are planned; see `TODO.md`.
 
 ## Building from source
 
 Prerequisites:
 
-- Go 1.23+
+- Rust stable (1.77+) — install via [rustup](https://rustup.rs/)
 - Node 20+
-- [Wails v2.12](https://wails.io/docs/gettingstarted/installation) (`go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0`)
+- The [Tauri prerequisites](https://tauri.app/start/prerequisites/) for
+  your platform (system libraries below). The Tauri CLI itself ships
+  via `@tauri-apps/cli` as an npm dev-dependency; no separate install
+  needed.
 
-Before the first `wails build` on macOS or Linux, install `libusb-1.0`
-(pulled in by `usbserial-go` for direct CP210x / CH340 / etc. access):
+System libraries (linked at compile time):
 
-- macOS: `brew install libusb pkg-config`
-- Debian / Ubuntu: `sudo apt install libusb-1.0-0-dev pkg-config`
-- Fedora: `sudo dnf install libusb1-devel pkgconf-pkg-config`
-- Arch: `sudo pacman -S libusb pkgconf`
+- **macOS**: `brew install libusb pkg-config`
+- **Debian / Ubuntu**: `sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev libayatana-appindicator3-dev librsvg2-dev libusb-1.0-0-dev libudev-dev pkg-config`
+- **Fedora**: `sudo dnf install gtk3-devel webkit2gtk4.1-devel libsoup3-devel libayatana-appindicator-gtk3-devel librsvg2-devel libusb1-devel systemd-devel pkgconf-pkg-config`
+- **Arch**: `sudo pacman -S gtk3 webkit2gtk-4.1 libsoup3 libayatana-appindicator librsvg libusb pkgconf`
+- **Windows**: nothing extra — WebView2 runtime ships with Windows 10 21H2+ and 11.
 
 ```bash
 git clone git@github.com:packetThrower/Baudrun.git
 cd Baudrun
-wails build                               # production build for host OS
-wails build -platform windows/amd64       # cross-compile to Windows from macOS
-wails build -platform darwin/arm64        # Apple Silicon
-wails build -platform darwin/amd64        # Intel Mac
-wails dev                                 # hot-reload dev mode
+npm install                              # pulls Tauri CLI + frontend deps
+npm run tauri dev                        # hot-reload dev (Rust + Vite)
+npm run tauri build                      # production bundle for host arch
+npm run tauri build -- --bundles deb     # only the .deb (Linux)
 ```
 
-Cross-compiling to Linux from macOS isn't supported by Wails, so Linux
-builds have to run on Linux (or in CI). On a Linux host, install the
-webview + libusb deps listed above first, then `wails build -platform
-linux/amd64` (or `linux/arm64`).
+`tauri build` cross-compiles within the same OS family but not across
+desktop OSes — Linux artifacts have to be built on Linux, Windows on
+Windows, macOS on macOS. The release matrix in CI runs native builds
+on each platform's runner; locally a Linux VM (or CI) is the cleanest
+way to produce Linux artifacts from a macOS / Windows host.
 
-CI (`.github/workflows/ci.yml`) runs native Go checks on `macos-26`,
-`macos-15-intel`, `windows-latest`, `windows-11-arm`, `ubuntu-latest`, and
-`ubuntu-24.04-arm` on each push to `main`. Tagged pushes matching SemVer
-`v[0-9]+.[0-9]+.[0-9]+` trigger `.github/workflows/release.yml`, which
-produces a GitHub Release with all six platform artifacts attached
+CI (`.github/workflows/ci.yml`) runs `cargo check` + `cargo clippy
+-- -D warnings` + `cargo test --lib` on `macos-26`, `macos-15-intel`,
+`windows-latest`, `windows-11-arm`, `ubuntu-latest`, and
+`ubuntu-24.04-arm` on each push to `main`, plus a frontend job
+(`npm ci`, `svelte-check`, `npm run build`). Tagged pushes matching
+SemVer `v[0-9]+.[0-9]+.[0-9]+` (or `v[0-9]+.[0-9]+.[0-9]+-*` for
+pre-releases) trigger `.github/workflows/release.yml`, which uses
+[`tauri-action`](https://github.com/tauri-apps/tauri-action) to
+produce a GitHub Release with all six platform artifacts attached
 (macOS arm64/amd64, Windows x64/arm64, Linux amd64/arm64).
 
 ## Architecture
 
 ```
 Baudrun/
-├── main.go                        # Wails entrypoint + per-OS window options
-├── app.go                         # Wails-bound App struct (API surface)
-├── internal/
-│   ├── appdata/                   # per-OS app-data directory helper
-│   ├── profiles/                  # JSON-backed profile store
-│   ├── serial/                    # go.bug.st/serial wrapper, read pump,
-│   │                              # chipset detection (ioreg / Get-PnpDevice)
-│   ├── settings/                  # global settings (default theme, skin,
-│   │                              # appearance, font size, log dir, toggles)
-│   ├── skins/                     # app-chrome skins (CSS-var JSON)
-│   └── themes/                    # terminal themes + .itermcolors parser
-├── frontend/
+├── src-tauri/                     # Rust backend (Tauri v2)
+│   ├── Cargo.toml                 # crate manifest, deps (tauri, serialport,
+│   │                              # rusb, plist, chrono, uuid, ...)
+│   ├── tauri.conf.json            # window config, bundle metadata, Linux
+│   │                              # deb/rpm/appimage settings
+│   ├── build.rs                   # tauri-build entrypoint
+│   ├── capabilities/default.json  # IPC permission grants (dialog, opener,
+│   │                              # log, core:window:allow-start-dragging)
+│   ├── icons/                     # generated by `cargo tauri icon` from
+│   │                              # build/appicon.png
+│   ├── resources/
+│   │   ├── builtin_themes.json    # 13 built-in terminal themes (data only)
+│   │   └── builtin_skins.json     # 14 built-in app skins (data only)
 │   └── src/
-│       ├── App.svelte             # sidebar + main layout, session lifecycle
-│       ├── style.css              # CSS custom-property surface (skin root)
-│       ├── lib/
-│       │   ├── Sidebar.svelte     # profile list + settings button
-│       │   ├── ProfileForm.svelte # profile editor + connect/suspend flow
-│       │   ├── Terminal.svelte    # xterm.js wrapper, stays mounted per-session
-│       │   ├── PreviewTerminal.svelte # read-only xterm for theme previews
-│       │   ├── Settings.svelte    # skin picker, appearance, default theme,
-│       │   │                      # theme preview modal, log dir, toggles
-│       │   ├── highlight.ts       # line-buffered ANSI-aware colorizer
-│       │   ├── hexdump.ts         # 16-byte-per-line hex+ASCII formatter
-│       │   └── api.ts             # thin Wails bindings wrapper
-│       └── stores/                # Svelte stores (profiles, themes, skins,
+│       ├── main.rs                # binary entry; calls baudrun_lib::run()
+│       ├── lib.rs                 # tauri::Builder setup, plugin registration,
+│       │                          # state init, invoke_handler list
+│       ├── state.rs               # AppState (stores + active session handle)
+│       ├── events.rs              # event-name constants + payload types
+│       ├── appdata.rs             # OS config-directory resolution + override
+│       ├── profiles.rs            # JSON-backed profile store + validation
+│       ├── settings.rs            # global settings store
+│       ├── themes/{mod,parse}.rs  # theme store + .itermcolors plist parser
+│       ├── skins.rs               # skin store + CSS-var validation
+│       ├── serial/
+│       │   ├── session.rs         # Session struct, read pump (own thread),
+│       │   │                      # DTR/RTS/break, log writer, transfer redirect
+│       │   ├── chipsets.rs        # VID/PID + manufacturer chipset table
+│       │   ├── ports.rs           # ListPorts + PortInfo
+│       │   ├── direct.rs          # libusb-direct port-name codec
+│       │   ├── detect.rs          # suspect-port detection (counterfeit Prolific)
+│       │   ├── usb_darwin.rs      # ioreg-based missing-driver detection
+│       │   ├── usb_windows.rs     # Get-PnpDevice missing-driver detection
+│       │   └── usb_other.rs       # Linux/BSD stub
+│       ├── usbserial/             # vendored from packetThrower/usbserial-go
+│       │   ├── mod.rs             # Port trait, Driver registry, list()
+│       │   └── cp210x.rs          # SiLabs CP210x driver via rusb
+│       ├── transfer.rs            # XMODEM / XMODEM-CRC / XMODEM-1K / YMODEM
+│       │                          # state machines + ChannelReader helper
+│       ├── sanitize.rs            # session-log sanitizer (strips ANSI,
+│       │                          # collapses CR-heavy line endings)
+│       └── commands/              # #[tauri::command] handlers grouped by domain
+│           ├── profiles.rs        # CRUD on the profile store
+│           ├── themes.rs          # list/import/delete + dialog file picker
+│           ├── skins.rs           # list/import/delete + dialog file picker
+│           ├── settings.rs        # get/update + log-dir + config-dir + open_path
+│           ├── serial.rs          # connect/disconnect/send + DTR/RTS/break +
+│           │                      # auto-reconnect loop
+│           ├── transfer.rs        # send_file (XMODEM/YMODEM) + cancel_transfer
+│           └── window.rs          # set_traffic_lights_inset (decorum)
+├── src/                           # Svelte 5 frontend (was frontend/src/)
+│   ├── App.svelte                 # sidebar + main layout, session lifecycle
+│   ├── style.css                  # CSS custom-property surface (skin root)
+│   ├── lib/
+│   │   ├── Sidebar.svelte         # profile list + settings button
+│   │   ├── ProfileForm.svelte     # profile editor + connect/suspend flow
+│   │   ├── Terminal.svelte        # xterm.js wrapper, stays mounted per-session
+│   │   ├── PreviewTerminal.svelte # read-only xterm for theme previews
+│   │   ├── Settings.svelte        # skin picker, appearance, default theme,
+│   │   │                          # theme preview modal, log dir, toggles
+│   │   ├── highlight.ts           # line-buffered ANSI-aware colorizer
+│   │   ├── hexdump.ts             # 16-byte-per-line hex+ASCII formatter
+│   │   └── api.ts                 # thin @tauri-apps/api invoke + listen wrapper
+│   └── stores/                    # Svelte stores (profiles, themes, skins,
 │                                  # settings, session, appearance, dismissed-drivers)
-├── build/                         # Wails build inputs (read at wails build)
+├── build/                         # icon source + per-OS metadata
 │   ├── appicon.svg                # source of truth — run make-icon.sh after edits
-│   ├── appicon.png                # rasterized; Wails reads this to emit .icns
-│   ├── make-icon.sh               # regenerates appicon.png + Windows .ico
+│   ├── appicon.png                # rasterized; fed to `cargo tauri icon` to
+│   │                              # regenerate src-tauri/icons/
+│   ├── make-icon.sh               # regenerates appicon.png from the SVG
 │   │                              # (needs rsvg-convert + ImageMagick 7)
 │   ├── darwin/Info.plist          # macOS bundle metadata
-│   └── windows/                   # Windows .ico + manifest + installer
+│   └── windows/                   # Windows .ico + manifest
 ├── packaging/                     # downstream packaging metadata
-│   ├── linux/baudrun.desktop     # freedesktop entry shipped inside .deb/.rpm/AppImage
+│   ├── linux/baudrun.desktop      # freedesktop entry shipped in .deb/.rpm/AppImage
+│   ├── linux/60-baudrun-serial.rules  # udev rule (uaccess for /dev/ttyUSB*)
+│   ├── linux/baudrun-postinstall.sh   # reload udev on install/upgrade
 │   └── arch/                      # AUR PKGBUILD for baudrun-bin
 └── .github/workflows/
-    ├── ci.yml                     # native Go + frontend checks across
+    ├── ci.yml                     # cargo check/clippy/test on
     │                              # macOS, Windows (amd64/arm64), Linux (amd64/arm64)
-    └── release.yml                # tag-triggered build + GitHub Release;
-                                   # emits .app per macOS arch (arm64/amd64),
-                                   # .exe .zip per Windows arch, and
-                                   # .deb/.rpm/.AppImage per Linux arch
+    │                              # + frontend (svelte-check + vite build)
+    ├── release.yml                # tag-triggered build via tauri-action;
+    │                              # emits .app/.dmg per macOS arch,
+    │                              # .msi/.exe (NSIS)/.zip per Windows arch,
+    │                              # and .deb/.rpm/.AppImage/.pkg.tar.zst
+    │                              # per Linux arch
+    └── docs.yml                   # mkdocs build + GitHub Pages deploy
 ```
 
-**Data flow.** Bytes from the serial port flow as base64-encoded Wails events
-(`serial:data`) to preserve binary fidelity, are decoded in `api.onData`,
-fed through either the highlighter (with optional per-line timestamp
-prefixing) or the hex-dump formatter depending on per-profile settings, and
-written to the xterm instance. If session logging is enabled, a separate
-log-file sink in the Go backend receives a raw copy of every byte. Keystrokes
-go the other way via `api.sendBytes`, with line-ending translation applied
-on the frontend.
+**Data flow.** Bytes from the serial port flow as base64-encoded Tauri
+events (`serial:data`) to preserve binary fidelity, are decoded in
+`api.onData`, fed through either the highlighter (with optional per-line
+timestamp prefixing) or the hex-dump formatter depending on per-profile
+settings, and written to the xterm instance. If session logging is
+enabled, a separate log-file sink (a `SanitizingLogWriter` that strips
+ANSI escapes and collapses CR-heavy line endings) receives a copy of
+every byte. Keystrokes go the other way via `api.sendBytes`
+(`invoke("send", {...})`) with line-ending translation applied on the
+frontend.
 
-**Serial lifecycle.** Opening a port starts a goroutine-driven read pump with
-a 100ms read timeout; closing the port waits for the pump to exit via a
-`sync.WaitGroup` so the OS-level FD is guaranteed released before
-`Disconnect` returns. On-connect and on-disconnect control-line policies
-(DTR/RTS assert/deassert) are applied at the right bookends.
+**Serial lifecycle.** Opening a port spawns a dedicated read-pump thread
+with a 100ms read timeout. On the native backend, `serialport::SerialPort::try_clone`
+splits the underlying file descriptor so command invocations
+(`send`, `set_dtr`, `send_break`, …) don't contend with the blocking
+read. On the libusb-direct backend (CP210x), an `Arc<dyn Port>` is shared
+between the read thread and command handlers — `rusb` allows concurrent
+bulk read + bulk write on the same handle. `Session::close` is idempotent:
+it sets a closed flag, applies on-disconnect DTR/RTS policies, and joins
+the pump thread before releasing the handle.
 
 **Terminal persistence.** The `<Terminal>` component stays mounted as long
 as there's an active session, even when the UI is showing the profile form
@@ -310,7 +375,9 @@ dimensions.
 from the active skin's JSON onto `document.documentElement`, tracking which
 properties it has written. Switching skins first unsets all tracked
 properties (so sparser skins don't inherit stale values from richer ones)
-then applies the new set. Live-swap, no reload.
+then applies the new set. Live-swap, no reload. macOS traffic-light
+position re-applies via `tauri-plugin-decorum` to land inside the
+floating-bubble layout for skins like Liquid Glass.
 
 ## License
 
