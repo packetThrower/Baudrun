@@ -13,6 +13,7 @@ pub mod skins;
 pub mod state;
 pub mod themes;
 pub mod transfer;
+pub mod usbserial;
 
 use state::{AppState, SessionHandle};
 

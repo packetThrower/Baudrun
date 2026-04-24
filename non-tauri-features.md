@@ -10,37 +10,21 @@ flagged here becomes a post-migration follow-up.
 
 ## Open items
 
-### libusb-direct CP210x fallback (serial layer)
-
-The Go version uses [`packetThrower/usbserial-go`](https://github.com/packetThrower/usbserial-go)
-to talk to CP210x adapters directly over libusb when no vendor driver
-is installed — common on macOS without the SiLabs VCP driver and on
-rebranded devices whose VID doesn't bind to the kernel's id table.
-
-No off-the-shelf Rust crate covers the CP210x control-transfer
-protocol. Porting [`usbserial-go/cp210x`](https://github.com/packetThrower/usbserial-go/tree/main/cp210x)
-to Rust on top of `rusb` is a ~300 LOC sub-project (baud-rate /
-framing / flow-control / DTR-RTS / break control-transfer sequences,
-bulk-transfer read+write endpoints).
-
-Impact: users on macOS without the SiLabs driver currently can't talk
-to a CP210x adapter from the Tauri build. On Linux and Windows the
-kernel drivers cover CP210x so there's no regression there.
-
-Tracked on branch `tauri-v2-migration`:
-- `src-tauri/src/serial/direct.rs` — stub module, `list_direct_usb()`
-  returns empty.
-- `src-tauri/src/serial/session.rs` — `DirectUsbUnsupported` error
-  fires when a profile's `port_name` starts with `usb:`.
-
-Follow-up: add `rusb = "0.9"` to `Cargo.toml`, implement a `NativePort`
-peer that wires `rusb::DeviceHandle` through the same `PortBackend`
-trait, and replace the stubs.
+_Nothing flagged — libusb-direct CP210x landed in `src-tauri/src/usbserial/`._
 
 ## Resolved items
 
-_Items move here once addressed, with a brief note on the chosen
-approach._
+### libusb-direct CP210x fallback (phase follow-up)
+
+Ported `usbserial-go` in-tree to [src-tauri/src/usbserial/](src-tauri/src/usbserial/)
+with [src-tauri/src/usbserial/cp210x.rs](src-tauri/src/usbserial/cp210x.rs) as
+the CP210x driver implementation. Built on `rusb = "0.9"`. Same
+VID/PID table (SiLabs stock + Siemens RUGGEDCOM rebrand), same
+control-transfer protocol (AN571), same behavior on open (9600-8N1,
+no flow, DTR+RTS asserted). [src-tauri/src/serial/direct.rs](src-tauri/src/serial/direct.rs)
+replaces the earlier stub and delegates to `usbserial` for
+enumeration + open. [src-tauri/src/serial/session.rs](src-tauri/src/serial/session.rs)
+routes `usb:VID:PID[:Serial]` port names through the new backend.
 
 ---
 

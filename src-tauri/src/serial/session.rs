@@ -17,6 +17,9 @@ use serde::Serialize;
 use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use thiserror::Error;
 
+use super::direct;
+use crate::usbserial::{self, FlowControl as UsbFlow, Framing as UsbFraming, Parity as UsbParity};
+
 /// Kernel/driver read block. 100ms is the same budget go.bug.st uses
 /// and is small enough that Close() observes `closed = true` promptly.
 const READ_TIMEOUT: Duration = Duration::from_millis(100);
@@ -64,8 +67,6 @@ pub enum SessionError {
     InvalidDataBits(u32),
     #[error("baud rate must be positive")]
     InvalidBaud,
-    #[error("direct-USB (libusb) backend not yet implemented on Tauri")]
-    DirectUsbUnsupported,
     #[error("session closed")]
     Closed,
     #[error(transparent)]
@@ -119,6 +120,42 @@ impl PortBackend for NativePort {
         self.inner.set_break().map_err(serialport_to_io)?;
         thread::sleep(duration);
         self.inner.clear_break().map_err(serialport_to_io)
+    }
+}
+
+/// Direct-USB backend — wraps an `Arc<dyn usbserial::Port>`. Both
+/// the read pump and the command handlers hold clones of the same
+/// Arc because libusb only allows one active interface claim per
+/// device; concurrent bulk read + bulk write on a single handle are
+/// safe at the libusb layer.
+struct DirectUsbBackend {
+    port: Arc<dyn usbserial::Port>,
+}
+
+impl Read for DirectUsbBackend {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.port.read(buf)
+    }
+}
+
+impl Write for DirectUsbBackend {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.port.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl PortBackend for DirectUsbBackend {
+    fn set_dtr(&mut self, v: bool) -> io::Result<()> {
+        self.port.set_dtr(v)
+    }
+    fn set_rts(&mut self, v: bool) -> io::Result<()> {
+        self.port.set_rts(v)
+    }
+    fn send_break_signal(&mut self, duration: Duration) -> io::Result<()> {
+        self.port.send_break(duration)
     }
 }
 
@@ -177,9 +214,58 @@ impl Session {
             return Err(SessionError::InvalidBaud);
         }
         if is_direct_usb_port_name(&cfg.port_name) {
-            return Err(SessionError::DirectUsbUnsupported);
+            Self::open_direct(cfg, on_read, on_exit)
+        } else {
+            Self::open_native(cfg, on_read, on_exit)
         }
-        Self::open_native(cfg, on_read, on_exit)
+    }
+
+    fn open_direct(cfg: Config, on_read: OnRead, on_exit: OnExit) -> Result<Self> {
+        let port = direct::open_direct_usb(&cfg.port_name)?;
+
+        // Configure the port. Parameters validated up-front so a
+        // bad config tears the port down cleanly.
+        port.set_baud_rate(cfg.baud_rate)?;
+        port.set_framing(usb_framing(cfg.data_bits, &cfg.parity, &cfg.stop_bits)?)?;
+        port.set_flow_control(usb_flow(&cfg.flow_control)?)?;
+
+        // Apply on-connect DTR/RTS policies. Direct-USB opens with
+        // both asserted (matches `go.bug.st/serial` and the Go
+        // usbserial-go behavior).
+        let dtr = apply_line(|v| port.set_dtr(v), &cfg.dtr_on_connect, true);
+        let rts = apply_line(|v| port.set_rts(v), &cfg.rts_on_connect, true);
+
+        let closed = Arc::new(AtomicBool::new(false));
+        let log_writer: Arc<Mutex<Option<Box<dyn Write + Send>>>> = Arc::new(Mutex::new(None));
+        let transfer_rx: Arc<Mutex<Option<TransferSink>>> = Arc::new(Mutex::new(None));
+
+        let read_backend = DirectUsbBackend {
+            port: Arc::clone(&port),
+        };
+        let write_backend = DirectUsbBackend {
+            port: Arc::clone(&port),
+        };
+
+        let thread = spawn_read_pump(
+            read_backend,
+            closed.clone(),
+            on_read,
+            on_exit,
+            log_writer.clone(),
+            transfer_rx.clone(),
+        );
+
+        Ok(Session {
+            port_write: Mutex::new(Box::new(write_backend)),
+            closed,
+            dtr_state: AtomicBool::new(dtr),
+            rts_state: AtomicBool::new(rts),
+            dtr_on_close: cfg.dtr_on_disconnect,
+            rts_on_close: cfg.rts_on_disconnect,
+            log_writer,
+            transfer_rx,
+            thread: Mutex::new(Some(thread)),
+        })
     }
 
     fn open_native(cfg: Config, on_read: OnRead, on_exit: OnExit) -> Result<Self> {
@@ -347,8 +433,8 @@ impl Drop for Session {
     }
 }
 
-fn spawn_read_pump(
-    mut port: NativePort,
+fn spawn_read_pump<P: PortBackend + 'static>(
+    mut port: P,
     closed: Arc<AtomicBool>,
     on_read: OnRead,
     on_exit: OnExit,
@@ -464,14 +550,45 @@ fn to_flow(f: &str) -> Result<FlowControl> {
     })
 }
 
-/// Reserved prefix on a port name that marks it as a libusb-direct
-/// device — the Go version routed these to usbserial-go. Tauri port
-/// stubs the direct-USB backend (see `non-tauri-features.md`), so
-/// callers hitting this prefix currently error out.
-pub(super) const DIRECT_USB_PREFIX: &str = "usb:";
+// --- usbserial variants of the config mappers --------------------------
+
+fn usb_framing(data_bits: u32, parity: &str, stop_bits: &str) -> Result<UsbFraming> {
+    let bits: u8 = match data_bits {
+        5..=8 => data_bits as u8,
+        other => return Err(SessionError::InvalidDataBits(other)),
+    };
+    let stop: u8 = match stop_bits {
+        "" | "1" => 1,
+        "1.5" => 15,
+        "2" => 2,
+        other => return Err(SessionError::InvalidStopBits(other.to_string())),
+    };
+    let parity = match parity {
+        "" | "none" => UsbParity::None,
+        "odd" => UsbParity::Odd,
+        "even" => UsbParity::Even,
+        "mark" => UsbParity::Mark,
+        "space" => UsbParity::Space,
+        other => return Err(SessionError::InvalidParity(other.to_string())),
+    };
+    Ok(UsbFraming {
+        data_bits: bits,
+        stop_bits: stop,
+        parity,
+    })
+}
+
+fn usb_flow(f: &str) -> Result<UsbFlow> {
+    Ok(match f {
+        "" | "none" => UsbFlow::None,
+        "rtscts" | "hardware" => UsbFlow::RtsCts,
+        "xonxoff" | "software" => UsbFlow::XonXoff,
+        other => return Err(SessionError::InvalidFlowControl(other.to_string())),
+    })
+}
 
 pub fn is_direct_usb_port_name(name: &str) -> bool {
-    name.starts_with(DIRECT_USB_PREFIX)
+    direct::is_direct_usb_port_name(name)
 }
 
 /// Linux-only: rewrite EACCES-looking errors with the dialout-group
