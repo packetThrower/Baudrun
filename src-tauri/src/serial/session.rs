@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use serde::Serialize;
 use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use thiserror::Error;
 
@@ -44,7 +45,8 @@ pub struct Config {
     pub rts_on_disconnect: String,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ControlLines {
     pub dtr: bool,
     pub rts: bool,
