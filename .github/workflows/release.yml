@@ -315,14 +315,14 @@ jobs:
       # reads as a downgrade (0.8.0 < 0.8.0.beta.1 per lexicographic
       # version compare), but that's fine for a pre-release flow
       # where testers uninstall + reinstall between builds anyway.
-      # --log-level debug on fpm so rpmbuild's actual stderr
-      # surfaces in CI on any future failure, instead of just a
-      # "rpmbuild failed (exit code 1)" summary.
+      # --debug on fpm so rpmbuild's actual stderr surfaces in CI
+      # on any future failure, instead of just a "rpmbuild failed
+      # (exit code 1)" summary.
       - name: Build .rpm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           RPM_VERSION="${VERSION//-/.}"
-          fpm --log-level debug -s dir -t rpm \
+          fpm --debug -s dir -t rpm \
             --name baudrun \
             --version "${RPM_VERSION}" \
             --iteration "1" \
