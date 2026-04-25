@@ -1,11 +1,19 @@
-//! Window chrome commands. macOS-specific traffic-light
-//! repositioning via `tauri-plugin-decorum` so skins with a
-//! floating-bubble layout (macos-26 Liquid Glass) can pull the
-//! lights inside the panel instead of leaving them stranded in the
-//! shell-padding background. Non-macOS platforms accept the call
-//! and no-op.
+//! Window chrome + multi-window commands.
+//!
+//! - `set_traffic_lights_inset`: macOS-specific traffic-light
+//!   repositioning via `tauri-plugin-decorum` so skins with a
+//!   floating-bubble layout (macos-26 Liquid Glass) can pull the
+//!   lights inside the panel. Non-macOS platforms accept the call
+//!   and no-op.
+//! - `open_profile_window`: spawn a new top-level webview pointing
+//!   at the same renderer URL with `?profile=<id>` so the new
+//!   window's frontend lands on that profile selected. The new
+//!   window has its own session in [`crate::state::AppState`] keyed
+//!   by its label, so connecting / disconnecting / transferring on
+//!   one window doesn't disturb the others.
 
-use tauri::WebviewWindow;
+use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use uuid::Uuid;
 
 #[tauri::command]
 pub fn set_traffic_lights_inset(
@@ -26,4 +34,65 @@ pub fn set_traffic_lights_inset(
         let _ = (x, y, window);
         Ok(())
     }
+}
+
+#[tauri::command]
+pub fn open_profile_window(
+    profile_id: String,
+    profile_name: Option<String>,
+    app: AppHandle,
+) -> Result<String, String> {
+    // Sanitize the profile id into a URL-safe slice — Tauri's URL is
+    // assembled from the renderer's index.html plus our query string
+    // and the renderer parses it back via URLSearchParams on mount.
+    // Reject anything fishy up front so the value can't break out of
+    // the query-string scope on either end.
+    let safe_id: String = profile_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if safe_id.is_empty() {
+        return Err("profile id required".into());
+    }
+
+    // Each spawned window gets a unique label so per-window session
+    // state in AppState keys cleanly.
+    let label = format!("win-{}", Uuid::new_v4().simple());
+    let title = match profile_name {
+        Some(name) if !name.trim().is_empty() => format!("Baudrun — {}", name.trim()),
+        _ => "Baudrun".to_string(),
+    };
+
+    let url = WebviewUrl::App(format!("index.html?profile={}", safe_id).into());
+    let window = WebviewWindowBuilder::new(&app, &label, url)
+        .title(title)
+        .inner_size(1100.0, 720.0)
+        .min_inner_size(800.0, 500.0)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .build()
+        .map_err(|e| format!("create window: {}", e))?;
+
+    // Match the main window's overlay-titlebar + traffic-light setup
+    // so the spawned window doesn't look out of place. Failures here
+    // aren't fatal — the window still opens, the chrome just looks
+    // like the default.
+    #[cfg(desktop)]
+    {
+        use tauri_plugin_decorum::WebviewWindowExt;
+        if let Err(err) = window.create_overlay_titlebar() {
+            log::warn!("spawned window {}: create_overlay_titlebar: {}", label, err);
+        }
+        #[cfg(target_os = "macos")]
+        if let Err(err) = window.set_traffic_lights_inset(14.0, 20.0) {
+            log::warn!(
+                "spawned window {}: set_traffic_lights_inset: {}",
+                label,
+                err
+            );
+        }
+    }
+    let _ = window.set_focus();
+
+    Ok(label)
 }

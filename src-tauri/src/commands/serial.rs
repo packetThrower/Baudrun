@@ -3,6 +3,12 @@
 //! (send, DTR / RTS / break), port enumeration, and missing-driver
 //! detection. Events are emitted for data, disconnects, reconnect
 //! state changes, and transfer progress.
+//!
+//! Every command takes a [`WebviewWindow`] so its session is scoped
+//! to the calling window — clicking Connect in window A connects A's
+//! session, not main's. Background threads (read pump, auto-reconnect
+//! loop) carry the window label and emit via [`AppHandle::emit_to`]
+//! so events land in the right webview.
 
 use std::fs::File;
 use std::io::{self, Write};
@@ -14,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine;
 use chrono::Local;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
 use crate::appdata;
 use crate::events;
@@ -39,26 +45,28 @@ pub fn list_missing_drivers() -> Result<Vec<serial::USBSerialCandidate>, String>
 #[tauri::command]
 pub fn connect(
     profile_id: String,
-    app: AppHandle,
+    window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let profile = state
         .profiles
         .get(&profile_id)
         .ok_or_else(|| format!("profile {} not found", profile_id))?;
-    open_session(&app, state.inner(), profile).map_err(|e| e.to_string())
+    open_session(&window, state.inner(), profile).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn disconnect(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let (sess, cancel) = {
-        let mut guard = state.session.lock().unwrap();
-        let sess = guard.session.take();
-        let cancel = guard.reconnect_cancel.take();
-        guard.profile_id.clear();
-        guard.profile_snapshot = None;
+pub fn disconnect(
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let (sess, cancel) = state.with_session(window.label(), |handle| {
+        let sess = handle.session.take();
+        let cancel = handle.reconnect_cancel.take();
+        handle.profile_id.clear();
+        handle.profile_snapshot = None;
         (sess, cancel)
-    };
+    });
     // Cancel any in-flight reconnect loop first — otherwise it might
     // briefly re-open the port between our Close and the user's
     // expectation that the port is free.
@@ -72,48 +80,69 @@ pub fn disconnect(state: State<'_, Arc<AppState>>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn send(data: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+pub fn send(
+    data: String,
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data.as_bytes())
         .map_err(|e| format!("decode send payload: {}", e))?;
-    let sess = active_session(state.inner()).ok_or("not connected")?;
+    let sess = active_session(state.inner(), window.label()).ok_or("not connected")?;
     sess.send(&bytes).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn set_rts(v: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let sess = active_session(state.inner()).ok_or("not connected")?;
+pub fn set_rts(
+    v: bool,
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let sess = active_session(state.inner(), window.label()).ok_or("not connected")?;
     sess.set_rts(v).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn set_dtr(v: bool, state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let sess = active_session(state.inner()).ok_or("not connected")?;
+pub fn set_dtr(
+    v: bool,
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let sess = active_session(state.inner(), window.label()).ok_or("not connected")?;
     sess.set_dtr(v).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn send_break(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    let sess = active_session(state.inner()).ok_or("not connected")?;
+pub fn send_break(
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let sess = active_session(state.inner(), window.label()).ok_or("not connected")?;
     sess.send_break(serial::session::BREAK_DURATION)
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn active_profile_id(state: State<'_, Arc<AppState>>) -> String {
-    state.session.lock().unwrap().profile_id.clone()
+pub fn active_profile_id(
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> String {
+    state.with_session(window.label(), |handle| handle.profile_id.clone())
 }
 
 #[tauri::command]
-pub fn get_control_lines(state: State<'_, Arc<AppState>>) -> Result<ControlLines, String> {
-    let sess = active_session(state.inner()).ok_or("not connected")?;
+pub fn get_control_lines(
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<ControlLines, String> {
+    let sess = active_session(state.inner(), window.label()).ok_or("not connected")?;
     Ok(sess.control_lines())
 }
 
 // --- Internals ---------------------------------------------------------
 
-fn active_session(state: &Arc<AppState>) -> Option<Arc<Session>> {
-    state.session.lock().unwrap().session.clone()
+fn active_session(state: &Arc<AppState>, label: &str) -> Option<Arc<Session>> {
+    state.with_session(label, |handle| handle.session.clone())
 }
 
 /// Open a session for `profile`, wire data / exit callbacks, and
@@ -121,18 +150,16 @@ fn active_session(state: &Arc<AppState>) -> Option<Arc<Session>> {
 /// Connect command and the auto-reconnect loop so both paths produce
 /// identical sessions.
 fn open_session(
-    app: &AppHandle,
+    window: &WebviewWindow,
     state: &Arc<AppState>,
     profile: Profile,
 ) -> Result<(), serial::SessionError> {
-    {
-        let guard = state.session.lock().unwrap();
-        if guard.session.is_some() {
-            return Err(serial::SessionError::Io(io::Error::new(
-                io::ErrorKind::AlreadyExists,
-                "already connected — disconnect first",
-            )));
-        }
+    let label = window.label().to_string();
+    if state.with_session(&label, |handle| handle.session.is_some()) {
+        return Err(serial::SessionError::Io(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "already connected — disconnect first",
+        )));
     }
 
     let cfg = Config {
@@ -148,8 +175,9 @@ fn open_session(
         rts_on_disconnect: profile.rts_on_disconnect.clone(),
     };
 
-    let on_read = build_on_read(app.clone());
-    let on_exit = build_on_exit(app.clone(), Arc::clone(state));
+    let app = window.app_handle().clone();
+    let on_read = build_on_read(app.clone(), label.clone());
+    let on_exit = build_on_exit(app, Arc::clone(state), label.clone());
 
     let sess = Arc::new(Session::open(cfg, on_read, on_exit)?);
 
@@ -160,38 +188,45 @@ fn open_session(
         }
     }
 
-    {
-        let mut guard = state.session.lock().unwrap();
-        guard.session = Some(Arc::clone(&sess));
-        guard.profile_id = profile.id.clone();
-        guard.profile_snapshot = Some(profile);
-    }
+    state.with_session(&label, |handle| {
+        handle.session = Some(Arc::clone(&sess));
+        handle.profile_id = profile.id.clone();
+        handle.profile_snapshot = Some(profile);
+    });
     Ok(())
 }
 
-fn build_on_read(app: AppHandle) -> OnRead {
+/// Build the on-read callback that ferries serial bytes to the
+/// originating window's renderer. AppHandle is passed in (rather
+/// than WebviewWindow) so the callback is `Send + Sync` — the
+/// read-pump thread that fires this is OS-owned, not Tauri's runtime.
+fn build_on_read(app: AppHandle, label: String) -> OnRead {
     Arc::new(move |bytes: &[u8]| {
         let payload = base64::engine::general_purpose::STANDARD.encode(bytes);
-        let _ = app.emit(events::SERIAL_DATA, payload);
+        let _ = app.emit_to(label.as_str(), events::SERIAL_DATA, payload);
     })
 }
 
-fn build_on_exit(app: AppHandle, state: Arc<AppState>) -> OnExit {
+fn build_on_exit(app: AppHandle, state: Arc<AppState>, label: String) -> OnExit {
     Arc::new(move |err: io::Error| {
-        handle_session_exit(&app, &state, err);
+        handle_session_exit(&app, &state, &label, err);
     })
 }
 
 /// Runs on the read-pump thread when the port returns an error. On
 /// profiles that opt into auto-reconnect it kicks off a retry loop;
 /// otherwise it clears session state and emits `serial:disconnect`.
-fn handle_session_exit(app: &AppHandle, state: &Arc<AppState>, err: io::Error) {
-    let (old_session, profile) = {
-        let mut guard = state.session.lock().unwrap();
-        let sess = guard.session.take();
-        let profile = guard.profile_snapshot.clone();
+fn handle_session_exit(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    label: &str,
+    err: io::Error,
+) {
+    let (old_session, profile) = state.with_session(label, |handle| {
+        let sess = handle.session.take();
+        let profile = handle.profile_snapshot.clone();
         (sess, profile)
-    };
+    });
 
     // Close the orphaned session on a fresh thread — Session::close
     // joins the read-pump thread, and we're ON that thread right now.
@@ -203,33 +238,37 @@ fn handle_session_exit(app: &AppHandle, state: &Arc<AppState>, err: io::Error) {
 
     if let Some(profile) = profile {
         if profile.auto_reconnect {
-            start_reconnect(app, state, profile);
+            start_reconnect(app, state, label, profile);
             return;
         }
     }
 
-    {
-        let mut guard = state.session.lock().unwrap();
-        guard.profile_id.clear();
-        guard.profile_snapshot = None;
-    }
-    let _ = app.emit(events::SERIAL_DISCONNECT, err.to_string());
+    state.with_session(label, |handle| {
+        handle.profile_id.clear();
+        handle.profile_snapshot = None;
+    });
+    let _ = app.emit_to(label, events::SERIAL_DISCONNECT, err.to_string());
 }
 
-fn start_reconnect(app: &AppHandle, state: &Arc<AppState>, profile: Profile) {
+fn start_reconnect(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    label: &str,
+    profile: Profile,
+) {
     let cancel = Arc::new(AtomicBool::new(false));
-    {
-        let mut guard = state.session.lock().unwrap();
-        if let Some(prev) = guard.reconnect_cancel.take() {
+    state.with_session(label, |handle| {
+        if let Some(prev) = handle.reconnect_cancel.take() {
             prev.store(true, Ordering::Release);
         }
-        guard.reconnect_cancel = Some(Arc::clone(&cancel));
-    }
+        handle.reconnect_cancel = Some(Arc::clone(&cancel));
+    });
 
-    let _ = app.emit(events::SERIAL_RECONNECTING, profile.port_name.clone());
+    let _ = app.emit_to(label, events::SERIAL_RECONNECTING, profile.port_name.clone());
 
     let app = app.clone();
     let state = Arc::clone(state);
+    let label = label.to_string();
     thread::Builder::new()
         .name("baudrun-reconnect".into())
         .spawn(move || {
@@ -237,17 +276,29 @@ fn start_reconnect(app: &AppHandle, state: &Arc<AppState>, profile: Profile) {
             loop {
                 thread::sleep(RECONNECT_INTERVAL);
                 if cancel.load(Ordering::Acquire) {
-                    finish_failed_reconnect(&app, &state, "reconnect cancelled");
+                    finish_failed_reconnect(&app, &state, &label, "reconnect cancelled");
                     return;
                 }
                 if Instant::now() >= deadline {
-                    finish_failed_reconnect(&app, &state, "reconnect timeout");
+                    finish_failed_reconnect(&app, &state, &label, "reconnect timeout");
                     return;
                 }
-                if open_session(&app, &state, profile.clone()).is_ok() {
-                    let _ = app.emit(events::SERIAL_RECONNECTED, profile.id.clone());
-                    let mut guard = state.session.lock().unwrap();
-                    guard.reconnect_cancel = None;
+                // Re-derive the WebviewWindow from the AppHandle each
+                // attempt — the user might've closed the window during
+                // the reconnect loop, in which case we silently abort.
+                let Some(window) = app.get_webview_window(&label) else {
+                    finish_failed_reconnect(&app, &state, &label, "window closed");
+                    return;
+                };
+                if open_session(&window, &state, profile.clone()).is_ok() {
+                    let _ = app.emit_to(
+                        label.as_str(),
+                        events::SERIAL_RECONNECTED,
+                        profile.id.clone(),
+                    );
+                    state.with_session(&label, |handle| {
+                        handle.reconnect_cancel = None;
+                    });
                     return;
                 }
             }
@@ -255,14 +306,18 @@ fn start_reconnect(app: &AppHandle, state: &Arc<AppState>, profile: Profile) {
         .expect("spawn baudrun-reconnect thread");
 }
 
-fn finish_failed_reconnect(app: &AppHandle, state: &Arc<AppState>, reason: &str) {
-    {
-        let mut guard = state.session.lock().unwrap();
-        guard.profile_id.clear();
-        guard.profile_snapshot = None;
-        guard.reconnect_cancel = None;
-    }
-    let _ = app.emit(events::SERIAL_DISCONNECT, reason);
+fn finish_failed_reconnect(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    label: &str,
+    reason: &str,
+) {
+    state.with_session(label, |handle| {
+        handle.profile_id.clear();
+        handle.profile_snapshot = None;
+        handle.reconnect_cancel = None;
+    });
+    let _ = app.emit_to(label, events::SERIAL_DISCONNECT, reason);
 }
 
 fn open_session_log(

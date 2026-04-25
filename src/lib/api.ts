@@ -193,6 +193,8 @@ export const api = {
 
   setTrafficLightsInset: (x: number, y: number) =>
     invoke<void>("set_traffic_lights_inset", { x, y }),
+  openProfileWindow: (profileId: string, profileName?: string) =>
+    invoke<string>("open_profile_window", { profileId, profileName }),
 
   listHighlightPacks: () => invoke<HighlightPack[]>("list_highlight_packs"),
   updateUserHighlightPack: (pack: HighlightPack) =>

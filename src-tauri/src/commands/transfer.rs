@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::events::{self, TransferProgress};
@@ -44,38 +44,40 @@ pub fn pick_send_file(app: AppHandle) -> Result<String, String> {
 pub fn send_file(
     protocol: String,
     path: String,
-    app: AppHandle,
+    window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     // Acquire session + install transfer state under the session
-    // lock so two send_file invocations can't both think they own
-    // the port.
-    let (sess, tx, rx, cancel) = {
-        let mut guard = state.session.lock().unwrap();
-        if guard.transfer_cancel.is_some() {
-            return Err("transfer already in progress".into());
+    // lock so two send_file invocations from this window can't both
+    // think they own the port. Two windows running parallel transfers
+    // is fine — each has its own SessionHandle.
+    let setup = state.with_session(&label, |handle| {
+        if handle.transfer_cancel.is_some() {
+            return Err("transfer already in progress".to_string());
         }
-        let sess = guard
+        let sess = handle
             .session
             .clone()
             .ok_or_else(|| "not connected".to_string())?;
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
-        guard.transfer_tx = Some(tx.clone());
+        handle.transfer_tx = Some(tx.clone());
         let cancel = Arc::new(AtomicBool::new(false));
-        guard.transfer_cancel = Some(Arc::clone(&cancel));
-        (sess, tx, rx, cancel)
-    };
+        handle.transfer_cancel = Some(Arc::clone(&cancel));
+        Ok((sess, tx, rx, cancel))
+    });
+    let (sess, tx, rx, cancel) = setup?;
 
-    let result = run_transfer(&app, &sess, &protocol, &path, tx, rx, cancel);
+    let app = window.app_handle().clone();
+    let result = run_transfer(&app, &label, &sess, &protocol, &path, tx, rx, cancel);
 
     // Tear down transfer state regardless of outcome. Hold the
     // session lock only while mutating, not while emitting events.
     sess.end_transfer();
-    {
-        let mut guard = state.session.lock().unwrap();
-        guard.transfer_tx = None;
-        guard.transfer_cancel = None;
-    }
+    state.with_session(&label, |handle| {
+        handle.transfer_tx = None;
+        handle.transfer_cancel = None;
+    });
 
     let filename = Path::new(&path)
         .file_name()
@@ -84,21 +86,22 @@ pub fn send_file(
 
     match result {
         Ok(()) => {
-            let _ = app.emit(events::TRANSFER_COMPLETE, filename);
+            let _ = app.emit_to(label.as_str(), events::TRANSFER_COMPLETE, filename);
             Ok(())
         }
         Err(msg) => {
-            let _ = app.emit(events::TRANSFER_ERROR, msg.clone());
+            let _ = app.emit_to(label.as_str(), events::TRANSFER_ERROR, msg.clone());
             Err(msg)
         }
     }
 }
 
 /// Flip the cancel flag on an in-flight transfer. No-op when no
-/// transfer is running.
+/// transfer is running in the calling window.
 #[tauri::command]
-pub fn cancel_transfer(state: State<'_, Arc<AppState>>) {
-    if let Some(flag) = state.session.lock().unwrap().transfer_cancel.clone() {
+pub fn cancel_transfer(window: WebviewWindow, state: State<'_, Arc<AppState>>) {
+    let cancel = state.with_session(window.label(), |handle| handle.transfer_cancel.clone());
+    if let Some(flag) = cancel {
         flag.store(true, Ordering::Release);
     }
 }
@@ -107,6 +110,7 @@ pub fn cancel_transfer(state: State<'_, Arc<AppState>>) {
 
 fn run_transfer(
     app: &AppHandle,
+    label: &str,
     sess: &Arc<Session>,
     protocol: &str,
     path: &str,
@@ -134,8 +138,10 @@ fn run_transfer(
     };
 
     let progress_app = app.clone();
+    let progress_label = label.to_string();
     let progress = Arc::new(move |sent: u64, total: u64| {
-        let _ = progress_app.emit(
+        let _ = progress_app.emit_to(
+            progress_label.as_str(),
             events::TRANSFER_PROGRESS,
             TransferProgress { sent, total },
         );

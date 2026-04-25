@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use tauri::Manager;
+use tauri::{Manager, RunEvent, WindowEvent};
 
 pub mod appdata;
 pub mod commands;
@@ -16,7 +17,7 @@ pub mod themes;
 pub mod transfer;
 pub mod usbserial;
 
-use state::{AppState, SessionHandle};
+use state::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -66,7 +67,7 @@ pub fn run() {
                 themes,
                 skins,
                 highlight,
-                session: Mutex::new(SessionHandle::default()),
+                sessions: Mutex::new(HashMap::new()),
             });
             app.manage(app_state);
 
@@ -126,14 +127,33 @@ pub fn run() {
             commands::transfer::pick_send_file,
             commands::transfer::send_file,
             commands::transfer::cancel_transfer,
-            // window chrome
+            // window chrome + multi-window
             commands::window::set_traffic_lights_inset,
+            commands::window::open_profile_window,
             // highlight rules
             commands::highlight::list_highlight_packs,
             commands::highlight::update_user_highlight_pack,
             commands::highlight::import_user_highlight_pack,
             commands::highlight::delete_user_highlight_pack,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Drop the per-window session map entry on window close so
+            // a torn-off window's serial port is freed even if the
+            // user quits via the red close button rather than
+            // Disconnect → Quit. Tauri delivers Destroyed AFTER the
+            // OS-level close, so the session's underlying SerialPort
+            // is already closing when this fires; here we just clear
+            // the bookkeeping.
+            if let WindowEvent::Destroyed = match &event {
+                RunEvent::WindowEvent { event, .. } => event.clone(),
+                _ => return,
+            } {
+                let RunEvent::WindowEvent { label, .. } = event else { return };
+                if let Some(state) = app.try_state::<Arc<AppState>>() {
+                    state.forget_session(&label);
+                }
+            }
+        });
 }

@@ -255,6 +255,18 @@
     // subsequent settings or profile-override changes.
     applyEnabledHighlightPresets(effectiveEnabledHighlightPresets);
 
+    // Multi-window: a window spawned via "Open profile in new window"
+    // gets ?profile=<id> appended to its URL (see open_profile_window
+    // in src-tauri/src/commands/window.rs). Read that and pre-select
+    // the profile so the user lands on it instead of the empty state.
+    // Restricted to the safe-id alphabet on both ends so a hand-
+    // crafted URL can't smuggle anything weird through here.
+    const params = new URLSearchParams(window.location.search);
+    const initialProfile = params.get("profile");
+    if (initialProfile && /^[A-Za-z0-9_-]+$/.test(initialProfile)) {
+      selectedProfileID.set(initialProfile);
+    }
+
     offDisconnect = api.onDisconnect((reason) => {
       session.set({ status: "idle" });
       statusMsg = reason ? `Disconnected: ${reason}` : "Disconnected";
@@ -425,6 +437,14 @@
     const base = await api.defaultProfile();
     draft = { ...base, id: "", name: "Untitled" } as Profile;
     settingsOpen = false;
+  }
+
+  async function handleOpenInNewWindow(profile: Profile) {
+    try {
+      await api.openProfileWindow(profile.id, profile.name);
+    } catch (e) {
+      statusMsg = `Open new window failed: ${e}`;
+    }
   }
 
   async function handleToggleSettings() {
@@ -1146,6 +1166,7 @@
     onSelect={handleSelect}
     onCreate={handleCreate}
     onSettings={handleToggleSettings}
+    onOpenInNewWindow={handleOpenInNewWindow}
   />
 
   <main class="main">

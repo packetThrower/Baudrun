@@ -10,6 +10,7 @@
     onSelect: (id: string) => void;
     onCreate: () => void;
     onSettings: () => void;
+    onOpenInNewWindow: (profile: Profile) => void;
   };
 
   let {
@@ -20,11 +21,36 @@
     onSelect,
     onCreate,
     onSettings,
+    onOpenInNewWindow,
   }: Props = $props();
 
   const sorted = $derived(
     [...profiles].sort((a, b) => a.name.localeCompare(b.name)),
   );
+
+  // Right-click → tear-off context menu. Position is set per-event
+  // from the cursor, then closed by any click anywhere or Escape.
+  let menu = $state<{ profile: Profile; x: number; y: number } | null>(null);
+
+  function openMenu(e: MouseEvent, p: Profile) {
+    e.preventDefault();
+    menu = { profile: p, x: e.clientX, y: e.clientY };
+  }
+
+  function closeMenu() {
+    menu = null;
+  }
+
+  function chooseOpenInNewWindow() {
+    if (!menu) return;
+    const target = menu.profile;
+    menu = null;
+    onOpenInNewWindow(target);
+  }
+
+  function onMenuKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") closeMenu();
+  }
 </script>
 
 <aside class="sidebar">
@@ -64,6 +90,7 @@
             class="row"
             class:selected={p.id === selectedID && !settingsOpen}
             onclick={() => onSelect(p.id)}
+            oncontextmenu={(e) => openMenu(e, p)}
           >
             <span class="indicator" class:active={p.id === activeID}></span>
             <span class="row-body">
@@ -87,6 +114,35 @@
     Settings
   </button>
 </aside>
+
+<!-- Top-level <svelte:window> per Svelte's "no inside blocks" rule.
+     The handlers no-op when no menu is open, which is the common
+     case, so the always-bound listeners cost nothing. -->
+<svelte:window
+  onclick={() => {
+    if (menu) closeMenu();
+  }}
+  onkeydown={onMenuKeydown}
+/>
+
+{#if menu}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="ctx-menu"
+    style:left="{menu.x}px"
+    style:top="{menu.y}px"
+    role="menu"
+    tabindex="-1"
+    onclick={(e) => e.stopPropagation()}
+    onkeydown={onMenuKeydown}
+  >
+    <button
+      role="menuitem"
+      class="ctx-item"
+      onclick={chooseOpenInNewWindow}
+    >Open profile in new window</button>
+  </div>
+{/if}
 
 <style>
   .sidebar {
@@ -248,5 +304,37 @@
   .footer-btn.active {
     background: var(--bg-active);
     color: var(--fg-primary);
+  }
+
+  /* Floating context menu for right-click → "Open in new window".
+     Positioned at the cursor coords via inline styles in the
+     markup; styling here only handles look + stacking. */
+  .ctx-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 200px;
+    background: var(--option-bg, var(--bg-panel));
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-floating, 0 10px 30px rgba(0, 0, 0, 0.35));
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .ctx-item {
+    text-align: left;
+    padding: 7px 10px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--option-fg, var(--fg-primary));
+    font-size: 13px;
+    font-family: inherit;
+  }
+
+  .ctx-item:hover {
+    background: var(--bg-hover);
   }
 </style>
