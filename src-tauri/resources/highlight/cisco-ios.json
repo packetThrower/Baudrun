@@ -1,7 +1,7 @@
 {
   "id": "cisco-ios",
   "name": "Cisco IOS / IOS XE / IOS XR",
-  "description": "Patterns common to Cisco's CLI output: line-protocol states, spanning-tree port roles, OSPF/BGP/EIGRP states, ACL hit counters, config-mode prompts.",
+  "description": "Patterns common to Cisco's CLI output AND running-configs: line-protocol states, STP/OSPF/BGP states, log mnemonics, config-section headers, routing/service protocols. Config vocabulary set informed by Osama Abbas's Notepad++ UDL (github.com/Tes3awy/Cisco-IOS-XE-NotepadPlusPlus-Syntax-Highlight).",
   "rules": [
     {
       "pattern": "\\bline protocol is (up|down)\\b",
@@ -52,6 +52,42 @@
       "color": "blue",
       "ignoreCase": true,
       "group": "vlan-mode"
+    },
+    {
+      "pattern": "^\\s*no\\s+",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "negation"
+    },
+    {
+      "pattern": "\\bshutdown\\b",
+      "color": "red",
+      "ignoreCase": true,
+      "group": "shutdown"
+    },
+    {
+      "pattern": "^\\s*(?:interface|router|line|vrf|crypto|access-list|route-map|policy-map|class-map|banner|vlan|vtp|hostname|logging|spanning-tree|boot|service|username|ip\\s+access-list|ipv6\\s+access-list|aaa|radius-server|tacacs-server|snmp-server|ntp|lldp|cdp|dot1x|mpls|device-tracking)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "config-section"
+    },
+    {
+      "pattern": "\\b(?:switchport|encapsulation|channel-group|channel-protocol|duplex|speed|mtu|description|ip\\s+address|no\\s+ip\\s+address|ip\\s+helper-address|standby|bridge-group|service-policy|priority|bandwidth)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "interface-subcmd"
+    },
+    {
+      "pattern": "\\b(?:ospf|bgp|eigrp|rip|isis|pim|bfd|hsrp|vrrp|glbp)\\b",
+      "color": "magenta",
+      "ignoreCase": true,
+      "group": "routing-proto"
+    },
+    {
+      "pattern": "\\b(?:snmp|ssh|telnet|tftp|ftp|http|https|ntp|syslog|tacacs|radius|dhcp|dns|icmp|ipsec|gre|lacp|pagp|cdp|lldp|stp|mstp|rstp|pvst|cef)\\b",
+      "color": "magenta",
+      "ignoreCase": true,
+      "group": "service-proto"
     }
   ]
 }
