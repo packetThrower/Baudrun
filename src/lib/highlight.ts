@@ -5,95 +5,65 @@
 // inserted. The unterminated tail (typically a prompt) is flushed un-highlighted
 // after a short idle timeout so prompts still appear responsively.
 //
+// Rules come from one or more "highlight packs" the user has enabled in
+// Settings → Advanced. Each pack is a JSON document; the bundled set ships
+// with the binary (Baudrun default + cisco-ios + junos + aruba-cx today)
+// and the user's editable pack lives at $SUPPORT_DIR/highlight-rules.json.
+// `setActiveRules()` is called at app start (and whenever the user toggles
+// presets) to recompile the union of all enabled packs into the regex
+// engine below.
+//
 // Rules are tried in order; the first match wins for any character range.
 // Regions already inside an existing ANSI escape sequence are left alone so
 // we don't interfere with device-supplied colors.
 
-const GREEN = "\x1b[32m";
-const RED = "\x1b[31m";
-const YELLOW = "\x1b[33m";
-const BLUE = "\x1b[34m";
-const MAGENTA = "\x1b[35m";
-const CYAN = "\x1b[36m";
-const DIM = "\x1b[90m";
-const RESET = "\x1b[0m";
+import type { HighlightRule } from "./api";
 
-interface Rule {
+const RESET = "\x1b[0m";
+const ANSI_BY_COLOR: Record<string, string> = {
+  red: "\x1b[31m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  blue: "\x1b[34m",
+  magenta: "\x1b[35m",
+  cyan: "\x1b[36m",
+  dim: "\x1b[90m",
+};
+
+interface CompiledRule {
   re: RegExp;
   open: string;
   close: string;
 }
 
-const RULES: Rule[] = [
-  // Timestamps HH:MM:SS[.ms] — first so they don't get caught by IPv6
-  { re: /\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g, open: DIM, close: RESET },
-  // Dates YYYY-MM-DD
-  { re: /\b\d{4}-\d{2}-\d{2}\b/g, open: DIM, close: RESET },
+let RULES: CompiledRule[] = [];
 
-  // IPv4 + optional CIDR
-  { re: /\b(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?\b/g, open: CYAN, close: RESET },
-
-  // MAC addresses (colon/dash) — before IPv6
-  {
-    re: /\b(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}\b/g,
-    open: MAGENTA,
-    close: RESET,
-  },
-  // MAC Cisco-dotted (aabb.ccdd.eeff)
-  {
-    re: /\b[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\.[0-9a-fA-F]{4}\b/g,
-    open: MAGENTA,
-    close: RESET,
-  },
-
-  // IPv6 — 3+ groups of hex separated by colons
-  {
-    re: /\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b/g,
-    open: CYAN,
-    close: RESET,
-  },
-
-  // Cisco-style full interface names
-  {
-    re: /\b(?:GigabitEthernet|FastEthernet|TenGigabitEthernet|TwentyFiveGigE|HundredGigE|FortyGigE|Ethernet|Serial|Loopback|Vlan|Port-channel|Tunnel|Management|Bundle-Ether|Null)\s?\d+(?:\/\d+)*(?:\.\d+)?\b/g,
-    open: BLUE,
-    close: RESET,
-  },
-  // Cisco abbreviated (Gi1/0/24, Fa0/1, Te1/1)
-  {
-    re: /\b(?:Gi|Fa|Te|Twe|Hun|Fo|Eth|Se|Lo|Vl|Po|Tu|Mg|Bu|Nu)\d+\/\d+(?:\/\d+)*(?:\.\d+)?\b/g,
-    open: BLUE,
-    close: RESET,
-  },
-  // Juniper (ge-0/0/1, xe-0/1/0, ae0, etc.)
-  {
-    re: /\b(?:ge|xe|et|fe|me|xl|em|lo|fxp|irb|lt|st|mt|ae|pp|bme|vcp|vme|vt|sp|reth)-\d+\/\d+\/\d+(?:\.\d+)?\b/g,
-    open: BLUE,
-    close: RESET,
-  },
-
-  // GOOD states (case-insensitive)
-  {
-    re: /\b(?:up|online|active|established|connected|enabled|forwarding|FULL|passed|OK|success)\b/gi,
-    open: GREEN,
-    close: RESET,
-  },
-  // BAD states
-  {
-    re: /\b(?:down|offline|inactive|failed|err-?disabled|error|denied|disabled|rejected|timeout|lost|critical|fatal|alert|unreachable)\b/gi,
-    open: RED,
-    close: RESET,
-  },
-  // WARN states
-  {
-    re: /\b(?:warning|warn|degraded|partial|init|learning|listening|blocking|pending)\b/gi,
-    open: YELLOW,
-    close: RESET,
-  },
-
-  // VLAN IDs
-  { re: /\bVLAN\s?\d+\b/gi, open: YELLOW, close: RESET },
-];
+/**
+ * Replace the active rule set. Called by the runtime when the user
+ * toggles preset packs or edits the user pack. Patterns that fail to
+ * compile (bad regex syntax, unsupported features) are silently
+ * dropped so a single malformed user rule doesn't take the whole
+ * highlighter down — see console for the dropped pattern.
+ */
+export function setActiveRules(rules: HighlightRule[]): void {
+  const compiled: CompiledRule[] = [];
+  for (const rule of rules) {
+    let flags = "g";
+    if (rule.ignoreCase) flags += "i";
+    let re: RegExp;
+    try {
+      re = new RegExp(rule.pattern, flags);
+    } catch (err) {
+      console.warn(
+        `highlight: dropping rule with invalid pattern ${JSON.stringify(rule.pattern)}: ${err}`,
+      );
+      continue;
+    }
+    const open = ANSI_BY_COLOR[rule.color] ?? ANSI_BY_COLOR.dim;
+    compiled.push({ re, open, close: RESET });
+  }
+  RULES = compiled;
+}
 
 const ESC_RE = /\x1b\[[0-9;]*[A-Za-z]/g;
 

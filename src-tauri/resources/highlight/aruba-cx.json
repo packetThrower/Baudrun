@@ -1,0 +1,51 @@
+{
+  "id": "aruba-cx",
+  "name": "Aruba AOS-CX",
+  "description": "Patterns for HPE/Aruba AOS-CX switches: VSX/VSF chassis state, LAG/MCLAG status, Spanning Tree, ACL action keywords, daemon names in event logs.",
+  "rules": [
+    {
+      "pattern": "\\bVSX\\b",
+      "color": "magenta",
+      "group": "vsx"
+    },
+    {
+      "pattern": "\\bVSF\\b",
+      "color": "magenta",
+      "group": "vsf"
+    },
+    {
+      "pattern": "\\b(?:lag|trk)\\d+\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "lag"
+    },
+    {
+      "pattern": "\\b(?:Designated|Root|Alternate|Backup|Disabled)\\s+(?:Forwarding|Discarding|Learning|Listening)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "stp-role"
+    },
+    {
+      "pattern": "\\b(?:hpe|hpe-aaa|hpe-snmp|hpe-syslog|hpe-mgmd|hpe-stp|hpe-vrrp|hpe-vsf|hpe-vsx|hpe-l2|hpe-routing)[^\\s\\]]*",
+      "color": "dim",
+      "group": "daemon"
+    },
+    {
+      "pattern": "\\b(?:permit|deny|drop|count|log|reflect)\\b",
+      "color": "yellow",
+      "ignoreCase": true,
+      "group": "acl-action"
+    },
+    {
+      "pattern": "\\b(?:Operational|Administrative)\\s+(?:up|down)\\b",
+      "color": "yellow",
+      "ignoreCase": true,
+      "group": "interface-state"
+    },
+    {
+      "pattern": "\\b(?:Active|Inactive|Standby|Mismatch|Sync|InSync)\\b",
+      "color": "green",
+      "group": "vsx-role"
+    }
+  ]
+}

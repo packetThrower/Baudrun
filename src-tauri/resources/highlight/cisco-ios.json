@@ -1,0 +1,57 @@
+{
+  "id": "cisco-ios",
+  "name": "Cisco IOS / IOS XE / IOS XR",
+  "description": "Patterns common to Cisco's CLI output: line-protocol states, spanning-tree port roles, OSPF/BGP/EIGRP states, ACL hit counters, config-mode prompts.",
+  "rules": [
+    {
+      "pattern": "\\bline protocol is (up|down)\\b",
+      "color": "yellow",
+      "ignoreCase": true,
+      "group": "interface-state"
+    },
+    {
+      "pattern": "%\\w+(?:-\\w+)*-\\d+-\\w+",
+      "color": "yellow",
+      "group": "log-mnemonic"
+    },
+    {
+      "pattern": "\\b(?:DESG|ROOT|ALTN|BLK|DSBL|BKN|LRN|FWD|LIS|EXC)\\b",
+      "color": "blue",
+      "group": "stp-role"
+    },
+    {
+      "pattern": "\\b(?:Full|Init|2-Way|ExStart|Exchange|Loading|Down)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "ospf-neighbor-state"
+    },
+    {
+      "pattern": "\\b(?:Idle|Connect|Active|OpenSent|OpenConfirm|Established)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "bgp-fsm-state"
+    },
+    {
+      "pattern": "\\bAS\\s?\\d{1,10}\\b",
+      "color": "magenta",
+      "group": "as-number"
+    },
+    {
+      "pattern": "\\(config(?:-[a-z0-9-]+)?\\)#",
+      "color": "dim",
+      "group": "config-prompt"
+    },
+    {
+      "pattern": "\\b(?:permit|deny)\\b",
+      "color": "yellow",
+      "ignoreCase": true,
+      "group": "acl-action"
+    },
+    {
+      "pattern": "\\b(?:tagged|untagged|access|trunk|hybrid)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "vlan-mode"
+    }
+  ]
+}

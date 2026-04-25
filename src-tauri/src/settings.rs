@@ -55,6 +55,17 @@ pub struct Settings {
     /// frontend — None here does NOT mean "disabled".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shortcuts: Option<HashMap<String, String>>,
+
+    /// Highlight rule packs the user has enabled. Each entry is a
+    /// pack id (`"baudrun-default"`, `"cisco-ios"`, `"junos"`,
+    /// `"aruba-cx"`, `"user"` for the editable user pack at
+    /// `$SUPPORT_DIR/highlight-rules.json`). The active rule set is
+    /// the union of every enabled pack's rules, applied in order.
+    /// Empty `Vec` means "no highlighting at all" even when a
+    /// profile has `highlight: true` — that's an explicit
+    /// opt-out, not a default-fallback signal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled_highlight_presets: Option<Vec<String>>,
 }
 
 impl Default for Settings {
@@ -70,6 +81,10 @@ impl Default for Settings {
             screen_reader_mode: false,
             scrollback_lines: 10_000,
             shortcuts: None,
+            enabled_highlight_presets: Some(vec![
+                "baudrun-default".into(),
+                "user".into(),
+            ]),
         }
     }
 }

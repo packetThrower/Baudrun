@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
+use crate::highlight;
 use crate::profiles;
 use crate::serial::Session;
 use crate::settings;
@@ -17,6 +18,7 @@ pub struct AppState {
     pub settings: settings::Store,
     pub themes: themes::Store,
     pub skins: skins::Store,
+    pub highlight: highlight::Store,
 
     /// The single active serial session (one port at a time — the
     /// hardware can't be opened twice) plus its ancillary state.

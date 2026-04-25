@@ -43,6 +43,11 @@
   } from "./stores/skins";
   import { session } from "./stores/session";
   import { portScanning } from "./stores/scanning";
+  import {
+    highlightPacks,
+    loadHighlightPacks,
+    applyEnabledHighlightPresets,
+  } from "./stores/highlight";
 
   let draft = $state<Profile | null>(null);
   let terminalRef = $state<Terminal | null>(null);
@@ -147,6 +152,14 @@
     );
   });
 
+  // Recompile the highlight engine when the user toggles preset
+  // packs in Settings → Advanced. The initial apply happens in
+  // onMount once both packs and settings have loaded; this fires
+  // for every subsequent change.
+  $effect(() => {
+    applyEnabledHighlightPresets($settings.enabledHighlightPresets);
+  });
+
   function resolveTheme(id: string, all: Theme[]): Theme | undefined {
     return (
       all.find((t) => t.id === id) ??
@@ -209,10 +222,14 @@
       loadThemes(),
       loadSkins(),
       loadSettings(),
+      loadHighlightPacks(),
     ]);
     activeSkinID.set($settings.skinId || "baudrun");
     appearance.set(($settings.appearance as Appearance) || "auto");
     applySkin(resolveSkin($activeSkinID, $skins), $appearance, $systemIsDark);
+    // Initial apply happens here; the $effect below picks up any
+    // subsequent settings changes (Settings UI toggles).
+    applyEnabledHighlightPresets($settings.enabledHighlightPresets);
 
     offDisconnect = api.onDisconnect((reason) => {
       session.set({ status: "idle" });
@@ -817,6 +834,21 @@
     }
   }
 
+  async function handleSetEnabledHighlightPresets(ids: string[]) {
+    try {
+      const updated = await api.updateSettings({
+        ...$settings,
+        enabledHighlightPresets: ids,
+      });
+      settings.set(updated);
+      // The $effect on $settings.enabledHighlightPresets recompiles
+      // the active rule set automatically, so no explicit
+      // applyEnabledHighlightPresets call here.
+    } catch (e) {
+      statusMsg = `Setting update failed: ${e}`;
+    }
+  }
+
   async function handlePickConfigDir() {
     try {
       const dir = await api.pickConfigDirectory();
@@ -934,6 +966,8 @@
           onDeleteSkin={handleDeleteSkin}
           onSetAppearance={handleSetAppearance}
           onSetShortcuts={handleSetShortcuts}
+          highlightPacks={$highlightPacks}
+          onSetEnabledHighlightPresets={handleSetEnabledHighlightPresets}
         />
       {:else if !currentProfile}
         <div class="titlebar" data-tauri-drag-region></div>

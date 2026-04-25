@@ -5,6 +5,7 @@ use tauri::Manager;
 pub mod appdata;
 pub mod commands;
 pub mod events;
+pub mod highlight;
 pub mod profiles;
 pub mod sanitize;
 pub mod serial;
@@ -54,12 +55,15 @@ pub fn run() {
                 .map_err(|e| format!("theme store init: {}", e))?;
             let skins = skins::Store::new(&support_dir)
                 .map_err(|e| format!("skin store init: {}", e))?;
+            let highlight = highlight::Store::new(&support_dir)
+                .map_err(|e| format!("highlight store init: {}", e))?;
 
             let app_state = Arc::new(AppState {
                 profiles,
                 settings,
                 themes,
                 skins,
+                highlight,
                 session: Mutex::new(SessionHandle::default()),
             });
             app.manage(app_state);
@@ -122,6 +126,9 @@ pub fn run() {
             commands::transfer::cancel_transfer,
             // window chrome
             commands::window::set_traffic_lights_inset,
+            // highlight rules
+            commands::highlight::list_highlight_packs,
+            commands::highlight::update_user_highlight_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

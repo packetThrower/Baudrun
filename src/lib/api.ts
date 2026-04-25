@@ -90,6 +90,32 @@ export type Settings = {
   screenReaderMode?: boolean;
   scrollbackLines?: number;
   shortcuts?: Record<string, string>;
+  enabledHighlightPresets?: string[];
+};
+
+export type HighlightColor =
+  | "red"
+  | "green"
+  | "yellow"
+  | "blue"
+  | "magenta"
+  | "cyan"
+  | "dim";
+
+export type HighlightRule = {
+  pattern: string;
+  color: HighlightColor | string;
+  ignoreCase?: boolean;
+  group?: string;
+};
+
+export type HighlightPack = {
+  id: string;
+  name: string;
+  description?: string;
+  /** "builtin" or "user" — set by the backend store at load time. */
+  source: string;
+  rules: HighlightRule[];
 };
 
 export type ControlLines = {
@@ -161,6 +187,10 @@ export const api = {
 
   setTrafficLightsInset: (x: number, y: number) =>
     invoke<void>("set_traffic_lights_inset", { x, y }),
+
+  listHighlightPacks: () => invoke<HighlightPack[]>("list_highlight_packs"),
+  updateUserHighlightPack: (pack: HighlightPack) =>
+    invoke<HighlightPack>("update_user_highlight_pack", { pack }),
 
   sendBytes(bytes: Uint8Array): Promise<void> {
     return invoke<void>("send", { data: base64Encode(bytes) });

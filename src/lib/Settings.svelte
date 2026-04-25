@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { api, type Theme, type Settings, type Skin } from "./api";
+  import {
+    api,
+    type Theme,
+    type Settings,
+    type Skin,
+    type HighlightPack,
+  } from "./api";
   import PreviewTerminal from "./PreviewTerminal.svelte";
   import Select, { type SelectItems } from "./Select.svelte";
   import KeyCapture from "./KeyCapture.svelte";
@@ -34,6 +40,8 @@
     onDeleteSkin: (id: string) => void;
     onSetAppearance: (mode: "auto" | "light" | "dark") => void;
     onSetShortcuts: (shortcuts: Record<string, string>) => void;
+    highlightPacks?: HighlightPack[];
+    onSetEnabledHighlightPresets: (ids: string[]) => void;
   };
 
   let {
@@ -60,6 +68,8 @@
     onDeleteSkin,
     onSetAppearance,
     onSetShortcuts,
+    highlightPacks = [],
+    onSetEnabledHighlightPresets,
   }: Props = $props();
 
   // Platform marker for formatShortcut() in the keyboard-shortcuts
@@ -179,6 +189,18 @@
 
   function onScreenReaderModeChange(e: Event) {
     onSetScreenReaderMode((e.target as HTMLInputElement).checked);
+  }
+
+  function isHighlightPackEnabled(id: string): boolean {
+    return (settings.enabledHighlightPresets ?? []).includes(id);
+  }
+
+  function onTogglePresetPack(id: string, enabled: boolean) {
+    const current = settings.enabledHighlightPresets ?? [];
+    const next = enabled
+      ? Array.from(new Set([...current, id]))
+      : current.filter((p) => p !== id);
+    onSetEnabledHighlightPresets(next);
   }
 
   async function openInFileManager(path: string) {
@@ -521,6 +543,44 @@
           />
           Copy terminal selection to clipboard automatically
         </label>
+      </div>
+
+      <div class="sub">
+        <h4>Syntax Highlighting</h4>
+        <p class="section-hint">
+          Highlight rules grouped into packs. The default vendor-neutral set
+          covers IPs, MACs, interface names, and status keywords. Device-
+          specific packs (Cisco IOS, Junos, Aruba CX) add patterns common to
+          each platform's output. The "User overrides" pack is editable at
+          <code>$SUPPORT_DIR/highlight-rules.json</code> — bundled packs are
+          read-only. Profile-level "Highlight" must be on for any of this
+          to render.
+        </p>
+        <div class="preset-list">
+          {#each highlightPacks as pack (pack.id)}
+            <label class="toggle preset">
+              <input
+                type="checkbox"
+                checked={isHighlightPackEnabled(pack.id)}
+                onchange={(e) =>
+                  onTogglePresetPack(
+                    pack.id,
+                    (e.target as HTMLInputElement).checked,
+                  )}
+              />
+              <span class="preset-meta">
+                <span class="preset-name">{pack.name}</span>
+                {#if pack.description}
+                  <span class="preset-desc">{pack.description}</span>
+                {/if}
+                <span class="preset-count">
+                  {pack.rules.length} rule{pack.rules.length === 1 ? "" : "s"}
+                  {#if pack.source === "user"} · editable{/if}
+                </span>
+              </span>
+            </label>
+          {/each}
+        </div>
       </div>
 
       <div class="sub">
@@ -876,6 +936,49 @@
   .toggle input {
     width: auto;
     accent-color: var(--accent);
+  }
+
+  .preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toggle.preset {
+    align-items: flex-start;
+    padding: 8px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+  }
+
+  .toggle.preset input {
+    margin-top: 3px;
+  }
+
+  .preset-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .preset-name {
+    font-weight: 500;
+    color: var(--fg-primary);
+  }
+
+  .preset-desc {
+    font-size: 12px;
+    color: var(--fg-secondary);
+    line-height: 1.35;
+  }
+
+  .preset-count {
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    font-variant-numeric: tabular-nums;
   }
 
   .modal-backdrop {

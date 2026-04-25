@@ -1,0 +1,62 @@
+{
+  "id": "junos",
+  "name": "Juniper Junos",
+  "description": "Patterns for Junos OS output: chassis hardware status, BGP/OSPF/IS-IS neighbor states, RPM probes, commit messages, set/delete statement annotations.",
+  "rules": [
+    {
+      "pattern": "\\b(?:Online|Offline|Present|Empty|Ready|Restart)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "chassis-status"
+    },
+    {
+      "pattern": "\\b(?:Estab|EstabSync|Active|Idle|Connect|OpenSent|OpenConfirm)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "bgp-state"
+    },
+    {
+      "pattern": "\\b(?:Full|Init|2Way|ExStart|Exchange|Loading|Down|Attempt)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "ospf-state"
+    },
+    {
+      "pattern": "\\bL[12](?:Pseudonode)?\\b",
+      "color": "blue",
+      "group": "isis-level"
+    },
+    {
+      "pattern": "\\[edit(?:[^\\]]*)?\\]",
+      "color": "dim",
+      "group": "edit-banner"
+    },
+    {
+      "pattern": "^\\+\\s+\\S+",
+      "color": "green",
+      "group": "config-add"
+    },
+    {
+      "pattern": "^-\\s+\\S+",
+      "color": "red",
+      "group": "config-remove"
+    },
+    {
+      "pattern": "\\bcommit complete\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "commit-success"
+    },
+    {
+      "pattern": "\\bcommit failed\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "commit-fail"
+    },
+    {
+      "pattern": "\\b(?:lo0|lo|fxp0|fxp1|me0|em\\d+)(?:\\.\\d+)?\\b",
+      "color": "blue",
+      "group": "mgmt-interface"
+    }
+  ]
+}
