@@ -64,7 +64,12 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      # Resolve include paths from the docs source dir so the example
+      # markdown pages can pull in their adjacent .json files via
+      # --8<-- "examples/foo.json" without project-root prefixes.
+      base_path: ["docs"]
+      check_paths: true
   - pymdownx.tabbed:
       alternate_style: true
   - toc:

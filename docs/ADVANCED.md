@@ -332,15 +332,16 @@ shows a **Remove** button next to its entry, and otherwise behaves
 identically to the bundled ones. Imports with an `id` that collides
 with a bundled pack or the reserved `user` scratchpad are rejected.
 
-Two starter files live alongside the other customization examples:
+Two starter packs are documented with a copy-button code block plus
+a download link:
 
-- [`docs/examples/highlight-pack.example.json`](examples/highlight-pack.example.json)
-  — minimal skeleton showing the schema. Copy, rename `id` + `name`,
-  add rules, import.
-- [`docs/examples/syslog.example.json`](examples/syslog.example.json)
-  — practical starter for generic syslog / journald output (severity
-  keywords, systemd unit states, sshd accepted/denied lines,
-  `[OK]`/`[FAILED]` markers, daemon tags, PIDs).
+- [Minimal example](examples/highlight-pack.example.md) — near-empty
+  skeleton showing the schema. Copy, rename `id` + `name`, add rules,
+  import.
+- [Syslog / journald](examples/syslog.example.md) — practical starter
+  for generic syslog / journald output (severity keywords, systemd
+  unit states, sshd accepted/denied lines, `[OK]`/`[FAILED]` markers,
+  daemon tags, PIDs).
 
 ### Playground
 
