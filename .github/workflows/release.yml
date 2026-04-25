@@ -78,11 +78,13 @@ jobs:
           mv tmp.json src-tauri/tauri.conf.json
           echo "Using version: $VERSION"
 
-      # Setting TAURI_SIGNING_PRIVATE_KEY makes tauri-action emit
-      # `.app.tar.gz` + `.app.tar.gz.sig` alongside the regular
-      # bundles — the updater plugin downloads the .tar.gz and
-      # verifies the .sig against the public key embedded in
-      # tauri.conf.json on first install.
+      # `updater` in --bundles is what makes tauri-bundler emit the
+      # `.app.tar.gz` + `.sig` pair next to the regular .app — they
+      # don't appear automatically just because TAURI_SIGNING_PRIVATE_KEY
+      # is set. The custom re-tar step below then overwrites the
+      # auto-generated tarball with one packed AFTER our libusb
+      # install_name_tool fixup, but the `updater` target still has to
+      # be selected so tauri-bundler writes the initial pair.
       - name: Build Tauri bundle
         uses: tauri-apps/tauri-action@v0
         env:
@@ -90,7 +92,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target ${{ matrix.target }} --bundles app dmg
+          args: --target ${{ matrix.target }} --bundles app dmg updater
 
       # rusb links against Homebrew's libusb via an absolute path;
       # ship a bundled copy inside .app/Contents/Frameworks so
@@ -248,7 +250,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis' || 'msi nsis' }}
+          # `updater` adds the .nsis.zip + .sig pair the auto-updater
+          # downloads. Pre-release tags drop msi (WiX rejects the
+          # alphanumeric pre-release identifier).
+          args: --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis updater' || 'msi nsis updater' }}
 
       # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
       # portable zip of the bare Baudrun.exe for users who don't
@@ -368,7 +373,10 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          args: --target ${{ matrix.target }} --bundles deb rpm appimage
+          # `updater` makes tauri-bundler emit AppImage.tar.gz + .sig
+          # alongside the bare .AppImage; without it those updater
+          # feed files don't get produced.
+          args: --target ${{ matrix.target }} --bundles deb rpm appimage updater
 
       # Tauri doesn't generate .pkg.tar.zst — fpm's pacman target
       # does. Reuse the same binary + desktop file + icon + udev
