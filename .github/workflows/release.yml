@@ -78,21 +78,16 @@ jobs:
           mv tmp.json src-tauri/tauri.conf.json
           echo "Using version: $VERSION"
 
-      # `updater` in --bundles is what makes tauri-bundler emit the
-      # `.app.tar.gz` + `.sig` pair next to the regular .app — they
-      # don't appear automatically just because TAURI_SIGNING_PRIVATE_KEY
-      # is set. The custom re-tar step below then overwrites the
-      # auto-generated tarball with one packed AFTER our libusb
-      # install_name_tool fixup, but the `updater` target still has to
-      # be selected so tauri-bundler writes the initial pair.
+      # Direct \`tauri build\` (see Linux step for context). On macOS
+      # the custom re-tar/re-sign step further down overwrites the
+      # initial .app.tar.gz with one packed AFTER our libusb fixup,
+      # so the `updater` target's first emission is throwaway.
       - name: Build Tauri bundle
-        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          args: --target ${{ matrix.target }} --bundles app dmg updater
+        run: |
+          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles app dmg updater
 
       # rusb links against Homebrew's libusb via an absolute path;
       # ship a bundled copy inside .app/Contents/Frameworks so
@@ -243,17 +238,17 @@ jobs:
       # rejects alphanumeric ones like 0.9.0-alpha.3. NSIS has no
       # such restriction. So pre-release tags ship NSIS only; stable
       # tags ship both MSI + NSIS for corporate-deploy use cases.
+      # Direct \`tauri build\` — see Linux step. WiX still rejects
+      # alphanumeric pre-release identifiers, so msi is gated to
+      # stable tags only.
       - name: Build Tauri bundle
-        uses: tauri-apps/tauri-action@v0
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          # `updater` adds the .nsis.zip + .sig pair the auto-updater
-          # downloads. Pre-release tags drop msi (WiX rejects the
-          # alphanumeric pre-release identifier).
-          args: --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis updater' || 'msi nsis updater' }}
+        run: |
+          $bundleList = if ("${{ github.ref_name }}".Contains("-")) { @("nsis", "updater") } else { @("msi", "nsis", "updater") }
+          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles @bundleList
 
       # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
       # portable zip of the bare Baudrun.exe for users who don't
@@ -366,17 +361,19 @@ jobs:
           mv tmp.json src-tauri/tauri.conf.json
           echo "Using version: $VERSION"
 
+      # Direct \`tauri build\` instead of tauri-apps/tauri-action — the
+      # action's post-build pass filters its "Found artifacts" list
+      # down to primary installers and (per testing on alpha.10) leaves
+      # the .AppImage.tar.gz / .sig updater-feed files orphaned, where
+      # they then disappear from the bundle dir before our collect
+      # step runs. Calling \`tauri build\` directly leaves every file
+      # tauri-bundler produced exactly where it wrote them.
       - name: Build Tauri bundle
-        uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        with:
-          # `updater` makes tauri-bundler emit AppImage.tar.gz + .sig
-          # alongside the bare .AppImage; without it those updater
-          # feed files don't get produced.
-          args: --target ${{ matrix.target }} --bundles deb rpm appimage updater
+        run: |
+          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles deb rpm appimage updater
 
       # Tauri doesn't generate .pkg.tar.zst — fpm's pacman target
       # does. Reuse the same binary + desktop file + icon + udev
