@@ -311,6 +311,7 @@ scale linearly with line count.
   | **Juniper Junos** | Chassis status (`Online`/`Empty`), BGP/OSPF/IS-IS states, `[edit ...]` banners, commit messages, set/delete diff lines |
   | **Aruba AOS-CX** | VSX/VSF status, LAG/MCLAG, STP role+state, daemon names in event logs, ACL actions |
   | **Arista EOS** | MLAG peer state, VXLAN/EVPN fabric keywords, `Et1/1` short-form interfaces, `Aboot`/EOS version banners, log facility (`%BGP-5-ADJCHANGE`), config-section headers |
+  | **MikroTik RouterOS** | `/export` section paths (`/ip firewall filter`, `/interface vlan`), `k=v` parameter syntax, firewall chain + action semantics (accept/drop/reject), connection states, RouterOS-style interface names (`ether1`, `wlan1`, `wg0`) |
 
 - The "User overrides" pack lives at
   `$SUPPORT_DIR/highlight-rules.json` and is editable on disk —

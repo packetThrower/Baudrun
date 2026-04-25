@@ -58,9 +58,9 @@ pub struct Settings {
 
     /// Highlight rule packs the user has enabled. Each entry is a
     /// pack id (`"baudrun-default"`, `"cisco-ios"`, `"junos"`,
-    /// `"aruba-cx"`, `"arista-eos"`, `"user"` for the editable user
-    /// pack at `$SUPPORT_DIR/highlight-rules.json`). The active rule
-    /// set is
+    /// `"aruba-cx"`, `"arista-eos"`, `"mikrotik-routeros"`,
+    /// `"user"` for the editable user pack at
+    /// `$SUPPORT_DIR/highlight-rules.json`). The active rule set is
     /// the union of every enabled pack's rules, applied in order.
     /// Empty `Vec` means "no highlighting at all" even when a
     /// profile has `highlight: true` — that's an explicit

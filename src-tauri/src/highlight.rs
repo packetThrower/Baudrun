@@ -4,7 +4,7 @@
 //!      via `include_str!` from `src-tauri/resources/highlight/`.
 //!      Includes the `baudrun-default` vendor-neutral set plus
 //!      device-specific add-ons (cisco-ios, junos, aruba-cx,
-//!      arista-eos, …).
+//!      arista-eos, mikrotik-routeros, …).
 //!   2. **User pack** — editable JSON at
 //!      `$SUPPORT_DIR/highlight-rules.json`. Created from the
 //!      `baudrun-default` preset on first run if absent. Users edit
@@ -92,6 +92,10 @@ pub fn bundled_packs() -> &'static [HighlightPack] {
             (
                 "arista-eos",
                 include_str!("../resources/highlight/arista-eos.json"),
+            ),
+            (
+                "mikrotik-routeros",
+                include_str!("../resources/highlight/mikrotik-routeros.json"),
             ),
         ];
         raw_packs

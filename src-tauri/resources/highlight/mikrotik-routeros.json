@@ -1,0 +1,91 @@
+{
+  "id": "mikrotik-routeros",
+  "name": "MikroTik RouterOS",
+  "description": "Patterns for RouterOS output and /export dumps: section paths (/ip address, /interface ethernet, /ip firewall filter), key=value parameter syntax, firewall chains + actions, connection states, MikroTik-style interface names (ether1, wlan1, wg0). Informed by dokai/routeros-conf VSCode grammar.",
+  "rules": [
+    {
+      "pattern": "(?<=\\baction=)(?:accept|passthrough|fasttrack-connection)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "fw-action-accept"
+    },
+    {
+      "pattern": "(?<=\\baction=)(?:drop|reject|tarpit)\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "fw-action-deny"
+    },
+    {
+      "pattern": "(?<=\\baction=)(?:log|jump|return|mark-connection|mark-packet|mark-routing|add-src-to-address-list|add-dst-to-address-list|src-nat|dst-nat|netmap|masquerade|redirect|change-ttl|change-dscp|change-mss)\\b",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "fw-action-other"
+    },
+    {
+      "pattern": "(?<=\\bchain=)(?:input|output|forward|srcnat|dstnat|prerouting|postrouting)\\b",
+      "color": "blue",
+      "ignoreCase": false,
+      "group": "fw-chain"
+    },
+    {
+      "pattern": "(?<=\\bconnection-state=)[a-z,]+",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "conn-state"
+    },
+    {
+      "pattern": "(?<=\\bprotocol=)(?:tcp|udp|icmp|icmpv6|igmp|gre|ipip|ah|esp|ospf|pim|vrrp|sctp)\\b",
+      "color": "magenta",
+      "ignoreCase": false,
+      "group": "fw-protocol"
+    },
+    {
+      "pattern": "(?<==)(?:yes|true)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "bool-true"
+    },
+    {
+      "pattern": "(?<==)(?:no|false)\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "bool-false"
+    },
+    {
+      "pattern": "^\\s*\\/[a-z][a-z0-9-]*(?:\\s+[a-z][a-z0-9-]*)*",
+      "color": "blue",
+      "ignoreCase": false,
+      "group": "section-path"
+    },
+    {
+      "pattern": "^\\s*(?:add|set|remove|print|get|find|move|disable|enable|export|import|comment|reset-configuration)\\b",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "action-verb"
+    },
+    {
+      "pattern": "^\\[[^@]*@[^\\]]+\\]\\s*(?:\\/[^>]*)?\\s*>",
+      "color": "dim",
+      "ignoreCase": false,
+      "group": "prompt"
+    },
+    {
+      "pattern": "^\\s*#.*$",
+      "color": "dim",
+      "ignoreCase": false,
+      "group": "comment"
+    },
+    {
+      "pattern": "\\b(?:ether|sfp-sfpplus|sfpplus|sfp|wlan|bridge|vlan|wg|bond|pppoe-out|pppoe-in|ovpn-out|ovpn-in|l2tp-out|l2tp-in|sstp-out|sstp-in|gre-tunnel|ipip-tunnel|eoip-tunnel|ifname)\\d+\\b",
+      "color": "blue",
+      "ignoreCase": false,
+      "group": "mikrotik-interface"
+    },
+    {
+      "pattern": "\\b([a-z][a-z0-9_-]*)=",
+      "color": "magenta",
+      "ignoreCase": false,
+      "group": "param-key"
+    }
+  ]
+}
