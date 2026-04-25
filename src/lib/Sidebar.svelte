@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Profile } from "./api";
+  import { api, type Profile } from "./api";
   import { formatPortName } from "./ports";
 
   type Props = {
@@ -51,6 +51,44 @@
   function onMenuKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") closeMenu();
   }
+
+  // --- drag-to-spawn ----------------------------------------------------
+  // The HTML5 drag API is window-bound — once the cursor crosses the
+  // window edge there's no native "where did the drop land" signal we
+  // can read from the browser. After dragend we ask the Rust side to
+  // compare the OS cursor position against the source window's outer
+  // rect (both in physical pixels, see commands::window::cursor_outside_window)
+  // and spawn a new window if the drop landed outside.
+
+  // Tracks the in-flight drag's profile so we can hand it to
+  // openProfileWindow on dragend without re-resolving from the DOM.
+  let dragging = $state<Profile | null>(null);
+
+  function onDragStart(e: DragEvent, p: Profile) {
+    if (!e.dataTransfer) return;
+    dragging = p;
+    e.dataTransfer.effectAllowed = "copy";
+    // Set a payload so other webview drop targets (a different
+    // Baudrun window) could in principle accept the drop. Phase 2
+    // doesn't drop INTO existing windows yet, but the data is set
+    // for when phase 3 wants it.
+    e.dataTransfer.setData("application/x-baudrun-profile", p.id);
+    e.dataTransfer.setData("text/plain", p.name);
+  }
+
+  async function onDragEnd() {
+    const profile = dragging;
+    dragging = null;
+    if (!profile) return;
+    try {
+      const outside = await api.cursorOutsideWindow();
+      if (outside) {
+        onOpenInNewWindow(profile);
+      }
+    } catch (err) {
+      console.warn("drag-end check failed:", err);
+    }
+  }
 </script>
 
 <aside class="sidebar">
@@ -89,8 +127,12 @@
           <button
             class="row"
             class:selected={p.id === selectedID && !settingsOpen}
+            class:dragging={dragging?.id === p.id}
+            draggable="true"
             onclick={() => onSelect(p.id)}
             oncontextmenu={(e) => openMenu(e, p)}
+            ondragstart={(e) => onDragStart(e, p)}
+            ondragend={onDragEnd}
           >
             <span class="indicator" class:active={p.id === activeID}></span>
             <span class="row-body">
@@ -229,6 +271,13 @@
 
   .row.selected {
     background: var(--bg-active);
+  }
+
+  /* Subtle visual cue while a drag is in flight. The OS-provided drag
+     image still appears; this just dims the source row so the user
+     can see which one is being lifted. */
+  .row.dragging {
+    opacity: 0.45;
   }
 
   .indicator {

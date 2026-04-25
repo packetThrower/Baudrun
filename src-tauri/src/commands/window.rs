@@ -12,7 +12,7 @@
 //!   by its label, so connecting / disconnecting / transferring on
 //!   one window doesn't disturb the others.
 
-use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use uuid::Uuid;
 
 #[tauri::command]
@@ -95,4 +95,34 @@ pub fn open_profile_window(
     let _ = window.set_focus();
 
     Ok(label)
+}
+
+/// Whether the OS cursor is currently outside the calling window's
+/// outer bounds. Phase-2 drag-to-spawn calls this on `dragend` — a
+/// drop landed outside the source window is treated as a tear-off
+/// and triggers [`open_profile_window`].
+///
+/// Both the cursor position and the window's outer rect come from
+/// the OS in **physical pixels**, so DPI-scaling is consistent on
+/// both sides of the comparison without the renderer doing
+/// devicePixelRatio math.
+#[tauri::command]
+pub fn cursor_outside_window(window: WebviewWindow) -> Result<bool, String> {
+    let cursor = window
+        .app_handle()
+        .cursor_position()
+        .map_err(|e| format!("cursor_position: {}", e))?;
+    let origin = window
+        .outer_position()
+        .map_err(|e| format!("outer_position: {}", e))?;
+    let size = window
+        .outer_size()
+        .map_err(|e| format!("outer_size: {}", e))?;
+
+    let left = origin.x as f64;
+    let top = origin.y as f64;
+    let right = left + size.width as f64;
+    let bottom = top + size.height as f64;
+    let inside = cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom;
+    Ok(!inside)
 }

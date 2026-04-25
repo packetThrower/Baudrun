@@ -130,6 +130,7 @@ pub fn run() {
             // window chrome + multi-window
             commands::window::set_traffic_lights_inset,
             commands::window::open_profile_window,
+            commands::window::cursor_outside_window,
             // highlight rules
             commands::highlight::list_highlight_packs,
             commands::highlight::update_user_highlight_pack,
