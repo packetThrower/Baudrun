@@ -49,7 +49,9 @@
     applyEnabledHighlightPresets,
   } from "./stores/highlight";
   import { getVersion } from "@tauri-apps/api/app";
+  import { relaunch } from "@tauri-apps/plugin-process";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import { check as tauriCheckUpdate } from "@tauri-apps/plugin-updater";
   import { checkForUpdate, type AvailableUpdate } from "./lib/updater";
 
   let draft = $state<Profile | null>(null);
@@ -185,6 +187,14 @@
   let configDir = $state("");
   let defaultConfigDir = $state("");
   let availableUpdate = $state<AvailableUpdate | null>(null);
+  // Auto-install state. The Tauri updater plugin only handles stable
+  // releases (its endpoint serves a single latest.json). Pre-release
+  // updates fall back to opening the release notes in the browser.
+  let updateInstalling = $state(false);
+  let updateProgress = $state<{ downloaded: number; total: number } | null>(
+    null,
+  );
+  let updateInstallError = $state("");
 
   // Delayed-delete state for the profile undo flow. The profile stays
   // in the backend until the timer fires or the user undoes; the
@@ -332,6 +342,54 @@
       await openUrl(availableUpdate.url);
     } catch (e) {
       statusMsg = `Open release page failed: ${e}`;
+    }
+  }
+
+  // Stable releases get the auto-install path: download the signed
+  // artifact, verify with the embedded pubkey, replace the binary,
+  // relaunch. Pre-releases skip this — the configured endpoint only
+  // tracks stable, so there's nothing to download via the plugin and
+  // the user clicks through to GitHub instead.
+  async function installUpdate() {
+    if (!availableUpdate || availableUpdate.prerelease) {
+      void openUpdateUrl();
+      return;
+    }
+    updateInstalling = true;
+    updateInstallError = "";
+    updateProgress = null;
+    try {
+      const update = await tauriCheckUpdate();
+      if (!update) {
+        updateInstallError =
+          "Update endpoint returned no update — manifest may not be published yet";
+        statusMsg = updateInstallError;
+        return;
+      }
+      let total = 0;
+      let downloaded = 0;
+      await update.downloadAndInstall((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+          downloaded = 0;
+          updateProgress = { downloaded, total };
+        } else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          updateProgress = { downloaded, total };
+        } else if (event.event === "Finished") {
+          updateProgress = { downloaded: total, total };
+        }
+      });
+      // Replaced binary; relaunch so the user lands on the new version
+      // without manually quitting and re-opening.
+      await relaunch();
+    } catch (e) {
+      const msg = String(e);
+      updateInstallError = msg;
+      statusMsg = `Update install failed: ${msg}`;
+      console.error("update install:", e);
+    } finally {
+      updateInstalling = false;
     }
   }
 
@@ -1302,24 +1360,50 @@
             role="status"
             aria-live="polite"
           >
-            <button
-              class="update-link"
-              onclick={openUpdateUrl}
-              title="Open release notes on GitHub"
-            >
-              <span class="update-dot"></span>
-              Update available:
-              <strong>v{availableUpdate.version}</strong>
-              {#if availableUpdate.prerelease}
-                <span class="update-prerelease-tag">pre-release</span>
-              {/if}
-            </button>
-            <button
-              class="update-dismiss"
-              onclick={dismissUpdate}
-              title="Dismiss — won't show again for this version"
-              aria-label="Dismiss update notification"
-            >×</button>
+            {#if updateInstalling}
+              <span class="update-installing">
+                <span class="update-dot pulsing"></span>
+                {#if updateProgress && updateProgress.total > 0}
+                  Installing v{availableUpdate.version}…
+                  <span class="update-progress-num">
+                    {Math.round(
+                      (updateProgress.downloaded / updateProgress.total) * 100,
+                    )}%
+                  </span>
+                {:else}
+                  Installing v{availableUpdate.version}…
+                {/if}
+              </span>
+            {:else}
+              <button
+                class="update-link"
+                onclick={installUpdate}
+                title={availableUpdate.prerelease
+                  ? "Open release notes on GitHub (pre-releases install manually)"
+                  : "Download, verify signature, install, and relaunch"}
+              >
+                <span class="update-dot"></span>
+                {availableUpdate.prerelease ? "Pre-release available:" : "Update available:"}
+                <strong>v{availableUpdate.version}</strong>
+                {#if availableUpdate.prerelease}
+                  <span class="update-prerelease-tag">pre-release</span>
+                {:else}
+                  <span class="update-action-hint">Install</span>
+                {/if}
+              </button>
+              <button
+                class="update-link secondary"
+                onclick={openUpdateUrl}
+                title="Open release notes on GitHub"
+                aria-label="Open release notes for v{availableUpdate.version}"
+              >Notes</button>
+              <button
+                class="update-dismiss"
+                onclick={dismissUpdate}
+                title="Dismiss — won't show again for this version"
+                aria-label="Dismiss update notification"
+              >×</button>
+            {/if}
           </div>
         {/if}
       </div>
@@ -1794,6 +1878,69 @@
   .update-dismiss:hover {
     background: var(--bg-hover);
     color: var(--fg-primary);
+  }
+
+  /* Right-side "Notes" button is the manual fallback to release notes
+     even when auto-install is the primary action — handy for users
+     who want to read what changed before installing. */
+  .update-link.secondary {
+    border-left: 1px solid var(--success);
+    color: var(--fg-secondary);
+    padding: 3px 10px;
+    font-weight: 500;
+  }
+
+  .update-toast.update-toast-prerelease .update-link.secondary {
+    border-left-color: var(--warn);
+  }
+
+  /* Inline "Install" hint pill on stable updates — invertes against
+     --success so the action affordance reads at a glance without
+     needing a separate button. Same trick as the PRE-RELEASE pill. */
+  .update-action-hint {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 9px;
+    padding: 1px 5px;
+    background: var(--success);
+    color: var(--bg-main);
+    border-radius: 3px;
+    margin-left: 2px;
+    font-weight: 600;
+  }
+
+  .update-installing {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 12px;
+    color: var(--fg-primary);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+
+  .update-progress-num {
+    color: var(--success);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  .update-toast.update-toast-prerelease .update-progress-num {
+    color: var(--warn);
+  }
+
+  .update-dot.pulsing {
+    animation: update-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes update-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .update-dot.pulsing { animation: none; }
   }
 
   .terminal-layer {

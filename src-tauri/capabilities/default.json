@@ -8,6 +8,8 @@
     "core:window:allow-start-dragging",
     "dialog:default",
     "opener:default",
-    "log:default"
+    "log:default",
+    "updater:default",
+    "process:default"
   ]
 }

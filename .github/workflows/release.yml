@@ -78,10 +78,17 @@ jobs:
           mv tmp.json src-tauri/tauri.conf.json
           echo "Using version: $VERSION"
 
+      # Setting TAURI_SIGNING_PRIVATE_KEY makes tauri-action emit
+      # `.app.tar.gz` + `.app.tar.gz.sig` alongside the regular
+      # bundles — the updater plugin downloads the .tar.gz and
+      # verifies the .sig against the public key embedded in
+      # tauri.conf.json on first install.
       - name: Build Tauri bundle
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           args: --target ${{ matrix.target }} --bundles app dmg
 
@@ -154,6 +161,35 @@ jobs:
             "release-artifacts/Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip"
           cp "$BUNDLE_DIR/dmg"/*.dmg release-artifacts/ 2>/dev/null || true
 
+      # tauri-action's signing emits Baudrun.app.tar.gz + .sig BEFORE
+      # the install_name_tool fixup above — so its contents reference
+      # /opt/homebrew/lib/libusb. Replace both with a freshly-tarred
+      # copy of the post-fixup .app, then re-sign with the updater
+      # key via `tauri signer sign`. Without this step the auto-update
+      # download would crash on user machines without Homebrew.
+      - name: Re-tar and re-sign .app for updater
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
+          rm -f "$BUNDLE_DIR/Baudrun.app.tar.gz" "$BUNDLE_DIR/Baudrun.app.tar.gz.sig"
+          # BSD tar on macOS preserves xattrs by default; that's where
+          # the codesign signature we just applied lives.
+          tar -czf "$BUNDLE_DIR/Baudrun.app.tar.gz" -C "$BUNDLE_DIR" Baudrun.app
+          # Write the private key to a tempfile so `signer sign` can
+          # consume it via -f (the env-var form expects the literal
+          # key contents but the CLI is happier with a path).
+          KEY_FILE=$(mktemp)
+          printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > "$KEY_FILE"
+          npx @tauri-apps/cli signer sign -k "$KEY_FILE" -p "" "$BUNDLE_DIR/Baudrun.app.tar.gz"
+          rm "$KEY_FILE"
+          # Rename to include the arch so updater latest.json can
+          # disambiguate aarch64 vs x86_64 from a single release.
+          VERSION="${GITHUB_REF_NAME#v}"
+          UPDATE_NAME="Baudrun-${VERSION}-${{ matrix.arch }}.app.tar.gz"
+          mv "$BUNDLE_DIR/Baudrun.app.tar.gz" "release-artifacts/$UPDATE_NAME"
+          mv "$BUNDLE_DIR/Baudrun.app.tar.gz.sig" "release-artifacts/$UPDATE_NAME.sig"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -212,12 +248,15 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           args: --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis' || 'msi nsis' }}
 
       # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
       # portable zip of the bare Baudrun.exe for users who don't
-      # want an installer.
+      # want an installer. Updater bundles (.nsis.zip + .sig) come
+      # from the NSIS bundler when signing is enabled.
       - name: Package artifacts
         shell: pwsh
         run: |
@@ -230,6 +269,11 @@ jobs:
           }
           if (Test-Path "$bundle/nsis") {
             Copy-Item "$bundle/nsis/*.exe" release-artifacts/
+            # Updater feed: NSIS-format zipped installer + signature.
+            # Tauri's installer-mode updater on Windows downloads this
+            # zip, extracts it, and runs the installer in /SILENT mode.
+            Get-ChildItem "$bundle/nsis/*.nsis.zip" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ }
+            Get-ChildItem "$bundle/nsis/*.nsis.zip.sig" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ }
           }
           Compress-Archive `
             -Path "src-tauri/target/${{ matrix.target }}/release/Baudrun.exe" `
@@ -312,6 +356,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           args: --target ${{ matrix.target }} --bundles deb rpm appimage
 
@@ -364,6 +410,13 @@ jobs:
           cp "$BUNDLE_DIR/rpm"/*.rpm release-artifacts/ 2>/dev/null || true
           cp "$BUNDLE_DIR/appimage"/*.AppImage release-artifacts/ 2>/dev/null || true
           cp *.pkg.tar.zst release-artifacts/ 2>/dev/null || true
+          # Updater bundles (only present when TAURI_SIGNING_PRIVATE_KEY
+          # was set during the build). AppImage feeds Tauri's auto-
+          # updater on Linux; .deb / .rpm / pacman users update via
+          # their distro's package manager and don't get the auto-
+          # install path.
+          cp "$BUNDLE_DIR/appimage"/*.AppImage.tar.gz release-artifacts/ 2>/dev/null || true
+          cp "$BUNDLE_DIR/appimage"/*.AppImage.tar.gz.sig release-artifacts/ 2>/dev/null || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -440,6 +493,102 @@ jobs:
           echo "--- Generated release notes ---"
           cat release-notes.md
 
+      # Updater manifest: served at
+      # https://github.com/packetThrower/Baudrun/releases/latest/download/latest.json
+      # which permalinks to the latest non-prerelease release. So we
+      # only emit / upload it for stable tags — pre-release builds
+      # still ship signed updater bundles, but the manifest stays
+      # pinned to the most recent stable so existing users don't
+      # auto-jump onto an alpha. Pre-release detection in-app stays
+      # via the GitHub Releases API + browser-open path.
+      - name: Generate updater manifest (stable only)
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${GITHUB_REF_NAME}"
+          REPO="${GITHUB_REPOSITORY}"
+          PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Each .sig file is short minisign-format text — embed its
+          # contents inline in the manifest so the updater plugin can
+          # verify without an extra HTTP roundtrip.
+          read_sig() {
+            local f="$1"
+            if [ -f "$f" ]; then
+              cat "$f"
+            else
+              echo ""
+            fi
+          }
+
+          # Match files by basename glob; the artifact step renames
+          # macOS bundles to include the version + arch, but Linux /
+          # Windows keep tauri-bundler's defaults.
+          find_one() {
+            local pattern="$1"
+            find artifacts -type f -name "$pattern" | head -n 1
+          }
+
+          MAC_ARM=$(find_one "Baudrun-${VERSION}-arm64.app.tar.gz")
+          MAC_X64=$(find_one "Baudrun-${VERSION}-amd64.app.tar.gz")
+          LINUX_X64=$(find_one "*amd64.AppImage.tar.gz")
+          LINUX_ARM=$(find_one "*aarch64.AppImage.tar.gz")
+          WIN_X64=$(find_one "*x64-setup.nsis.zip")
+          WIN_ARM=$(find_one "*arm64-setup.nsis.zip")
+
+          # Release-asset URL pattern that resolves on the rendered
+          # release page. Permalink form ensures GitHub redirects to
+          # the actual blob storage URL the updater plugin then
+          # downloads.
+          asset_url() {
+            local f="$1"
+            if [ -z "$f" ] || [ ! -f "$f" ]; then
+              echo ""
+            else
+              echo "https://github.com/${REPO}/releases/download/${TAG}/$(basename "$f")"
+            fi
+          }
+
+          MAC_ARM_SIG=$(read_sig "${MAC_ARM}.sig")
+          MAC_X64_SIG=$(read_sig "${MAC_X64}.sig")
+          LINUX_X64_SIG=$(read_sig "${LINUX_X64}.sig")
+          LINUX_ARM_SIG=$(read_sig "${LINUX_ARM}.sig")
+          WIN_X64_SIG=$(read_sig "${WIN_X64}.sig")
+          WIN_ARM_SIG=$(read_sig "${WIN_ARM}.sig")
+
+          # Use jq to build the JSON so quoting / escaping in release
+          # notes / signatures stay safe.
+          NOTES="$(cat release-notes.md)"
+
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$NOTES" \
+            --arg pub_date "$PUB_DATE" \
+            --arg mac_arm_url "$(asset_url "$MAC_ARM")" --arg mac_arm_sig "$MAC_ARM_SIG" \
+            --arg mac_x64_url "$(asset_url "$MAC_X64")" --arg mac_x64_sig "$MAC_X64_SIG" \
+            --arg lin_x64_url "$(asset_url "$LINUX_X64")" --arg lin_x64_sig "$LINUX_X64_SIG" \
+            --arg lin_arm_url "$(asset_url "$LINUX_ARM")" --arg lin_arm_sig "$LINUX_ARM_SIG" \
+            --arg win_x64_url "$(asset_url "$WIN_X64")" --arg win_x64_sig "$WIN_X64_SIG" \
+            --arg win_arm_url "$(asset_url "$WIN_ARM")" --arg win_arm_sig "$WIN_ARM_SIG" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: (
+                {}
+                + (if $mac_arm_url != "" then { "darwin-aarch64": { url: $mac_arm_url, signature: $mac_arm_sig } } else {} end)
+                + (if $mac_x64_url != "" then { "darwin-x86_64": { url: $mac_x64_url, signature: $mac_x64_sig } } else {} end)
+                + (if $lin_x64_url != "" then { "linux-x86_64": { url: $lin_x64_url, signature: $lin_x64_sig } } else {} end)
+                + (if $lin_arm_url != "" then { "linux-aarch64": { url: $lin_arm_url, signature: $lin_arm_sig } } else {} end)
+                + (if $win_x64_url != "" then { "windows-x86_64": { url: $win_x64_url, signature: $win_x64_sig } } else {} end)
+                + (if $win_arm_url != "" then { "windows-aarch64": { url: $win_arm_url, signature: $win_arm_sig } } else {} end)
+              )
+            }' > latest.json
+
+          echo "--- Generated latest.json ---"
+          cat latest.json
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -451,6 +600,7 @@ jobs:
             artifacts/linux-amd64-package/*
             artifacts/linux-arm64-package/*
             SHA256SUMS
+            ${{ !contains(github.ref_name, '-') && 'latest.json' || '' }}
           body_path: release-notes.md
           draft: false
           # Tags with a hyphen in the SemVer pre-release slot flag
