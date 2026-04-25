@@ -64,12 +64,25 @@ pub fn open_profile_window(
     };
 
     let url = WebviewUrl::App(format!("index.html?profile={}", safe_id).into());
-    let window = WebviewWindowBuilder::new(&app, &label, url)
+    // `title_bar_style` and `hidden_title` only exist on the macOS
+    // builder API — chaining them unconditionally breaks the
+    // Windows + Linux compiles (E0599: no method named ...). They
+    // match the main window's overlay-titlebar treatment from
+    // tauri.conf.json so spawned windows on macOS look identical to
+    // main; non-macOS gets the default decorated chrome the conf
+    // file describes for those platforms.
+    #[allow(unused_mut)]
+    let mut builder = WebviewWindowBuilder::new(&app, &label, url)
         .title(title)
         .inner_size(1100.0, 720.0)
-        .min_inner_size(800.0, 500.0)
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .hidden_title(true)
+        .min_inner_size(800.0, 500.0);
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true);
+    }
+    let window = builder
         .build()
         .map_err(|e| format!("create window: {}", e))?;
 
