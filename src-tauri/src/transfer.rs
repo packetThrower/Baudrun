@@ -419,14 +419,12 @@ mod tests {
     fn xmodem_classic_sends_all_blocks() {
         // Receiver sends NAK (init), then ACK for each block + final
         // EOT ACK. 200 bytes of data = two 128-byte blocks.
-        let responses = {
-            let mut v = Vec::new();
-            v.push(NAK); // initial handshake
-            v.push(ACK); // block 1
-            v.push(ACK); // block 2
-            v.push(ACK); // EOT
-            v
-        };
+        let responses = vec![
+            NAK, // initial handshake
+            ACK, // block 1
+            ACK, // block 2
+            ACK, // EOT
+        ];
         let mut reader = MockReader::new(&responses);
         let mut writer: Vec<u8> = Vec::new();
         let data: Vec<u8> = (0..200).map(|i| i as u8).collect();
@@ -446,7 +444,7 @@ mod tests {
         assert_eq!(writer[0], SOH);
         assert_eq!(writer[1], 1); // block 1
         assert_eq!(writer[2], !1u8); // complement
-        assert_eq!(writer[*&writer.len() - 1], EOT);
+        assert_eq!(writer[writer.len() - 1], EOT);
     }
 
     #[test]

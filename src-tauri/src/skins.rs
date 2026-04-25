@@ -206,6 +206,23 @@ fn id_exists(user: &[Skin], id: &str) -> bool {
     user.iter().any(|s| s.id == id)
 }
 
+fn validate(sk: &Skin) -> Result<()> {
+    if sk.name.is_empty() {
+        return Err(SkinError::NameRequired);
+    }
+    if sk.vars.is_empty() && sk.dark_vars.is_empty() && sk.light_vars.is_empty() {
+        return Err(SkinError::NoVars);
+    }
+    for map in [&sk.vars, &sk.dark_vars, &sk.light_vars] {
+        for key in map.keys() {
+            if !key.starts_with("--") {
+                return Err(SkinError::BadVarName(key.clone()));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,21 +244,4 @@ mod tests {
             }
         }
     }
-}
-
-fn validate(sk: &Skin) -> Result<()> {
-    if sk.name.is_empty() {
-        return Err(SkinError::NameRequired);
-    }
-    if sk.vars.is_empty() && sk.dark_vars.is_empty() && sk.light_vars.is_empty() {
-        return Err(SkinError::NoVars);
-    }
-    for map in [&sk.vars, &sk.dark_vars, &sk.light_vars] {
-        for key in map.keys() {
-            if !key.starts_with("--") {
-                return Err(SkinError::BadVarName(key.clone()));
-            }
-        }
-    }
-    Ok(())
 }

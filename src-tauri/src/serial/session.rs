@@ -645,7 +645,7 @@ mod tests {
             "assert",
             false,
         );
-        assert_eq!(state, true);
+        assert!(state);
         assert_eq!(last, Some(true));
 
         let mut last: Option<bool> = None;
@@ -657,7 +657,7 @@ mod tests {
             "deassert",
             true,
         );
-        assert_eq!(state, false);
+        assert!(!state);
         assert_eq!(last, Some(false));
 
         let mut last: Option<bool> = None;
@@ -669,7 +669,7 @@ mod tests {
             "default",
             true,
         );
-        assert_eq!(state, true);
+        assert!(state);
         assert_eq!(last, None, "default must not invoke the setter");
     }
 

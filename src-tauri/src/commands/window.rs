@@ -20,7 +20,7 @@ use tauri::{
 use uuid::Uuid;
 
 use crate::events;
-use crate::state::{AppState, SessionHandle};
+use crate::state::AppState;
 
 #[tauri::command]
 pub fn set_traffic_lights_inset(
@@ -187,7 +187,7 @@ pub fn migrate_session(
     let moved = sessions
         .get_mut(&from_label)
         .map(std::mem::take)
-        .unwrap_or_else(SessionHandle::default);
+        .unwrap_or_default();
 
     // Update the shared cell so the read-pump's on_read / on_exit
     // closures emit to the target window from now on.

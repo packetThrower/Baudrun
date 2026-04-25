@@ -206,27 +206,6 @@ fn id_exists(user: &[Theme], id: &str) -> bool {
     user.iter().any(|t| t.id == id)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn builtins_parse() {
-        let list = builtins();
-        assert!(!list.is_empty(), "expected at least one builtin theme");
-        assert!(list.iter().any(|t| t.id == DEFAULT_THEME_ID));
-        assert!(list.iter().all(|t| t.source == "builtin"));
-    }
-
-    #[test]
-    fn slugify_basic() {
-        assert_eq!(slugify("Dracula", "theme"), "dracula");
-        assert_eq!(slugify("Tomorrow Night", "theme"), "tomorrow-night");
-        assert_eq!(slugify("!!!", "theme"), "theme");
-        assert_eq!(slugify("Solarized  Dark--!", "theme"), "solarized-dark");
-    }
-}
-
 /// slugify mirrors the Go implementation: lowercase, collapse
 /// `[ \-_.]` runs to a single `-`, strip non-alnum, trim trailing
 /// dashes, fall back to "theme" when empty.
@@ -249,4 +228,25 @@ pub(crate) fn slugify(input: &str, fallback: &str) -> String {
         out = fallback.into();
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtins_parse() {
+        let list = builtins();
+        assert!(!list.is_empty(), "expected at least one builtin theme");
+        assert!(list.iter().any(|t| t.id == DEFAULT_THEME_ID));
+        assert!(list.iter().all(|t| t.source == "builtin"));
+    }
+
+    #[test]
+    fn slugify_basic() {
+        assert_eq!(slugify("Dracula", "theme"), "dracula");
+        assert_eq!(slugify("Tomorrow Night", "theme"), "tomorrow-night");
+        assert_eq!(slugify("!!!", "theme"), "theme");
+        assert_eq!(slugify("Solarized  Dark--!", "theme"), "solarized-dark");
+    }
 }

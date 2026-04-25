@@ -108,6 +108,7 @@ pub fn cancel_transfer(window: WebviewWindow, state: State<'_, Arc<AppState>>) {
 
 // --- Internals ---------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn run_transfer(
     app: &AppHandle,
     label: &str,
