@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' tauri: ipc: https://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' tauri: ipc: https://ipc.localhost https://api.github.com https://github.com https://*.githubusercontent.com https://objects.githubusercontent.com; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
     }
   },
   "plugins": {
@@ -31,7 +31,7 @@
       "endpoints": [
         "https://github.com/packetThrower/Baudrun/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVBNDk4NzQ3RDIxMjcxNUEKUldSYWNSTFNSNGRKV2laOEY5NlY1aWhrdmROM3E5Z1Y4NzhUS1Bhb0RydnZ0NFBzZmJWZlRicVMK"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVDM0ExREQ0NjI1NjBDM0MKUldROERGWmkxQjA2N08zdEgxQzRrcUxzT055STF1ZnowbXIwdnZLOXhvOXpZWEFEZ242aTFFZy8K"
     }
   },
   "bundle": {

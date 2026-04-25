@@ -25,6 +25,39 @@ if (typeof window !== "undefined") {
 // clear them before applying a new skin or switching modes.
 let managedProps = new Set<string>();
 
+/** CSS custom-property names we'll accept from imported skins.
+ *  `--` followed by ASCII letters / digits / hyphen / underscore.
+ *  Stricter than the spec (which allows most identifiers) but matches
+ *  every variable Baudrun's bundled skins actually use. */
+function isSafeVarName(name: string): boolean {
+  return /^--[a-zA-Z0-9_-]+$/.test(name);
+}
+
+/** Reject CSS values that could exfiltrate data or invoke unsafe
+ *  parsers when consumed by `var(...)`. The browser already prevents
+ *  script execution from CSS values, but a `url(http://attacker/...)`
+ *  would still fire a network request when used by `background: var()`,
+ *  leaking the user's IP. Skins legitimately need colors, numbers,
+ *  font stacks, simple keywords, calc(), and var() references — none
+ *  of which require url() / image-set() / @import / behavior:. */
+function isSafeVarValue(value: string): boolean {
+  if (typeof value !== "string") return false;
+  if (value.length > 512) return false;
+  // Block any function-call form that could fetch resources or invoke
+  // an unsafe CSS parser path. Match case-insensitively because CSS
+  // function names ARE case-insensitive.
+  const banned = /\b(?:url|image|image-set|src|cross-fade|element|expression|behavior|-moz-binding|@import|@charset)\s*\(/i;
+  if (banned.test(value)) return false;
+  // Block "javascript:" and "data:" URIs even outside url(...) — some
+  // CSS contexts accept bare URI strings.
+  if (/(?:javascript|data|vbscript|file|blob)\s*:/i.test(value)) return false;
+  // Control characters and the </ sequence (which some HTML parsers
+  // can mishandle when CSS leaks into <style>) are also out.
+  if (/[\u0000-\u001f\u007f]/.test(value)) return false;
+  if (/<\//.test(value)) return false;
+  return true;
+}
+
 export async function loadSkins() {
   const list = await api.listSkins();
   skins.set(list ?? []);
@@ -68,7 +101,13 @@ export function applySkin(
   const write = (map: Record<string, string> | undefined) => {
     if (!map) return;
     for (const [k, v] of Object.entries(map)) {
-      if (!k.startsWith("--")) continue;
+      if (!isSafeVarName(k)) continue;
+      if (!isSafeVarValue(v)) {
+        console.warn(
+          `skin: dropping value with unsafe content for ${k}: ${JSON.stringify(v)}`,
+        );
+        continue;
+      }
       root.setProperty(k, v);
       managedProps.add(k);
     }

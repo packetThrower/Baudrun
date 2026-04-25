@@ -164,11 +164,25 @@ fn load_user(dir: &Path) -> Vec<Skin> {
         }
         let data = match fs::read(&path) {
             Ok(d) => d,
-            Err(_) => continue,
+            Err(err) => {
+                log::warn!(
+                    "skin: skipping unreadable file {}: {}",
+                    path.display(),
+                    err
+                );
+                continue;
+            }
         };
         let mut skin: Skin = match serde_json::from_slice(&data) {
             Ok(s) => s,
-            Err(_) => continue,
+            Err(err) => {
+                log::warn!(
+                    "skin: skipping malformed JSON at {}: {}",
+                    path.display(),
+                    err
+                );
+                continue;
+            }
         };
         skin.source = "user".into();
         out.push(skin);

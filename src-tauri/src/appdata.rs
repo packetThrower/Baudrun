@@ -87,9 +87,28 @@ fn read_override() -> Result<Option<PathBuf>> {
         Ok(data) => {
             let trimmed = data.trim();
             if trimmed.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(PathBuf::from(trimmed)))
+                return Ok(None);
+            }
+            let raw = PathBuf::from(trimmed);
+            // Reject relative or empty paths up front — the override
+            // file is supposed to contain an absolute path. A
+            // relative one would be resolved against whatever the
+            // working directory happens to be, which is surprising
+            // (and on platforms where Baudrun is launched from a
+            // shell, gives the launching dir surprising influence
+            // over where stores live).
+            if !raw.is_absolute() {
+                return Ok(None);
+            }
+            // Canonicalize so symlink components in the override
+            // path can't redirect later store I/O outside the
+            // intended target. Falling back to the raw path is OK if
+            // the target doesn't yet exist on disk — the store init
+            // will mkdir it normally; canonicalization just isn't
+            // useful in that case.
+            match fs::canonicalize(&raw) {
+                Ok(resolved) => Ok(Some(resolved)),
+                Err(_) => Ok(Some(raw)),
             }
         }
         Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(None),

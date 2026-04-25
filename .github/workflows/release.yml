@@ -86,7 +86,7 @@ jobs:
       - name: Build Tauri bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles app dmg
 
@@ -174,10 +174,10 @@ jobs:
           # BSD tar on macOS preserves xattrs by default; that's where
           # the codesign signature we just applied lives.
           tar -czf "$BUNDLE_DIR/Baudrun.app.tar.gz" -C "$BUNDLE_DIR" Baudrun.app
-          # `signer sign` reads the key from TAURI_SIGNING_PRIVATE_KEY
-          # in the environment (set above), so no -k flag is needed.
-          # Empty password matches how the key was generated.
-          npx @tauri-apps/cli signer sign -p "" "$BUNDLE_DIR/Baudrun.app.tar.gz"
+          # `signer sign` reads the key + password from
+          # TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] in the environment
+          # (set on the step), so no -k / -p flags are needed.
+          npx @tauri-apps/cli signer sign "$BUNDLE_DIR/Baudrun.app.tar.gz"
           # Rename to include the arch so updater latest.json can
           # disambiguate aarch64 vs x86_64 from a single release.
           VERSION="${GITHUB_REF_NAME#v}"
@@ -250,7 +250,7 @@ jobs:
         shell: cmd
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis' || 'msi nsis' }}
 
       # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
@@ -374,7 +374,7 @@ jobs:
       - name: Build Tauri bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles deb rpm appimage
 

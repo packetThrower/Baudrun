@@ -34,9 +34,24 @@ interface CompiledRule {
   re: RegExp;
   open: string;
   close: string;
+  /** Pattern source — used for the one-time disable warning. */
+  source: string;
+  /** Set to true after this rule's per-line CPU budget overruns
+   * once. ReDoS-prone patterns get permanently skipped for the rest
+   * of the session so a malicious or careless user pack can't hold
+   * the renderer hostage on every subsequent line. */
+  disabled: boolean;
 }
 
 let RULES: CompiledRule[] = [];
+
+/** Per-line wall-clock budget for ALL rules combined. Exceed it and
+ *  the remainder of the line is rendered uncolored — readability
+ *  beats correctness when a regex is misbehaving. */
+const PER_LINE_BUDGET_MS = 5;
+/** Per-rule budget for a single .exec() loop on one line. A single
+ *  pathological pattern can't burn the whole line budget alone. */
+const PER_RULE_BUDGET_MS = 2;
 
 /**
  * Replace the active rule set. Called by the runtime when the user
@@ -60,7 +75,13 @@ export function setActiveRules(rules: HighlightRule[]): void {
       continue;
     }
     const open = ANSI_BY_COLOR[rule.color] ?? ANSI_BY_COLOR.dim;
-    compiled.push({ re, open, close: RESET });
+    compiled.push({
+      re,
+      open,
+      close: RESET,
+      source: rule.pattern,
+      disabled: false,
+    });
   }
   RULES = compiled;
 }
@@ -102,10 +123,30 @@ interface Match {
 function highlightText(text: string): string {
   if (text.length === 0) return text;
   const matches: Match[] = [];
+  // Wall-clock budget across the whole rule set for this line. Once
+  // exceeded, the remaining rules are skipped — coloring the line
+  // partially is fine; locking the renderer is not.
+  const lineStart = performance.now();
   for (const rule of RULES) {
+    if (rule.disabled) continue;
+    if (performance.now() - lineStart > PER_LINE_BUDGET_MS) break;
+
     rule.re.lastIndex = 0;
+    const ruleStart = performance.now();
     let m;
     while ((m = rule.re.exec(text)) !== null) {
+      // Per-rule budget guard: a single pathological pattern (ReDoS
+      // catastrophic backtracking — e.g. `(a+)+` on a long no-match
+      // tail) can spin inside .exec() for seconds. Re-checking after
+      // each successful match catches the case where exec returns at
+      // all but each iteration is slow.
+      if (performance.now() - ruleStart > PER_RULE_BUDGET_MS) {
+        console.warn(
+          `highlight: disabling slow rule (>${PER_RULE_BUDGET_MS}ms): ${JSON.stringify(rule.source)} — likely catastrophic backtrack`,
+        );
+        rule.disabled = true;
+        break;
+      }
       const start = m.index;
       const end = start + m[0].length;
       if (end === start) {

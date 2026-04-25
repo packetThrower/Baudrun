@@ -98,6 +98,13 @@ type Release = {
   draft: boolean;
 };
 
+/** Hard cap on a single GitHub API response. A real /releases/latest
+ *  payload runs ~5 KB and a /releases?per_page=10 list runs ~50 KB.
+ *  100 KB is well above the ceiling, well below the renderer-DoS
+ *  threshold a hostile redirect could otherwise leverage. */
+const MAX_RESPONSE_BYTES = 100 * 1024;
+const FETCH_TIMEOUT_MS = 10_000;
+
 async function fetchReleases(includePrereleases: boolean): Promise<Release[]> {
   // `/releases/latest` returns a single JSON object and skips pre-releases + drafts.
   // `/releases?per_page=10` returns an array newest-first, including pre-releases.
@@ -106,15 +113,66 @@ async function fetchReleases(includePrereleases: boolean): Promise<Release[]> {
     ? `https://api.github.com/repos/${REPO}/releases?per_page=10`
     : `https://api.github.com/repos/${REPO}/releases/latest`;
 
-  const resp = await fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  // AbortController gives us a hard deadline AND a way to short-circuit
+  // a slow / hung fetch — important on flaky networks where the
+  // updater check would otherwise spin until the OS-level TCP timeout.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
   if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
 
-  const data = await resp.json();
+  // Fast path: trust the Content-Length header when present. GitHub
+  // sets it on every JSON response and an attacker who controls the
+  // body but not the headers (e.g. a TLS MITM that can't forge certs
+  // — i.e. nobody on a properly-secured connection) doesn't matter
+  // here. Belt-and-suspenders is the byte-count loop below.
+  const declaredSize = Number(resp.headers.get("content-length"));
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_RESPONSE_BYTES) {
+    throw new Error(
+      `GitHub API response declares ${declaredSize} bytes, capped at ${MAX_RESPONSE_BYTES}`,
+    );
+  }
+
+  // Read incrementally so a server that lies about Content-Length (or
+  // omits it on a chunked response) can't blow past the cap.
+  const reader = resp.body?.getReader();
+  if (!reader) throw new Error("GitHub API response had no body");
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MAX_RESPONSE_BYTES) {
+      reader.cancel();
+      throw new Error(
+        `GitHub API response exceeded ${MAX_RESPONSE_BYTES} bytes`,
+      );
+    }
+    chunks.push(value);
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  const body = new TextDecoder().decode(merged);
+  const data = JSON.parse(body);
   if (Array.isArray(data)) return data as Release[];
   return [data as Release];
 }

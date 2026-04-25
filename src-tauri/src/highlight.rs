@@ -206,7 +206,20 @@ impl Store {
     /// collide with a bundled pack or the scratchpad, the import is
     /// rejected so users don't silently shadow a built-in.
     pub fn import_user_pack(&self, source_path: &Path) -> Result<HighlightPack> {
-        let data = fs::read(source_path)?;
+        // Read with the underlying filesystem error logged internally
+        // but scrubbed from the error returned to the frontend — the
+        // string returned via tauri::command surfaces in the UI and
+        // (on some platforms) includes the absolute source path,
+        // which is unhelpful and slightly leaky for hosted app
+        // distributions where a stray screenshot might travel.
+        let data = fs::read(source_path).map_err(|err| {
+            log::warn!(
+                "highlight: read import source {}: {}",
+                source_path.display(),
+                err
+            );
+            HighlightError::Invalid("couldn't read selected file".into())
+        })?;
         let mut pack: HighlightPack = serde_json::from_slice(&data).map_err(|e| {
             HighlightError::Invalid(format!("invalid pack JSON: {}", e))
         })?;
