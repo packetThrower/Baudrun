@@ -1,0 +1,878 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Highlight Rule Playground · Baudrun</title>
+    <meta
+      name="description"
+      content="Test Baudrun highlight rule packs against your own serial captures, in your browser."
+    />
+    <link
+      rel="icon"
+      href="https://raw.githubusercontent.com/packetThrower/Baudrun/main/build/appicon.png"
+    />
+    <style>
+      :root {
+        --bg: #0b0b0d;
+        --bg-panel: #15151a;
+        --bg-input: #1a1a20;
+        --border: #2a2a32;
+        --border-strong: #3a3a44;
+        --fg: #e4e4e7;
+        --fg-secondary: #a8a8b0;
+        --fg-tertiary: #75757e;
+        --accent: #7cd992;
+        --danger: #ff6961;
+        --warn: #f5d76e;
+
+        /* Baudrun default-theme palette — kept in sync with
+           src-tauri/resources/builtin_themes.json so the playground
+           output matches what users will see in the app. */
+        --term-bg: #0b0b0d;
+        --term-fg: #e4e4e7;
+        --term-red: #ff6961;
+        --term-green: #7cd992;
+        --term-yellow: #f5d76e;
+        --term-blue: #6cb6ff;
+        --term-magenta: #d794ff;
+        --term-cyan: #7ce0e0;
+        --term-dim: #75757e;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-panel);
+      }
+
+      .topbar h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .topbar h1 .accent {
+        color: var(--accent);
+      }
+
+      .topbar .subtitle {
+        color: var(--fg-tertiary);
+        font-size: 12px;
+        margin-left: 8px;
+      }
+
+      .topbar a {
+        color: var(--fg-secondary);
+        text-decoration: none;
+        font-size: 12px;
+        margin-left: 16px;
+      }
+
+      .topbar a:hover {
+        color: var(--fg);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        padding: 16px 24px 24px;
+        min-height: calc(100vh - 56px);
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .col {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+      }
+
+      .panel {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        min-height: 0;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .panel-head h2 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .panel-head .meta {
+        font-size: 11px;
+        color: var(--fg-tertiary);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .panel-body {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      select,
+      button,
+      input[type="file"]::file-selector-button {
+        background: var(--bg-input);
+        color: var(--fg);
+        border: 1px solid var(--border-strong);
+        border-radius: 5px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+      }
+
+      select:hover,
+      button:hover,
+      input[type="file"]::file-selector-button:hover {
+        border-color: var(--accent);
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: #0b0b0d;
+        border-color: var(--accent);
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .controls label {
+        font-size: 12px;
+        color: var(--fg-secondary);
+      }
+
+      .controls .stack-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: 8px;
+        padding-left: 8px;
+        border-left: 1px solid var(--border);
+        cursor: pointer;
+      }
+
+      .controls .stack-label input {
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      textarea {
+        flex: 1;
+        min-height: 200px;
+        margin: 0;
+        padding: 12px 14px;
+        background: var(--bg-input);
+        color: var(--fg);
+        border: none;
+        outline: none;
+        font-family:
+          ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Monaco,
+          "Cascadia Mono", Consolas, monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+        resize: none;
+        tab-size: 2;
+      }
+
+      textarea.json-editor.invalid {
+        outline: 2px solid var(--danger);
+        outline-offset: -2px;
+      }
+
+      .status-bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 8px 14px;
+        font-size: 11px;
+        color: var(--fg-tertiary);
+        background: rgba(0, 0, 0, 0.2);
+        border-top: 1px solid var(--border);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .status-bar .err {
+        color: var(--danger);
+      }
+
+      .status-bar .warn {
+        color: var(--warn);
+      }
+
+      .status-bar .ok {
+        color: var(--accent);
+      }
+
+      .output {
+        flex: 1;
+        margin: 0;
+        padding: 12px 14px;
+        background: var(--term-bg);
+        color: var(--term-fg);
+        font-family:
+          ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Monaco,
+          "Cascadia Mono", Consolas, monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+        overflow: auto;
+        white-space: pre;
+        word-wrap: normal;
+      }
+
+      .output .red {
+        color: var(--term-red);
+      }
+      .output .green {
+        color: var(--term-green);
+      }
+      .output .yellow {
+        color: var(--term-yellow);
+      }
+      .output .blue {
+        color: var(--term-blue);
+      }
+      .output .magenta {
+        color: var(--term-magenta);
+      }
+      .output .cyan {
+        color: var(--term-cyan);
+      }
+      .output .dim {
+        color: var(--term-dim);
+      }
+
+      .hint-row {
+        font-size: 11px;
+        color: var(--fg-tertiary);
+        padding: 0 24px 12px;
+      }
+
+      .hint-row code {
+        background: var(--bg-input);
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 11px;
+      }
+
+      .hint-row a {
+        color: var(--fg-secondary);
+      }
+
+      .drop-target {
+        position: relative;
+      }
+
+      .drop-target.dragover::after {
+        content: "Drop file to load";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(124, 217, 146, 0.08);
+        border: 2px dashed var(--accent);
+        color: var(--accent);
+        font-size: 13px;
+        pointer-events: none;
+        z-index: 1;
+        backdrop-filter: blur(2px);
+      }
+
+      .file-input {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="topbar">
+      <h1>
+        <span class="accent">Baudrun</span> · highlight rule playground
+        <span class="subtitle"
+          >paste a pack, drop a log, see the colors</span
+        >
+      </h1>
+      <nav>
+        <a
+          href="https://github.com/packetThrower/Baudrun/tree/main/src-tauri/resources/highlight"
+          target="_blank"
+          rel="noopener"
+          >Bundled packs ↗</a
+        >
+        <a href="https://packetthrower.github.io/Baudrun/" target="_blank" rel="noopener">Docs ↗</a>
+      </nav>
+    </header>
+
+    <p class="hint-row">
+      All processing is local — your file never leaves the browser. Pick a
+      bundled pack as a starting point, edit the rules, and drop a real
+      capture (config dump, <code>show interface</code>, syslog, anything
+      text) into the right pane to see the colors apply. The regex engine
+      and color mapping match what Baudrun uses on a live serial session.
+    </p>
+
+    <main class="layout">
+      <section class="col">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Highlight pack (JSON)</h2>
+            <div class="controls">
+              <label for="pack-select">Load:</label>
+              <select id="pack-select">
+                <option value="baudrun-default">Baudrun default</option>
+                <option value="cisco-ios">Cisco IOS / IOS XE / IOS XR</option>
+                <option value="junos">Juniper Junos</option>
+                <option value="aruba-cx">Aruba AOS-CX</option>
+                <option value="empty">Empty (start from scratch)</option>
+              </select>
+              <label class="stack-label" title="Apply baudrun-default's rules underneath the pack you're editing — matches how Baudrun stacks bundled packs at runtime.">
+                <input type="checkbox" id="stack-default" checked />
+                Stack with Baudrun default
+              </label>
+            </div>
+          </div>
+          <div class="panel-body">
+            <textarea
+              id="pack-input"
+              class="json-editor"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+            ></textarea>
+            <div class="status-bar" id="pack-status">Ready.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="col">
+        <div class="panel drop-target" id="sample-drop">
+          <div class="panel-head">
+            <h2>Sample text</h2>
+            <div class="controls">
+              <label for="sample-select">Load sample:</label>
+              <select id="sample-select">
+                <option value="baudrun-default">Mixed (IPs + MACs + interfaces)</option>
+                <option value="cisco-ios">Cisco IOS show output</option>
+                <option value="junos">Junos show output</option>
+                <option value="aruba-cx">Aruba AOS-CX show output</option>
+              </select>
+              <button id="load-file-btn" type="button" title="Open a local text file">
+                Open file…
+              </button>
+              <input
+                type="file"
+                id="file-input"
+                class="file-input"
+                accept=".txt,.log,.cfg,.conf,.cisco,.ios,.config,text/plain"
+              />
+            </div>
+          </div>
+          <div class="panel-body">
+            <textarea
+              id="sample-input"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Output</h2>
+            <span class="meta" id="output-meta"></span>
+          </div>
+          <pre class="output" id="output"></pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // -------- bundled packs --------
+      // These are the same JSON files shipped in the binary at
+      // src-tauri/resources/highlight/. Inlined so the playground works
+      // offline and on GitHub Pages without a fetch round-trip.
+      const BUNDLED_PACKS = {
+        "baudrun-default": {
+          "id": "baudrun-default",
+          "name": "Baudrun default",
+          "description": "Vendor-neutral highlights — IPs, MACs, interface names, status keywords, timestamps. Enabled by default; turn it off if you only want device-specific presets.",
+          "rules": [
+            { "pattern": "\\b\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\b", "color": "dim", "group": "timestamps" },
+            { "pattern": "\\b\\d{4}-\\d{2}-\\d{2}\\b", "color": "dim", "group": "dates" },
+            { "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}(?:\\/\\d{1,2})?\\b", "color": "cyan", "group": "ipv4" },
+            { "pattern": "\\b(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}\\b", "color": "magenta", "group": "mac" },
+            { "pattern": "\\b[0-9a-fA-F]{4}\\.[0-9a-fA-F]{4}\\.[0-9a-fA-F]{4}\\b", "color": "magenta", "group": "mac-cisco" },
+            { "pattern": "\\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\\b", "color": "cyan", "group": "ipv6" },
+            { "pattern": "\\b(?:GigabitEthernet|FastEthernet|TenGigabitEthernet|TwentyFiveGigE|HundredGigE|FortyGigE|Ethernet|Serial|Loopback|Vlan|Port-channel|Tunnel|Management|Bundle-Ether|Null)\\s?\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b", "color": "blue", "group": "interface-cisco-full" },
+            { "pattern": "\\b(?:Gi|Fa|Te|Twe|Hun|Fo|Eth|Se|Lo|Vl|Po|Tu|Mg|Bu|Nu)\\d+\\/\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b", "color": "blue", "group": "interface-cisco-short" },
+            { "pattern": "\\b(?:ge|xe|et|fe|me|xl|em|lo|fxp|irb|lt|st|mt|ae|pp|bme|vcp|vme|vt|sp|reth)-\\d+\\/\\d+\\/\\d+(?:\\.\\d+)?\\b", "color": "blue", "group": "interface-juniper" },
+            { "pattern": "\\b(?:up|online|active|established|connected|enabled|forwarding|FULL|passed|OK|success)\\b", "color": "green", "ignoreCase": true, "group": "state-good" },
+            { "pattern": "\\b(?:down|offline|inactive|failed|err-?disabled|error|denied|disabled|rejected|timeout|lost|critical|fatal|alert|unreachable)\\b", "color": "red", "ignoreCase": true, "group": "state-bad" },
+            { "pattern": "\\b(?:warning|warn|degraded|partial|init|learning|listening|blocking|pending)\\b", "color": "yellow", "ignoreCase": true, "group": "state-warn" },
+            { "pattern": "\\bVLAN\\s?\\d+\\b", "color": "yellow", "ignoreCase": true, "group": "vlan" }
+          ]
+        },
+        "cisco-ios": {
+          "id": "cisco-ios",
+          "name": "Cisco IOS / IOS XE / IOS XR",
+          "description": "Patterns common to Cisco's CLI output: line-protocol states, spanning-tree port roles, OSPF/BGP/EIGRP states, ACL hit counters, config-mode prompts.",
+          "rules": [
+            { "pattern": "\\bline protocol is (up|down)\\b", "color": "yellow", "ignoreCase": true, "group": "interface-state" },
+            { "pattern": "%\\w+(?:-\\w+)*-\\d+-\\w+", "color": "yellow", "group": "log-mnemonic" },
+            { "pattern": "\\b(?:DESG|ROOT|ALTN|BLK|DSBL|BKN|LRN|FWD|LIS|EXC)\\b", "color": "blue", "group": "stp-role" },
+            { "pattern": "\\b(?:Full|Init|2-Way|ExStart|Exchange|Loading|Down)\\b", "color": "green", "ignoreCase": false, "group": "ospf-neighbor-state" },
+            { "pattern": "\\b(?:Idle|Connect|Active|OpenSent|OpenConfirm|Established)\\b", "color": "green", "ignoreCase": false, "group": "bgp-fsm-state" },
+            { "pattern": "\\bAS\\s?\\d{1,10}\\b", "color": "magenta", "group": "as-number" },
+            { "pattern": "\\(config(?:-[a-z0-9-]+)?\\)#", "color": "dim", "group": "config-prompt" },
+            { "pattern": "\\b(?:permit|deny)\\b", "color": "yellow", "ignoreCase": true, "group": "acl-action" },
+            { "pattern": "\\b(?:tagged|untagged|access|trunk|hybrid)\\b", "color": "blue", "ignoreCase": true, "group": "vlan-mode" }
+          ]
+        },
+        "junos": {
+          "id": "junos",
+          "name": "Juniper Junos",
+          "description": "Patterns for Junos OS output: chassis hardware status, BGP/OSPF/IS-IS neighbor states, RPM probes, commit messages, set/delete statement annotations.",
+          "rules": [
+            { "pattern": "\\b(?:Online|Offline|Present|Empty|Ready|Restart)\\b", "color": "green", "ignoreCase": false, "group": "chassis-status" },
+            { "pattern": "\\b(?:Estab|EstabSync|Active|Idle|Connect|OpenSent|OpenConfirm)\\b", "color": "green", "ignoreCase": false, "group": "bgp-state" },
+            { "pattern": "\\b(?:Full|Init|2Way|ExStart|Exchange|Loading|Down|Attempt)\\b", "color": "green", "ignoreCase": false, "group": "ospf-state" },
+            { "pattern": "\\bL[12](?:Pseudonode)?\\b", "color": "blue", "group": "isis-level" },
+            { "pattern": "\\[edit(?:[^\\]]*)?\\]", "color": "dim", "group": "edit-banner" },
+            { "pattern": "^\\+\\s+\\S+", "color": "green", "group": "config-add" },
+            { "pattern": "^-\\s+\\S+", "color": "red", "group": "config-remove" },
+            { "pattern": "\\bcommit complete\\b", "color": "green", "ignoreCase": false, "group": "commit-success" },
+            { "pattern": "\\bcommit failed\\b", "color": "red", "ignoreCase": false, "group": "commit-fail" },
+            { "pattern": "\\b(?:lo0|lo|fxp0|fxp1|me0|em\\d+)(?:\\.\\d+)?\\b", "color": "blue", "group": "mgmt-interface" }
+          ]
+        },
+        "aruba-cx": {
+          "id": "aruba-cx",
+          "name": "Aruba AOS-CX",
+          "description": "Patterns for HPE/Aruba AOS-CX switches: VSX/VSF chassis state, LAG/MCLAG status, Spanning Tree, ACL action keywords, daemon names in event logs.",
+          "rules": [
+            { "pattern": "\\bVSX\\b", "color": "magenta", "group": "vsx" },
+            { "pattern": "\\bVSF\\b", "color": "magenta", "group": "vsf" },
+            { "pattern": "\\b(?:lag|trk)\\d+\\b", "color": "blue", "ignoreCase": true, "group": "lag" },
+            { "pattern": "\\b(?:Designated|Root|Alternate|Backup|Disabled)\\s+(?:Forwarding|Discarding|Learning|Listening)\\b", "color": "blue", "ignoreCase": true, "group": "stp-role" },
+            { "pattern": "\\b(?:hpe|hpe-aaa|hpe-snmp|hpe-syslog|hpe-mgmd|hpe-stp|hpe-vrrp|hpe-vsf|hpe-vsx|hpe-l2|hpe-routing)[^\\s\\]]*", "color": "dim", "group": "daemon" },
+            { "pattern": "\\b(?:permit|deny|drop|count|log|reflect)\\b", "color": "yellow", "ignoreCase": true, "group": "acl-action" },
+            { "pattern": "\\b(?:Operational|Administrative)\\s+(?:up|down)\\b", "color": "yellow", "ignoreCase": true, "group": "interface-state" },
+            { "pattern": "\\b(?:Active|Inactive|Standby|Mismatch|Sync|InSync)\\b", "color": "green", "group": "vsx-role" }
+          ]
+        },
+        "empty": {
+          id: "user",
+          name: "Custom",
+          description: "",
+          rules: [],
+        },
+      };
+
+      const SAMPLES = {
+        "baudrun-default": [
+          "2026-01-14 09:42:18  Interface GigabitEthernet0/0/1 changed state to up",
+          "2026-01-14 09:42:18  Line protocol on Interface Gi0/0/1, changed state to up",
+          "2026-01-14 09:42:19  Neighbor 10.0.12.1 (VRF default) is Established",
+          "2026-01-14 09:43:02  MAC 00:1a:2b:3c:4d:5e learned on Vlan10 port Gi0/0/3",
+          "2026-01-14 09:43:02  MAC aabb.ccdd.eeff aged out on TenGigabitEthernet1/0/24",
+          "2026-01-14 09:43:11  IPv6 neighbor 2001:db8::1 reachable via Loopback0",
+          "2026-01-14 09:44:00  WARNING: Interface FortyGigE2/0/1 entering err-disabled state",
+          "2026-01-14 09:44:01  Tunnel100 down — peer 192.0.2.42/32 unreachable",
+          "2026-01-14 09:44:30  VLAN 200 forwarding · ge-0/0/4 active",
+          "2026-01-14 09:45:00  Loopback0 192.0.2.1/32 up · admin enabled",
+          "2026-01-14 09:45:12  ERROR: BFD session to 198.51.100.5 timeout (lost adjacency)",
+        ].join("\n"),
+        "cisco-ios": [
+          "Router#show ip ospf neighbor",
+          "",
+          "Neighbor ID     Pri   State           Dead Time   Address         Interface",
+          "10.0.0.2          1   FULL/DR         00:00:38    10.0.12.2       GigabitEthernet0/0/1",
+          "10.0.0.3          1   2-Way/DROTHER   00:00:35    10.0.13.3       GigabitEthernet0/0/2",
+          "10.0.0.4          1   ExStart         00:00:31    10.0.14.4       GigabitEthernet0/0/3",
+          "",
+          "Router#show bgp summary",
+          "",
+          "Neighbor      V    AS  MsgRcvd MsgSent State/PfxRcd",
+          "10.0.12.2     4 65001    81234   81210 Established",
+          "10.0.13.3     4 65002    11      11    Active",
+          "10.0.14.4     4 65003    0       0     Idle",
+          "",
+          "Router#show spanning-tree",
+          "Gi0/0/1   DESG FWD 4    128.1   P2p",
+          "Gi0/0/2   ROOT FWD 4    128.2   P2p",
+          "Gi0/0/3   ALTN BLK 4    128.3   P2p",
+          "",
+          "Jan 14 09:44:01.234: %LINK-3-UPDOWN: Interface GigabitEthernet0/0/4, changed state to down",
+          "Jan 14 09:44:01.236: %LINEPROTO-5-UPDOWN: Line protocol on Interface Gi0/0/4, changed state to down",
+          "",
+          "Router(config)#interface Gi0/0/5",
+          "Router(config-if)#switchport mode trunk",
+          "Router(config-if)#switchport trunk allowed vlan 10,20,30",
+          "Router(config-if)#ip access-list extended FILTER",
+          "Router(config-ext-nacl)# permit tcp any any eq 443",
+          "Router(config-ext-nacl)# deny   ip any any log",
+        ].join("\n"),
+        "junos": [
+          "[edit]",
+          "user@junos> show chassis hardware",
+          "",
+          "Hardware inventory:",
+          "Item             Version  Part number  Serial number    Description",
+          "Chassis                                JN1234ABCD       MX204",
+          "Midplane         REV 06   711-079053   AAEX1234         MX204 Midplane",
+          "Routing Engine   BUILTIN  BUILTIN      BUILTIN          Routing Engine",
+          "FPC 0            REV 18   750-066884   CABL5678         FPC0  Online",
+          "  PIC 0                                BUILTIN          4x10GE SFP+",
+          "    Xcvr 0       REV 01   740-031980   AB12CD34         SFP+-10G-SR",
+          "FPC 1            -        -            -                Empty",
+          "",
+          "user@junos> show bgp summary",
+          "Peer                     AS      InPkt     OutPkt    OutQ   Flaps Last Up/Dwn State",
+          "10.0.0.2              65001     123456     123455       0       0     2w3d Estab",
+          "10.0.0.3              65002        102        101       0       1     00:01:42 Active",
+          "10.0.0.4              65003          0          0       0       0     never Idle",
+          "",
+          "user@junos> show ospf neighbor",
+          "Address          Interface              State     ID               Pri  Dead",
+          "10.0.12.2        ge-0/0/1.0             Full      10.0.0.2         128    37",
+          "10.0.13.3        ge-0/0/2.0             2Way      10.0.0.3         128    33",
+          "10.0.14.4        ge-0/0/3.0             ExStart   10.0.0.4         128    31",
+          "",
+          "user@junos> show interfaces lo0 terse",
+          "Interface               Admin Link Proto    Local                 Remote",
+          "lo0                     up    up",
+          "lo0.0                   up    up   inet     192.0.2.1/32",
+          "",
+          "user@junos# show | compare",
+          "[edit interfaces ge-0/0/4]",
+          "+   description \"link to spine-01\";",
+          "-   disable;",
+          "+   unit 0 family inet address 10.0.24.1/30;",
+          "",
+          "user@junos# commit",
+          "commit complete",
+        ].join("\n"),
+        "aruba-cx": [
+          "switch# show vsx status",
+          "",
+          "VSX Operational State",
+          "  ISL channel: In-Sync   Sync",
+          "  ISL mgmt channel: operational",
+          "  Config Sync Status: InSync",
+          "  NAE: Active",
+          "  HTTPS Server: Active",
+          "  Device Role: primary",
+          "",
+          "switch# show lacp aggregates",
+          "Aggregate name  : lag1",
+          "Aggregated interfaces : 1/1/1 1/1/2",
+          "Aggregate mode  : active",
+          "Operational state: Active",
+          "",
+          "switch# show spanning-tree",
+          "Port   Role        State        Cost     Pri  Type",
+          "1/1/1  Designated  Forwarding   2000     128  point-to-point",
+          "1/1/2  Root        Forwarding   2000     128  point-to-point",
+          "1/1/3  Alternate   Discarding   2000     128  point-to-point",
+          "",
+          "switch# show interface 1/1/4 brief",
+          "Port    Native VLAN  Mode    Operational  Administrative  Reason",
+          "1/1/4   1            access  Operational up  Administrative up",
+          "",
+          "switch# show events -d hpe-stp",
+          "2026-01-14T09:42:18.123Z hpe-stp[1234]: Interface 1/1/3 transitioned to Discarding",
+          "2026-01-14T09:43:02.987Z hpe-vsx[5678]: peer 192.0.2.2 keepalive Active",
+          "2026-01-14T09:44:01.456Z hpe-syslog[91011]: ACL FILTER deny tcp any any eq 23",
+          "",
+          "switch(config)# access-list ip MGMT",
+          "  10 permit tcp 10.0.0.0/24 any eq 22",
+          "  20 deny   ip any any count log",
+        ].join("\n"),
+      };
+
+      const COLOR_CLASS = {
+        red: "red",
+        green: "green",
+        yellow: "yellow",
+        blue: "blue",
+        magenta: "magenta",
+        cyan: "cyan",
+        dim: "dim",
+      };
+
+      // -------- DOM --------
+      const packSelect = document.getElementById("pack-select");
+      const packInput = document.getElementById("pack-input");
+      const packStatus = document.getElementById("pack-status");
+      const stackDefault = document.getElementById("stack-default");
+      const sampleSelect = document.getElementById("sample-select");
+      const sampleInput = document.getElementById("sample-input");
+      const fileInput = document.getElementById("file-input");
+      const loadFileBtn = document.getElementById("load-file-btn");
+      const dropTarget = document.getElementById("sample-drop");
+      const output = document.getElementById("output");
+      const outputMeta = document.getElementById("output-meta");
+
+      let compiledRules = [];
+
+      // -------- pack handling --------
+      function loadBundledPack(id) {
+        const pack = BUNDLED_PACKS[id];
+        packInput.value = JSON.stringify(pack, null, 2);
+        recompile();
+      }
+
+      // Compile a list of rule objects (pattern + color + ignoreCase)
+      // into our internal {re, cls} shape. Patterns that fail to compile
+      // are dropped and reported back via the returned `dropped` array
+      // so the status bar can surface them.
+      function compileRuleList(rules) {
+        const out = [];
+        const dropped = [];
+        for (const r of rules) {
+          if (typeof r?.pattern !== "string") {
+            dropped.push("(missing pattern)");
+            continue;
+          }
+          let flags = "g";
+          if (r.ignoreCase) flags += "i";
+          try {
+            const re = new RegExp(r.pattern, flags);
+            const cls = COLOR_CLASS[r.color] ?? COLOR_CLASS.dim;
+            out.push({ re, cls });
+          } catch (err) {
+            dropped.push(`${r.pattern}  →  ${err.message}`);
+          }
+        }
+        return { compiled: out, dropped };
+      }
+
+      function recompile() {
+        let pack;
+        try {
+          pack = JSON.parse(packInput.value);
+        } catch (err) {
+          packInput.classList.add("invalid");
+          packStatus.innerHTML = `<span class="err">JSON: ${escapeHtml(String(err.message || err))}</span>`;
+          compiledRules = [];
+          render();
+          return;
+        }
+        packInput.classList.remove("invalid");
+
+        const editorRules = Array.isArray(pack?.rules) ? pack.rules : [];
+        // Stacking model mirrors the runtime: baudrun-default first,
+        // then the user's pack — so user rules win on overlap.
+        // Skip the stack when the editor already holds baudrun-default
+        // (otherwise its rules would be applied twice for no reason).
+        const stack = stackDefault.checked && pack?.id !== "baudrun-default";
+
+        const editor = compileRuleList(editorRules);
+        const stacked = stack ? compileRuleList(BUNDLED_PACKS["baudrun-default"].rules) : { compiled: [], dropped: [] };
+
+        compiledRules = [...stacked.compiled, ...editor.compiled];
+        const dropped = [...stacked.dropped, ...editor.dropped];
+
+        const totalRules = compiledRules.length;
+        const editorCount = editor.compiled.length;
+        let baseMsg;
+        if (stack) {
+          baseMsg = `${editorCount} rule${editorCount === 1 ? "" : "s"} compiled · ${stacked.compiled.length} stacked from default`;
+        } else {
+          baseMsg = `${totalRules} rule${totalRules === 1 ? "" : "s"} compiled`;
+        }
+        if (dropped.length === 0) {
+          packStatus.innerHTML = `<span class="ok">${baseMsg}.</span>`;
+        } else {
+          packStatus.innerHTML =
+            `<span class="ok">${baseMsg}.</span> ` +
+            `<span class="warn">${dropped.length} dropped:</span> ` +
+            `<span class="warn">${escapeHtml(dropped.slice(0, 3).join(" · "))}` +
+            (dropped.length > 3 ? ` · …` : "") +
+            `</span>`;
+        }
+        render();
+      }
+
+      // -------- highlighting --------
+      // Mirror of src/lib/highlight.ts: try every rule, collect non-
+      // overlapping matches, render in start-order. First match wins on
+      // overlap so earlier rules in the pack take precedence over later
+      // ones (matches the in-app behavior).
+      function highlightLine(line) {
+        if (line.length === 0) return "";
+        const matches = [];
+        for (const rule of compiledRules) {
+          rule.re.lastIndex = 0;
+          let m;
+          while ((m = rule.re.exec(line)) !== null) {
+            const start = m.index;
+            const end = start + m[0].length;
+            if (end === start) {
+              rule.re.lastIndex = end + 1;
+              continue;
+            }
+            const overlaps = matches.some(
+              (e) => !(end <= e.start || start >= e.end),
+            );
+            if (!overlaps) {
+              matches.push({ start, end, cls: rule.cls });
+            }
+          }
+        }
+        if (matches.length === 0) return escapeHtml(line);
+        matches.sort((a, b) => a.start - b.start);
+
+        let out = "";
+        let pos = 0;
+        for (const mt of matches) {
+          out += escapeHtml(line.slice(pos, mt.start));
+          out += `<span class="${mt.cls}">${escapeHtml(line.slice(mt.start, mt.end))}</span>`;
+          pos = mt.end;
+        }
+        out += escapeHtml(line.slice(pos));
+        return out;
+      }
+
+      function render() {
+        const text = sampleInput.value;
+        const lines = text.split(/\r\n|\n/);
+        let totalMatches = 0;
+        const html = lines
+          .map((line) => {
+            const before = output.querySelectorAll
+              ? null
+              : null;
+            const rendered = highlightLine(line);
+            // Quick match counter — count <span tags in the line.
+            const m = rendered.match(/<span /g);
+            if (m) totalMatches += m.length;
+            return rendered;
+          })
+          .join("\n");
+        output.innerHTML = html;
+        outputMeta.textContent = `${lines.length.toLocaleString()} lines · ${totalMatches.toLocaleString()} match${totalMatches === 1 ? "" : "es"}`;
+      }
+
+      function escapeHtml(s) {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      // -------- file loading --------
+      function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsText(file);
+        });
+      }
+
+      async function loadFile(file) {
+        try {
+          sampleInput.value = await readFileAsText(file);
+          render();
+        } catch (err) {
+          alert(`Failed to read file: ${err.message || err}`);
+        }
+      }
+
+      // -------- wire-up --------
+      packSelect.addEventListener("change", () => loadBundledPack(packSelect.value));
+      packInput.addEventListener("input", recompile);
+      stackDefault.addEventListener("change", recompile);
+      sampleInput.addEventListener("input", render);
+      sampleSelect.addEventListener("change", () => {
+        sampleInput.value = SAMPLES[sampleSelect.value] ?? "";
+        render();
+      });
+      loadFileBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        const f = fileInput.files?.[0];
+        if (f) loadFile(f);
+        fileInput.value = ""; // allow re-selecting same file later
+      });
+
+      // Drag-and-drop onto the sample panel.
+      ["dragenter", "dragover"].forEach((ev) =>
+        dropTarget.addEventListener(ev, (e) => {
+          e.preventDefault();
+          dropTarget.classList.add("dragover");
+        }),
+      );
+      ["dragleave", "drop"].forEach((ev) =>
+        dropTarget.addEventListener(ev, (e) => {
+          e.preventDefault();
+          if (ev === "dragleave" && dropTarget.contains(e.relatedTarget))
+            return;
+          dropTarget.classList.remove("dragover");
+        }),
+      );
+      dropTarget.addEventListener("drop", (e) => {
+        const f = e.dataTransfer?.files?.[0];
+        if (f) loadFile(f);
+      });
+
+      // -------- boot --------
+      loadBundledPack("baudrun-default");
+      sampleInput.value = SAMPLES["baudrun-default"];
+      render();
+    </script>
+  </body>
+</html>

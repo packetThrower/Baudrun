@@ -297,24 +297,37 @@ scale linearly with line count.
 
 ## Syntax highlighting
 
-- Per-profile toggle (`highlight`, default `true`).
-- Line-buffered regex colorizer applied to incoming text. Active
-  pattern set:
+- Per-profile toggle (`highlight`, default `true`) plus a per-profile
+  pack-override list. Settings → Syntax Highlighting picks the global
+  default packs; profiles override under their own collapsible
+  Syntax Highlighting card.
+- Rules ship as **packs** — JSON files with a list of `{pattern, color,
+  ignoreCase?, group?}` entries. Built-in packs:
 
-  | Color    | Matches                                                       |
-  | -------- | ------------------------------------------------------------- |
-  | Cyan     | IPv4 (with optional CIDR), IPv6                               |
-  | Magenta  | MAC addresses (colon, dash, or Cisco-dotted)                  |
-  | Blue     | Interface names — `GigabitEthernet0/1`, `Gi1/0/24`, `ge-0/0/1`, `Vlan100` |
-  | Green    | `up`, `online`, `active`, `established`, `enabled`, `OK`, `FULL` |
-  | Red      | `down`, `failed`, `err-disabled`, `error`, `denied`, `timeout`, `critical` |
-  | Yellow   | `warning`, `degraded`, `init`, `learning`, `blocking`         |
-  | Dim gray | `HH:MM:SS` timestamps, `YYYY-MM-DD` dates                     |
+  | Pack | Covers |
+  | ---- | ------ |
+  | **Baudrun default** | Vendor-neutral: IPv4/IPv6, MACs, interface names, `up`/`down`/`error`/`warning` keywords, timestamps, dates, VLANs |
+  | **Cisco IOS / IOS XE / IOS XR** | `line protocol`, log mnemonics (`%LINK-3-UPDOWN`), STP roles (`DESG`/`ROOT`/`ALTN`), OSPF/BGP states, AS numbers, ACL `permit`/`deny` |
+  | **Juniper Junos** | Chassis status (`Online`/`Empty`), BGP/OSPF/IS-IS states, `[edit ...]` banners, commit messages, set/delete diff lines |
+  | **Aruba AOS-CX** | VSX/VSF status, LAG/MCLAG, STP role+state, daemon names in event logs, ACL actions |
 
+- The "User overrides" pack lives at
+  `$SUPPORT_DIR/highlight-rules.json` and is editable on disk —
+  rules there layer on top of bundled packs.
+- Available colors: `red`, `green`, `yellow`, `blue`, `magenta`,
+  `cyan`, `dim`. First match wins on overlap; rules within a pack
+  are tried in array order, packs in load order.
 - Mutually exclusive with hex view — toggling either mode resets
   the other's line buffer.
 - Device-supplied ANSI CSI colors pass through unchanged. The
   highlighter only applies color to text that arrived uncolored.
+
+### Playground
+
+Want to try a regex before saving it? Open the
+[**rule playground**](playground.html) — paste or drop a real capture,
+edit the pack JSON, see the colors apply live. Everything runs in your
+browser; the file you drop never leaves your machine.
 
 ## Theme preview
 

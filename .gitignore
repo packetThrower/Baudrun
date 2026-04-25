@@ -27,6 +27,7 @@ site/
 # Claude Code local settings + ephemeral worktree clones
 .claude/settings.local.json
 .claude/worktrees/
+.claude/launch.json
 
 # Logs & temp
 *.log
