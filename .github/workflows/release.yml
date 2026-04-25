@@ -253,7 +253,10 @@ jobs:
       # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
       # portable zip of the bare Baudrun.exe for users who don't
       # want an installer. Updater bundles (.nsis.zip + .sig) come
-      # from the NSIS bundler when signing is enabled.
+      # from the NSIS bundler when signing is enabled — list every
+      # NSIS output file before the targeted copies so a missing
+      # updater bundle is obvious in the log instead of silently
+      # skipped.
       - name: Package artifacts
         shell: pwsh
         run: |
@@ -261,20 +264,29 @@ jobs:
           $arch = "${{ matrix.arch }}"
           $bundle = "src-tauri/target/${{ matrix.target }}/release/bundle"
           New-Item -ItemType Directory -Force release-artifacts | Out-Null
+
+          Write-Host "--- contents of $bundle ---"
+          if (Test-Path $bundle) {
+            Get-ChildItem -Path $bundle -Recurse -File | ForEach-Object { $_.FullName }
+          }
+
           if (Test-Path "$bundle/msi") {
-            Copy-Item "$bundle/msi/*.msi" release-artifacts/
+            Copy-Item "$bundle/msi/*.msi" release-artifacts/ -Verbose
           }
           if (Test-Path "$bundle/nsis") {
-            Copy-Item "$bundle/nsis/*.exe" release-artifacts/
+            Copy-Item "$bundle/nsis/*.exe" release-artifacts/ -Verbose
             # Updater feed: NSIS-format zipped installer + signature.
             # Tauri's installer-mode updater on Windows downloads this
             # zip, extracts it, and runs the installer in /SILENT mode.
-            Get-ChildItem "$bundle/nsis/*.nsis.zip" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ }
-            Get-ChildItem "$bundle/nsis/*.nsis.zip.sig" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ }
+            Get-ChildItem "$bundle/nsis/*.nsis.zip" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ -Verbose }
+            Get-ChildItem "$bundle/nsis/*.nsis.zip.sig" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ -Verbose }
           }
           Compress-Archive `
             -Path "src-tauri/target/${{ matrix.target }}/release/Baudrun.exe" `
             -DestinationPath "release-artifacts/Baudrun-Windows-$arch-$version.zip"
+
+          Write-Host "--- staged ---"
+          Get-ChildItem release-artifacts | ForEach-Object { $_.Name }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -399,21 +411,58 @@ jobs:
             --package "baudrun-${ARCH_VERSION}-1-${{ matrix.appimage_arch }}.pkg.tar.zst" \
             .
 
+      # Collect every artifact into a flat dir for upload. Each cp
+      # is wrapped in a function that prints what's matched (or notes
+      # the dir) so missing files surface in the log instead of being
+      # swallowed by a silent glob non-match. Tauri 2's appimage
+      # bundler emits BOTH `Baudrun_*` (display-name cased) and a
+      # secondary `baudrun_*` (binary-name cased) copy of every file —
+      # the dedupe loop keeps just the display-name copies so the
+      # release page doesn't show duplicates.
       - name: Collect artifacts
         run: |
+          set -euo pipefail
           BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
           mkdir -p release-artifacts
-          cp "$BUNDLE_DIR/deb"/*.deb release-artifacts/ 2>/dev/null || true
-          cp "$BUNDLE_DIR/rpm"/*.rpm release-artifacts/ 2>/dev/null || true
-          cp "$BUNDLE_DIR/appimage"/*.AppImage release-artifacts/ 2>/dev/null || true
-          cp *.pkg.tar.zst release-artifacts/ 2>/dev/null || true
-          # Updater bundles (only present when TAURI_SIGNING_PRIVATE_KEY
-          # was set during the build). AppImage feeds Tauri's auto-
-          # updater on Linux; .deb / .rpm / pacman users update via
-          # their distro's package manager and don't get the auto-
-          # install path.
-          cp "$BUNDLE_DIR/appimage"/*.AppImage.tar.gz release-artifacts/ 2>/dev/null || true
-          cp "$BUNDLE_DIR/appimage"/*.AppImage.tar.gz.sig release-artifacts/ 2>/dev/null || true
+
+          echo "--- contents of $BUNDLE_DIR ---"
+          find "$BUNDLE_DIR" -maxdepth 3 -type f -printf "%P\n" || true
+
+          # Display-cased outputs only — skip the lowercase `baudrun_*`
+          # twins tauri's appimage bundler also writes.
+          collect() {
+            local dir="$1"; local pattern="$2"
+            shopt -s nullglob
+            local files=( "$dir"/$pattern )
+            shopt -u nullglob
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "no match: $dir/$pattern"
+              return 0
+            fi
+            for f in "${files[@]}"; do
+              local name=$(basename "$f")
+              # Skip the lowercase twin pair on Linux AppImage outputs.
+              if [[ "$name" == baudrun_* ]]; then
+                continue
+              fi
+              cp -v "$f" release-artifacts/
+            done
+          }
+
+          collect "$BUNDLE_DIR/deb" "*.deb"
+          collect "$BUNDLE_DIR/rpm" "*.rpm"
+          collect "$BUNDLE_DIR/appimage" "*.AppImage"
+          collect "." "*.pkg.tar.zst"
+
+          # Updater feed: AppImage.tar.gz + .sig (signed by tauri-bundler
+          # when TAURI_SIGNING_PRIVATE_KEY was set on the build step).
+          # .deb / .rpm / pacman users update via the distro package
+          # manager and don't go through Tauri's auto-updater.
+          collect "$BUNDLE_DIR/appimage" "*.AppImage.tar.gz"
+          collect "$BUNDLE_DIR/appimage" "*.AppImage.tar.gz.sig"
+
+          echo "--- staged ---"
+          ls -la release-artifacts
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
