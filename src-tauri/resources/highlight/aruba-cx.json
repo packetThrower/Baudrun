@@ -1,7 +1,7 @@
 {
   "id": "aruba-cx",
   "name": "Aruba AOS-CX",
-  "description": "Patterns for HPE/Aruba AOS-CX switches: VSX/VSF chassis state, LAG/MCLAG status, Spanning Tree, ACL action keywords, daemon names in event logs.",
+  "description": "Patterns for HPE/Aruba AOS-CX switches AND running-configs: VSX/VSF chassis state, LAG/MCLAG status, STP, ACL actions, daemon names in event logs, config-section headers, routing/service protocols. Vocabulary set informed by Drannor-Dosalith's ArubaOS TextMate grammar.",
   "rules": [
     {
       "pattern": "\\bVSX\\b",
@@ -46,6 +46,30 @@
       "pattern": "\\b(?:Active|Inactive|Standby|Mismatch|Sync|InSync)\\b",
       "color": "green",
       "group": "vsx-role"
+    },
+    {
+      "pattern": "^\\s*no\\s+",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "negation"
+    },
+    {
+      "pattern": "^\\s*(?:interface|vlan|hostname|router|aaa|access-list|banner|logging|snmp-server|ntp|sntp|ip\\s+route|ipv6\\s+route|spanning-tree|qos|dhcp-snooping|device-profile|system|telnet-server|ssh\\s+server|radius-server|tacacs-server|user|username|mac-auth|port-access|nae-script|nae-agent|rest|mirror\\s+session|poe-policy|power-over-ethernet|vsx|vsf|vrf|console)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "config-section"
+    },
+    {
+      "pattern": "\\b(?:ospf|ospfv3|bgp|isis|pim|vrrp|rip|ripng|bfd|msdp|igmp|ldp|mpls)\\b",
+      "color": "magenta",
+      "ignoreCase": true,
+      "group": "routing-proto"
+    },
+    {
+      "pattern": "\\b(?:snmp|ssh|telnet|tftp|ftp|http|https|ntp|sntp|syslog|radius|tacacs|dhcp|dns|lldp|lacp|mstp|rstp|pvst|bpdu|icmp|ipsec|gre)\\b",
+      "color": "magenta",
+      "ignoreCase": true,
+      "group": "service-proto"
     }
   ]
 }

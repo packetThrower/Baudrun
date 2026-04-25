@@ -1,7 +1,7 @@
 {
   "id": "junos",
   "name": "Juniper Junos",
-  "description": "Patterns for Junos OS output: chassis hardware status, BGP/OSPF/IS-IS neighbor states, RPM probes, commit messages, set/delete statement annotations.",
+  "description": "Patterns for Junos OS output AND configuration: chassis hardware status, BGP/OSPF/IS-IS neighbor states, commit messages, set/delete statement annotations, stanza headers (interfaces/protocols/policy-options/firewall/routing-instances/…), policy-action keywords (accept/permit/reject/discard). Stanza and keyword set informed by nprintz/junos-sublime-pkg and wildsubnet/npp-junos.",
   "rules": [
     {
       "pattern": "\\b(?:Online|Offline|Present|Empty|Ready|Restart)\\b",
@@ -57,6 +57,42 @@
       "pattern": "\\b(?:lo0|lo|fxp0|fxp1|me0|em\\d+)(?:\\.\\d+)?\\b",
       "color": "blue",
       "group": "mgmt-interface"
+    },
+    {
+      "pattern": "^\\s*no\\s+",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "negation"
+    },
+    {
+      "pattern": "^\\s*(?:set|delete|edit|show|request|activate|deactivate|rollback|run|annotate|replace|load)\\b",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "action-verb"
+    },
+    {
+      "pattern": "\\b(?:deny|discard|reject)\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "policy-deny"
+    },
+    {
+      "pattern": "\\b(?:accept|permit)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "policy-accept"
+    },
+    {
+      "pattern": "^\\s*(?:system|interfaces|chassis|security|firewall|protocols|vlans|services|schedulers|applications|access|snmp|groups|apply-groups|forwarding-options|routing-options|routing-instances|logical-systems|bridge-domains|dynamic-profiles|ethernet-switching-options|policy-options|virtual-chassis|event-options|class-of-service|accounting-options|switch-options|multi-chassis|redundant-power-system|poe)\\b",
+      "color": "blue",
+      "ignoreCase": false,
+      "group": "config-section"
+    },
+    {
+      "pattern": "\\b(?:ospf|ospfv3|bgp|isis|mpls|ldp|rsvp|pim|igmp|msdp|rip|ripng|bfd|vrrp|lacp|lldp|stp|rstp|mstp)\\b",
+      "color": "magenta",
+      "ignoreCase": false,
+      "group": "protocol"
     }
   ]
 }
