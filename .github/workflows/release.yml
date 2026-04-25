@@ -176,13 +176,10 @@ jobs:
           # BSD tar on macOS preserves xattrs by default; that's where
           # the codesign signature we just applied lives.
           tar -czf "$BUNDLE_DIR/Baudrun.app.tar.gz" -C "$BUNDLE_DIR" Baudrun.app
-          # Write the private key to a tempfile so `signer sign` can
-          # consume it via -f (the env-var form expects the literal
-          # key contents but the CLI is happier with a path).
-          KEY_FILE=$(mktemp)
-          printf '%s\n' "$TAURI_SIGNING_PRIVATE_KEY" > "$KEY_FILE"
-          npx @tauri-apps/cli signer sign -k "$KEY_FILE" -p "" "$BUNDLE_DIR/Baudrun.app.tar.gz"
-          rm "$KEY_FILE"
+          # `signer sign` reads the key from TAURI_SIGNING_PRIVATE_KEY
+          # in the environment (set above), so no -k flag is needed.
+          # Empty password matches how the key was generated.
+          npx @tauri-apps/cli signer sign -p "" "$BUNDLE_DIR/Baudrun.app.tar.gz"
           # Rename to include the arch so updater latest.json can
           # disambiguate aarch64 vs x86_64 from a single release.
           VERSION="${GITHUB_REF_NAME#v}"
