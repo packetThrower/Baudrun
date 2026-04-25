@@ -48,6 +48,9 @@
     loadHighlightPacks,
     applyEnabledHighlightPresets,
   } from "./stores/highlight";
+  import { getVersion } from "@tauri-apps/api/app";
+  import { openUrl } from "@tauri-apps/plugin-opener";
+  import { checkForUpdate, type AvailableUpdate } from "./lib/updater";
 
   let draft = $state<Profile | null>(null);
   let terminalRef = $state<Terminal | null>(null);
@@ -181,6 +184,7 @@
   let defaultLogDir = $state("");
   let configDir = $state("");
   let defaultConfigDir = $state("");
+  let availableUpdate = $state<AvailableUpdate | null>(null);
 
   // Delayed-delete state for the profile undo flow. The profile stays
   // in the backend until the timer fires or the user undoes; the
@@ -279,7 +283,57 @@
       configDir = await api.getConfigDirectory();
       defaultConfigDir = await api.getDefaultConfigDirectory();
     } catch {}
+
+    // Update check fires once per launch when enabled. The GitHub
+    // request happens off the critical path — we don't await it
+    // before rendering. Failures fall back to `null` internally so
+    // network errors can't surface a UI error here.
+    if (!$settings.disableUpdateCheck) {
+      void runUpdateCheck();
+    }
   });
+
+  async function runUpdateCheck() {
+    try {
+      const current = await getVersion();
+      const update = await checkForUpdate(
+        current,
+        $settings.includePrereleaseUpdates ?? false,
+      );
+      if (!update) return;
+      // Skip if the user already dismissed this exact version.
+      if ($settings.dismissedUpdateVersion === update.version) return;
+      availableUpdate = update;
+    } catch (err) {
+      console.warn("update check threw:", err);
+    }
+  }
+
+  async function dismissUpdate() {
+    if (!availableUpdate) return;
+    const version = availableUpdate.version;
+    availableUpdate = null;
+    try {
+      const updated = await api.updateSettings({
+        ...$settings,
+        dismissedUpdateVersion: version,
+      });
+      settings.set(updated);
+    } catch (e) {
+      // Non-fatal; the toast stays dismissed for this session
+      // either way because we already cleared availableUpdate.
+      console.warn("persist dismissed-update-version:", e);
+    }
+  }
+
+  async function openUpdateUrl() {
+    if (!availableUpdate) return;
+    try {
+      await openUrl(availableUpdate.url);
+    } catch (e) {
+      statusMsg = `Open release page failed: ${e}`;
+    }
+  }
 
   onDestroy(() => {
     offDisconnect?.();
@@ -844,6 +898,39 @@
     }
   }
 
+  async function handleSetUpdateCheckEnabled(enabled: boolean) {
+    try {
+      const updated = await api.updateSettings({
+        ...$settings,
+        disableUpdateCheck: !enabled,
+      });
+      settings.set(updated);
+      // Hide any pending toast when checks are turned off so the UI
+      // reflects the setting immediately.
+      if (!enabled) availableUpdate = null;
+    } catch (e) {
+      statusMsg = `Setting update failed: ${e}`;
+    }
+  }
+
+  async function handleSetIncludePrereleaseUpdates(enabled: boolean) {
+    try {
+      const updated = await api.updateSettings({
+        ...$settings,
+        includePrereleaseUpdates: enabled,
+      });
+      settings.set(updated);
+      // Re-run the check right away so flipping the toggle re-evaluates
+      // against the new policy without waiting for the next launch.
+      if (!updated.disableUpdateCheck) {
+        availableUpdate = null;
+        void runUpdateCheck();
+      }
+    } catch (e) {
+      statusMsg = `Setting update failed: ${e}`;
+    }
+  }
+
   async function handleSetEnabledHighlightPresets(ids: string[]) {
     try {
       const updated = await api.updateSettings({
@@ -1023,6 +1110,8 @@
           onSetDetectDrivers={handleSetDetectDrivers}
           onSetCopyOnSelect={handleSetCopyOnSelect}
           onSetScreenReaderMode={handleSetScreenReaderMode}
+          onSetUpdateCheckEnabled={handleSetUpdateCheckEnabled}
+          onSetIncludePrereleaseUpdates={handleSetIncludePrereleaseUpdates}
           onPickConfigDir={handlePickConfigDir}
           onResetConfigDir={handleResetConfigDir}
           onSetSkin={handleSetSkin}
@@ -1196,15 +1285,44 @@
         </span>
       {/if}
       <span class="status-text">{statusMsg || " "}</span>
-      {#if pendingDelete}
-        <button
-          class="undo-btn"
-          onclick={undoDelete}
-          title="Restore {pendingDelete.profile.name}"
-        >
-          Undo <span class="undo-countdown">({pendingDeleteSecondsLeft}s)</span>
-        </button>
-      {/if}
+      <div class="status-right">
+        {#if pendingDelete}
+          <button
+            class="undo-btn"
+            onclick={undoDelete}
+            title="Restore {pendingDelete.profile.name}"
+          >
+            Undo <span class="undo-countdown">({pendingDeleteSecondsLeft}s)</span>
+          </button>
+        {/if}
+        {#if availableUpdate}
+          <div
+            class="update-toast"
+            class:update-toast-prerelease={availableUpdate.prerelease}
+            role="status"
+            aria-live="polite"
+          >
+            <button
+              class="update-link"
+              onclick={openUpdateUrl}
+              title="Open release notes on GitHub"
+            >
+              <span class="update-dot"></span>
+              Update available:
+              <strong>v{availableUpdate.version}</strong>
+              {#if availableUpdate.prerelease}
+                <span class="update-prerelease-tag">pre-release</span>
+              {/if}
+            </button>
+            <button
+              class="update-dismiss"
+              onclick={dismissUpdate}
+              title="Dismiss — won't show again for this version"
+              aria-label="Dismiss update notification"
+            >×</button>
+          </div>
+        {/if}
+      </div>
     </footer>
   </main>
 </div>
@@ -1549,8 +1667,15 @@
     .scanning-dot { animation: none; opacity: 1; }
   }
 
-  .undo-btn {
+  .status-right {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .undo-btn {
     padding: 2px 9px;
     font-size: 11px;
     font-weight: 500;
@@ -1569,6 +1694,106 @@
     opacity: 0.75;
     font-variant-numeric: tabular-nums;
     margin-left: 2px;
+  }
+
+  /* Toast stays skin-neutral: transparent over the panel background,
+     solid --success / --warn border carries the status signal. Text
+     uses --fg-primary so it reads on dark AND light skins — only the
+     version number + dot + pre-release pill pick up the accent color,
+     matching how --undo-btn / --line-btn mix colored borders with
+     neutral text across the codebase. */
+  .update-toast {
+    display: inline-flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--success);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .update-toast.update-toast-prerelease {
+    border-color: var(--warn);
+  }
+
+  .update-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    background: transparent;
+    border: none;
+    color: var(--fg-primary);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    line-height: 1.3;
+  }
+
+  .update-link:hover {
+    background: var(--bg-hover);
+  }
+
+  /* Version inherits --fg-primary from .update-link so it reads on
+     every skin — emphasis comes from font-weight + letter-spacing
+     alone. The colored dot, border, and PRE-RELEASE pill carry the
+     visual urgency without making the text itself colored. */
+  .update-link strong {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .update-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 5px var(--success);
+  }
+
+  .update-toast.update-toast-prerelease .update-dot {
+    background: var(--warn);
+    box-shadow: 0 0 5px var(--warn);
+  }
+
+  /* Pill inverts against its own background so contrast is guaranteed
+     regardless of skin brightness (light skins have dark --bg-main,
+     and vice-versa — Baudrun's skin contract is that bg + fg pair up
+     readably). */
+  .update-prerelease-tag {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 9px;
+    padding: 1px 5px;
+    background: var(--warn);
+    color: var(--bg-main);
+    border-radius: 3px;
+    margin-left: 2px;
+    font-weight: 600;
+  }
+
+  .update-dismiss {
+    padding: 3px 8px;
+    background: transparent;
+    border: none;
+    border-left: 1px solid var(--success);
+    color: var(--fg-tertiary);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .update-toast.update-toast-prerelease .update-dismiss {
+    border-left-color: var(--warn);
+  }
+
+  .update-dismiss:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
   }
 
   .terminal-layer {

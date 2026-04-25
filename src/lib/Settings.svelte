@@ -40,6 +40,8 @@
     onDeleteSkin: (id: string) => void;
     onSetAppearance: (mode: "auto" | "light" | "dark") => void;
     onSetShortcuts: (shortcuts: Record<string, string>) => void;
+    onSetUpdateCheckEnabled: (enabled: boolean) => void;
+    onSetIncludePrereleaseUpdates: (enabled: boolean) => void;
     highlightPacks?: HighlightPack[];
     onSetEnabledHighlightPresets: (ids: string[]) => void;
     onImportHighlightPack: () => void;
@@ -70,6 +72,8 @@
     onDeleteSkin,
     onSetAppearance,
     onSetShortcuts,
+    onSetUpdateCheckEnabled,
+    onSetIncludePrereleaseUpdates,
     highlightPacks = [],
     onSetEnabledHighlightPresets,
     onImportHighlightPack,
@@ -666,6 +670,37 @@
             onchange={onScreenReaderModeChange}
           />
           Enable xterm screen-reader mode
+        </label>
+      </div>
+
+      <div class="sub">
+        <h4>Updates</h4>
+        <p class="section-hint">
+          Check GitHub on app launch for a newer Baudrun release. When a
+          newer version is found, a one-line notice appears in the
+          footer linking to the release notes. No auto-update — you
+          download and install from GitHub yourself.
+        </p>
+        <label class="toggle">
+          <input
+            type="checkbox"
+            checked={!settings.disableUpdateCheck}
+            onchange={(e) =>
+              onSetUpdateCheckEnabled((e.target as HTMLInputElement).checked)}
+          />
+          Check for updates on launch
+        </label>
+        <label class="toggle" style="margin-top: 8px;">
+          <input
+            type="checkbox"
+            checked={settings.includePrereleaseUpdates ?? false}
+            disabled={settings.disableUpdateCheck ?? false}
+            onchange={(e) =>
+              onSetIncludePrereleaseUpdates(
+                (e.target as HTMLInputElement).checked,
+              )}
+          />
+          Include pre-releases (alpha / beta / rc)
         </label>
       </div>
 

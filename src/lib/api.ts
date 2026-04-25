@@ -93,6 +93,9 @@ export type Settings = {
   screenReaderMode?: boolean;
   scrollbackLines?: number;
   shortcuts?: Record<string, string>;
+  disableUpdateCheck?: boolean;
+  includePrereleaseUpdates?: boolean;
+  dismissedUpdateVersion?: string;
   enabledHighlightPresets?: string[];
 };
 

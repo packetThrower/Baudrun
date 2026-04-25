@@ -56,6 +56,25 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shortcuts: Option<HashMap<String, String>>,
 
+    /// Suppresses the app-boot check against GitHub Releases for a
+    /// newer Baudrun version. Inverted to match `disable_driver_detection`
+    /// — false here means the check is enabled, so the default stays
+    /// "check on" without needing a custom serde default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub disable_update_check: bool,
+
+    /// When true, the update check considers pre-release tags
+    /// (`v*-alpha.*`, `v*-beta.*`, `v*-rc.*`) alongside stable
+    /// releases. Off by default so stable users don't get nagged.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub include_prerelease_updates: bool,
+
+    /// The version string of the last update notification the user
+    /// clicked away. The footer toast stays hidden for that exact
+    /// version and re-appears when a newer one is discovered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismissed_update_version: Option<String>,
+
     /// Highlight rule packs the user has enabled. Each entry is a
     /// pack id (`"baudrun-default"`, `"cisco-ios"`, `"junos"`,
     /// `"aruba-cx"`, `"arista-eos"`, `"mikrotik-routeros"`,
@@ -82,6 +101,9 @@ impl Default for Settings {
             screen_reader_mode: false,
             scrollback_lines: 10_000,
             shortcuts: None,
+            disable_update_check: false,
+            include_prerelease_updates: false,
+            dismissed_update_version: None,
             enabled_highlight_presets: Some(vec![
                 "baudrun-default".into(),
                 "user".into(),
