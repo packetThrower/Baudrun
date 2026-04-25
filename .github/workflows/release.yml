@@ -78,16 +78,17 @@ jobs:
           mv tmp.json src-tauri/tauri.conf.json
           echo "Using version: $VERSION"
 
-      # Direct \`tauri build\` (see Linux step for context). On macOS
-      # the custom re-tar/re-sign step further down overwrites the
-      # initial .app.tar.gz with one packed AFTER our libusb fixup,
-      # so the `updater` target's first emission is throwaway.
+      # Updater feed (.app.tar.gz + .sig) is attached to whichever
+      # primary bundle is built when bundle.createUpdaterArtifacts is
+      # true in tauri.conf.json. The custom re-tar/re-sign step
+      # further down overwrites the auto-generated tarball with one
+      # packed AFTER our libusb install_name_tool fixup.
       - name: Build Tauri bundle
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles app dmg updater
+          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles app dmg
 
       # rusb links against Homebrew's libusb via an absolute path;
       # ship a bundled copy inside .app/Contents/Frameworks so
@@ -247,7 +248,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          $bundleList = if ("${{ github.ref_name }}".Contains("-")) { @("nsis", "updater") } else { @("msi", "nsis", "updater") }
+          $bundleList = if ("${{ github.ref_name }}".Contains("-")) { @("nsis") } else { @("msi", "nsis") }
           npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles @bundleList
 
       # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
@@ -373,7 +374,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
-          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles deb rpm appimage updater
+          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles deb rpm appimage
 
       # Tauri doesn't generate .pkg.tar.zst — fpm's pacman target
       # does. Reuse the same binary + desktop file + icon + udev
