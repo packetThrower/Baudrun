@@ -26,6 +26,9 @@ export type Profile = {
   pasteWarnMultiline: boolean;
   pasteSlow: boolean;
   pasteCharDelayMs?: number;
+  /** Per-profile override for global enabledHighlightPresets in Settings.
+   * undefined = inherit; defined (even an empty array) = override. */
+  enabledHighlightPresets?: string[];
   createdAt: string;
   updatedAt: string;
 };

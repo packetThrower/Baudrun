@@ -19,6 +19,7 @@
     type Profile,
     type PortInfo,
     type Theme,
+    type HighlightPack,
     type USBSerialCandidate,
   } from "./api";
   import { formatPortName } from "./ports";
@@ -34,6 +35,8 @@
     themes?: Theme[];
     defaultThemeID?: string;
     detectDrivers?: boolean;
+    highlightPacks?: HighlightPack[];
+    globalEnabledHighlightPresets?: string[];
     onSave: (p: Profile) => void | Promise<void>;
     onDelete: (id: string) => void;
     onConnect: () => void;
@@ -51,6 +54,8 @@
     themes = [],
     defaultThemeID = "baudrun",
     detectDrivers = true,
+    highlightPacks = [],
+    globalEnabledHighlightPresets,
     onSave,
     onDelete,
     onConnect,
@@ -254,6 +259,44 @@
     { value: "del", label: "DEL (0x7F) — VT100 / xterm / most modern" },
     { value: "bs", label: "BS (0x08) — some older Cisco / Foundry gear" },
   ];
+
+  // Per-profile highlight overrides. `enabledHighlightPresets` on the
+  // profile is `undefined` to inherit the global Settings selection;
+  // any defined array (even []) replaces it for this profile's session.
+  const overrideHighlightPacks = $derived(
+    draft.enabledHighlightPresets !== undefined,
+  );
+
+  // Effective list shown in the toggle UI: profile override if set,
+  // otherwise the current global. Used for both the read-only display
+  // when the override switch is off and as the seed when flipping it on.
+  const effectiveHighlightPresets = $derived(
+    draft.enabledHighlightPresets ?? globalEnabledHighlightPresets ?? [],
+  );
+
+  function isProfilePackEnabled(id: string): boolean {
+    return effectiveHighlightPresets.includes(id);
+  }
+
+  function onToggleProfilePack(id: string, enabled: boolean) {
+    const current = draft.enabledHighlightPresets ?? [];
+    const next = enabled
+      ? Array.from(new Set([...current, id]))
+      : current.filter((p) => p !== id);
+    draft.enabledHighlightPresets = next;
+    markDirty();
+  }
+
+  function onToggleOverride(enabled: boolean) {
+    if (enabled) {
+      // Seed from current global so flipping the switch doesn't
+      // silently drop highlighting until the user re-checks each pack.
+      draft.enabledHighlightPresets = [...(globalEnabledHighlightPresets ?? [])];
+    } else {
+      draft.enabledHighlightPresets = undefined;
+    }
+    markDirty();
+  }
 
   // Theme picker: groups for built-in vs. user, default sentinel on top.
   const themeOptions: SelectItems = $derived.by(() => {
@@ -533,16 +576,6 @@
         </label>
       </div>
 
-      <div class="field checkbox">
-        <label>
-          <input
-            type="checkbox"
-            bind:checked={draft.highlight}
-            onchange={markDirty}
-          />
-          Syntax highlighting
-        </label>
-      </div>
     </div>
   </section>
 
@@ -560,6 +593,84 @@
       </div>
     </div>
   </section>
+
+  {#if highlightPacks.length > 0}
+    <section class="advanced">
+      <details>
+        <summary>
+          <h3>Syntax Highlighting</h3>
+          <span class="hint">
+            {#if !draft.highlight}
+              Disabled
+            {:else if overrideHighlightPacks}
+              Overriding global · {effectiveHighlightPresets.length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled
+            {:else}
+              Inheriting from Settings · {effectiveHighlightPresets.length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled
+            {/if}
+          </span>
+        </summary>
+
+        <section class="sub">
+          <label class="toggle">
+            <input
+              type="checkbox"
+              bind:checked={draft.highlight}
+              onchange={markDirty}
+            />
+            Enable syntax highlighting
+          </label>
+
+          <p class="section-hint" style="margin-top: 12px;">
+            Pick which highlight rule packs apply to this profile's session.
+            By default profiles inherit the selection from <strong>Settings →
+            Syntax Highlighting</strong>; flip "Override" to choose a
+            different set just for this profile.
+          </p>
+
+          <label class="toggle" class:disabled={!draft.highlight}>
+            <input
+              type="checkbox"
+              checked={overrideHighlightPacks}
+              disabled={!draft.highlight}
+              onchange={(e) =>
+                onToggleOverride((e.target as HTMLInputElement).checked)}
+            />
+            Override global packs
+          </label>
+
+          <div class="preset-list">
+            {#each highlightPacks as pack (pack.id)}
+              <label
+                class="toggle preset"
+                class:disabled={!overrideHighlightPacks || !draft.highlight}
+              >
+                <input
+                  type="checkbox"
+                  checked={isProfilePackEnabled(pack.id)}
+                  disabled={!overrideHighlightPacks || !draft.highlight}
+                  onchange={(e) =>
+                    onToggleProfilePack(
+                      pack.id,
+                      (e.target as HTMLInputElement).checked,
+                    )}
+                />
+                <span class="preset-meta">
+                  <span class="preset-name">{pack.name}</span>
+                  {#if pack.description}
+                    <span class="preset-desc">{pack.description}</span>
+                  {/if}
+                  <span class="preset-count">
+                    {pack.rules.length} rule{pack.rules.length === 1 ? "" : "s"}
+                    {#if pack.source === "user"} · editable{/if}
+                  </span>
+                </span>
+              </label>
+            {/each}
+          </div>
+        </section>
+      </details>
+    </section>
+  {/if}
 
   <section class="advanced">
     <details>
@@ -1071,5 +1182,71 @@
   .driver-close:hover {
     background: rgba(255, 255, 255, 0.08);
     color: var(--fg-primary);
+  }
+
+  .toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: none;
+    letter-spacing: normal;
+    font-size: 13px;
+    color: var(--fg-primary);
+    font-weight: normal;
+    cursor: pointer;
+  }
+
+  .toggle input {
+    width: auto;
+    accent-color: var(--accent);
+  }
+
+  .preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .toggle.preset {
+    align-items: flex-start;
+    padding: 8px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-input);
+  }
+
+  .toggle.preset.disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .toggle.preset input {
+    margin-top: 3px;
+  }
+
+  .preset-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .preset-name {
+    font-weight: 500;
+    color: var(--fg-primary);
+  }
+
+  .preset-desc {
+    font-size: 12px;
+    color: var(--fg-secondary);
+    line-height: 1.35;
+  }
+
+  .preset-count {
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    font-variant-numeric: tabular-nums;
   }
 </style>

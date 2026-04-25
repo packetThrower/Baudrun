@@ -152,12 +152,22 @@
     );
   });
 
-  // Recompile the highlight engine when the user toggles preset
-  // packs in Settings → Advanced. The initial apply happens in
-  // onMount once both packs and settings have loaded; this fires
-  // for every subsequent change.
+  // Per-profile override > global setting. activeProfile drives this
+  // when a session is open (so a connected profile's overrides win
+  // even while the user is editing another profile in the form);
+  // currentProfile covers the no-session case (profile form open,
+  // user toggles a pack — the change should preview live).
+  const effectiveEnabledHighlightPresets = $derived(
+    activeProfile?.enabledHighlightPresets ??
+      currentProfile?.enabledHighlightPresets ??
+      $settings.enabledHighlightPresets,
+  );
+
+  // Recompile the highlight engine whenever the resolved selection
+  // changes. The initial apply happens in onMount once both packs
+  // and settings have loaded; this fires for every subsequent change.
   $effect(() => {
-    applyEnabledHighlightPresets($settings.enabledHighlightPresets);
+    applyEnabledHighlightPresets(effectiveEnabledHighlightPresets);
   });
 
   function resolveTheme(id: string, all: Theme[]): Theme | undefined {
@@ -228,8 +238,8 @@
     appearance.set(($settings.appearance as Appearance) || "auto");
     applySkin(resolveSkin($activeSkinID, $skins), $appearance, $systemIsDark);
     // Initial apply happens here; the $effect below picks up any
-    // subsequent settings changes (Settings UI toggles).
-    applyEnabledHighlightPresets($settings.enabledHighlightPresets);
+    // subsequent settings or profile-override changes.
+    applyEnabledHighlightPresets(effectiveEnabledHighlightPresets);
 
     offDisconnect = api.onDisconnect((reason) => {
       session.set({ status: "idle" });
@@ -991,6 +1001,8 @@
           themes={$themes}
           defaultThemeID={$settings.defaultThemeId}
           detectDrivers={!$settings.disableDriverDetection}
+          highlightPacks={$highlightPacks}
+          globalEnabledHighlightPresets={$settings.enabledHighlightPresets}
           onSave={handleSave}
           onDelete={handleDelete}
           onConnect={handleConnect}

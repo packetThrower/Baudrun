@@ -482,6 +482,54 @@
   <section class="advanced">
     <details>
       <summary>
+        <h3>Syntax Highlighting</h3>
+        <span class="hint">
+          {(settings.enabledHighlightPresets ?? []).length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled — profile-level "Highlight" must be on
+        </span>
+      </summary>
+
+      <div class="sub">
+        <p class="section-hint">
+          Highlight rules grouped into packs. The default vendor-neutral set
+          covers IPs, MACs, interface names, and status keywords. Device-
+          specific packs (Cisco IOS, Junos, Aruba CX) add patterns common to
+          each platform's output. The "User overrides" pack is editable at
+          <code>$SUPPORT_DIR/highlight-rules.json</code> — bundled packs are
+          read-only. Each profile can override these defaults under its own
+          Syntax Highlighting section.
+        </p>
+        <div class="preset-list">
+          {#each highlightPacks as pack (pack.id)}
+            <label class="toggle preset">
+              <input
+                type="checkbox"
+                checked={isHighlightPackEnabled(pack.id)}
+                onchange={(e) =>
+                  onTogglePresetPack(
+                    pack.id,
+                    (e.target as HTMLInputElement).checked,
+                  )}
+              />
+              <span class="preset-meta">
+                <span class="preset-name">{pack.name}</span>
+                {#if pack.description}
+                  <span class="preset-desc">{pack.description}</span>
+                {/if}
+                <span class="preset-count">
+                  {pack.rules.length} rule{pack.rules.length === 1 ? "" : "s"}
+                  {#if pack.source === "user"} · editable{/if}
+                </span>
+              </span>
+            </label>
+          {/each}
+        </div>
+      </div>
+    </details>
+  </section>
+
+  <section class="advanced">
+    <details>
+      <summary>
         <h3>Advanced</h3>
         <span class="hint">Session logging and other global defaults</span>
       </summary>
@@ -543,44 +591,6 @@
           />
           Copy terminal selection to clipboard automatically
         </label>
-      </div>
-
-      <div class="sub">
-        <h4>Syntax Highlighting</h4>
-        <p class="section-hint">
-          Highlight rules grouped into packs. The default vendor-neutral set
-          covers IPs, MACs, interface names, and status keywords. Device-
-          specific packs (Cisco IOS, Junos, Aruba CX) add patterns common to
-          each platform's output. The "User overrides" pack is editable at
-          <code>$SUPPORT_DIR/highlight-rules.json</code> — bundled packs are
-          read-only. Profile-level "Highlight" must be on for any of this
-          to render.
-        </p>
-        <div class="preset-list">
-          {#each highlightPacks as pack (pack.id)}
-            <label class="toggle preset">
-              <input
-                type="checkbox"
-                checked={isHighlightPackEnabled(pack.id)}
-                onchange={(e) =>
-                  onTogglePresetPack(
-                    pack.id,
-                    (e.target as HTMLInputElement).checked,
-                  )}
-              />
-              <span class="preset-meta">
-                <span class="preset-name">{pack.name}</span>
-                {#if pack.description}
-                  <span class="preset-desc">{pack.description}</span>
-                {/if}
-                <span class="preset-count">
-                  {pack.rules.length} rule{pack.rules.length === 1 ? "" : "s"}
-                  {#if pack.source === "user"} · editable{/if}
-                </span>
-              </span>
-            </label>
-          {/each}
-        </div>
       </div>
 
       <div class="sub">
