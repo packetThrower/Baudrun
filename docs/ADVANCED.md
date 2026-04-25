@@ -310,6 +310,7 @@ scale linearly with line count.
   | **Cisco IOS / IOS XE / IOS XR** | `line protocol`, log mnemonics (`%LINK-3-UPDOWN`), STP roles (`DESG`/`ROOT`/`ALTN`), OSPF/BGP states, AS numbers, ACL `permit`/`deny` |
   | **Juniper Junos** | Chassis status (`Online`/`Empty`), BGP/OSPF/IS-IS states, `[edit ...]` banners, commit messages, set/delete diff lines |
   | **Aruba AOS-CX** | VSX/VSF status, LAG/MCLAG, STP role+state, daemon names in event logs, ACL actions |
+  | **Arista EOS** | MLAG peer state, VXLAN/EVPN fabric keywords, `Et1/1` short-form interfaces, `Aboot`/EOS version banners, log facility (`%BGP-5-ADJCHANGE`), config-section headers |
 
 - The "User overrides" pack lives at
   `$SUPPORT_DIR/highlight-rules.json` and is editable on disk —

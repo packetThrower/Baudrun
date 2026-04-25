@@ -1,0 +1,103 @@
+{
+  "id": "arista-eos",
+  "name": "Arista EOS",
+  "description": "Patterns for Arista EOS switches AND running-configs: MLAG peer state, VXLAN/EVPN fabric keywords, EOS-specific interface short forms (Et1/1), log facility format, config-section headers, routing/service protocols. Informed by og124's vscode-arista-eos extension.",
+  "rules": [
+    {
+      "pattern": "\\b(?:MLAG)\\b",
+      "color": "magenta",
+      "ignoreCase": false,
+      "group": "mlag"
+    },
+    {
+      "pattern": "\\b(?:mlag-peer|peer-link|dual-primary|peer-address|domain-id)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "mlag-cfg"
+    },
+    {
+      "pattern": "\\b(?:VXLAN|VTEP|VNI|EVPN)\\b",
+      "color": "magenta",
+      "ignoreCase": false,
+      "group": "fabric"
+    },
+    {
+      "pattern": "\\b(?:vxlan|vtep|vni|flood|route-target|route-distinguisher|rd)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "fabric-cfg"
+    },
+    {
+      "pattern": "\\b(?:Aboot|Arista|EOS(?:-\\d+\\.\\d+(?:\\.\\d+[A-Za-z]?)*)?|TerminAttr)\\b",
+      "color": "dim",
+      "ignoreCase": false,
+      "group": "platform"
+    },
+    {
+      "pattern": "\\bEt\\d+(?:\\/\\d+)+(?:\\.\\d+)?\\b",
+      "color": "blue",
+      "ignoreCase": false,
+      "group": "interface-eos-short"
+    },
+    {
+      "pattern": "^\\s*no\\s+",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "negation"
+    },
+    {
+      "pattern": "\\bshutdown\\b",
+      "color": "red",
+      "ignoreCase": true,
+      "group": "shutdown"
+    },
+    {
+      "pattern": "^\\s*(?:interface|router|vlan|vrf|hostname|banner|logging|snmp-server|ntp|spanning-tree|mlag|aaa|radius-server|tacacs-server|ip\\s+access-list|ipv6\\s+access-list|ip\\s+route|ipv6\\s+route|access-list|class-map|policy-map|route-map|prefix-list|peer-filter|username|role|event-handler|daemon|management|monitor|errdisable|qos|dot1x|port-security|lldp|cdp)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "config-section"
+    },
+    {
+      "pattern": "\\b(?:switchport|encapsulation|channel-group|description|duplex|speed|mtu|ip\\s+address|ipv6\\s+address|ip\\s+helper-address|lacp\\s+mode|lacp\\s+fallback|storm-control|priority-flow-control|port-channel|trunk\\s+group|trunk\\s+native|trunk\\s+allowed)\\b",
+      "color": "blue",
+      "ignoreCase": true,
+      "group": "interface-subcmd"
+    },
+    {
+      "pattern": "\\b(?:ospf|ospfv3|bgp|isis|pim|bfd|vrrp|rip|ldp|msdp|igmp)\\b",
+      "color": "magenta",
+      "ignoreCase": true,
+      "group": "routing-proto"
+    },
+    {
+      "pattern": "\\b(?:snmp|ssh|telnet|tftp|ftp|http|https|ntp|syslog|radius|tacacs|dhcp|dns|lldp|lacp|mstp|rstp|bpdu|ipsec|gre|gnmi|netconf|restconf)\\b",
+      "color": "magenta",
+      "ignoreCase": true,
+      "group": "service-proto"
+    },
+    {
+      "pattern": "\\b(?:consistent|synchronized|InSync)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "mlag-state-good"
+    },
+    {
+      "pattern": "\\b(?:inconsistent|unsynchronized|OutOfSync|dual-primary-detected)\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "mlag-state-bad"
+    },
+    {
+      "pattern": "%[A-Z][A-Z0-9_]*-\\d-[A-Z][A-Z0-9_]*",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "log-facility"
+    },
+    {
+      "pattern": "\\b(?:Idle|Connect|Active|OpenSent|OpenConfirm|Established)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "bgp-state"
+    }
+  ]
+}

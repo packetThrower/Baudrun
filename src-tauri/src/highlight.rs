@@ -3,7 +3,8 @@
 //!   1. **Bundled preset packs** — read-only, shipped in the binary
 //!      via `include_str!` from `src-tauri/resources/highlight/`.
 //!      Includes the `baudrun-default` vendor-neutral set plus
-//!      device-specific add-ons (cisco-ios, junos, aruba-cx, …).
+//!      device-specific add-ons (cisco-ios, junos, aruba-cx,
+//!      arista-eos, …).
 //!   2. **User pack** — editable JSON at
 //!      `$SUPPORT_DIR/highlight-rules.json`. Created from the
 //!      `baudrun-default` preset on first run if absent. Users edit
@@ -87,6 +88,10 @@ pub fn bundled_packs() -> &'static [HighlightPack] {
             (
                 "aruba-cx",
                 include_str!("../resources/highlight/aruba-cx.json"),
+            ),
+            (
+                "arista-eos",
+                include_str!("../resources/highlight/arista-eos.json"),
             ),
         ];
         raw_packs
