@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type Profile = {
   id: string;
@@ -197,6 +197,10 @@ export const api = {
     invoke<string>("open_profile_window", { profileId, profileName }),
   cursorOutsideWindow: () =>
     invoke<boolean>("cursor_outside_window"),
+  migrateSession: (targetLabel: string, terminalSnapshot?: string) =>
+    invoke<void>("migrate_session", { targetLabel, terminalSnapshot }),
+  takePendingTerminalSnapshot: () =>
+    invoke<string | null>("take_pending_terminal_snapshot"),
 
   listHighlightPacks: () => invoke<HighlightPack[]>("list_highlight_packs"),
   updateUserHighlightPack: (pack: HighlightPack) =>
@@ -246,13 +250,23 @@ export const api = {
 // Tauri's listen() is async but callers (Svelte onMount) want a sync
 // unsubscribe. Buffer cancellation so disposal before the listener
 // is wired still detaches once it arrives.
+//
+// Uses `getCurrentWebviewWindow().listen` (not the top-level `listen`
+// from @tauri-apps/api/event) — the global form receives EVERY event
+// regardless of which window it was emitted to, which causes
+// cross-window leaks under multi-window mode (one window's serial:data
+// would print into every other window's terminal). The window-scoped
+// form only receives events targeted at this webview's label, plus
+// any global emit() events, which is what we want.
 function subscribe<T>(event: string, handler: (payload: T) => void): () => void {
   let unlisten: (() => void) | null = null;
   let cancelled = false;
-  listen<T>(event, (e) => handler(e.payload)).then((un) => {
-    if (cancelled) un();
-    else unlisten = un;
-  });
+  getCurrentWebviewWindow()
+    .listen<T>(event, (e) => handler(e.payload))
+    .then((un) => {
+      if (cancelled) un();
+      else unlisten = un;
+    });
   return () => {
     cancelled = true;
     if (unlisten) {

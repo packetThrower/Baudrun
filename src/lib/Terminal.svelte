@@ -491,6 +491,31 @@
       fit?.fit();
     } catch {}
   }
+
+  /** Serialize the current xterm buffer to an ANSI-escape-encoded
+   *  string — same machinery recreateTerminal uses for zoom-in-place.
+   *  Used by multi-window session migration to carry visible
+   *  scrollback over to the new window. Returns "" if the terminal
+   *  isn't mounted yet. */
+  export function snapshot(): string {
+    if (!serializer || !term) return "";
+    try {
+      return serializer.serialize({ scrollback: term.buffer.active.length });
+    } catch (e) {
+      console.warn("terminal snapshot failed:", e);
+      return "";
+    }
+  }
+
+  /** Write a previously-serialized buffer into a freshly mounted
+   *  terminal. Called on a new window's mount when the backend has
+   *  a pending snapshot from a session-migration source. The string
+   *  comes from snapshot() / SerializeAddon, which leaves the cursor
+   *  parked at the active prompt position; no extra newline needed. */
+  export function restoreSnapshot(data: string) {
+    if (!data || !term) return;
+    term.write(data);
+  }
 </script>
 
 <div class="wrap" style:background-color={theme?.background ?? "#0b0b0d"}>

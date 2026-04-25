@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::highlight;
 use crate::profiles;
@@ -42,6 +42,14 @@ pub struct AppState {
     /// instead of locking directly so the lock-time stays short and
     /// the get-or-insert idiom isn't repeated everywhere.
     pub sessions: Mutex<HashMap<String, SessionHandle>>,
+
+    /// Pending xterm.js buffer snapshots indexed by target window
+    /// label. Set during `migrate_session` when the source window
+    /// hands us its serialized terminal scrollback; consumed exactly
+    /// once on target mount via `take_pending_terminal_snapshot`.
+    /// Cleared along with the rest of a window's state when the
+    /// window is destroyed.
+    pub pending_terminal_snapshots: Mutex<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -62,9 +70,37 @@ impl AppState {
 
     /// Drop a window's session state entirely. Call from the
     /// `WindowEvent::Destroyed` handler so a closed window doesn't
-    /// leave a dangling [`SessionHandle`] in the map.
+    /// leave a dangling [`SessionHandle`] in the map. Also drops
+    /// any pending terminal snapshot keyed by the same label so a
+    /// window closed before its renderer ever called
+    /// `take_pending_terminal_snapshot` doesn't leak it.
     pub fn forget_session(&self, label: &str) {
         self.sessions.lock().unwrap().remove(label);
+        self.pending_terminal_snapshots
+            .lock()
+            .unwrap()
+            .remove(label);
+    }
+
+    /// Stash a serialized xterm buffer for `target_label` to pick up
+    /// on its next mount. Migration sets this from the source's
+    /// snapshot; the target's renderer drains it via
+    /// [`commands::window::take_pending_terminal_snapshot`].
+    pub fn store_pending_terminal_snapshot(&self, target_label: &str, data: String) {
+        if data.is_empty() {
+            return;
+        }
+        self.pending_terminal_snapshots
+            .lock()
+            .unwrap()
+            .insert(target_label.to_string(), data);
+    }
+
+    pub fn take_pending_terminal_snapshot(&self, label: &str) -> Option<String> {
+        self.pending_terminal_snapshots
+            .lock()
+            .unwrap()
+            .remove(label)
     }
 }
 
@@ -98,4 +134,12 @@ pub struct SessionHandle {
     /// `cancel_transfer`, observed by `send_xmodem` /
     /// `send_ymodem` between blocks.
     pub transfer_cancel: Option<Arc<AtomicBool>>,
+
+    /// Shared cell holding the window label this session's
+    /// background callbacks (on_read / on_exit / transfer-progress)
+    /// emit events to. The closures read this every fire so the
+    /// session's stream can be rerouted to a new window via
+    /// `commands::window::migrate_session` without rebuilding the
+    /// `Session` itself. `None` when the handle has no active session.
+    pub event_target_label: Option<Arc<RwLock<String>>>,
 }

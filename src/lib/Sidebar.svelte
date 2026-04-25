@@ -10,6 +10,11 @@
     onSelect: (id: string) => void;
     onCreate: () => void;
     onSettings: () => void;
+    /** Spawn a new window for `profile`. App.svelte handles the
+     *  decision of whether to also migrate this window's active
+     *  session — both gestures (right-click + drag-out) flow
+     *  through the same callback so the migration logic isn't
+     *  duplicated here. */
     onOpenInNewWindow: (profile: Profile) => void;
   };
 
@@ -82,9 +87,11 @@
     if (!profile) return;
     try {
       const outside = await api.cursorOutsideWindow();
-      if (outside) {
-        onOpenInNewWindow(profile);
-      }
+      if (!outside) return;
+      // Same path as right-click → "Open in new window". App.svelte
+      // decides whether to also migrate the live session and carry
+      // over the terminal scrollback.
+      onOpenInNewWindow(profile);
     } catch (err) {
       console.warn("drag-end check failed:", err);
     }

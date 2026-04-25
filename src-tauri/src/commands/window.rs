@@ -12,8 +12,15 @@
 //!   by its label, so connecting / disconnecting / transferring on
 //!   one window doesn't disturb the others.
 
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use std::sync::Arc;
+
+use tauri::{
+    AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 use uuid::Uuid;
+
+use crate::events;
+use crate::state::{AppState, SessionHandle};
 
 #[tauri::command]
 pub fn set_traffic_lights_inset(
@@ -110,6 +117,114 @@ pub fn open_profile_window(
     Ok(label)
 }
 
+/// Move the calling window's session into `target_label`'s slot. The
+/// frontend calls this right after [`open_profile_window`] when the
+/// dragged-out profile was the source window's active session — so
+/// the new window inherits the live serial connection instead of
+/// starting fresh while the source loses ownership of the port.
+///
+/// The shared event-target-label cell stored in the session handle
+/// is updated atomically, so background threads that have read the
+/// old label will fire one final emit toward the source before the
+/// next one routes to the target. That tiny race is acceptable for
+/// a tear-off; the source's frontend clears its session UI on
+/// success and any straggler events become no-ops.
+///
+/// Refuses migration when:
+///   - source has no active session
+///   - target already has an active session (would shadow / leak)
+///   - source has a transfer in flight (the transfer's progress
+///     closure binds the label statically — wait or cancel first)
+#[tauri::command]
+pub fn migrate_session(
+    target_label: String,
+    terminal_snapshot: Option<String>,
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let from_label = window.label().to_string();
+    // Sanitize on the way in — Tauri lets renderers send arbitrary
+    // strings, and target_label is used as a HashMap key + emit_to
+    // route. Same alphabet as `open_profile_window`'s id sanitizer.
+    let target_label: String = target_label
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if target_label.is_empty() {
+        return Err("target window label required".into());
+    }
+    if from_label == target_label {
+        return Err("source and target are the same window".into());
+    }
+
+    let mut sessions = state.sessions.lock().unwrap();
+    {
+        let source = sessions
+            .get(&from_label)
+            .ok_or_else(|| "source has no session".to_string())?;
+        if source.session.is_none() {
+            return Err("source has no active session to migrate".into());
+        }
+        if source.transfer_cancel.is_some() {
+            return Err(
+                "transfer in progress — wait for it to finish or cancel before migrating".into(),
+            );
+        }
+    }
+    {
+        // Don't accidentally clobber an in-progress connection in the
+        // target — bail before disturbing the source.
+        if let Some(target) = sessions.get(&target_label) {
+            if target.session.is_some() {
+                return Err("target already has an active session".into());
+            }
+        }
+    }
+
+    // Take source's contents, leaving an empty handle in its slot so
+    // the entry can be removed cleanly afterwards. std::mem::take
+    // gives back a default SessionHandle with all fields cleared.
+    let moved = sessions
+        .get_mut(&from_label)
+        .map(std::mem::take)
+        .unwrap_or_else(SessionHandle::default);
+
+    // Update the shared cell so the read-pump's on_read / on_exit
+    // closures emit to the target window from now on.
+    if let Some(cell) = &moved.event_target_label {
+        if let Ok(mut guard) = cell.write() {
+            *guard = target_label.clone();
+        }
+    }
+
+    sessions.remove(&from_label);
+    sessions.insert(target_label.clone(), moved);
+    drop(sessions);
+
+    // Stash the source's serialized xterm buffer so the target
+    // window's renderer can pull it on mount and write it into its
+    // fresh terminal — preserves visible scrollback across the
+    // tear-off. Empty strings are skipped (e.g. migration of a
+    // fresh session before any data arrived).
+    if let Some(snapshot) = terminal_snapshot {
+        state.store_pending_terminal_snapshot(&target_label, snapshot);
+    }
+
+    // Fire a `serial:reconnected` to the target window so its
+    // frontend updates whether its onMount has already run (in which
+    // case its activeProfileID() pull returned empty and the
+    // listener catches up here) or hasn't yet (in which case its
+    // mount-time pull will see the migrated session and the event is
+    // redundant). Same payload shape the existing reconnect handler
+    // expects — the profile id of the live session.
+    let app = window.app_handle().clone();
+    let profile_id = state.with_session(&target_label, |handle| handle.profile_id.clone());
+    if !profile_id.is_empty() {
+        let _ = app.emit_to(target_label.as_str(), events::SERIAL_RECONNECTED, profile_id);
+    }
+    Ok(())
+}
+
 /// Whether the OS cursor is currently outside the calling window's
 /// outer bounds. Phase-2 drag-to-spawn calls this on `dragend` — a
 /// drop landed outside the source window is treated as a tear-off
@@ -138,4 +253,18 @@ pub fn cursor_outside_window(window: WebviewWindow) -> Result<bool, String> {
     let bottom = top + size.height as f64;
     let inside = cursor.x >= left && cursor.x <= right && cursor.y >= top && cursor.y <= bottom;
     Ok(!inside)
+}
+
+/// Drain and return any pending xterm.js buffer snapshot for the
+/// calling window. Migration sets one of these on the target's slot
+/// just before the new window's renderer mounts; the renderer pulls
+/// it once and writes it into the fresh terminal so the visible
+/// scrollback survives the tear-off. Returns `None` for windows
+/// that weren't created by a migration tear-off.
+#[tauri::command]
+pub fn take_pending_terminal_snapshot(
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Option<String> {
+    state.take_pending_terminal_snapshot(window.label())
 }

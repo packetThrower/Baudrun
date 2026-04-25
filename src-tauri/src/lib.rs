@@ -68,6 +68,7 @@ pub fn run() {
                 skins,
                 highlight,
                 sessions: Mutex::new(HashMap::new()),
+                pending_terminal_snapshots: Mutex::new(HashMap::new()),
             });
             app.manage(app_state);
 
@@ -131,6 +132,8 @@ pub fn run() {
             commands::window::set_traffic_lights_inset,
             commands::window::open_profile_window,
             commands::window::cursor_outside_window,
+            commands::window::migrate_session,
+            commands::window::take_pending_terminal_snapshot,
             // highlight rules
             commands::highlight::list_highlight_packs,
             commands::highlight::update_user_highlight_pack,

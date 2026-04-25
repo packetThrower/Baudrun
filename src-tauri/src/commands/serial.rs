@@ -14,7 +14,7 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -176,8 +176,12 @@ fn open_session(
     };
 
     let app = window.app_handle().clone();
-    let on_read = build_on_read(app.clone(), label.clone());
-    let on_exit = build_on_exit(app, Arc::clone(state), label.clone());
+    // Carry the emit-target label in a shared cell so a future
+    // `migrate_session` can reroute the on_read / on_exit fan-out
+    // without re-constructing Session.
+    let label_cell = Arc::new(RwLock::new(label.clone()));
+    let on_read = build_on_read(app.clone(), Arc::clone(&label_cell));
+    let on_exit = build_on_exit(app, Arc::clone(state), Arc::clone(&label_cell));
 
     let sess = Arc::new(Session::open(cfg, on_read, on_exit)?);
 
@@ -192,6 +196,7 @@ fn open_session(
         handle.session = Some(Arc::clone(&sess));
         handle.profile_id = profile.id.clone();
         handle.profile_snapshot = Some(profile);
+        handle.event_target_label = Some(label_cell);
     });
     Ok(())
 }
@@ -199,16 +204,25 @@ fn open_session(
 /// Build the on-read callback that ferries serial bytes to the
 /// originating window's renderer. AppHandle is passed in (rather
 /// than WebviewWindow) so the callback is `Send + Sync` — the
-/// read-pump thread that fires this is OS-owned, not Tauri's runtime.
-fn build_on_read(app: AppHandle, label: String) -> OnRead {
+/// read-pump thread that fires this is OS-owned, not Tauri's
+/// runtime. The label arrives via `Arc<RwLock<String>>` so a
+/// session-migration step can reroute the stream to a different
+/// window after the fact (see `commands::window::migrate_session`).
+fn build_on_read(app: AppHandle, label_cell: Arc<RwLock<String>>) -> OnRead {
     Arc::new(move |bytes: &[u8]| {
         let payload = base64::engine::general_purpose::STANDARD.encode(bytes);
+        let label = label_cell.read().unwrap().clone();
         let _ = app.emit_to(label.as_str(), events::SERIAL_DATA, payload);
     })
 }
 
-fn build_on_exit(app: AppHandle, state: Arc<AppState>, label: String) -> OnExit {
+fn build_on_exit(
+    app: AppHandle,
+    state: Arc<AppState>,
+    label_cell: Arc<RwLock<String>>,
+) -> OnExit {
     Arc::new(move |err: io::Error| {
+        let label = label_cell.read().unwrap().clone();
         handle_session_exit(&app, &state, &label, err);
     })
 }

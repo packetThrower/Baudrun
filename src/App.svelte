@@ -297,6 +297,22 @@
       if (activeID) session.set({ status: "connected", profileID: activeID });
     } catch {}
 
+    // If this window was spawned by a session-migration tear-off,
+    // the backend has a serialized xterm buffer waiting for us to
+    // pull. Wait one tick for the Terminal component to mount
+    // (gated by hasSession becoming true above), then write the
+    // snapshot in. Falls through silently for the common case
+    // (windows that weren't migration targets get null back).
+    try {
+      const snapshot = await api.takePendingTerminalSnapshot();
+      if (snapshot) {
+        await tick();
+        terminalRef?.restoreSnapshot(snapshot);
+      }
+    } catch (err) {
+      console.warn("restore migrated terminal snapshot:", err);
+    }
+
     try {
       defaultLogDir = await api.defaultLogDirectory();
     } catch {}
@@ -440,11 +456,41 @@
   }
 
   async function handleOpenInNewWindow(profile: Profile) {
+    // If the profile is the active connection in THIS window, the
+    // user expects the live session to follow regardless of which
+    // gesture they used (right-click → "Open in new window" or
+    // drag-out). Capture the terminal scrollback BEFORE we spawn so
+    // it carries over too. If migration fails we still have the
+    // disconnected new window; nothing's lost.
+    const migrate =
+      $session.status === "connected" && profile.id === activeProfileID;
+    const snapshot = migrate ? terminalRef?.snapshot() ?? "" : "";
     try {
-      await api.openProfileWindow(profile.id, profile.name);
+      const targetLabel = await api.openProfileWindow(profile.id, profile.name);
+      if (migrate) {
+        try {
+          await api.migrateSession(targetLabel, snapshot || undefined);
+          handleSessionMigrated();
+        } catch (err) {
+          statusMsg = `Session migrate failed: ${err}`;
+        }
+      }
     } catch (e) {
       statusMsg = `Open new window failed: ${e}`;
     }
+  }
+
+  function handleSessionMigrated() {
+    // Sidebar dragged a connected profile out of this window; the
+    // backend has already moved the SessionHandle to the new window
+    // and updated the read-pump's emit target. Clear THIS window's
+    // session UI so it stops claiming to be connected — the new
+    // window will reflect the live connection via its own onMount
+    // activeProfileID() pull plus the serial:reconnected event the
+    // backend fires after migrate completes.
+    session.set({ status: "idle" });
+    suspended = false;
+    statusMsg = "Session moved to new window";
   }
 
   async function handleToggleSettings() {
