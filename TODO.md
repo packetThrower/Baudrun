@@ -143,25 +143,44 @@ high-effort or niche enough that priority tracks real demand.
 
 ## Syntax highlighting — Tier 2
 
-Current highlighter is a line-buffered regex rule engine baked into the
-binary. Tier 2 is making it data-driven + shareable:
+Current highlighter is a line-buffered regex rule engine. Tier 2
+work — data-driven, shareable rule packs — landed in v0.9.0:
 
-- [ ] **User-editable rule file** at
-      `~/Library/Application Support/Baudrun/highlight-rules.json`.
-      Format: array of `{ pattern, open, close, group? }` objects.
-      Ship current built-in rules as the default file on first run;
-      users can add patterns without rebuilding.
-- [ ] **Preset packs** as bundled read-only rule sets: `cisco-ios`,
-      `junos`, `ruggedcom-ros`, `aruba-cx`, `f5-tmos`. Each ~10-20
-      patterns. Enable/disable per profile via a Settings → Advanced
-      picker (multi-select).
-- [ ] **Import from iTerm2 Triggers.** iTerm stores triggers in its
-      plist; the "highlight foreground" action maps cleanly to our
-      rule shape. Importer pulls matching entries out, surfaces the
-      rest as ignored. Lets users bring existing configs over.
-- [ ] **Import from grc configs.** grc's text format is simple
-      (regex + colour codes + optional `count=more`). One-shot importer
-      from a user-selected grc conf file.
+- [x] **User-editable rule file** at
+      `$SUPPORT_DIR/highlight-rules.json`. Shipped as the editable
+      "User overrides" pack, seeded from `baudrun-default` on first
+      run. Pack format is `{id, name, description?, source, rules:
+      [{pattern, color, ignoreCase?, group?}]}` — see
+      [docs/examples/highlight-pack.example.json](docs/examples/highlight-pack.example.json).
+- [x] **Preset packs** — six bundled, read-only: `baudrun-default`
+      (vendor-neutral), `cisco-ios` (IOS / IOS XE / IOS XR), `junos`,
+      `aruba-cx`, `arista-eos`, and `mikrotik-routeros`. Selectable
+      per profile under the Syntax Highlighting card; profile picks
+      override the global default. (Original wishlist included
+      `ruggedcom-ros` and `f5-tmos` — those didn't land yet; user-
+      authored packs cover the gap via Import.)
+- [x] **Importable user packs** — Settings → Syntax Highlighting →
+      Import pack reads any JSON pack into
+      `$SUPPORT_DIR/highlight/<id>.json` and auto-enables it.
+      Supersedes the iTerm2-Triggers / grc-conf import items below
+      since the JSON format is well-documented and the playground
+      lets users author packs directly without going through a
+      vendor format.
+- [x] **Browser-based playground** — static page hosted on the docs
+      site that runs the same regex compiler + ANSI color map as
+      the app. Drop a real capture in, edit the JSON, watch colors
+      apply live; everything stays client-side so the file never
+      leaves the user's machine. See
+      [packetthrower.github.io/Baudrun/playground.html](https://packetthrower.github.io/Baudrun/playground.html).
+- [ ] **Import from iTerm2 Triggers.** **[on request]** iTerm stores
+      triggers in its plist; the "highlight foreground" action maps
+      cleanly to our rule shape. Useful for users coming from an
+      iTerm-driven workflow but not enough demand to prioritize
+      ahead of other features.
+- [ ] **Import from grc configs.** **[on request]** grc's text
+      format is simple (regex + colour codes + optional
+      `count=more`). One-shot importer would help users bring
+      `grc.conf` rules over.
 
 Non-goals / won't-do:
 - tree-sitter / Pygments / chroma lexers — overkill for line-level
@@ -212,9 +231,8 @@ cranking out more presets.
       borders everywhere, WCAG-AAA accent colors.
 
 Known caveats to document in README (done):
-- Window chrome (`mac.TitleBarHiddenInset`, Windows Mica backdrop,
-  vibrancy) requires Wails startup config and relaunch. Skins can
-  hint at this via an `.extras.requiresRelaunch` flag and prompt
-  the user. **Not yet implemented** — currently window chrome is
-  fixed at app launch.
+- Window chrome (macOS overlay titlebar, Windows decorated chrome,
+  Linux GTK) is set at window-creation time via
+  `WebviewWindowBuilder` and `tauri.conf.json`. Skins can't change
+  the OS chrome live — only the in-window CSS surface.
 - Window shape (macOS squircle vs. Windows rect) is fixed per-OS.

@@ -17,6 +17,113 @@ final stable entry at tag time.
 
 ### Added
 
+- **Multi-window support.** Right-click any profile in the sidebar
+  or drag it out to spawn a fresh window with that profile selected.
+  Each window has its own session, so two windows can hold parallel
+  serial connections to different devices. When the dragged profile
+  is the active connection in the source window, the live session
+  and visible scrollback move to the new window — same port, same
+  DTR/RTS state, no mid-session bytes lost. Tear-off mid-transfer is
+  rejected with a "wait or cancel first" message; everything else
+  follows you. See [docs/ADVANCED.md](docs/ADVANCED.md#multi-window)
+  for the gesture map and edge cases.
+
+## [0.9.0] — 2026-04-25
+
+### Added
+
+- **Tauri v2 / Rust port.** Backend reimplemented in Rust on Tauri
+  2; the renderer stays Svelte 5. Macros / DTR-RTS / hex view /
+  XMODEM/YMODEM / auto-reconnect / driver detection all preserved
+  with the same on-disk JSON shapes so existing profiles, themes,
+  skins, and settings round-trip without a migration step.
+- **Signed in-app updater.** Footer toast appears when GitHub has
+  a newer release; clicking Install on a stable update downloads
+  the platform bundle, verifies its minisign signature against the
+  public key embedded in the binary, and relaunches into the new
+  version. Settings → Advanced → Updates toggles the launch check
+  and a separate "include pre-releases" knob. Pre-releases ship
+  signed updater bundles too but don't update the auto-update
+  manifest, so stable installs aren't auto-jumped onto an alpha.
+- **Highlight rule packs.** Six bundled packs — Baudrun default
+  (vendor-neutral), Cisco IOS / IOS XE / IOS XR, Juniper Junos,
+  Aruba AOS-CX, Arista EOS, and MikroTik RouterOS — toggle on per
+  Settings or per profile. The user pack at
+  `$SUPPORT_DIR/highlight-rules.json` is editable on disk and
+  layers on top; additional packs can be imported via Settings →
+  Syntax Highlighting → Import pack. First-match-wins ordering,
+  available colors red / green / yellow / blue / magenta / cyan
+  / dim. Per-rule CPU budget bails on regex catastrophic
+  backtracking instead of locking the renderer.
+- **Highlight rule playground** — a static HTML page at
+  [packetthrower.github.io/Baudrun/playground.html](https://packetthrower.github.io/Baudrun/playground.html)
+  for testing rule packs against real captures (drop a file or
+  paste, edit the JSON, watch colors apply live; everything runs
+  client-side, the file you drop never leaves your browser).
+- **Per-profile syntax-highlight pack overrides.** A profile can
+  pick a different set of packs than the global default — handy
+  when one profile talks to a Cisco device and the next to a
+  Juniper one. The profile's Syntax Highlighting card collapses to
+  save space.
+- **Importable highlight packs alongside the bundled ones.**
+  Settings → Syntax Highlighting → Import pack reads a JSON file
+  into `$SUPPORT_DIR/highlight/<id>.json` and auto-enables it.
+  Imported packs show a Remove button. Two starter examples ship
+  under [docs/examples/](docs/examples/) — the minimal-skeleton
+  schema and a practical syslog/journald set with severity
+  keywords, systemd unit states, sshd events, and PID highlighting.
+
+### Changed
+
+- **macOS code signing stays ad-hoc.** First launch of a new
+  download still prompts Gatekeeper's "right-click → Open" UX —
+  the maintainer doesn't have a paid Apple Developer account yet.
+  Auto-update works either way; only the first-launch experience
+  is affected.
+- **Content Security Policy explicit.** Replaced `csp: null` with
+  a tight `default-src 'self' tauri: ipc: …; script-src 'self'; …`
+  so any future XSS in the renderer can't reach an arbitrary
+  origin. `connect-src` whitelists GitHub for the update check.
+
+### Security
+
+- **Rule-pack ReDoS budget.** User-imported regex now runs under a
+  per-line + per-rule wall-clock cap; rules that take longer than
+  the per-rule budget once are auto-disabled for the rest of the
+  session with a console warning.
+- **GitHub API response cap.** Update-check fetch ceilings the
+  body at 100 KB and times out after 10 s, so a hostile network
+  redirect can't return a giant JSON body or hang the renderer.
+- **Skin variable validation.** Imported skins reject CSS values
+  containing `url()`, `image-set()`, `expression()`, `@import`, or
+  `javascript:` / `data:` URIs to block exfiltration through `var()`
+  references in regular CSS.
+- **Updater key now passphrase-protected.** Initial keypair was
+  generated with an empty password; rotated to one protected by
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Existing pre-release
+  installs (alpha.1–alpha.13) won't auto-update against the new
+  pubkey but they were never on the auto-update channel anyway.
+
+### Ops & packaging
+
+- macOS installs ship per-arch (`arm64` + `amd64`) `.dmg` + `.zip`
+  with `libusb-1.0.0.dylib` bundled inside `Contents/Frameworks/`,
+  so users without Homebrew can still run.
+- Windows ships `.msi` (stable tags only — WiX rejects alphanumeric
+  pre-release identifiers) and `.nsis-setup.exe` for both `x64`
+  and `arm64`.
+- Linux ships `.deb`, `.rpm`, `.AppImage`, and Arch `.pkg.tar.zst`
+  for both `amd64` and `aarch64`. AppImage + the
+  `60-baudrun-serial.rules` udev rule mean no `sudo` / `dialout`
+  group fiddling.
+
+## [0.7.0] — 2026-04-22
+
+Last release on the Wails / Go backend before the Tauri v2 / Rust
+port in v0.9.0.
+
+### Added
+
 - **Direct USB-serial access on Linux and macOS**, via the new
   [`usbserial-go`](https://github.com/packetThrower/usbserial-go) library.
   CP210x adapters — including vendor-rebranded VIDs like the Siemens
@@ -116,19 +223,6 @@ final stable entry at tag time.
 - AppImage bundles `libusb-1.0.so.0` into `AppDir/usr/lib/` and
   AppRun prepends that to `LD_LIBRARY_PATH` so the packaged copy is
   found ahead of anything on the host.
-
-## [0.7.0] — 2026-04-22
-
-See the [GitHub release notes](https://github.com/packetThrower/Baudrun/releases/tag/v0.7.0)
-for the full list. Highlights:
-
-- Auto-reconnect on by default with a "reconnecting…" status indicator
-  that stays visible while the profile is suspended.
-- Virtual-serial tool (`scripts/virtual-serial`) — baud-throttled pty
-  pair for dev testing without real hardware.
-- Paste safety (multi-line confirmation + slow paste) made to actually
-  work end-to-end against WKWebView and set on by default for new
-  profiles.
 
 ## [0.6.0] — 2026-04-22 and earlier
 

@@ -25,9 +25,10 @@ and the specific VID:PID values Apple's bundled DEXTs cover.
 **[Advanced features](ADVANCED.md)** — every feature beyond basic
 connect-and-type, documented as reference. Send Break, hex send and
 hex view, control-line policies (DTR/RTS), session logging, auto-
-reconnect, paste safety, suspend/resume, syntax highlighting, theme
-preview, light/dark appearance, and the USB-serial driver-detection
-banner.
+reconnect, paste safety, suspend/resume, multi-window with live
+session migration, signed software updates, syntax highlighting +
+rule packs + the browser-based playground, theme preview, light/
+dark appearance, and the USB-serial driver-detection banner.
 
 **[Keyboard shortcuts](SHORTCUTS.md)** — default bindings for zoom,
 Clear, Send Break, and Suspend. Session shortcuts are user-editable

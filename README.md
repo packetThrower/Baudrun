@@ -77,19 +77,30 @@ Developed in close collaboration with Claude (Anthropic). See
 - **Suspend / Resume** — step away from a connected session without
   tearing down the serial port; xterm stays mounted so the full
   backlog is preserved on return.
-- **Syntax highlighting for network gear** — auto-color IPs, MACs,
-  interface names, status keywords (up/down/err-disabled/warning),
-  timestamps. Device-supplied ANSI colors pass through unchanged.
-
-| Color | Matches |
-|-------|---------|
-| Cyan | IPv4 (with CIDR), IPv6, MAC addresses |
-| Magenta | MAC addresses (colon, dash, Cisco-dotted) |
-| Blue | Interface names — `GigabitEthernet0/1`, `Gi1/0/24`, `ge-0/0/1`, `Vlan100` |
-| Green | `up`, `online`, `active`, `established`, `enabled`, `OK`, `FULL` |
-| Red | `down`, `failed`, `err-disabled`, `error`, `denied`, `timeout`, `critical` |
-| Yellow | `warning`, `degraded`, `init`, `learning`, `blocking` |
-| Dim gray | Timestamps (`HH:MM:SS`), dates (`YYYY-MM-DD`) |
+- **Multi-window** — right-click any profile or drag it out of the
+  sidebar to spawn a new window with that profile selected. If the
+  profile is the active connection in the source window, the live
+  session and visible scrollback follow the tear-off — same port,
+  same DTR/RTS state, no mid-session bytes lost. Each window keeps
+  its own connection so you can hold parallel sessions to different
+  devices side by side.
+- **Syntax highlighting for network gear** — bundled rule packs for
+  vendor-neutral output plus device-specific sets for Cisco IOS,
+  Juniper Junos, Aruba AOS-CX, Arista EOS, and MikroTik RouterOS.
+  Toggle packs in Settings, override per profile, edit the user
+  pack on disk, or import shared packs as JSON. A
+  [browser-based playground](https://packetthrower.github.io/Baudrun/playground.html)
+  lets you test regex against your own captures. Device-supplied
+  ANSI colors pass through unchanged. Available colors: red, green,
+  yellow, blue, magenta, cyan, dim.
+- **Signed auto-update** — built-in update check on launch (toggle
+  off in Settings). When a new release is out a footer toast points
+  at the GitHub release notes; clicking Install on a stable update
+  downloads the platform bundle, verifies its minisign signature
+  against the embedded public key, and relaunches into the new
+  version. Pre-releases stay manual (ship signed updater bundles
+  but don't update the auto-update endpoint, so existing stable
+  installs aren't auto-jumped onto an alpha).
 
 - **13 built-in terminal themes + `.itermcolors` import** — including
   **Colorblind Safe** (Bang Wong's palette from Nature Methods, 2011 —

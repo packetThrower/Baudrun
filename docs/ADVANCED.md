@@ -226,6 +226,117 @@ well below 20 characters.
 - Because the event fires continuously during a drag, the clipboard
   always reflects the live selection.
 
+## Multi-window
+
+Every profile can be torn off into its own window, and each window
+holds an independent serial session. Useful for parallel work on two
+or more devices side-by-side without juggling tabs.
+
+### Gestures
+
+- **Right-click** any profile in the sidebar → "Open profile in new
+  window".
+- **Drag** any profile out of the sidebar and release the mouse
+  outside the source window.
+
+Both gestures route through the same handler, so behavior is
+identical regardless of which one you reach for.
+
+### Session migration on tear-off
+
+If the profile you're tearing off is *currently connected* in the
+source window, the live session moves with it:
+
+- The serial port stays open the entire time — no mid-session bytes
+  lost, no DTR/RTS pulse, no need to re-authenticate the device-side
+  shell.
+- The visible xterm scrollback rides along too (serialized via
+  `@xterm/addon-serialize` and replayed in the new window's terminal
+  on mount), so you don't lose what was on screen.
+- The source window's session UI clears — the connection now belongs
+  to the new window.
+- An in-flight XMODEM/YMODEM transfer blocks migration with a
+  `transfer in progress — wait for it to finish or cancel before
+  migrating` error. Wait for the transfer or click Cancel transfer
+  first.
+
+If the dragged profile *isn't* currently connected, the new window
+just opens with that profile selected and disconnected (same as
+right-click → "Open" with a non-active profile).
+
+### Per-window sessions
+
+Each window keeps its own session in the backend, keyed by Tauri
+window label (`main` for the original, `win-<uuid>` for spawned
+ones). Settings, profiles, themes, skins, and highlight packs
+remain shared across all windows; only the *connection state* is
+per-window. Closing a window disconnects only that window's session,
+not the others.
+
+A single physical port can still only be opened once at the OS
+level — if window A is connected to `/dev/cu.usbserial-1234` and you
+try to connect window B to the same port, the OS returns busy.
+Migrate instead of trying to open twice.
+
+### Cross-platform behavior
+
+- macOS: spawned windows match the main window's overlay-titlebar +
+  traffic-light layout, so they don't look out of place against the
+  active skin.
+- Windows + Linux: spawned windows get the OS's default decorated
+  chrome (titlebar with title + min/max/close). The drag-out
+  gesture works the same — Tauri queries the OS cursor position
+  directly rather than trusting browser-event coordinates, which
+  side-steps the WebKitGTK / WebView2 quirks around `dragend`.
+
+## Software updates
+
+Settings → Advanced → Updates controls the launch-time check
+against GitHub for a newer Baudrun release. Default behavior:
+
+- Check for updates on launch is **on**. The check hits the GitHub
+  Releases API once per app start; failures (offline, rate limit)
+  fall through silently.
+- Include pre-releases is **off**. Stable users see only stable
+  releases as updates; flip the toggle to surface alphas / betas
+  / RCs too.
+
+When an update is available a one-line toast appears in the
+bottom-right of the footer: `Update available: vX.Y.Z` linking to
+the release notes, with an `×` to dismiss for that exact version
+(it'll re-show next time something newer is published). Pre-release
+toasts open the release page in your browser so you can read the
+notes and download manually. Stable toasts get an additional
+**Install** button that uses Tauri's signed-updater plugin:
+
+1. Downloads the platform-specific bundle from the GitHub release.
+2. Verifies the bundle's minisign signature against the public key
+   embedded in `tauri.conf.json` — bundles signed with any other
+   key are rejected before they touch disk.
+3. Replaces the installed binary in place and relaunches into the
+   new version.
+
+The signing keypair is held outside the repo. Per-platform mechanics:
+
+- **macOS** — auto-update unpacks `Baudrun.app.tar.gz` next to the
+  installed `.app` and replaces it. Builds are ad-hoc codesigned
+  (no paid Apple Developer account yet), so each downloaded update
+  triggers Gatekeeper's "right-click → Open" prompt the first time
+  on each user's machine.
+- **Windows** — downloads the NSIS `setup.exe` and runs it in
+  silent mode.
+- **Linux** — AppImage updater. `.deb` / `.rpm` / Arch users update
+  through their distro's package manager (or download a fresh
+  package from the release page); the in-app updater leaves those
+  alone.
+
+Pre-release tags (`vX.Y.Z-alpha.N`, `-beta.N`, `-rc.N`) ship signed
+updater bundles too but **don't** update the
+`/releases/latest/download/latest.json` manifest the auto-updater
+reads from. So existing stable installs aren't auto-jumped onto an
+alpha; pre-release-channel users continue to install pre-releases
+manually.
+
 ## Session suspend / resume
 
 - **Suspend** session-header button: leaves the port open and the
