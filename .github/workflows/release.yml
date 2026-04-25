@@ -242,14 +242,16 @@ jobs:
       # Direct \`tauri build\` — see Linux step. WiX still rejects
       # alphanumeric pre-release identifiers, so msi is gated to
       # stable tags only.
+      # cmd shell, NOT pwsh — pwsh's argument splatting expanded the
+      # bundle list at the character level and tauri's CLI saw 'n'
+      # as a bundle value. The expression syntax inlined into the
+      # command string sidesteps splatting entirely.
       - name: Build Tauri bundle
-        shell: pwsh
+        shell: cmd
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: |
-          $bundleList = if ("${{ github.ref_name }}".Contains("-")) { @("nsis") } else { @("msi", "nsis") }
-          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles @bundleList
+        run: npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis' || 'msi nsis' }}
 
       # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
       # portable zip of the bare Baudrun.exe for users who don't
