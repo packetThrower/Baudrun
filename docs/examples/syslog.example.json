@@ -1,0 +1,103 @@
+{
+  "id": "syslog-example",
+  "name": "Syslog (example)",
+  "description": "Example importable pack for generic syslog/journald/dmesg output — RFC 3164/5424 severity keywords, systemd unit states, sshd events, kernel messages, common [OK]/[FAILED] markers. Rename and edit freely; the id must be alphanum, hyphen, or underscore.",
+  "rules": [
+    {
+      "pattern": "\\[\\s*OK\\s*\\]",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "marker-ok"
+    },
+    {
+      "pattern": "\\[\\s*FAILED?\\s*\\]",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "marker-fail"
+    },
+    {
+      "pattern": "\\[\\s*WARN(?:ING)?\\s*\\]",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "marker-warn"
+    },
+    {
+      "pattern": "\\[\\s*INFO\\s*\\]",
+      "color": "dim",
+      "ignoreCase": false,
+      "group": "marker-info"
+    },
+    {
+      "pattern": "\\b(?:emerg(?:ency)?|panic|fatal|alert|crit(?:ical)?)\\b",
+      "color": "red",
+      "ignoreCase": true,
+      "group": "severity-critical"
+    },
+    {
+      "pattern": "\\b(?:err(?:or)?)\\b",
+      "color": "red",
+      "ignoreCase": true,
+      "group": "severity-error"
+    },
+    {
+      "pattern": "\\bnotice\\b",
+      "color": "yellow",
+      "ignoreCase": true,
+      "group": "severity-notice"
+    },
+    {
+      "pattern": "\\b(?:debug|trace)\\b",
+      "color": "dim",
+      "ignoreCase": true,
+      "group": "severity-debug"
+    },
+    {
+      "pattern": "^<\\d{1,3}>",
+      "color": "dim",
+      "ignoreCase": false,
+      "group": "priority-prefix"
+    },
+    {
+      "pattern": "\\bAccepted\\s+(?:publickey|password|keyboard-interactive)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "sshd-accepted"
+    },
+    {
+      "pattern": "\\b(?:Failed\\s+password|Invalid\\s+user|authentication\\s+failure|PAM\\s+\\d+\\s+more\\s+authentication\\s+failures?|Disconnected\\s+from\\s+authenticating\\s+user)\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "sshd-denied"
+    },
+    {
+      "pattern": "\\bsession\\s+(?:opened|started|closed|terminated)\\b",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "session-event"
+    },
+    {
+      "pattern": "\\b(?:Started|Reached\\s+target|Listening\\s+on|Mounted)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "systemd-good"
+    },
+    {
+      "pattern": "\\b(?:Stopped|Unmounted|Failed\\s+to\\s+start|Deactivated|Job\\s+.+\\s+failed)\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "systemd-bad"
+    },
+    {
+      "pattern": "\\b(?:kernel|systemd|sshd|sudo|cron|crond|dhclient|dhcpcd|NetworkManager|wpa_supplicant|rsyslogd|journal|auditd|dbus-daemon|polkitd|avahi-daemon|systemd-resolved|systemd-networkd|systemd-logind|systemd-timesyncd)(?:\\[\\d+\\])?(?=:)",
+      "color": "blue",
+      "ignoreCase": false,
+      "group": "daemon-tag"
+    },
+    {
+      "pattern": "\\[\\d+\\]",
+      "color": "dim",
+      "ignoreCase": false,
+      "group": "pid"
+    }
+  ]
+}

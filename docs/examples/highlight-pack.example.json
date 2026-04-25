@@ -1,0 +1,30 @@
+{
+  "id": "my-lab",
+  "name": "My Lab",
+  "description": "Example highlight pack for personal / lab use. Rename `id` and `name`, then import via Settings → Syntax Highlighting → Import pack… The `id` becomes the pack's filename under $SUPPORT_DIR/highlight/<id>.json and must be alphanumeric, hyphen, or underscore.",
+  "rules": [
+    {
+      "pattern": "\\blab-[a-z0-9-]+\\b",
+      "color": "magenta",
+      "group": "lab-hostnames"
+    },
+    {
+      "pattern": "\\b(?:PASS|OK|SUCCESS)\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "test-ok"
+    },
+    {
+      "pattern": "\\b(?:FAIL|ERROR|ABORT)\\b",
+      "color": "red",
+      "ignoreCase": false,
+      "group": "test-fail"
+    },
+    {
+      "pattern": "\\bTODO\\b",
+      "color": "yellow",
+      "ignoreCase": false,
+      "group": "todo"
+    }
+  ]
+}

@@ -859,6 +859,60 @@
     }
   }
 
+  async function handleImportHighlightPack() {
+    try {
+      const pack = await api.importHighlightPack();
+      await loadHighlightPacks();
+      // Auto-enable on import — fresh packs the user just chose
+      // should participate in the active rule set without a second
+      // click. They can untick it in Settings if they don't want it.
+      const enabled = new Set($settings.enabledHighlightPresets ?? []);
+      enabled.add(pack.id);
+      const next = Array.from(enabled);
+      try {
+        const updated = await api.updateSettings({
+          ...$settings,
+          enabledHighlightPresets: next,
+        });
+        settings.set(updated);
+      } catch (e) {
+        statusMsg = `Settings update after import failed: ${e}`;
+      }
+      statusMsg = `Imported highlight pack: ${pack.name}`;
+    } catch (e) {
+      const msg = String(e);
+      // Tauri's dialog.blocking_pick_file returns "cancelled" if the
+      // user dismisses the picker — not worth a status-bar error.
+      if (!msg.includes("cancelled")) {
+        statusMsg = `Import failed: ${msg}`;
+      }
+    }
+  }
+
+  async function handleDeleteHighlightPack(id: string) {
+    try {
+      await api.deleteHighlightPack(id);
+      await loadHighlightPacks();
+      // Pull the deleted id out of the enabled list so Settings
+      // doesn't keep a dangling reference.
+      const enabled = ($settings.enabledHighlightPresets ?? []).filter(
+        (p) => p !== id,
+      );
+      try {
+        const updated = await api.updateSettings({
+          ...$settings,
+          enabledHighlightPresets: enabled,
+        });
+        settings.set(updated);
+      } catch (e) {
+        statusMsg = `Settings cleanup after delete failed: ${e}`;
+      }
+      statusMsg = "Highlight pack removed";
+    } catch (e) {
+      statusMsg = `Delete failed: ${e}`;
+    }
+  }
+
   async function handlePickConfigDir() {
     try {
       const dir = await api.pickConfigDirectory();
@@ -978,6 +1032,8 @@
           onSetShortcuts={handleSetShortcuts}
           highlightPacks={$highlightPacks}
           onSetEnabledHighlightPresets={handleSetEnabledHighlightPresets}
+          onImportHighlightPack={handleImportHighlightPack}
+          onDeleteHighlightPack={handleDeleteHighlightPack}
         />
       {:else if !currentProfile}
         <div class="titlebar" data-tauri-drag-region></div>

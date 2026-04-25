@@ -129,6 +129,8 @@ pub fn run() {
             // highlight rules
             commands::highlight::list_highlight_packs,
             commands::highlight::update_user_highlight_pack,
+            commands::highlight::import_user_highlight_pack,
+            commands::highlight::delete_user_highlight_pack,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

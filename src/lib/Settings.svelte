@@ -42,6 +42,8 @@
     onSetShortcuts: (shortcuts: Record<string, string>) => void;
     highlightPacks?: HighlightPack[];
     onSetEnabledHighlightPresets: (ids: string[]) => void;
+    onImportHighlightPack: () => void;
+    onDeleteHighlightPack: (id: string) => void;
   };
 
   let {
@@ -70,6 +72,8 @@
     onSetShortcuts,
     highlightPacks = [],
     onSetEnabledHighlightPresets,
+    onImportHighlightPack,
+    onDeleteHighlightPack,
   }: Props = $props();
 
   // Platform marker for formatShortcut() in the keyboard-shortcuts
@@ -201,6 +205,28 @@
       ? Array.from(new Set([...current, id]))
       : current.filter((p) => p !== id);
     onSetEnabledHighlightPresets(next);
+  }
+
+  let importingHighlight = $state(false);
+  let highlightImportError = $state("");
+
+  async function handleHighlightImport() {
+    importingHighlight = true;
+    highlightImportError = "";
+    try {
+      onImportHighlightPack();
+    } catch (e) {
+      highlightImportError = String(e);
+    } finally {
+      importingHighlight = false;
+    }
+  }
+
+  // A pack is deletable iff it's a user-source pack AND not the
+  // editable scratchpad (id === "user"). Bundled packs are read-only
+  // and the scratchpad is always present.
+  function canDeletePack(pack: HighlightPack): boolean {
+    return pack.source === "user" && pack.id !== "user";
   }
 
   async function openInFileManager(path: string) {
@@ -492,35 +518,68 @@
         <p class="section-hint">
           Highlight rules grouped into packs. The default vendor-neutral set
           covers IPs, MACs, interface names, and status keywords. Device-
-          specific packs (Cisco IOS, Junos, Aruba CX) add patterns common to
-          each platform's output. The "User overrides" pack is editable at
-          <code>$SUPPORT_DIR/highlight-rules.json</code> — bundled packs are
-          read-only. Each profile can override these defaults under its own
-          Syntax Highlighting section.
+          specific packs (Cisco IOS, Junos, Aruba CX, Arista EOS, MikroTik
+          RouterOS) add patterns common to each platform's output. Bundled
+          packs are read-only; the "User overrides" scratchpad is editable
+          at <code>$SUPPORT_DIR/highlight-rules.json</code>. Imported packs
+          live under <code>$SUPPORT_DIR/highlight/&lt;id&gt;.json</code> and
+          can be removed from here.
         </p>
+
+        <div class="section-head">
+          <button
+            onclick={handleHighlightImport}
+            disabled={importingHighlight}
+            title="Pick a highlight pack JSON to add alongside the bundled ones. See docs/examples/highlight-pack.example.json for the schema."
+          >
+            {importingHighlight ? "Importing…" : "Import pack…"}
+          </button>
+        </div>
+        {#if highlightImportError}
+          <div class="error">{highlightImportError}</div>
+        {/if}
+
         <div class="preset-list">
           {#each highlightPacks as pack (pack.id)}
-            <label class="toggle preset">
-              <input
-                type="checkbox"
-                checked={isHighlightPackEnabled(pack.id)}
-                onchange={(e) =>
-                  onTogglePresetPack(
-                    pack.id,
-                    (e.target as HTMLInputElement).checked,
-                  )}
-              />
-              <span class="preset-meta">
-                <span class="preset-name">{pack.name}</span>
-                {#if pack.description}
-                  <span class="preset-desc">{pack.description}</span>
-                {/if}
-                <span class="preset-count">
-                  {pack.rules.length} rule{pack.rules.length === 1 ? "" : "s"}
-                  {#if pack.source === "user"} · editable{/if}
+            <div class="preset-row">
+              <label class="toggle preset">
+                <input
+                  type="checkbox"
+                  checked={isHighlightPackEnabled(pack.id)}
+                  onchange={(e) =>
+                    onTogglePresetPack(
+                      pack.id,
+                      (e.target as HTMLInputElement).checked,
+                    )}
+                />
+                <span class="preset-meta">
+                  <span class="preset-name">{pack.name}</span>
+                  {#if pack.description}
+                    <span class="preset-desc">{pack.description}</span>
+                  {/if}
+                  <span class="preset-count">
+                    {pack.rules.length} rule{pack.rules.length === 1 ? "" : "s"}
+                    {#if pack.id === "user"}
+                      · editable scratchpad
+                    {:else if pack.source === "user"}
+                      · imported
+                    {:else}
+                      · built-in
+                    {/if}
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+              {#if canDeletePack(pack)}
+                <button
+                  class="danger small"
+                  onclick={() => onDeleteHighlightPack(pack.id)}
+                  title="Remove this imported pack"
+                  aria-label="Remove imported pack {pack.name}"
+                >
+                  Remove
+                </button>
+              {/if}
+            </div>
           {/each}
         </div>
       </div>
@@ -952,6 +1011,21 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .preset-row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .preset-row .toggle.preset {
+    flex: 1;
+  }
+
+  .preset-row button.danger.small {
+    flex-shrink: 0;
+    align-self: center;
   }
 
   .toggle.preset {

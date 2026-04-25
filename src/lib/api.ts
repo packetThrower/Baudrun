@@ -194,6 +194,10 @@ export const api = {
   listHighlightPacks: () => invoke<HighlightPack[]>("list_highlight_packs"),
   updateUserHighlightPack: (pack: HighlightPack) =>
     invoke<HighlightPack>("update_user_highlight_pack", { pack }),
+  importHighlightPack: () =>
+    invoke<HighlightPack>("import_user_highlight_pack"),
+  deleteHighlightPack: (id: string) =>
+    invoke<void>("delete_user_highlight_pack", { id }),
 
   sendBytes(bytes: Uint8Array): Promise<void> {
     return invoke<void>("send", { data: base64Encode(bytes) });
