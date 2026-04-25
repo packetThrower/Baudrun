@@ -278,11 +278,11 @@ jobs:
           }
           if (Test-Path "$bundle/nsis") {
             Copy-Item "$bundle/nsis/*.exe" release-artifacts/ -Verbose
-            # Updater feed: NSIS-format zipped installer + signature.
-            # Tauri's installer-mode updater on Windows downloads this
-            # zip, extracts it, and runs the installer in /SILENT mode.
-            Get-ChildItem "$bundle/nsis/*.nsis.zip" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ -Verbose }
-            Get-ChildItem "$bundle/nsis/*.nsis.zip.sig" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ -Verbose }
+            # Updater feed: in Tauri 2 the auto-updater downloads the
+            # NSIS .exe installer directly and verifies with the
+            # *-setup.exe.sig signature next to it. No .nsis.zip
+            # wrapper is involved in the v2 updater path.
+            Get-ChildItem "$bundle/nsis/*-setup.exe.sig" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ -Verbose }
           }
           Compress-Archive `
             -Path "src-tauri/target/${{ matrix.target }}/release/Baudrun.exe" `
@@ -462,12 +462,12 @@ jobs:
           collect "$BUNDLE_DIR/appimage" "*.AppImage"
           collect "." "*.pkg.tar.zst"
 
-          # Updater feed: AppImage.tar.gz + .sig (signed by tauri-bundler
-          # when TAURI_SIGNING_PRIVATE_KEY was set on the build step).
-          # .deb / .rpm / pacman users update via the distro package
-          # manager and don't go through Tauri's auto-updater.
-          collect "$BUNDLE_DIR/appimage" "*.AppImage.tar.gz"
-          collect "$BUNDLE_DIR/appimage" "*.AppImage.tar.gz.sig"
+          # Updater feed: in Tauri 2 the auto-updater downloads the
+          # primary AppImage directly (no .tar.gz wrapper) and verifies
+          # with the .AppImage.sig minisign signature. .deb / .rpm /
+          # pacman users update via their distro's package manager and
+          # don't go through Tauri's auto-updater.
+          collect "$BUNDLE_DIR/appimage" "*.AppImage.sig"
 
           echo "--- staged ---"
           ls -la release-artifacts
@@ -584,12 +584,17 @@ jobs:
             find artifacts -type f -name "$pattern" | head -n 1
           }
 
+          # Tauri 2 updater format per platform:
+          #   macOS:   .app.tar.gz + .sig  (the .app is a directory,
+          #                                 so it has to be tarballed)
+          #   Linux:   .AppImage   + .AppImage.sig  (download directly)
+          #   Windows: -setup.exe  + -setup.exe.sig (NSIS installer)
           MAC_ARM=$(find_one "Baudrun-${VERSION}-arm64.app.tar.gz")
           MAC_X64=$(find_one "Baudrun-${VERSION}-amd64.app.tar.gz")
-          LINUX_X64=$(find_one "*amd64.AppImage.tar.gz")
-          LINUX_ARM=$(find_one "*aarch64.AppImage.tar.gz")
-          WIN_X64=$(find_one "*x64-setup.nsis.zip")
-          WIN_ARM=$(find_one "*arm64-setup.nsis.zip")
+          LINUX_X64=$(find_one "*amd64.AppImage")
+          LINUX_ARM=$(find_one "*aarch64.AppImage")
+          WIN_X64=$(find_one "*x64-setup.exe")
+          WIN_ARM=$(find_one "*arm64-setup.exe")
 
           # Release-asset URL pattern that resolves on the rendered
           # release page. Permalink form ensures GitHub redirects to
@@ -604,6 +609,9 @@ jobs:
             fi
           }
 
+          # macOS .app.tar.gz.sig sits next to its tarball; Linux
+          # .AppImage.sig and Windows -setup.exe.sig follow the same
+          # naming convention next to their primary bundles.
           MAC_ARM_SIG=$(read_sig "${MAC_ARM}.sig")
           MAC_X64_SIG=$(read_sig "${MAC_X64}.sig")
           LINUX_X64_SIG=$(read_sig "${LINUX_X64}.sig")
