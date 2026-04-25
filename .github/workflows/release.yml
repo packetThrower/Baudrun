@@ -531,6 +531,17 @@ jobs:
               echo "> ⚠️ **Pre-release.** Published for testing. Behaviour and artifacts are not final."
               echo
             fi
+
+            # Platform-test disclaimer. Honest framing while Windows /
+            # Linux builds catch up — keep this banner until those
+            # platforms are routinely exercised against real hardware,
+            # then drop the block.
+            echo "> ℹ️ **Platform support — early days.**"
+            echo ">"
+            echo "> macOS builds (arm64 + amd64) are tested with a real serial connection."
+            echo "> Windows and Linux builds are produced and signed by CI but **not yet routinely tested against real hardware**."
+            echo "> If you hit issues on those platforms, please file an issue at <https://github.com/packetThrower/Baudrun/issues>."
+            echo
             echo "## What's Changed"
             echo
             if [ -n "$PREV_TAG" ]; then
