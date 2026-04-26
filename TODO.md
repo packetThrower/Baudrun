@@ -54,6 +54,27 @@ high-effort or niche enough that priority tracks real demand.
       Not implemented in the first cut; XMODEM/YMODEM cover the
       vast majority of embedded bootloader use cases. Add if a
       specific use case surfaces.
+- [ ] **Auto-detect baud rate.** Profile-form "Auto-detect" button
+      next to the baud field. Cycles through the standard rates
+      (9600 / 19200 / 38400 / 57600 / 115200, plus the others
+      already in `BAUD_RATES`), opens the port at each for ~500ms,
+      scores the bytes that arrive — printable ASCII + line endings
+      → good, high-bit garbage + control characters → wrong baud —
+      and picks the highest-scoring rate. ~4 seconds per probe pass.
+      Caveats:
+      - Only works while the device is actively emitting; a silent
+        prompt gives nothing to score.
+      - Binary protocols (Modbus RTU, custom firmware bootloaders)
+        look like garbage at every baud and the heuristic guesses
+        wrong.
+      - Sub-bit-rate timing measurement isn't feasible through a
+        USB-serial adapter — by the time bytes reach us they're
+        already framed.
+      Realistic accuracy: high (90%+) for ASCII-emitting network
+      gear; low elsewhere. Implementation: ~150 LOC of Rust on
+      the backend (probe loop with cancel) + a small modal in the
+      profile form showing per-rate progress so the user can bail
+      mid-probe.
 
 ## Accessibility
 
@@ -236,3 +257,29 @@ Known caveats to document in README (done):
   `WebviewWindowBuilder` and `tauri.conf.json`. Skins can't change
   the OS chrome live — only the in-window CSS surface.
 - Window shape (macOS squircle vs. Windows rect) is fixed per-OS.
+
+## Localization (i18n)
+
+- [ ] **UI translation infrastructure.** **[on request]** Adopt
+      svelte-i18n (most conventional Svelte choice — JSON locale
+      files, `$_('settings.title')` lookups, system locale
+      detection via `@tauri-apps/plugin-os`). Extract every
+      hardcoded string in Settings, ProfileForm, Sidebar, Terminal,
+      modals, and tooltips into `src/i18n/en.json` as the canonical
+      source. Backend strings (Tauri command errors, status bar
+      messages like "Reconnected" / "Session moved to new window")
+      either return error codes the renderer translates, or pass
+      through a small Rust i18n helper.
+      - Ongoing tax: every PR has to extract its new strings; every
+        new feature ships untranslated until a translator catches
+        up. Worth doing once a real translator volunteers — until
+        then, a native English target is fine for the network-
+        engineer audience.
+      - Phased path if/when this lands: ship svelte-i18n with
+        English-only first so the infrastructure exists; subsequent
+        languages become translator-only PRs adding `<lang>.json`.
+        Pluralization, RTL languages (Arabic, Hebrew), and locale-
+        specific number / date formatting are second-pass concerns.
+      - Settings → Language picker once at least one non-English
+        locale ships, persisted to `Settings.locale`. Falls back to
+        the OS locale when unset.
