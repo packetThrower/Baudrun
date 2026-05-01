@@ -97,13 +97,17 @@ pub fn open_profile_window(
     // so the spawned window doesn't look out of place. Failures here
     // aren't fatal — the window still opens, the chrome just looks
     // like the default.
-    #[cfg(desktop)]
+    //
+    // macOS-only — see the matching note in lib.rs's setup hook.
+    // Calling decorum on Windows strips the native frame without
+    // providing a CSS replacement, which hides the caption buttons
+    // (issue #7).
+    #[cfg(target_os = "macos")]
     {
         use tauri_plugin_decorum::WebviewWindowExt;
         if let Err(err) = window.create_overlay_titlebar() {
             log::warn!("spawned window {}: create_overlay_titlebar: {}", label, err);
         }
-        #[cfg(target_os = "macos")]
         if let Err(err) = window.set_traffic_lights_inset(14.0, 20.0) {
             log::warn!(
                 "spawned window {}: set_traffic_lights_inset: {}",

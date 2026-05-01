@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-05-01
+
 ### Added
 
 - **Multi-window support.** Right-click any profile in the sidebar
@@ -27,6 +29,27 @@ final stable entry at tag time.
   rejected with a "wait or cancel first" message; everything else
   follows you. See [docs/ADVANCED.md](docs/ADVANCED.md#multi-window)
   for the gesture map and edge cases.
+
+### Fixed
+
+- **Windows: missing minimize / maximize / close buttons**
+  ([#7](https://github.com/packetThrower/Baudrun/issues/7)). The
+  `tauri-plugin-decorum` overlay-titlebar call was being applied on
+  every desktop platform during window setup, but on Windows it
+  strips the native frame expecting the renderer to draw its own
+  titlebar — Baudrun doesn't, so the system caption buttons went
+  missing. Gated the call (and the spawned-window equivalent in the
+  multi-window flow) to macOS only, where it has always been
+  intended — the plugin's purpose here is repositioning the macOS
+  traffic-lights so floating-bubble skins can pull them inside the
+  panel. Windows and Linux now get their default decorated chrome
+  with all three buttons.
+- **Settings button now pins to the bottom of the sidebar when
+  there are no profiles**
+  ([#8](https://github.com/packetThrower/Baudrun/issues/8)). The
+  empty-state container was missing `flex: 1`, so the Settings
+  button hugged it instead of sticking to the bottom the way it
+  does once a profile exists.
 
 ## [0.9.0] — 2026-04-25
 

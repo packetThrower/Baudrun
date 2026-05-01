@@ -78,11 +78,17 @@ pub fn run() {
             // Initial inset matches the default Baudrun skin; skin
             // changes adjust it via the set_traffic_lights_inset
             // command.
+            //
+            // macOS-only: on Windows decorum strips the native frame
+            // and expects the renderer to draw its own titlebar — we
+            // don't, so calling it there hides the system caption
+            // buttons (issue #7). Linux WebKit2GTK is similar. Both
+            // platforms get the default decorated chrome instead.
+            #[cfg(target_os = "macos")]
             if let Some(win) = app.get_webview_window("main") {
                 use tauri_plugin_decorum::WebviewWindowExt;
                 win.create_overlay_titlebar()
                     .map_err(|e| format!("create_overlay_titlebar: {}", e))?;
-                #[cfg(target_os = "macos")]
                 win.set_traffic_lights_inset(14.0, 20.0)
                     .map_err(|e| format!("set_traffic_lights_inset: {}", e))?;
             }

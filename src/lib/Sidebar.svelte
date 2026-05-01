@@ -322,6 +322,11 @@
   }
 
   .empty {
+    /* flex: 1 so the empty-state fills the gap between the header
+       and the footer Settings button — without this the empty div
+       only takes its content height and Settings hugs it instead
+       of pinning to the bottom (issue #8). */
+    flex: 1;
     padding: 30px 20px;
     text-align: center;
     color: var(--fg-tertiary);
