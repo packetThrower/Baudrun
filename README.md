@@ -11,6 +11,8 @@
 [![Tauri](https://img.shields.io/badge/Tauri-v2-FFC131?style=flat-square&logo=tauri&logoColor=black)](https://tauri.app)
 [![Svelte](https://img.shields.io/github/package-json/dependency-version/packetThrower/Baudrun/dev/svelte?style=flat-square&logo=svelte&logoColor=white&label=Svelte&color=FF3E00)](https://svelte.dev)
 
+## Minimum OS Versions
+
 **macOS** (Apple Silicon and Intel)  
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-333?style=flat-square&logo=apple&logoColor=white)](docs/REQUIREMENTS.md#macos)
