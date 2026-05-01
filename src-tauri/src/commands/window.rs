@@ -86,7 +86,15 @@ pub fn open_profile_window(
     // platform path semantics entirely.
     state.store_pending_profile_id(&label, safe_id.clone());
 
-    let url = WebviewUrl::App("index.html".into());
+    // `WebviewUrl::default()` resolves to an empty PathBuf which
+    // Tauri serves as the dist root — same path the main window
+    // uses (it has no explicit `url` in tauri.conf.json). Earlier
+    // we passed `WebviewUrl::App("index.html".into())` explicitly,
+    // but Windows release builds left the spawned window blank
+    // even after the `?profile=` query was removed; matching the
+    // main window's url-resolution path is the most reliable way
+    // to avoid Windows-specific Tauri 2 quirks here.
+    let url = WebviewUrl::default();
     // `title_bar_style` and `hidden_title` only exist on the macOS
     // builder API — chaining them unconditionally breaks the
     // Windows + Linux compiles (E0599: no method named ...). They
@@ -94,11 +102,20 @@ pub fn open_profile_window(
     // tauri.conf.json so spawned windows on macOS look identical to
     // main; non-macOS gets the default decorated chrome the conf
     // file describes for those platforms.
+    //
+    // `.devtools(true)` exposes WebView2 / WebKit / WebKitGTK
+    // DevTools on the spawned window even in release builds — gated
+    // behind the `tauri/devtools` feature in Cargo.toml. Useful for
+    // diagnosing tear-off rendering issues that don't reproduce on
+    // the maintainer's macOS dev box. Cheap to leave on for the
+    // multi-window flow specifically; main window's devtools state
+    // is unaffected.
     #[allow(unused_mut)]
     let mut builder = WebviewWindowBuilder::new(&app, &label, url)
         .title(title)
         .inner_size(1100.0, 720.0)
-        .min_inner_size(800.0, 500.0);
+        .min_inner_size(800.0, 500.0)
+        .devtools(true);
     #[cfg(target_os = "macos")]
     {
         builder = builder
