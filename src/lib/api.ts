@@ -201,6 +201,8 @@ export const api = {
     invoke<void>("migrate_session", { targetLabel, terminalSnapshot }),
   takePendingTerminalSnapshot: () =>
     invoke<string | null>("take_pending_terminal_snapshot"),
+  takePendingProfileId: () =>
+    invoke<string | null>("take_pending_profile_id"),
 
   listHighlightPacks: () => invoke<HighlightPack[]>("list_highlight_packs"),
   updateUserHighlightPack: (pack: HighlightPack) =>

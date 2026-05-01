@@ -73,12 +73,16 @@
     if (!e.dataTransfer) return;
     dragging = p;
     e.dataTransfer.effectAllowed = "copy";
-    // Set a payload so other webview drop targets (a different
-    // Baudrun window) could in principle accept the drop. Phase 2
-    // doesn't drop INTO existing windows yet, but the data is set
-    // for when phase 3 wants it.
+    // Custom MIME only — no DE recognizes this so dropping outside
+    // the window falls through to dragend (where we ask the
+    // backend whether the cursor is outside and spawn a new
+    // window if so). An earlier revision also set
+    // `text/plain`, which on Linux GTK / Wayland file managers
+    // looks like a draggable text snippet — dropping on the
+    // desktop creates a `.txt` file with the profile name and the
+    // OS consumes the drop before our dragend gets to fire, so no
+    // new window opens. Keeping only the custom MIME avoids that.
     e.dataTransfer.setData("application/x-baudrun-profile", p.id);
-    e.dataTransfer.setData("text/plain", p.name);
   }
 
   async function onDragEnd() {

@@ -6,11 +6,13 @@
 //!   lights inside the panel. Non-macOS platforms accept the call
 //!   and no-op.
 //! - `open_profile_window`: spawn a new top-level webview pointing
-//!   at the same renderer URL with `?profile=<id>` so the new
-//!   window's frontend lands on that profile selected. The new
-//!   window has its own session in [`crate::state::AppState`] keyed
-//!   by its label, so connecting / disconnecting / transferring on
-//!   one window doesn't disturb the others.
+//!   at the same renderer (plain `index.html`). The initial profile
+//!   id is stashed in `AppState::pending_profile_ids` keyed by the
+//!   new window's label so the renderer can drain it on mount via
+//!   `take_pending_profile_id`. The new window has its own session
+//!   in [`crate::state::AppState`] keyed by its label, so
+//!   connecting / disconnecting / transferring on one window
+//!   doesn't disturb the others.
 
 use std::sync::Arc;
 
@@ -21,6 +23,17 @@ use uuid::Uuid;
 
 use crate::events;
 use crate::state::AppState;
+
+/// Reduce a profile id to a URL-safe slice. Called on every command
+/// boundary that accepts a profile id from the renderer so values
+/// can't smuggle path / quote / scheme characters across the IPC
+/// surface.
+fn safe_profile_id(profile_id: &str) -> String {
+    profile_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect()
+}
 
 #[tauri::command]
 pub fn set_traffic_lights_inset(
@@ -48,16 +61,9 @@ pub fn open_profile_window(
     profile_id: String,
     profile_name: Option<String>,
     app: AppHandle,
+    state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
-    // Sanitize the profile id into a URL-safe slice — Tauri's URL is
-    // assembled from the renderer's index.html plus our query string
-    // and the renderer parses it back via URLSearchParams on mount.
-    // Reject anything fishy up front so the value can't break out of
-    // the query-string scope on either end.
-    let safe_id: String = profile_id
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
-        .collect();
+    let safe_id = safe_profile_id(&profile_id);
     if safe_id.is_empty() {
         return Err("profile id required".into());
     }
@@ -70,7 +76,17 @@ pub fn open_profile_window(
         _ => "Baudrun".to_string(),
     };
 
-    let url = WebviewUrl::App(format!("index.html?profile={}", safe_id).into());
+    // Stash the initial profile id under the new window's label so
+    // its renderer can pull it on mount via `take_pending_profile_id`
+    // and pre-select that profile. The previous design rode this in
+    // the URL as `?profile=<id>`, but `?` is an invalid path char on
+    // Windows — `WebviewUrl::App` builds its URL from a `PathBuf` and
+    // the `?` either got stripped or url-encoded, leading to a 404
+    // and a blank webview on Windows spawned windows. IPC sidesteps
+    // platform path semantics entirely.
+    state.store_pending_profile_id(&label, safe_id.clone());
+
+    let url = WebviewUrl::App("index.html".into());
     // `title_bar_style` and `hidden_title` only exist on the macOS
     // builder API — chaining them unconditionally breaks the
     // Windows + Linux compiles (E0599: no method named ...). They
@@ -271,4 +287,17 @@ pub fn take_pending_terminal_snapshot(
     state: State<'_, Arc<AppState>>,
 ) -> Option<String> {
     state.take_pending_terminal_snapshot(window.label())
+}
+
+/// Drain and return any pending initial profile id for the calling
+/// window. `open_profile_window` stashes one of these for every
+/// spawned window so the renderer can pre-select that profile on
+/// mount. Returns `None` for the main window or for any spawned
+/// window whose mount has already drained the value.
+#[tauri::command]
+pub fn take_pending_profile_id(
+    window: WebviewWindow,
+    state: State<'_, Arc<AppState>>,
+) -> Option<String> {
+    state.take_pending_profile_id(window.label())
 }

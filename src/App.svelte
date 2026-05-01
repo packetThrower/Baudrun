@@ -256,15 +256,24 @@
     applyEnabledHighlightPresets(effectiveEnabledHighlightPresets);
 
     // Multi-window: a window spawned via "Open profile in new window"
-    // gets ?profile=<id> appended to its URL (see open_profile_window
-    // in src-tauri/src/commands/window.rs). Read that and pre-select
-    // the profile so the user lands on it instead of the empty state.
-    // Restricted to the safe-id alphabet on both ends so a hand-
-    // crafted URL can't smuggle anything weird through here.
-    const params = new URLSearchParams(window.location.search);
-    const initialProfile = params.get("profile");
-    if (initialProfile && /^[A-Za-z0-9_-]+$/.test(initialProfile)) {
-      selectedProfileID.set(initialProfile);
+    // has its initial profile id stashed in the backend keyed by the
+    // window label (see open_profile_window in
+    // src-tauri/src/commands/window.rs). Drain it on mount and
+    // pre-select that profile so the user lands on it instead of
+    // the empty state. Restricted to the safe-id alphabet on both
+    // ends so a hostile renderer can't smuggle anything weird.
+    //
+    // Earlier versions rode this in `?profile=<id>` URL params, but
+    // `?` is invalid in Windows file paths and Tauri's
+    // `WebviewUrl::App(PathBuf)` mangled the URL → blank webview on
+    // Windows spawned windows.
+    try {
+      const initialProfile = await api.takePendingProfileId();
+      if (initialProfile && /^[A-Za-z0-9_-]+$/.test(initialProfile)) {
+        selectedProfileID.set(initialProfile);
+      }
+    } catch (err) {
+      console.warn("take pending profile id:", err);
     }
 
     offDisconnect = api.onDisconnect((reason) => {

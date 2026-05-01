@@ -50,6 +50,16 @@ pub struct AppState {
     /// Cleared along with the rest of a window's state when the
     /// window is destroyed.
     pub pending_terminal_snapshots: Mutex<HashMap<String, String>>,
+
+    /// Pending initial-profile ids indexed by spawned-window label.
+    /// Set inside `open_profile_window` so the new window's renderer
+    /// can pull it on mount via `take_pending_profile_id` and
+    /// pre-select that profile. Originally this rode in the spawned
+    /// window's URL as `?profile=<id>` but the `?` is an invalid
+    /// path character on Windows and the resulting URL never
+    /// resolved (blank webview). IPC carries the value cross-platform
+    /// without URL encoding gymnastics.
+    pub pending_profile_ids: Mutex<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -71,15 +81,16 @@ impl AppState {
     /// Drop a window's session state entirely. Call from the
     /// `WindowEvent::Destroyed` handler so a closed window doesn't
     /// leave a dangling [`SessionHandle`] in the map. Also drops
-    /// any pending terminal snapshot keyed by the same label so a
-    /// window closed before its renderer ever called
-    /// `take_pending_terminal_snapshot` doesn't leak it.
+    /// any pending terminal snapshot or initial-profile id keyed by
+    /// the same label so a window closed before its renderer ever
+    /// drained them doesn't leak.
     pub fn forget_session(&self, label: &str) {
         self.sessions.lock().unwrap().remove(label);
         self.pending_terminal_snapshots
             .lock()
             .unwrap()
             .remove(label);
+        self.pending_profile_ids.lock().unwrap().remove(label);
     }
 
     /// Stash a serialized xterm buffer for `target_label` to pick up
@@ -101,6 +112,24 @@ impl AppState {
             .lock()
             .unwrap()
             .remove(label)
+    }
+
+    /// Stash an initial profile id for `target_label` to pull on
+    /// mount. Called from `open_profile_window` right after the new
+    /// window is built so the value is available before the
+    /// renderer's onMount completes.
+    pub fn store_pending_profile_id(&self, target_label: &str, profile_id: String) {
+        if profile_id.is_empty() {
+            return;
+        }
+        self.pending_profile_ids
+            .lock()
+            .unwrap()
+            .insert(target_label.to_string(), profile_id);
+    }
+
+    pub fn take_pending_profile_id(&self, label: &str) -> Option<String> {
+        self.pending_profile_ids.lock().unwrap().remove(label)
     }
 }
 

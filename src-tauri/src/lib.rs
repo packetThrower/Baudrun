@@ -69,6 +69,7 @@ pub fn run() {
                 highlight,
                 sessions: Mutex::new(HashMap::new()),
                 pending_terminal_snapshots: Mutex::new(HashMap::new()),
+                pending_profile_ids: Mutex::new(HashMap::new()),
             });
             app.manage(app_state);
 
@@ -140,6 +141,7 @@ pub fn run() {
             commands::window::cursor_outside_window,
             commands::window::migrate_session,
             commands::window::take_pending_terminal_snapshot,
+            commands::window::take_pending_profile_id,
             // highlight rules
             commands::highlight::list_highlight_packs,
             commands::highlight::update_user_highlight_pack,

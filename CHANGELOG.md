@@ -15,6 +15,32 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-05-01
+
+### Fixed
+
+- **Multi-window: blank webview on Windows.** Spawned windows
+  opened to a blank white page on Windows. The spawned-window URL
+  was assembled as `index.html?profile=<id>`, but `?` is an invalid
+  Windows path character — Tauri's `WebviewUrl::App` builds its URL
+  from a `PathBuf` and Windows mangled or rejected the value, so
+  the document never resolved. The initial profile id is now
+  carried through the backend (a per-window pending stash that the
+  renderer drains on mount, mirroring the existing
+  `take_pending_terminal_snapshot` plumbing) instead of through the
+  URL. Cross-platform clean — the spawned URL is plain
+  `index.html` everywhere now.
+- **Multi-window: drag-out creates a `.txt` file on Linux.** The
+  drag handler was setting both `application/x-baudrun-profile`
+  (custom MIME, used by our dragend logic) and `text/plain` (the
+  profile name). On GTK / Wayland file managers, `text/plain` looks
+  like a draggable text snippet — dropping on the desktop made the
+  DE create a `.txt` file with the profile name and consume the
+  drop before dragend reached our backend cursor-outside check, so
+  no new window opened. Removed the `text/plain` payload; only the
+  custom MIME is set now, which no DE recognizes, so the drop falls
+  through to dragend and spawns the window correctly.
+
 ## [0.9.1] — 2026-05-01
 
 ### Added
