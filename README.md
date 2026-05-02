@@ -180,6 +180,56 @@ Required when using an adapter rather than a device's built-in USB console:
 Baudrun will detect known chipsets and point you at the right download when
 a driver is missing.
 
+## Install
+
+The easiest path on macOS and Windows is the package manager — auto-update
+on `brew upgrade` / `scoop update`, no Gatekeeper / SmartScreen friction
+on first launch, and pre-release channels are available alongside stable.
+Linux users grab the right `.deb` / `.rpm` / `.AppImage` / `.pkg.tar.zst`
+directly from the [Releases](#releases) section.
+
+### macOS — Homebrew
+
+```sh
+brew tap packetThrower/tap
+brew install --cask baudrun
+# or pre-release channel:
+brew install --cask baudrun@alpha
+```
+
+The `baudrun` cask installs `/Applications/Baudrun.app` and tracks the
+latest stable tag. The `baudrun@alpha` cask installs `/Applications/Baudrun
+Alpha.app` side-by-side and tracks the latest pre-release tag (`-alpha.N`,
+`-beta.N`, `-rc.N`). Both casks strip the macOS quarantine xattr on
+install so the app launches without a right-click → Open dance, since
+Baudrun ships ad-hoc signed but not notarized.
+
+The tap also holds [PortFinder](https://github.com/packetThrower/PortFinder).
+Repo: [packetThrower/homebrew-tap](https://github.com/packetThrower/homebrew-tap).
+
+### Windows — Scoop
+
+```powershell
+scoop bucket add packetThrower https://github.com/packetThrower/scoop-bucket
+scoop install baudrun
+# or pre-release channel:
+scoop install baudrun-prerelease
+```
+
+`scoop install baudrun` adds a `Baudrun` Start menu shortcut and a
+`Baudrun` shim on `PATH`. The pre-release manifest installs side-by-side
+with shim `baudrun-alpha` and Start menu entry `Baudrun Alpha`. Both use
+the per-arch NSIS installer so x64 and arm64 hosts get the matching
+build automatically.
+
+Repo: [packetThrower/scoop-bucket](https://github.com/packetThrower/scoop-bucket).
+
+### Both channels at once
+
+Stable and pre-release coexist on either platform. Useful when you want
+to keep stable as your daily driver and run alpha on the side to verify
+upcoming changes against your gear.
+
 ## Releases
 
 Tagged pushes with a SemVer tag like `v0.4.0` or `v1.0.0` produce a
