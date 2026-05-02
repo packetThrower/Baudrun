@@ -7,6 +7,12 @@ screenshots, and install instructions see the
 
 ## Install & build
 
+**[Install](INSTALL.md)** — Homebrew (`brew install --cask baudrun`),
+Scoop (`scoop install baudrun`), and direct downloads for Linux. Both
+package managers expose a separate pre-release channel
+(`baudrun@alpha` / `baudrun-prerelease`) that installs side-by-side
+with stable so you can run both.
+
 **[Requirements](REQUIREMENTS.md)** — minimum OS versions to run a
 released build, plus the toolchain needed to build from source.
 Running and building details are in separate sections.

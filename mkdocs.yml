@@ -40,6 +40,7 @@ nav:
   - Home: index.md
   - Screenshots: screenshots.md
   - Install & Build:
+      - Install: INSTALL.md
       - Requirements: REQUIREMENTS.md
   - Hardware:
       - USB-serial adapters: ADAPTERS.md
