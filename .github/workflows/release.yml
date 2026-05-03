@@ -137,6 +137,59 @@ jobs:
           codesign --force --deep --sign - "$APP_DIR"
           codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
+      # Rebuild the DMG so it contains the libusb-fixed + re-signed
+      # .app. Tauri creates the DMG during `tauri build` (above),
+      # before our install_name_tool + codesign step has run — so
+      # the .app inside that original DMG still references
+      # /opt/homebrew/opt/libusb (won't load on user Macs without
+      # Homebrew) and has the pre-fix signature. The .zip we
+      # package next is built from the post-fix .app, but `brew
+      # install --cask baudrun` consumes the DMG, so without this
+      # step every brew/dmg user gets a broken bundle. Drops
+      # Tauri's custom backdrop / window layout — drag-to-Applications
+      # still works, just without the styled background image.
+      - name: Rebuild DMG with libusb-fixed .app
+        run: |
+          set -euo pipefail
+          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Baudrun.app"
+          DMG_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
+
+          OLD_DMG=$(ls "$DMG_DIR"/Baudrun_*.dmg 2>/dev/null | head -1 || true)
+          if [ -z "$OLD_DMG" ]; then
+            echo "no existing DMG to rebuild — bundler output changed?"
+            ls -la "$DMG_DIR" || true
+            exit 1
+          fi
+          DMG_NAME=$(basename "$OLD_DMG")
+          echo "Rebuilding $DMG_NAME with post-fix .app..."
+          rm -f "$OLD_DMG"
+
+          # Stage the DMG contents: the fixed .app + a /Applications
+          # symlink (standard macOS drag-to-install convention).
+          # `ditto` preserves codesign xattrs through the copy, where
+          # `cp -R` may not.
+          STAGING="$(mktemp -d)/dmg-staging"
+          mkdir -p "$STAGING"
+          ditto "$APP_DIR" "$STAGING/Baudrun.app"
+          ln -s /Applications "$STAGING/Applications"
+
+          # UDZO is the same compressed format Tauri's bundler uses.
+          hdiutil create \
+            -volname "Baudrun" \
+            -srcfolder "$STAGING" \
+            -fs HFS+ \
+            -format UDZO \
+            -ov \
+            "$DMG_DIR/$DMG_NAME"
+
+          hdiutil verify "$DMG_DIR/$DMG_NAME"
+
+          # Belt + suspenders: mount the new DMG and verify its .app
+          # codesigns clean. Catches xattr-stripping bugs early.
+          MOUNT=$(hdiutil attach -nobrowse -readonly "$DMG_DIR/$DMG_NAME" | tail -1 | awk '{print $NF}')
+          codesign --verify --deep --strict --verbose=2 "$MOUNT/Baudrun.app"
+          hdiutil detach "$MOUNT"
+
       # Tauri produces a .dmg already; we additionally zip the .app
       # so users who prefer "drag to /Applications" don't have to
       # mount the DMG.

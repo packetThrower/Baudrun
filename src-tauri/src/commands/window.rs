@@ -102,20 +102,11 @@ pub fn open_profile_window(
     // tauri.conf.json so spawned windows on macOS look identical to
     // main; non-macOS gets the default decorated chrome the conf
     // file describes for those platforms.
-    //
-    // `.devtools(true)` exposes WebView2 / WebKit / WebKitGTK
-    // DevTools on the spawned window even in release builds — gated
-    // behind the `tauri/devtools` feature in Cargo.toml. Useful for
-    // diagnosing tear-off rendering issues that don't reproduce on
-    // the maintainer's macOS dev box. Cheap to leave on for the
-    // multi-window flow specifically; main window's devtools state
-    // is unaffected.
     #[allow(unused_mut)]
     let mut builder = WebviewWindowBuilder::new(&app, &label, url)
         .title(title)
         .inner_size(1100.0, 720.0)
-        .min_inner_size(800.0, 500.0)
-        .devtools(true);
+        .min_inner_size(800.0, 500.0);
     #[cfg(target_os = "macos")]
     {
         builder = builder

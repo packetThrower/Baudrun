@@ -15,6 +15,46 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-05-03
+
+### Fixed
+
+- **macOS: Homebrew install was broken because the DMG shipped a
+  pre-fix .app.** The release pipeline modifies the macOS bundle
+  after Tauri builds it (rewrites the libusb load command via
+  `install_name_tool` so the bundled `Frameworks/libusb-1.0.0.dylib`
+  loads on user Macs that don't have Homebrew, then re-signs the
+  whole bundle ad-hoc). But Tauri creates the DMG during
+  `tauri build` *before* that step runs, and we were copying that
+  original DMG straight into the release artifacts — so brew users
+  got a Baudrun.app with no `Contents/Frameworks/`, a binary still
+  pointing at `/opt/homebrew/opt/libusb/lib/`, and a stale signature
+  manifest (`spctl` rejected with "code has no resources but
+  signature indicates they must be present"). The release workflow
+  now rebuilds the DMG via `hdiutil` after the libusb fix + re-sign,
+  with a mount-and-`codesign --verify` sanity check baked in. Users
+  installing via the `.zip` were unaffected — that artifact already
+  packaged the post-fix .app.
+- **Multi-window: blank webview on Windows (CSP block).** Spawned
+  windows on Windows showed a blank page because every IPC call
+  (`list_profiles`, `get_settings`, etc.) was being rejected by the
+  Content Security Policy. Tauri 2 on Windows uses
+  `http://ipc.localhost` for the IPC protocol; our CSP whitelisted
+  only `https://ipc.localhost`. The `Promise.all` in the renderer's
+  bootstrap rejected, the UI never rendered, and the blank page
+  persisted. Added `http://ipc.localhost` to both `default-src` and
+  `connect-src`. macOS / Linux unaffected — they go through `tauri:`
+  / `ipc:` schemes that were already in the policy.
+- **Multi-window: spawned-window URL still didn't render correctly
+  on Windows.** Even after dropping the `?profile=<id>` query string
+  in 0.9.2, the Windows webview would render blank with the
+  `WebviewUrl::App("index.html".into())` form. Switched to
+  `WebviewUrl::default()` (empty PathBuf, the same path the main
+  window uses since it has no explicit `url` in
+  `tauri.conf.json`) — Tauri's default index resolution is more
+  reliable on Windows than the explicit-path form for spawned
+  windows.
+
 ## [0.9.2] — 2026-05-01
 
 ### Fixed
