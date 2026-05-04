@@ -47,10 +47,18 @@ install side-by-side with separate Start menu entries (`Baudrun` and
 `Baudrun Alpha`) and separate `PATH` shims (`Baudrun` / `baudrun-alpha`).
 
 ```powershell
+# Scoop needs git to fetch + update buckets. If `git --version`
+# already prints something, skip this line.
+scoop install git
+
 scoop bucket add packetThrower https://github.com/packetThrower/scoop-bucket
 scoop install baudrun                 # stable
 scoop install baudrun-prerelease      # pre-release
 ```
+
+If you skip the `scoop install git` line and try to add the bucket
+directly, Scoop fails fast with `ERROR Git is required for buckets.
+Run 'scoop install git' and try again.` — same fix.
 
 Both manifests use the per-arch NSIS setup (`_x64-setup.exe` /
 `_arm64-setup.exe`), picked by Scoop based on host architecture. Scoop

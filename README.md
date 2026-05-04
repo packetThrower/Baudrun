@@ -210,6 +210,11 @@ Repo: [packetThrower/homebrew-tap](https://github.com/packetThrower/homebrew-tap
 ### Windows — Scoop
 
 ```powershell
+# Scoop requires git to add buckets — install it first if you don't
+# already have it. Skip this if `git --version` already prints
+# something.
+scoop install git
+
 scoop bucket add packetThrower https://github.com/packetThrower/scoop-bucket
 scoop install baudrun
 # or pre-release channel:
