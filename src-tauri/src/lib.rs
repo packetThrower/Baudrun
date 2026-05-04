@@ -142,6 +142,7 @@ pub fn run() {
             commands::window::migrate_session,
             commands::window::take_pending_terminal_snapshot,
             commands::window::take_pending_profile_id,
+            commands::window::toggle_settings_window,
             // highlight rules
             commands::highlight::list_highlight_packs,
             commands::highlight::update_user_highlight_pack,
@@ -151,21 +152,52 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // Drop the per-window session map entry on window close so
-            // a torn-off window's serial port is freed even if the
-            // user quits via the red close button rather than
-            // Disconnect → Quit. Tauri delivers Destroyed AFTER the
-            // OS-level close, so the session's underlying SerialPort
-            // is already closing when this fires; here we just clear
-            // the bookkeeping.
-            if let WindowEvent::Destroyed = match &event {
-                RunEvent::WindowEvent { event, .. } => event.clone(),
-                _ => return,
-            } {
-                let RunEvent::WindowEvent { label, .. } = event else { return };
-                if let Some(state) = app.try_state::<Arc<AppState>>() {
-                    state.forget_session(&label);
+            let RunEvent::WindowEvent { label, event, .. } = &event else {
+                return;
+            };
+            match event {
+                // CloseRequested fires BEFORE the window is gone so we
+                // can still query its size/position. Stash those for
+                // the Settings window so it reopens at the same place
+                // next launch. We don't `prevent_close()` — the close
+                // proceeds normally; we just ride along.
+                WindowEvent::CloseRequested { .. }
+                    if label == commands::window::SETTINGS_WINDOW_LABEL =>
+                {
+                    if let Some(window) = app.get_webview_window(label) {
+                        let scale = window.scale_factor().unwrap_or(1.0);
+                        let size = window
+                            .inner_size()
+                            .ok()
+                            .map(|s| s.to_logical::<f64>(scale));
+                        let pos = window
+                            .outer_position()
+                            .ok()
+                            .map(|p| p.to_logical::<f64>(scale));
+                        if let (Some(s), Some(p)) = (size, pos) {
+                            commands::window::persist_settings_window_geometry(
+                                app,
+                                s.width as i32,
+                                s.height as i32,
+                                p.x as i32,
+                                p.y as i32,
+                            );
+                        }
+                    }
                 }
+                // Drop the per-window session map entry on window close
+                // so a torn-off window's serial port is freed even if
+                // the user quits via the red close button rather than
+                // Disconnect → Quit. Tauri delivers Destroyed AFTER the
+                // OS-level close, so the session's underlying SerialPort
+                // is already closing when this fires; here we just clear
+                // the bookkeeping.
+                WindowEvent::Destroyed => {
+                    if let Some(state) = app.try_state::<Arc<AppState>>() {
+                        state.forget_session(label);
+                    }
+                }
+                _ => {}
             }
         });
 }

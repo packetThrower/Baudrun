@@ -49,6 +49,7 @@
     applyEnabledHighlightPresets,
   } from "./stores/highlight";
   import { getVersion } from "@tauri-apps/api/app";
+  import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { relaunch } from "@tauri-apps/plugin-process";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { check as tauriCheckUpdate } from "@tauri-apps/plugin-updater";
@@ -60,6 +61,32 @@
   let offDisconnect: (() => void) | null = null;
   let offReconnecting: (() => void) | null = null;
   let offReconnected: (() => void) | null = null;
+  // App.svelte mounts in every Tauri window. The label tells us
+  // whether this is the main shell (profiles + terminal) or the
+  // dedicated Settings window opened via toggle_settings_window.
+  // The Settings window renders ONLY the Settings component; it
+  // skips session listeners, terminal mounting, the update toast,
+  // and the empty-state branding.
+  //
+  // IIFE so the value is `const` (set once at module init, never
+  // reassigned). svelte-check otherwise warns that a `let` not
+  // wrapped in `$state(...)` won't trigger reactive updates — true
+  // in general, but irrelevant here since this never changes after
+  // the window is created. The try/catch covers the plain-Vite-dev
+  // case where `getCurrentWebviewWindow()` throws (no Tauri
+  // runtime); the catch branch falls back to main-shell rendering.
+  const isSettingsWindow = (() => {
+    try {
+      return getCurrentWebviewWindow().label === "settings";
+    } catch {
+      return false;
+    }
+  })();
+
+  // Sidebar's Settings button "active" hint. Mirrors the IPC return
+  // value from toggleSettingsWindow. May go stale if the user closes
+  // the Settings window via its own X button (no event back to the
+  // main window yet) — minor visual lag, not load-bearing.
   let settingsOpen = $state(false);
   let suspended = $state(false);
   let ctrlDTR = $state(true);
@@ -274,6 +301,15 @@
       }
     } catch (err) {
       console.warn("take pending profile id:", err);
+    }
+
+    // Session listeners + terminal snapshot restoration only matter
+    // for the main window; the Settings window has no terminal,
+    // never holds a session, and spawning these subscribers would
+    // log noise. Same for the launch update check — per the shape
+    // brief, the update toast lives in the main window only.
+    if (isSettingsWindow) {
+      return;
     }
 
     offDisconnect = api.onDisconnect((reason) => {
@@ -502,11 +538,19 @@
     statusMsg = "Session moved to new window";
   }
 
+  // Toggle the dedicated Settings window. The backend handles
+  // singleton enforcement (existing → close, none → spawn) and
+  // returns the new state. Local `settingsOpen` mirror updates so
+  // the sidebar button can light up as active. Auto-disconnect on
+  // open isn't needed anymore — the terminal session keeps running
+  // in the main window while Settings is open in its own window.
   async function handleToggleSettings() {
-    if (!settingsOpen && viewingTerminal) {
-      await maybeAutoDisconnect();
+    try {
+      settingsOpen = await api.toggleSettingsWindow();
+    } catch (e) {
+      statusMsg = `Settings window: ${e}`;
+      console.error("toggle settings window:", e);
     }
-    settingsOpen = !settingsOpen;
   }
 
   async function handleSave(p: Profile) {
@@ -849,6 +893,17 @@
   function handleWindowKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && overflowOpen) {
       overflowOpen = false;
+      return;
+    }
+    // Cmd+, (Mac) / Ctrl+, (Win/Linux) toggles the Settings window
+    // globally — same shortcut works from either the main window or
+    // the Settings window itself, mirroring the universal macOS
+    // Preferences convention. Persona red flag fix: Alex's "no
+    // Cmd+, indicator" complaint from the Settings critique.
+    if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+      e.preventDefault();
+      e.stopPropagation();
+      void handleToggleSettings();
       return;
     }
     // Zoom first — it hasn't moved to settings-driven config.
@@ -1212,6 +1267,44 @@
   onkeydown={handleWindowKeydown}
 />
 
+{#if isSettingsWindow}
+  <!-- Settings window mode: this Tauri window's only content is the
+       Settings component. The main-window sidebar / terminal /
+       transfer modals etc. don't apply. The Settings.svelte
+       component already includes its own data-tauri-drag-region
+       titlebar, so no extra chrome is needed here. -->
+  <Settings
+    themes={$themes}
+    skins={$skins}
+    settings={$settings}
+    {defaultLogDir}
+    {configDir}
+    {defaultConfigDir}
+    onSetDefault={handleSetDefault}
+    onImport={handleImportTheme}
+    onDelete={handleDeleteTheme}
+    onSetFontSize={handleSetFontSize}
+    onSetScrollback={handleSetScrollback}
+    onSetLogDir={handleSetLogDir}
+    onPickLogDir={handlePickLogDir}
+    onSetDetectDrivers={handleSetDetectDrivers}
+    onSetCopyOnSelect={handleSetCopyOnSelect}
+    onSetScreenReaderMode={handleSetScreenReaderMode}
+    onSetUpdateCheckEnabled={handleSetUpdateCheckEnabled}
+    onSetIncludePrereleaseUpdates={handleSetIncludePrereleaseUpdates}
+    onPickConfigDir={handlePickConfigDir}
+    onResetConfigDir={handleResetConfigDir}
+    onSetSkin={handleSetSkin}
+    onImportSkin={handleImportSkin}
+    onDeleteSkin={handleDeleteSkin}
+    onSetAppearance={handleSetAppearance}
+    onSetShortcuts={handleSetShortcuts}
+    highlightPacks={$highlightPacks}
+    onSetEnabledHighlightPresets={handleSetEnabledHighlightPresets}
+    onImportHighlightPack={handleImportHighlightPack}
+    onDeleteHighlightPack={handleDeleteHighlightPack}
+  />
+{:else}
 <div class="shell">
   <Sidebar
     profiles={visibleProfiles}
@@ -1226,39 +1319,7 @@
 
   <main class="main">
     {#if !viewingTerminal}
-      {#if settingsOpen}
-        <Settings
-          themes={$themes}
-          skins={$skins}
-          settings={$settings}
-          {defaultLogDir}
-          {configDir}
-          {defaultConfigDir}
-          onSetDefault={handleSetDefault}
-          onImport={handleImportTheme}
-          onDelete={handleDeleteTheme}
-          onSetFontSize={handleSetFontSize}
-          onSetScrollback={handleSetScrollback}
-          onSetLogDir={handleSetLogDir}
-          onPickLogDir={handlePickLogDir}
-          onSetDetectDrivers={handleSetDetectDrivers}
-          onSetCopyOnSelect={handleSetCopyOnSelect}
-          onSetScreenReaderMode={handleSetScreenReaderMode}
-          onSetUpdateCheckEnabled={handleSetUpdateCheckEnabled}
-          onSetIncludePrereleaseUpdates={handleSetIncludePrereleaseUpdates}
-          onPickConfigDir={handlePickConfigDir}
-          onResetConfigDir={handleResetConfigDir}
-          onSetSkin={handleSetSkin}
-          onImportSkin={handleImportSkin}
-          onDeleteSkin={handleDeleteSkin}
-          onSetAppearance={handleSetAppearance}
-          onSetShortcuts={handleSetShortcuts}
-          highlightPacks={$highlightPacks}
-          onSetEnabledHighlightPresets={handleSetEnabledHighlightPresets}
-          onImportHighlightPack={handleImportHighlightPack}
-          onDeleteHighlightPack={handleDeleteHighlightPack}
-        />
-      {:else if !currentProfile}
+      {#if !currentProfile}
         <div class="titlebar" data-tauri-drag-region></div>
         <div class="empty-main">
           <div class="empty-inner">
@@ -1666,6 +1727,7 @@
       </div>
     </div>
   </div>
+{/if}
 {/if}
 
 <style>

@@ -13,6 +13,14 @@
 //!   in [`crate::state::AppState`] keyed by its label, so
 //!   connecting / disconnecting / transferring on one window
 //!   doesn't disturb the others.
+//! - `toggle_settings_window`: open or close the dedicated Settings
+//!   window. Singleton — second call while one is open closes it
+//!   (per the v0.9.5 shape brief: clicking the sidebar Settings
+//!   button while the window is open closes it). The window's label
+//!   is the literal string `"settings"`, distinguishing it from the
+//!   `"main"` window and the `win-<uuid>` profile-spawn windows.
+//!   Frontend routes view by reading
+//!   `getCurrentWebviewWindow().label`.
 
 use std::sync::Arc;
 
@@ -345,4 +353,127 @@ pub fn take_pending_profile_id(
     state: State<'_, Arc<AppState>>,
 ) -> Option<String> {
     state.take_pending_profile_id(window.label())
+}
+
+/// Settings window label. Used by both the toggle command and the
+/// destroy-event handler in lib.rs that persists final geometry.
+pub const SETTINGS_WINDOW_LABEL: &str = "settings";
+
+/// Default size when the Settings window opens for the first time
+/// (no saved geometry in `settings.json`). Centered on screen via
+/// the builder's default placement.
+const SETTINGS_DEFAULT_WIDTH: f64 = 720.0;
+const SETTINGS_DEFAULT_HEIGHT: f64 = 720.0;
+const SETTINGS_MIN_WIDTH: f64 = 600.0;
+const SETTINGS_MIN_HEIGHT: f64 = 500.0;
+
+/// Open or close the dedicated Settings window. Singleton — if a
+/// window labeled `settings` already exists, this command closes
+/// it (per the shape brief's "toggle open/closed" choice). If no
+/// such window exists, this opens one at the size/position remembered
+/// from the previous session (or centered 720x720 the very first
+/// time).
+///
+/// Returns the new state (`true` = window is now open, `false` =
+/// window is now closed) so the caller can update local UI hints
+/// (sidebar Settings button active state) immediately without
+/// waiting for a window event round-trip.
+#[tauri::command]
+pub fn toggle_settings_window(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<bool, String> {
+    if let Some(existing) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
+        // Singleton hit — toggle behavior closes the existing
+        // window. The Destroyed event handler in lib.rs persists
+        // the final geometry to settings.json on the way out.
+        existing
+            .close()
+            .map_err(|e| format!("close settings window: {}", e))?;
+        return Ok(false);
+    }
+
+    // Restore last known geometry from settings, or fall through to
+    // a centered default. Width / height of zero (the field's
+    // skip-serializing-default) means "not yet saved" — center the
+    // window at default size in that case.
+    let saved = state.settings.get().settings_window;
+    let (saved_w, saved_h, saved_x, saved_y) = match saved {
+        Some(g) => (g.width, g.height, g.x, g.y),
+        None => (0, 0, 0, 0),
+    };
+    let width = if saved_w > 0 {
+        saved_w as f64
+    } else {
+        SETTINGS_DEFAULT_WIDTH
+    };
+    let height = if saved_h > 0 {
+        saved_h as f64
+    } else {
+        SETTINGS_DEFAULT_HEIGHT
+    };
+
+    let url = WebviewUrl::default();
+    #[allow(unused_mut)]
+    let mut builder = WebviewWindowBuilder::new(&app, SETTINGS_WINDOW_LABEL, url)
+        .title("Baudrun Settings")
+        .inner_size(width, height)
+        .min_inner_size(SETTINGS_MIN_WIDTH, SETTINGS_MIN_HEIGHT)
+        .resizable(true);
+    if saved_x != 0 || saved_y != 0 {
+        // Saved a non-(0,0) position — use it. (0, 0) is the
+        // platform default for "no saved position", not a literal
+        // top-left placement, so we treat it as missing.
+        builder = builder.position(saved_x as f64, saved_y as f64);
+    } else {
+        builder = builder.center();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .title_bar_style(tauri::TitleBarStyle::Overlay)
+            .hidden_title(true);
+    }
+    let window = builder
+        .build()
+        .map_err(|e| format!("create settings window: {}", e))?;
+
+    #[cfg(target_os = "macos")]
+    {
+        use tauri_plugin_decorum::WebviewWindowExt;
+        if let Err(err) = window.create_overlay_titlebar() {
+            log::warn!("settings window: create_overlay_titlebar: {}", err);
+        }
+        if let Err(err) = window.set_traffic_lights_inset(14.0, 20.0) {
+            log::warn!("settings window: set_traffic_lights_inset: {}", err);
+        }
+    }
+    Ok(true)
+}
+
+/// Persist the Settings window's current size + position to
+/// `settings.json`. Called from the `WindowEvent::Destroyed` handler
+/// in lib.rs when the user closes the Settings window — saving on
+/// destroy, not on every Resized / Moved event, keeps the IO cost
+/// flat regardless of how aggressively the user drags. Errors are
+/// logged but don't propagate — failing to save geometry shouldn't
+/// crash the close path.
+pub fn persist_settings_window_geometry(
+    app: &AppHandle,
+    width: i32,
+    height: i32,
+    x: i32,
+    y: i32,
+) {
+    let Some(state) = app.try_state::<Arc<AppState>>() else { return };
+    let mut current = state.settings.get();
+    current.settings_window = Some(crate::settings::WindowGeometry {
+        width,
+        height,
+        x,
+        y,
+    });
+    if let Err(err) = state.settings.update(current) {
+        log::warn!("persist settings-window geometry: {}", err);
+    }
 }

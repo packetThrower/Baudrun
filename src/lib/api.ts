@@ -203,6 +203,12 @@ export const api = {
     invoke<string | null>("take_pending_terminal_snapshot"),
   takePendingProfileId: () =>
     invoke<string | null>("take_pending_profile_id"),
+  /** Open or close the Settings window (singleton). Returns the new
+   *  state: `true` = window is now open, `false` = window is now
+   *  closed. Backend persists size/position to settings.json on
+   *  CloseRequested so reopens land in the same place. */
+  toggleSettingsWindow: () =>
+    invoke<boolean>("toggle_settings_window"),
 
   listHighlightPacks: () => invoke<HighlightPack[]>("list_highlight_packs"),
   updateUserHighlightPack: (pack: HighlightPack) =>

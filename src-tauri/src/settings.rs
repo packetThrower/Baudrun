@@ -86,6 +86,31 @@ pub struct Settings {
     /// opt-out, not a default-fallback signal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled_highlight_presets: Option<Vec<String>>,
+
+    /// Last known size + position of the Settings window. Saved when
+    /// the user closes the Settings window so it reopens in the
+    /// same place next launch. Missing or zeroed fields fall back to
+    /// a centered 720x720 window. Keyed under one nested object so
+    /// the schema can grow other window-state slots later (e.g. main
+    /// window remember-on-quit) without polluting the top level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_window: Option<WindowGeometry>,
+}
+
+/// Saved size + position of an app window. All fields optional so
+/// older settings.json files round-trip; consumers fall back to the
+/// platform default when a field is absent.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowGeometry {
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub x: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub y: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub width: i32,
+    #[serde(default, skip_serializing_if = "is_zero_i32")]
+    pub height: i32,
 }
 
 impl Default for Settings {
@@ -108,6 +133,7 @@ impl Default for Settings {
                 "baudrun-default".into(),
                 "user".into(),
             ]),
+            settings_window: None,
         }
     }
 }
