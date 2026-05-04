@@ -1880,12 +1880,18 @@
 
   /* Settings window: paints the skin's --shell-bg behind the Settings
      component so the window has a visible substrate on every platform.
-     Fallback chain reaches `--bg-main` so opaque skins (e.g.
-     windows-11) that don't define --shell-bg still get a solid color,
-     and finally a hard-coded dark — pure safety net for a hypothetical
-     skin that defines neither. Without this wrapper Windows / Linux
-     show a black webview and macOS-light skins bleed the dark
-     vibrancy through. */
+     The fallback chain `--shell-bg → --bg-main → #1d1d1d` is the
+     production-state contract: skins that don't define --shell-bg
+     (windows-11, gnome, high-contrast, baudrun-light, etc.) all
+     define --bg-main with a solid color matching their surface, so
+     the wrapper picks up the right tone for any skin. The hard-coded
+     `#1d1d1d` is the safety net for skins that define neither.
+
+     The `#app` pre-paint in index.html sits BEHIND this wrapper and
+     paints solid `#1d1d1d` (or `#f2f2f7` per prefers-color-scheme)
+     before any skin is applied — so even though :root's default
+     `--bg-main` is translucent (rgba(...,0.55) for macOS vibrancy),
+     the layers below it are solid during boot. No black flash. */
   .settings-window-shell {
     flex: 1;
     min-height: 0;
