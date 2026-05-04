@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { getVersion } from "@tauri-apps/api/app";
   import {
     api,
@@ -117,6 +118,12 @@
     });
 
   let previewTheme = $state<Theme | null>(null);
+  // Theme-preview modal close button — bind:this so we can move
+  // focus into the modal when it opens, matching the Sam-persona
+  // accessibility fix from the v0.9.4 critique. Without this, a
+  // screen-reader user opening the modal stays focused on the
+  // Preview button below it.
+  let modalCloseEl: HTMLButtonElement | null = $state(null);
 
   function openPreview(t: Theme) {
     previewTheme = t;
@@ -129,6 +136,12 @@
   function onPreviewKeydown(e: KeyboardEvent) {
     if (e.key === "Escape") closePreview();
   }
+
+  $effect(() => {
+    if (previewTheme) {
+      void tick().then(() => modalCloseEl?.focus());
+    }
+  });
 
   const configIsCustom = $derived(
     !!configDir && !!defaultConfigDir && configDir !== defaultConfigDir,
@@ -249,6 +262,84 @@
     return pack.source === "user" && pack.id !== "user";
   }
 
+  // Destructive-remove undo gestures (themes, skins, highlight packs).
+  // Click Remove → row morphs to "Removed <name>. Undo" for 5s, then
+  // the actual onDelete* prop fires. Click Undo within 5s and the
+  // timer is cancelled, the row restored. Per DESIGN.md interaction
+  // model + reference/interaction-design.md "Undo > Confirm". Three
+  // separate Maps because each type calls a different onDelete*
+  // prop; pulling them into one generic helper with three timers
+  // would just push the same shape elsewhere.
+  let pendingThemeDelete = $state<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  let pendingSkinDelete = $state<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+  let pendingPackDelete = $state<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+
+  function startThemeDelete(id: string) {
+    if (pendingThemeDelete.has(id)) return;
+    const timer = setTimeout(() => {
+      onDelete(id);
+      const next = new Map(pendingThemeDelete);
+      next.delete(id);
+      pendingThemeDelete = next;
+    }, 5000);
+    const next = new Map(pendingThemeDelete);
+    next.set(id, timer);
+    pendingThemeDelete = next;
+  }
+  function undoThemeDelete(id: string) {
+    const timer = pendingThemeDelete.get(id);
+    if (timer) clearTimeout(timer);
+    const next = new Map(pendingThemeDelete);
+    next.delete(id);
+    pendingThemeDelete = next;
+  }
+
+  function startSkinDelete(id: string) {
+    if (pendingSkinDelete.has(id)) return;
+    const timer = setTimeout(() => {
+      onDeleteSkin(id);
+      const next = new Map(pendingSkinDelete);
+      next.delete(id);
+      pendingSkinDelete = next;
+    }, 5000);
+    const next = new Map(pendingSkinDelete);
+    next.set(id, timer);
+    pendingSkinDelete = next;
+  }
+  function undoSkinDelete(id: string) {
+    const timer = pendingSkinDelete.get(id);
+    if (timer) clearTimeout(timer);
+    const next = new Map(pendingSkinDelete);
+    next.delete(id);
+    pendingSkinDelete = next;
+  }
+
+  function startPackDelete(id: string) {
+    if (pendingPackDelete.has(id)) return;
+    const timer = setTimeout(() => {
+      onDeleteHighlightPack(id);
+      const next = new Map(pendingPackDelete);
+      next.delete(id);
+      pendingPackDelete = next;
+    }, 5000);
+    const next = new Map(pendingPackDelete);
+    next.set(id, timer);
+    pendingPackDelete = next;
+  }
+  function undoPackDelete(id: string) {
+    const timer = pendingPackDelete.get(id);
+    if (timer) clearTimeout(timer);
+    const next = new Map(pendingPackDelete);
+    next.delete(id);
+    pendingPackDelete = next;
+  }
+
   async function openInFileManager(path: string) {
     if (!path) return;
     try {
@@ -324,7 +415,6 @@
   <header>
     <div class="header-left">
       <h1>Settings</h1>
-      <span class="subtitle">Global preferences</span>
     </div>
     {#if appVersion}
       <span
@@ -378,27 +468,40 @@
       </button>
     </div>
     {#if skinImportError}
-      <div class="error">{skinImportError}</div>
+      <div class="error" role="alert" aria-live="polite">{skinImportError}</div>
     {/if}
 
     {#if skins.some((s) => s.source === "user")}
       <ul class="theme-list">
         {#each skins.filter((s) => s.source === "user") as s (s.id)}
           <li class="theme-row">
-            <div class="theme-meta">
-              <span class="theme-name">{s.name}</span>
-              <span class="theme-source">
-                Custom{#if s.supportsLight === false} · dark-only{/if}
+            {#if pendingSkinDelete.has(s.id)}
+              <span class="pending-text">
+                Removed <strong>{s.name}</strong>.
               </span>
-            </div>
-            <button
-              class="danger small"
-              onclick={() => onDeleteSkin(s.id)}
-              title="Remove skin"
-              aria-label="Remove skin"
-            >
-              Remove
-            </button>
+              <button
+                class="undo-btn"
+                onclick={() => undoSkinDelete(s.id)}
+                aria-label="Undo removing skin {s.name}"
+              >
+                Undo
+              </button>
+            {:else}
+              <div class="theme-meta">
+                <span class="theme-name">{s.name}</span>
+                <span class="theme-source">
+                  Custom{#if s.supportsLight === false} · dark-only{/if}
+                </span>
+              </div>
+              <button
+                class="danger small"
+                onclick={() => startSkinDelete(s.id)}
+                title="Remove skin"
+                aria-label="Remove skin {s.name}"
+              >
+                Remove
+              </button>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -416,19 +519,25 @@
     <p class="section-hint">
       Used by any profile that doesn't set its own theme.
     </p>
+    <div class="field">
+      <label for="default-theme">Theme</label>
+      <Select
+        id="default-theme"
+        value={settings.defaultThemeId}
+        onchange={onDefaultChangeValue}
+        options={defaultThemeOptions}
+      />
+    </div>
+  </section>
+
+  <section>
+    <h3>Terminal Defaults</h3>
+    <p class="section-hint">
+      Font size and scrollback for every profile's terminal viewport.
+    </p>
     <div class="grid">
       <div class="field">
-        <label for="default-theme">Theme</label>
-        <Select
-          id="default-theme"
-          value={settings.defaultThemeId}
-          onchange={onDefaultChangeValue}
-          options={defaultThemeOptions}
-        />
-      </div>
-
-      <div class="field">
-        <label for="font-size">Terminal Font Size</label>
+        <label for="font-size">Font Size</label>
         <input
           id="font-size"
           type="number"
@@ -489,43 +598,56 @@
       </button>
     </div>
     {#if importError}
-      <div class="error">{importError}</div>
+      <div class="error" role="alert" aria-live="polite">{importError}</div>
     {/if}
 
     <ul class="theme-list">
       {#each themes as t (t.id)}
         <li class="theme-row">
-          <div class="swatch">
-            <span class="sw bg" style:background={t.background}></span>
-            <span class="sw" style:background={t.red}></span>
-            <span class="sw" style:background={t.green}></span>
-            <span class="sw" style:background={t.yellow}></span>
-            <span class="sw" style:background={t.blue}></span>
-            <span class="sw" style:background={t.magenta}></span>
-            <span class="sw" style:background={t.cyan}></span>
-            <span class="sw fg" style:background={t.foreground}></span>
-          </div>
-          <div class="theme-meta">
-            <span class="theme-name">{t.name}</span>
-            <span class="theme-source">{t.source === "builtin" ? "Built-in" : "Custom"}</span>
-          </div>
-          <button
-            class="small"
-            onclick={() => openPreview(t)}
-            title="Preview theme"
-            aria-label="Preview theme"
-          >
-            Preview
-          </button>
-          {#if t.source === "user"}
+          {#if pendingThemeDelete.has(t.id)}
+            <span class="pending-text">
+              Removed <strong>{t.name}</strong>.
+            </span>
             <button
-              class="danger small"
-              onclick={() => onDelete(t.id)}
-              title="Delete theme"
-              aria-label="Delete theme"
+              class="undo-btn"
+              onclick={() => undoThemeDelete(t.id)}
+              aria-label="Undo removing theme {t.name}"
             >
-              Remove
+              Undo
             </button>
+          {:else}
+            <div class="swatch">
+              <span class="sw bg" style:background={t.background}></span>
+              <span class="sw" style:background={t.red}></span>
+              <span class="sw" style:background={t.green}></span>
+              <span class="sw" style:background={t.yellow}></span>
+              <span class="sw" style:background={t.blue}></span>
+              <span class="sw" style:background={t.magenta}></span>
+              <span class="sw" style:background={t.cyan}></span>
+              <span class="sw fg" style:background={t.foreground}></span>
+            </div>
+            <div class="theme-meta">
+              <span class="theme-name">{t.name}</span>
+              <span class="theme-source">{t.source === "builtin" ? "Built-in" : "Custom"}</span>
+            </div>
+            <button
+              class="small"
+              onclick={() => openPreview(t)}
+              title="Preview theme"
+              aria-label="Preview theme {t.name}"
+            >
+              Preview
+            </button>
+            {#if t.source === "user"}
+              <button
+                class="danger small"
+                onclick={() => startThemeDelete(t.id)}
+                title="Remove theme"
+                aria-label="Remove theme {t.name}"
+              >
+                Remove
+              </button>
+            {/if}
           {/if}
         </li>
       {/each}
@@ -563,12 +685,24 @@
           </button>
         </div>
         {#if highlightImportError}
-          <div class="error">{highlightImportError}</div>
+          <div class="error" role="alert" aria-live="polite">{highlightImportError}</div>
         {/if}
 
         <div class="preset-list">
           {#each highlightPacks as pack (pack.id)}
             <div class="preset-row">
+              {#if pendingPackDelete.has(pack.id)}
+                <span class="pending-text">
+                  Removed <strong>{pack.name}</strong>.
+                </span>
+                <button
+                  class="undo-btn"
+                  onclick={() => undoPackDelete(pack.id)}
+                  aria-label="Undo removing pack {pack.name}"
+                >
+                  Undo
+                </button>
+              {:else}
               <label class="toggle preset">
                 <input
                   type="checkbox"
@@ -599,12 +733,13 @@
               {#if canDeletePack(pack)}
                 <button
                   class="danger small"
-                  onclick={() => onDeleteHighlightPack(pack.id)}
+                  onclick={() => startPackDelete(pack.id)}
                   title="Remove this imported pack"
                   aria-label="Remove imported pack {pack.name}"
                 >
                   Remove
                 </button>
+              {/if}
               {/if}
             </div>
           {/each}
@@ -761,15 +896,25 @@
 </div>
 
 {#if previewTheme}
+  <!-- Backdrop is decorative (the dim canvas); the dialog role
+       belongs on the actual modal panel. Click on backdrop closes;
+       the modal stops propagation so its own clicks don't bubble. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="modal-backdrop"
     onclick={closePreview}
     onkeydown={onPreviewKeydown}
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
   >
-    <div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="presentation">
+    <div
+      class="modal"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Theme preview: {previewTheme.name}"
+      tabindex="-1"
+    >
       <header class="modal-header">
         <div class="modal-title">
           <strong>{previewTheme.name}</strong>
@@ -777,7 +922,7 @@
             {previewTheme.source === "builtin" ? "Built-in theme" : "Custom theme"} · sample network-gear output
           </span>
         </div>
-        <button onclick={closePreview}>Close</button>
+        <button bind:this={modalCloseEl} onclick={closePreview}>Close</button>
       </header>
       <PreviewTerminal theme={previewTheme} />
     </div>
@@ -814,12 +959,17 @@
     border-bottom: 1px solid var(--border-subtle);
   }
 
-  /* Subtle, monospace, dim — quick glance to confirm which build is
-     running without competing visually with the "Settings" heading. */
+  /* Quick glance to confirm which build is running without competing
+     visually with the "Settings" heading. Uses the project's mono
+     stack via --font-mono (which already encodes the SF Mono → Menlo
+     fallback chain in style.css; no need to duplicate it here).
+     Color is --fg-secondary so the pill clears WCAG AA contrast at
+     11px against the panel substrate; the previous --fg-tertiary
+     (rgba 0.4) failed AA. */
   .version {
-    font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+    font-family: var(--font-mono);
     font-size: 11px;
-    color: var(--fg-tertiary);
+    color: var(--fg-secondary);
     letter-spacing: 0.02em;
     user-select: text;
   }
@@ -829,15 +979,6 @@
     font-size: 24px;
     font-weight: 600;
     letter-spacing: -0.01em;
-  }
-
-  .subtitle {
-    display: block;
-    margin-top: 4px;
-    font-size: 11px;
-    color: var(--fg-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
 
   section {
@@ -868,7 +1009,9 @@
     margin: 0 0 8px 0;
     font-size: 15px;
     font-weight: 600;
-    letter-spacing: -0.005em;
+    /* No negative letter-spacing on section headings — DESIGN.md §3
+       reserves tight tracking for the 24px H1; section-level type
+       at 15px reads better with default tracking. */
     color: var(--fg-primary);
   }
 
@@ -940,6 +1083,43 @@
     -webkit-backdrop-filter: blur(var(--blur-strength));
   }
 
+  /* Pending-delete row + Undo affordance, shared across the three
+     destructive lists (themes, skins, highlight packs). The row
+     stays on the same surface as the normal rendering — Caution
+     Red is NEVER used as fill per DESIGN.md §2; the undo affordance
+     itself is the visual cue that something happened. The Undo
+     button uses the accent color but stays transparent at rest;
+     hover steps to the accent-hover with --bg-hover backdrop. */
+  .pending-text {
+    flex: 1;
+    color: var(--fg-secondary);
+    font-size: var(--font-size-base);
+    line-height: 1.4;
+  }
+  .pending-text strong {
+    color: var(--fg-primary);
+    font-weight: 500;
+  }
+  .undo-btn {
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    color: var(--accent);
+    font-weight: 500;
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: background 0.12s, color 0.12s;
+  }
+  .undo-btn:hover {
+    color: var(--accent-hover);
+    background: var(--bg-hover);
+  }
+  .undo-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
   .swatch {
     display: flex;
     border-radius: var(--radius-sm);
@@ -977,13 +1157,19 @@
     padding: 3px 8px;
   }
 
+  /* Error text only — no fill. DESIGN.md §2 reserves Caution Red as
+     a fill for actual destructive intent; a failed import is mild
+     and shouldn't claim that visual budget. font-weight: 500 so the
+     red text reads as decisive without needing background help.
+     `role="alert"` + `aria-live="polite"` are added on the markup
+     side so screen-reader users hear the message without it being
+     a banner-shaped block. */
   .error {
-    padding: 8px 12px;
     margin-bottom: 12px;
-    background: rgba(255, 69, 58, 0.12);
     color: var(--danger);
-    border-radius: var(--radius-md);
     font-size: 12px;
+    font-weight: 500;
+    line-height: 1.4;
   }
 
   .advanced details summary {
@@ -1079,16 +1265,35 @@
     accent-color: var(--accent);
   }
 
+  /* Flat row list. The previous per-row card treatment (border +
+     background tint) lived inside the .sub panel card, breaking
+     DESIGN.md §5 "The No-Cards-Within-Cards Rule" and registering
+     as the v0.9.4 critique's P1 card-in-card violation. Now: rows
+     are flat, separated by 1px --border-subtle rules, with a
+     full-bleed hover state that extends past the .sub's 16px
+     horizontal padding via negative margin so the hover reads as
+     the whole row width. */
   .preset-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
   }
 
   .preset-row {
     display: flex;
-    align-items: stretch;
-    gap: 8px;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 16px;
+    margin: 0 -16px;
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background 0.12s;
+  }
+
+  .preset-row:last-child {
+    border-bottom: none;
+  }
+
+  .preset-row:hover {
+    background: var(--bg-hover);
   }
 
   .preset-row .toggle.preset {
@@ -1102,14 +1307,14 @@
 
   .toggle.preset {
     align-items: flex-start;
-    padding: 8px 10px;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background: var(--bg-input);
+    /* No card chrome — the row is the surface. */
   }
 
   .toggle.preset input {
-    margin-top: 3px;
+    /* 0.2em aligns the checkbox optically with the first line of
+       multi-line .preset-meta without the magic 3px we used to need
+       when the row had its own padding. */
+    margin-top: 0.2em;
   }
 
   .preset-meta {
@@ -1137,6 +1342,12 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Modal elevation flows through CSS variables per DESIGN.md §4
+     Elevation-Belongs-To-Skins Rule. Base skin's --shadow-floating
+     is `none` and --blur-strength is `0px` — the modal reads as
+     flat against its border on the default theme. Skins (macOS 26
+     Liquid Glass, Windows 11 Fluent) opt into stronger elevation
+     by setting these vars at the document level. */
   .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -1145,8 +1356,8 @@
     align-items: center;
     justify-content: center;
     background: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(var(--blur-strength));
+    -webkit-backdrop-filter: blur(var(--blur-strength));
     padding: 24px;
   }
 
@@ -1154,7 +1365,7 @@
     background: var(--bg-main);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-lg);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-floating);
     width: 100%;
     max-width: 720px;
     overflow: hidden;

@@ -1201,19 +1201,32 @@
     accent-color: var(--accent);
   }
 
+  /* Flat row list — same DESIGN.md §5 No-Cards-Within-Cards fix as
+     Settings.svelte's pack list. Each row is just a label with a
+     bottom border + full-bleed hover that extends past the .sub's
+     16px horizontal padding via negative margin. The .disabled
+     state survives because per-profile inheritance still needs the
+     visual "this is read-only" cue when override is off. */
   .preset-list {
     display: flex;
     flex-direction: column;
-    gap: 10px;
     margin-top: 12px;
   }
 
   .toggle.preset {
     align-items: flex-start;
-    padding: 8px 10px;
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-md);
-    background: var(--bg-input);
+    padding: 10px 16px;
+    margin: 0 -16px;
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background 0.12s;
+  }
+
+  .toggle.preset:last-child {
+    border-bottom: none;
+  }
+
+  .toggle.preset:not(.disabled):hover {
+    background: var(--bg-hover);
   }
 
   .toggle.preset.disabled {
@@ -1222,7 +1235,7 @@
   }
 
   .toggle.preset input {
-    margin-top: 3px;
+    margin-top: 0.2em;
   }
 
   .preset-meta {
