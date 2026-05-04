@@ -15,6 +15,51 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-05-04
+
+### Added
+
+- **Settings header shows the app version.** A small dim
+  monospace `v0.9.4` pill sits on the right side of the Settings
+  header so it's easy to confirm at a glance which build is
+  running. Pulled from `tauri.conf.json` at runtime via the
+  `@tauri-apps/api/app` `getVersion()` helper, so it always
+  reflects the actual installed bundle.
+
+### Fixed
+
+- **Multi-window: spawned windows were blank and frozen on
+  Windows.** Both v0.9.2's URL fix and v0.9.3's CSP fix were
+  necessary but not sufficient — the spawned window's renderer
+  still couldn't bootstrap because `WebviewWindowBuilder::build()`
+  ran synchronously inside the IPC handler. While that handler
+  was in flight, Tauri 2's shared Windows-side WebView2 protocol
+  dispatcher couldn't service the new window's bootstrap fetches
+  (HTML / JS / CSS over `tauri.localhost`, IPC over
+  `ipc.localhost`). The renderer stalled on its initial document
+  load, the window painted blank, and even F12 / right-click / X
+  didn't respond (all need a live renderer). `build()` now runs
+  inside `tauri::async_runtime::spawn`, so the IPC handler
+  returns the new window's label immediately and the dispatcher
+  is free to serve the new window's startup. Right-click + drag
+  multi-window now works end-to-end on Windows.
+- **`window.set_focus()` removed from the spawn path.** Was the
+  first deadlock suspect — `SetForegroundWindow` on Windows waits
+  for the target window to become processable, which a Tauri-
+  spawned window mid-load isn't. Newly-created windows take
+  foreground naturally on every desktop OS, so the explicit call
+  was belt-and-braces anyway. Removing it didn't fully unstick
+  Windows on its own, but it eliminated one known wait state from
+  the IPC handler.
+
+### Docs
+
+- **Note that Scoop needs `git` before adding a third-party
+  bucket.** The README + `docs/INSTALL.md` quickstart now run
+  `scoop install git` before `scoop bucket add packetThrower
+  https://github.com/packetThrower/scoop-bucket`. Scoop fails
+  fast with `ERROR Git is required for buckets.` otherwise.
+
 ## [0.9.3] — 2026-05-03
 
 ### Fixed

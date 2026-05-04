@@ -121,16 +121,17 @@ pub fn open_profile_window(
         // main; other platforms get the default decorated chrome
         // the conf file describes.
         //
-        // `.devtools(true)` stays enabled across the 0.9.4 alpha
-        // track for diagnostic visibility — gated by tauri/devtools
-        // feature in Cargo.toml. Will be dialled back off in 0.9.4
-        // stable.
+        // DevTools were enabled across the 0.9.4 alpha track for
+        // diagnostic visibility into the Windows blank-screen issue;
+        // disabled again for stable since production users don't
+        // need the WebView2 / WebKit DevTools UI exposed by default.
+        // Re-enable by adding `"devtools"` to the tauri feature list
+        // in Cargo.toml plus a `.devtools(true)` builder call here.
         #[allow(unused_mut)]
         let mut builder = WebviewWindowBuilder::new(&app_clone, &label_for_task, url)
             .title(title)
             .inner_size(1100.0, 720.0)
-            .min_inner_size(800.0, 500.0)
-            .devtools(true);
+            .min_inner_size(800.0, 500.0);
         #[cfg(target_os = "macos")]
         {
             builder = builder
