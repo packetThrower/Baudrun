@@ -102,11 +102,20 @@ pub fn open_profile_window(
     // tauri.conf.json so spawned windows on macOS look identical to
     // main; non-macOS gets the default decorated chrome the conf
     // file describes for those platforms.
+    //
+    // `.devtools(true)` re-enabled (was on for alpha.1/alpha.2,
+    // dialled back off for 0.9.3 stable, now re-enabled for the
+    // 0.9.4 alpha track because v0.9.3 still blanks spawned
+    // windows on Windows in user testing — we need DevTools to see
+    // the actual console error so we can fix the right thing
+    // instead of theorising again. Gated behind the
+    // `tauri/devtools` feature in Cargo.toml.
     #[allow(unused_mut)]
     let mut builder = WebviewWindowBuilder::new(&app, &label, url)
         .title(title)
         .inner_size(1100.0, 720.0)
-        .min_inner_size(800.0, 500.0);
+        .min_inner_size(800.0, 500.0)
+        .devtools(true);
     #[cfg(target_os = "macos")]
     {
         builder = builder
@@ -140,7 +149,21 @@ pub fn open_profile_window(
             );
         }
     }
-    let _ = window.set_focus();
+    // Deliberately NOT calling `window.set_focus()` here. On Windows
+    // it blocks when the WebView2 child hasn't finished initializing
+    // (Win32 SetForegroundWindow waits for the target window to
+    // become processable, and a Tauri-spawned window mid-load isn't
+    // — Tauri 2's internal initialization can hold a per-window
+    // mutex that set_focus is also after). With the IPC handler
+    // sitting in that wait, the spawned window's renderer can't
+    // dispatch its bootstrap IPCs (take_pending_profile_id, …),
+    // those calls deadlock with the parent's still-pending
+    // open_profile_window — and the user sees a blank, unresponsive
+    // window the OS can't even close.
+    //
+    // Windows / macOS / Linux all bring a newly-created window to
+    // focus naturally (last-created wins for foreground), so the UX
+    // impact of skipping the explicit call is nil in practice.
 
     Ok(label)
 }
