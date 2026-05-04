@@ -43,6 +43,34 @@ fn safe_profile_id(profile_id: &str) -> String {
         .collect()
 }
 
+/// Pick the OS-level webview background color a freshly-spawned
+/// window should use. WebView2 and WebKitGTK paint their own default
+/// (black on Windows, white-ish on Linux) during the brief gap
+/// between window construction and the first HTML paint. Setting
+/// this on the builder hides that flash by giving the OS something
+/// reasonable to draw before any HTML has loaded.
+///
+/// Maps the user's saved `appearance` preference: "light" → light
+/// gray, anything else (including "auto" and "dark") → dark gray.
+/// "auto" defaults to dark because (a) most network-engineer users
+/// run a dark UI and (b) detecting system theme from Rust at this
+/// pre-window-creation point isn't reliable across all platforms.
+/// Even when the chosen color doesn't perfectly match the eventual
+/// skin, a brief mismatched flash is far less jarring than the raw
+/// black flash users were reporting.
+fn background_color_for_appearance(appearance: &str) -> tauri::window::Color {
+    match appearance {
+        // #f2f2f7 — matches the macOS-26 light skin's --shell-bg
+        // midpoint so the transition into Liquid Glass is seamless.
+        "light" => tauri::window::Color(242, 242, 247, 255),
+        // #1d1d1d — sits near the lower edge of every dark skin's
+        // shell gradient (macOS-26, windows-11, default). Close
+        // enough that the transition isn't perceptible on most
+        // skins.
+        _ => tauri::window::Color(29, 29, 29, 255),
+    }
+}
+
 #[tauri::command]
 pub fn set_traffic_lights_inset(
     x: f32,
@@ -98,6 +126,12 @@ pub fn open_profile_window(
     // platform path semantics entirely.
     state.store_pending_profile_id(&label, safe_id.clone());
 
+    // Snapshot the appearance preference now (before crossing the
+    // tokio boundary) so the spawned task can pick a sensible OS-
+    // level webview bg. Without this, the new window starts with a
+    // black surface that's visible until the JS bundle paints.
+    let bg_color = background_color_for_appearance(&state.settings.get().appearance);
+
     // Build the window OFF the IPC dispatcher thread.
     //
     // alpha.1 / alpha.2 still wedged on Windows even after dropping
@@ -148,7 +182,8 @@ pub fn open_profile_window(
         let mut builder = WebviewWindowBuilder::new(&app_clone, &label_for_task, url)
             .title(title)
             .inner_size(1100.0, 720.0)
-            .min_inner_size(800.0, 500.0);
+            .min_inner_size(800.0, 500.0)
+            .background_color(bg_color);
         #[cfg(target_os = "macos")]
         {
             builder = builder
@@ -419,7 +454,9 @@ pub fn toggle_settings_window(
     // a centered default. Width / height of zero (the field's
     // skip-serializing-default) means "not yet saved" — center the
     // window at default size in that case.
-    let saved = state.settings.get().settings_window;
+    let snapshot = state.settings.get();
+    let saved = snapshot.settings_window.clone();
+    let bg_color = background_color_for_appearance(&snapshot.appearance);
     let (saved_w, saved_h, saved_x, saved_y) = match saved {
         Some(g) => (g.width, g.height, g.x, g.y),
         None => (0, 0, 0, 0),
@@ -459,7 +496,8 @@ pub fn toggle_settings_window(
             .title("Baudrun Settings")
             .inner_size(width, height)
             .min_inner_size(SETTINGS_MIN_WIDTH, SETTINGS_MIN_HEIGHT)
-            .resizable(true);
+            .resizable(true)
+            .background_color(bg_color);
         // macOS chrome treatment goes BEFORE positioning so the OS
         // window is created with the overlay-titlebar style baked in
         // from the start. Same order as open_profile_window.

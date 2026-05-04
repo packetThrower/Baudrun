@@ -1,7 +1,7 @@
 {
   "name": "baudrun",
   "private": true,
-  "version": "0.9.5-alpha.5",
+  "version": "0.9.5-alpha.6",
   "type": "module",
   "scripts": {
     "dev": "vite",

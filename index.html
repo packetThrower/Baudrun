@@ -4,6 +4,24 @@
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Baudrun</title>
+    <!-- Pre-paint the body so a freshly-spawned WebView2 / WebKitGTK
+         instance doesn't show its default black surface during the
+         brief gap between HTML parse and our skin CSS bundle taking
+         over. `color-scheme` ensures form-control defaults (focus
+         rings, scrollbars) match the chosen background; the media
+         query keeps the flash matched to the user's system theme on
+         first launch when the saved preference doesn't apply yet.
+         Once App.svelte mounts, the .shell / .settings-window-shell
+         wrapper paints the actual skin substrate over body. -->
+    <style>
+        html, body {
+            background: #1d1d1d;
+            color-scheme: dark light;
+        }
+        @media (prefers-color-scheme: light) {
+            html, body { background: #f2f2f7; }
+        }
+    </style>
 </head>
 <body>
 <div id="app"></div>
