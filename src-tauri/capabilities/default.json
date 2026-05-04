@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set for the main window plus any tear-off windows spawned via `open_profile_window` (labels are `win-<uuid>`).",
-  "windows": ["main", "win-*"],
+  "description": "Default capability set: main window, the dedicated Settings window (label `settings`), and any tear-off profile windows spawned via `open_profile_window` (labels `win-<uuid>`).",
+  "windows": ["main", "settings", "win-*"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

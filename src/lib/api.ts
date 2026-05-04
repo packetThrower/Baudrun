@@ -147,6 +147,11 @@ export const EVT_RECONNECTED = "serial:reconnected";
 export const EVT_TRANSFER_PROGRESS = "transfer:progress";
 export const EVT_TRANSFER_COMPLETE = "transfer:complete";
 export const EVT_TRANSFER_ERROR = "transfer:error";
+/** Broadcast every time settings.json is rewritten on the backend.
+ *  The Settings window emitting on its own changes is what keeps
+ *  the main window in sync (skin, appearance, font size, scrollback,
+ *  etc.). Payload is the full updated Settings struct. */
+export const EVT_SETTINGS_UPDATED = "settings:updated";
 
 export type TransferProgress = { sent: number; total: number };
 export type TransferProtocol = "xmodem" | "xmodem-crc" | "xmodem-1k" | "ymodem";
@@ -252,6 +257,14 @@ export const api = {
 
   onTransferError(handler: (reason: string) => void): () => void {
     return subscribe<string>(EVT_TRANSFER_ERROR, handler);
+  },
+
+  /** Subscribe to settings-store broadcasts. Fires on every
+   *  successful `update_settings` call from any window, with the
+   *  full updated Settings as payload. The Settings window relies
+   *  on this to keep the main window's local store in sync. */
+  onSettingsUpdated(handler: (s: Settings) => void): () => void {
+    return subscribe<Settings>(EVT_SETTINGS_UPDATED, handler);
   },
 };
 

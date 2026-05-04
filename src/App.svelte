@@ -61,6 +61,7 @@
   let offDisconnect: (() => void) | null = null;
   let offReconnecting: (() => void) | null = null;
   let offReconnected: (() => void) | null = null;
+  let offSettingsUpdated: (() => void) | null = null;
   // App.svelte mounts in every Tauri window. The label tells us
   // whether this is the main shell (profiles + terminal) or the
   // dedicated Settings window opened via toggle_settings_window.
@@ -303,6 +304,20 @@
       console.warn("take pending profile id:", err);
     }
 
+    // Settings broadcast — fires in EVERY window (including the one
+    // that originated the change) so renderers can refresh local
+    // stores cross-window. Without this, changing the skin in the
+    // Settings window only repaints Settings; the main window's
+    // local $settings stays stale and applySkin never re-runs there.
+    // Set up before the main-only early return so both windows get
+    // it. The originating window's redundant store set is
+    // idempotent.
+    offSettingsUpdated = api.onSettingsUpdated((next) => {
+      settings.set(next);
+      activeSkinID.set(next.skinId || "baudrun");
+      appearance.set((next.appearance as Appearance) || "auto");
+    });
+
     // Session listeners + terminal snapshot restoration only matter
     // for the main window; the Settings window has no terminal,
     // never holds a session, and spawning these subscribers would
@@ -470,6 +485,7 @@
     offDisconnect?.();
     offReconnecting?.();
     offReconnected?.();
+    offSettingsUpdated?.();
   });
 
   async function maybeAutoDisconnect() {

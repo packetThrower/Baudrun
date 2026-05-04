@@ -413,41 +413,67 @@ pub fn toggle_settings_window(
         SETTINGS_DEFAULT_HEIGHT
     };
 
-    let url = WebviewUrl::default();
-    #[allow(unused_mut)]
-    let mut builder = WebviewWindowBuilder::new(&app, SETTINGS_WINDOW_LABEL, url)
-        .title("Baudrun Settings")
-        .inner_size(width, height)
-        .min_inner_size(SETTINGS_MIN_WIDTH, SETTINGS_MIN_HEIGHT)
-        .resizable(true);
-    if saved_x != 0 || saved_y != 0 {
-        // Saved a non-(0,0) position — use it. (0, 0) is the
-        // platform default for "no saved position", not a literal
-        // top-left placement, so we treat it as missing.
-        builder = builder.position(saved_x as f64, saved_y as f64);
-    } else {
-        builder = builder.center();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true);
-    }
-    let window = builder
-        .build()
-        .map_err(|e| format!("create settings window: {}", e))?;
-
-    #[cfg(target_os = "macos")]
-    {
-        use tauri_plugin_decorum::WebviewWindowExt;
-        if let Err(err) = window.create_overlay_titlebar() {
-            log::warn!("settings window: create_overlay_titlebar: {}", err);
+    // Build the window OFF the IPC dispatcher thread, matching the
+    // pattern in open_profile_window. The synchronous IPC-handler
+    // build pattern caused two problems on the previous commit:
+    // (1) Windows deadlock (cf. v0.9.4-alpha.3 release notes), and
+    // (2) on macOS, decorum's create_overlay_titlebar called from
+    // inside the still-running IPC handler appears to fail to inject
+    // its drag region cleanly — the result is a Settings window
+    // that opens but won't drag. Spawning the build + decorum setup
+    // to a tokio task lets the IPC handler return immediately, the
+    // webview initializes on its own thread, and decorum's setup
+    // runs against a fully-ready window.
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let url = WebviewUrl::default();
+        #[allow(unused_mut)]
+        let mut builder = WebviewWindowBuilder::new(&app_clone, SETTINGS_WINDOW_LABEL, url)
+            .title("Baudrun Settings")
+            .inner_size(width, height)
+            .min_inner_size(SETTINGS_MIN_WIDTH, SETTINGS_MIN_HEIGHT)
+            .resizable(true);
+        // macOS chrome treatment goes BEFORE positioning so the OS
+        // window is created with the overlay-titlebar style baked in
+        // from the start. Same order as open_profile_window.
+        #[cfg(target_os = "macos")]
+        {
+            builder = builder
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true);
         }
-        if let Err(err) = window.set_traffic_lights_inset(14.0, 20.0) {
-            log::warn!("settings window: set_traffic_lights_inset: {}", err);
+        if saved_x != 0 || saved_y != 0 {
+            // Saved a non-(0,0) position — use it. (0, 0) is the
+            // platform default for "no saved position", not a literal
+            // top-left placement, so we treat it as missing.
+            builder = builder.position(saved_x as f64, saved_y as f64);
+        } else {
+            builder = builder.center();
         }
-    }
+        match builder.build() {
+            Ok(window) => {
+                #[cfg(target_os = "macos")]
+                {
+                    use tauri_plugin_decorum::WebviewWindowExt;
+                    if let Err(err) = window.create_overlay_titlebar() {
+                        log::warn!(
+                            "settings window: create_overlay_titlebar: {}",
+                            err
+                        );
+                    }
+                    if let Err(err) = window.set_traffic_lights_inset(14.0, 20.0) {
+                        log::warn!(
+                            "settings window: set_traffic_lights_inset: {}",
+                            err
+                        );
+                    }
+                }
+            }
+            Err(err) => {
+                log::error!("create settings window: {}", err);
+            }
+        }
+    });
     Ok(true)
 }
 

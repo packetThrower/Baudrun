@@ -6,11 +6,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::appdata;
+use crate::events;
 use crate::settings::Settings;
 use crate::state::AppState;
 
@@ -23,11 +24,22 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Settings {
 pub fn update_settings(
     settings: Settings,
     state: State<'_, Arc<AppState>>,
+    app: AppHandle,
 ) -> Result<Settings, String> {
-    state
+    let updated = state
         .settings
         .update(settings)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Broadcast to every window so each renderer can refresh its
+    // local settings store. Without this, the Settings window's
+    // edits stay isolated to that window — e.g. changing the skin
+    // would only repaint Settings, not main. Logged-and-swallowed
+    // because a failed event-emit shouldn't fail the actual settings
+    // write that already succeeded on disk.
+    if let Err(err) = app.emit(events::SETTINGS_UPDATED, &updated) {
+        log::warn!("emit {}: {}", events::SETTINGS_UPDATED, err);
+    }
+    Ok(updated)
 }
 
 #[tauri::command]
