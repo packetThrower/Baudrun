@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getVersion } from "@tauri-apps/api/app";
   import {
     api,
     type Theme,
@@ -99,6 +100,21 @@
     delete next[action];
     onSetShortcuts(next);
   }
+
+  // App version pulled from tauri.conf.json at runtime via the
+  // tauri-apps/api/app helper. Settled by a fire-and-forget Promise
+  // chain at script-init time — Settings always renders, the
+  // version slot just stays empty for the few ms before the IPC
+  // resolves.
+  let appVersion = $state("");
+  getVersion()
+    .then((v) => {
+      appVersion = v;
+    })
+    .catch(() => {
+      // Non-fatal: leave the slot empty rather than break the
+      // Settings UI if the helper ever fails (it shouldn't).
+    });
 
   let previewTheme = $state<Theme | null>(null);
 
@@ -310,6 +326,13 @@
       <h1>Settings</h1>
       <span class="subtitle">Global preferences</span>
     </div>
+    {#if appVersion}
+      <span
+        class="version"
+        title="Baudrun version (from the bundle's tauri.conf.json)"
+        >v{appVersion}</span
+      >
+    {/if}
   </header>
 
   <div class="scroll">
@@ -783,8 +806,22 @@
 
   header {
     flex-shrink: 0;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
     padding: 0 28px 18px 28px;
     border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* Subtle, monospace, dim — quick glance to confirm which build is
+     running without competing visually with the "Settings" heading. */
+  .version {
+    font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    letter-spacing: 0.02em;
+    user-select: text;
   }
 
   .header-left h1 {
