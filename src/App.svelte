@@ -283,6 +283,45 @@
     // subsequent settings or profile-override changes.
     applyEnabledHighlightPresets(effectiveEnabledHighlightPresets);
 
+    // Settings broadcast — fires in EVERY window (including the one
+    // that originated the change) so renderers can refresh local
+    // stores cross-window. Without this, changing the skin in the
+    // Settings window only repaints Settings; the main window's
+    // local $settings stays stale and applySkin never re-runs there.
+    // Set up before the main-only early return so both windows get
+    // it. The originating window's redundant store set is
+    // idempotent.
+    offSettingsUpdated = api.onSettingsUpdated((next) => {
+      settings.set(next);
+      activeSkinID.set(next.skinId || "baudrun");
+      appearance.set((next.appearance as Appearance) || "auto");
+    });
+
+    // Directory paths shown in Settings → Advanced. Loaded in BOTH
+    // window types because the Settings window renders this section.
+    // (Originally only the main window loaded these — when Settings
+    // moved to its own window the Advanced panel started showing
+    // empty strings on Windows / Linux because the early-return
+    // below skipped these calls.)
+    try {
+      defaultLogDir = await api.defaultLogDirectory();
+    } catch {}
+
+    try {
+      configDir = await api.getConfigDirectory();
+      defaultConfigDir = await api.getDefaultConfigDirectory();
+    } catch {}
+
+    // Session listeners + terminal snapshot restoration + the pending
+    // profile id only matter for the main window or a profile tear-
+    // off window; the Settings window has no terminal, never holds a
+    // session, and isn't spawned with a pending profile id. Skipping
+    // these saves several IPC roundtrips on Windows where each call
+    // is non-trivial via WebView2's message channel.
+    if (isSettingsWindow) {
+      return;
+    }
+
     // Multi-window: a window spawned via "Open profile in new window"
     // has its initial profile id stashed in the backend keyed by the
     // window label (see open_profile_window in
@@ -302,29 +341,6 @@
       }
     } catch (err) {
       console.warn("take pending profile id:", err);
-    }
-
-    // Settings broadcast — fires in EVERY window (including the one
-    // that originated the change) so renderers can refresh local
-    // stores cross-window. Without this, changing the skin in the
-    // Settings window only repaints Settings; the main window's
-    // local $settings stays stale and applySkin never re-runs there.
-    // Set up before the main-only early return so both windows get
-    // it. The originating window's redundant store set is
-    // idempotent.
-    offSettingsUpdated = api.onSettingsUpdated((next) => {
-      settings.set(next);
-      activeSkinID.set(next.skinId || "baudrun");
-      appearance.set((next.appearance as Appearance) || "auto");
-    });
-
-    // Session listeners + terminal snapshot restoration only matter
-    // for the main window; the Settings window has no terminal,
-    // never holds a session, and spawning these subscribers would
-    // log noise. Same for the launch update check — per the shape
-    // brief, the update toast lives in the main window only.
-    if (isSettingsWindow) {
-      return;
     }
 
     offDisconnect = api.onDisconnect((reason) => {
@@ -373,14 +389,8 @@
       console.warn("restore migrated terminal snapshot:", err);
     }
 
-    try {
-      defaultLogDir = await api.defaultLogDirectory();
-    } catch {}
-
-    try {
-      configDir = await api.getConfigDirectory();
-      defaultConfigDir = await api.getDefaultConfigDirectory();
-    } catch {}
+    // (defaultLogDir / configDir / defaultConfigDir are loaded above
+    // the isSettingsWindow gate — see comment there.)
 
     // Update check fires once per launch when enabled. The GitHub
     // request happens off the critical path — we don't await it
@@ -1288,7 +1298,18 @@
        Settings component. The main-window sidebar / terminal /
        transfer modals etc. don't apply. The Settings.svelte
        component already includes its own data-tauri-drag-region
-       titlebar, so no extra chrome is needed here. -->
+       titlebar, so no extra chrome is needed here.
+
+       The .settings-window-shell wrapper exists so this window has
+       something painting `--shell-bg` (the same gradient `.shell`
+       paints in the main window). Without it, the body's
+       `--bg-window` (which most skins leave at rgba(0) so macOS
+       vibrancy can show through) leaves the webview transparent —
+       which on Windows and Linux paints black, and on macOS-light
+       skins bleeds the dark vibrancy through translucent panels.
+       Falling back to `--bg-main` covers skins like windows-11 that
+       don't define `--shell-bg`. -->
+  <div class="settings-window-shell">
   <Settings
     themes={$themes}
     skins={$skins}
@@ -1320,6 +1341,7 @@
     onImportHighlightPack={handleImportHighlightPack}
     onDeleteHighlightPack={handleDeleteHighlightPack}
   />
+  </div>
 {:else}
 <div class="shell">
   <Sidebar
@@ -1760,6 +1782,23 @@
        translucent surfaces must override it — the NSVisualEffectView is
        pinned dark, so a transparent shell would otherwise frame each
        panel with dark vibrancy. */
+  }
+
+  /* Settings window: paints the skin's --shell-bg behind the Settings
+     component so the window has a visible substrate on every platform.
+     Fallback chain reaches `--bg-main` so opaque skins (e.g.
+     windows-11) that don't define --shell-bg still get a solid color,
+     and finally a hard-coded dark — pure safety net for a hypothetical
+     skin that defines neither. Without this wrapper Windows / Linux
+     show a black webview and macOS-light skins bleed the dark
+     vibrancy through. */
+  .settings-window-shell {
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--shell-bg, var(--bg-main, #1d1d1d));
   }
 
   .main {
