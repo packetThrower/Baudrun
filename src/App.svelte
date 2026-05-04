@@ -318,15 +318,49 @@
       console.error(e.reason);
     });
 
-    perfMark("before-promise-all");
-    await Promise.all([
-      timed("loadProfiles", loadProfiles),
-      timed("loadThemes", loadThemes),
-      timed("loadSkins", loadSkins),
-      timed("loadSettings", loadSettings),
-      timed("loadHighlightPacks", loadHighlightPacks),
-    ]);
-    perfMark("after-promise-all");
+    // Single-IPC bootstrap. Replaces the 5+3 separate calls (5
+    // store loads + 3 dir lookups) the previous version fanned out
+    // on mount. Each `ipc.localhost` call has non-trivial latency on
+    // Windows and queues against in-flight calls from sibling
+    // windows; trace data showed the new-window-open path stalling
+    // ~500ms after Promise.all because the main window's
+    // list_ports was tail-blocking the response thread. Collapsing
+    // to one call removes that exposure entirely.
+    perfMark("before-bootstrap");
+    try {
+      const boot = await timed("bootstrap", () =>
+        api.bootstrapWindowState(),
+      );
+      profiles.set(boot.profiles);
+      themes.set(boot.themes);
+      skins.set(boot.skins);
+      settings.set(boot.settings);
+      highlightPacks.set(boot.highlightPacks);
+      defaultLogDir = boot.defaultLogDir;
+      configDir = boot.configDir;
+      defaultConfigDir = boot.defaultConfigDir;
+    } catch (err) {
+      // Bootstrap failure is fatal for an empty UI — surface it via
+      // the status bar and fall back to the per-store loaders so we
+      // at least try to populate something. (This path also covers
+      // a hypothetical mismatched-version scenario where the JS is
+      // newer than a backend that doesn't know `bootstrap_window_state`.)
+      console.error("bootstrap failed, falling back to per-store loaders:", err);
+      statusMsg = "Bootstrap failed — UI may be incomplete";
+      await Promise.all([
+        loadProfiles(),
+        loadThemes(),
+        loadSkins(),
+        loadSettings(),
+        loadHighlightPacks(),
+      ]);
+      try { defaultLogDir = await api.defaultLogDirectory(); } catch {}
+      try {
+        configDir = await api.getConfigDirectory();
+        defaultConfigDir = await api.getDefaultConfigDirectory();
+      } catch {}
+    }
+    perfMark("after-bootstrap");
     activeSkinID.set($settings.skinId || "baudrun");
     appearance.set(($settings.appearance as Appearance) || "auto");
     applySkin(resolveSkin($activeSkinID, $skins), $appearance, $systemIsDark);
@@ -348,28 +382,6 @@
       activeSkinID.set(next.skinId || "baudrun");
       appearance.set((next.appearance as Appearance) || "auto");
     });
-
-    // Directory paths shown in Settings → Advanced. Loaded in BOTH
-    // window types because the Settings window renders this section.
-    // (Originally only the main window loaded these — when Settings
-    // moved to its own window the Advanced panel started showing
-    // empty strings on Windows / Linux because the early-return
-    // below skipped these calls.)
-    try {
-      defaultLogDir = await timed("defaultLogDirectory", () =>
-        api.defaultLogDirectory(),
-      );
-    } catch {}
-
-    try {
-      configDir = await timed("getConfigDirectory", () =>
-        api.getConfigDirectory(),
-      );
-      defaultConfigDir = await timed("getDefaultConfigDirectory", () =>
-        api.getDefaultConfigDirectory(),
-      );
-    } catch {}
-    perfMark("after-dir-loads");
 
     // Session listeners + terminal snapshot restoration + the pending
     // profile id only matter for the main window or a profile tear-

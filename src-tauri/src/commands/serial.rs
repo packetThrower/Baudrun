@@ -32,14 +32,39 @@ use crate::state::AppState;
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(1);
 const RECONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Enumerate available serial ports. Marked `async` (with the body
+/// pushed to `spawn_blocking`) because on Windows the underlying
+/// `serialport::available_ports` call goes through SetupAPI, which
+/// regularly takes hundreds of ms — sometimes >1s — to walk the
+/// device tree. Tauri 2's IPC dispatcher can run sync commands on
+/// its blocking pool, but the *response delivery* path back to the
+/// renderer appears to share a thread with other in-flight responses,
+/// so a slow `list_ports` would tail-block unrelated commands like
+/// `take_pending_profile_id` (a HashMap lookup) sitting behind it.
+/// Tracing of v0.9.5-alpha.x on Windows showed this exact pattern:
+/// a profile-window open stalled ~500ms purely because `list_ports`
+/// from the previous render was still in flight.
+///
+/// `spawn_blocking` runs the SetupAPI work on a Tokio blocking thread
+/// while the IPC dispatcher (and the renderer-bound response thread)
+/// stay free. The await here is on the JoinHandle, not on SetupAPI.
 #[tauri::command]
-pub fn list_ports() -> Result<Vec<serial::PortInfo>, String> {
-    serial::list_ports().map_err(|e| e.to_string())
+pub async fn list_ports() -> Result<Vec<serial::PortInfo>, String> {
+    tauri::async_runtime::spawn_blocking(|| serial::list_ports().map_err(|e| e.to_string()))
+        .await
+        .map_err(|e| format!("list_ports join: {}", e))?
 }
 
+/// Detect attached USB-serial devices whose vendor driver isn't
+/// installed (CH340, CP210x, FTDI, …). Same Windows blocking-call
+/// concern as `list_ports` — `detect_missing_drivers` uses the same
+/// SetupAPI / udev / IOKit enumeration paths and was contributing to
+/// the same dispatcher tail-block — so it gets the same treatment.
 #[tauri::command]
-pub fn list_missing_drivers() -> Result<Vec<serial::USBSerialCandidate>, String> {
-    serial::detect_missing_drivers()
+pub async fn list_missing_drivers() -> Result<Vec<serial::USBSerialCandidate>, String> {
+    tauri::async_runtime::spawn_blocking(serial::detect_missing_drivers)
+        .await
+        .map_err(|e| format!("list_missing_drivers join: {}", e))?
 }
 
 #[tauri::command]

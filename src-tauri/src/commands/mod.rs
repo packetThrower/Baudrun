@@ -2,6 +2,7 @@
 //! hold the `#[tauri::command]` functions; this module just re-
 //! exports them for the invoke_handler list in `lib.rs`.
 
+pub mod bootstrap;
 pub mod highlight;
 pub mod profiles;
 pub mod serial;

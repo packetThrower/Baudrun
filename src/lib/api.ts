@@ -156,7 +156,31 @@ export const EVT_SETTINGS_UPDATED = "settings:updated";
 export type TransferProgress = { sent: number; total: number };
 export type TransferProtocol = "xmodem" | "xmodem-crc" | "xmodem-1k" | "ymodem";
 
+/** Single-IPC bootstrap payload returned by `bootstrap_window_state`.
+ *  Mirror of `commands::bootstrap::BootstrapPayload` on the Rust side
+ *  (camelCase via serde rename). Each field is exactly what the
+ *  individual list_* / get_* IPCs would have returned, so callers
+ *  can drop the result straight into the existing stores. */
+export type BootstrapPayload = {
+  profiles: Profile[];
+  themes: Theme[];
+  skins: Skin[];
+  settings: Settings;
+  highlightPacks: HighlightPack[];
+  defaultLogDir: string;
+  configDir: string;
+  defaultConfigDir: string;
+};
+
 export const api = {
+  /** Fetch every read-only piece of state a freshly-mounted window
+   *  needs (profiles, themes, skins, settings, highlight packs, dir
+   *  paths) in a single IPC. Replaces the 8 separate calls that App
+   *  .svelte's onMount used to fan out — important on Windows where
+   *  per-call latency tail-blocks behind in-flight serial-port
+   *  enumeration from sibling windows. */
+  bootstrapWindowState: () => invoke<BootstrapPayload>("bootstrap_window_state"),
+
   listProfiles: () => invoke<Profile[]>("list_profiles"),
   createProfile: (p: Profile) => invoke<Profile>("create_profile", { profile: p }),
   updateProfile: (p: Profile) => invoke<Profile>("update_profile", { profile: p }),

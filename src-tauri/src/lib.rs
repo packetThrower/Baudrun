@@ -96,6 +96,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // single-IPC bootstrap for new windows (collapses the 8
+            // separate reads each window's onMount used to fire)
+            commands::bootstrap::bootstrap_window_state,
             // profiles
             commands::profiles::list_profiles,
             commands::profiles::create_profile,
