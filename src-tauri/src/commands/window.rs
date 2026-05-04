@@ -451,17 +451,22 @@ pub fn toggle_settings_window(
             builder = builder.center();
         }
         match builder.build() {
-            Ok(window) => {
+            Ok(_window) => {
+                // macOS-only chrome touch-ups via decorum, matching
+                // the open_profile_window pattern. The underscore on
+                // `_window` keeps the binding non-fatal on Linux /
+                // Windows where the variable is unused (clippy runs
+                // `-D warnings` in CI).
                 #[cfg(target_os = "macos")]
                 {
                     use tauri_plugin_decorum::WebviewWindowExt;
-                    if let Err(err) = window.create_overlay_titlebar() {
+                    if let Err(err) = _window.create_overlay_titlebar() {
                         log::warn!(
                             "settings window: create_overlay_titlebar: {}",
                             err
                         );
                     }
-                    if let Err(err) = window.set_traffic_lights_inset(14.0, 20.0) {
+                    if let Err(err) = _window.set_traffic_lights_inset(14.0, 20.0) {
                         log::warn!(
                             "settings window: set_traffic_lights_inset: {}",
                             err
