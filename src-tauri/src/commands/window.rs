@@ -86,89 +86,97 @@ pub fn open_profile_window(
     // platform path semantics entirely.
     state.store_pending_profile_id(&label, safe_id.clone());
 
-    // `WebviewUrl::default()` resolves to an empty PathBuf which
-    // Tauri serves as the dist root — same path the main window
-    // uses (it has no explicit `url` in tauri.conf.json). Earlier
-    // we passed `WebviewUrl::App("index.html".into())` explicitly,
-    // but Windows release builds left the spawned window blank
-    // even after the `?profile=` query was removed; matching the
-    // main window's url-resolution path is the most reliable way
-    // to avoid Windows-specific Tauri 2 quirks here.
-    let url = WebviewUrl::default();
-    // `title_bar_style` and `hidden_title` only exist on the macOS
-    // builder API — chaining them unconditionally breaks the
-    // Windows + Linux compiles (E0599: no method named ...). They
-    // match the main window's overlay-titlebar treatment from
-    // tauri.conf.json so spawned windows on macOS look identical to
-    // main; non-macOS gets the default decorated chrome the conf
-    // file describes for those platforms.
+    // Build the window OFF the IPC dispatcher thread.
     //
-    // `.devtools(true)` re-enabled (was on for alpha.1/alpha.2,
-    // dialled back off for 0.9.3 stable, now re-enabled for the
-    // 0.9.4 alpha track because v0.9.3 still blanks spawned
-    // windows on Windows in user testing — we need DevTools to see
-    // the actual console error so we can fix the right thing
-    // instead of theorising again. Gated behind the
-    // `tauri/devtools` feature in Cargo.toml.
-    #[allow(unused_mut)]
-    let mut builder = WebviewWindowBuilder::new(&app, &label, url)
-        .title(title)
-        .inner_size(1100.0, 720.0)
-        .min_inner_size(800.0, 500.0)
-        .devtools(true);
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder
-            .title_bar_style(tauri::TitleBarStyle::Overlay)
-            .hidden_title(true);
-    }
-    // Underscore-prefixed because the only use site is the
-    // macOS-gated block below; on Windows / Linux the binding is
-    // unused after build() and clippy -D warnings rejects it
-    // otherwise. Rust allows reading from `_name` bindings, so the
-    // macOS branch can still call methods on it.
-    let _window = builder
-        .build()
-        .map_err(|e| format!("create window: {}", e))?;
-
-    // Match the main window's overlay-titlebar + traffic-light setup
-    // so the spawned window doesn't look out of place. Failures here
-    // aren't fatal — the window still opens, the chrome just looks
-    // like the default.
+    // alpha.1 / alpha.2 still wedged on Windows even after dropping
+    // set_focus(), so the deadlock isn't just that one call — it's
+    // that `WebviewWindowBuilder::build()` itself runs synchronously
+    // inside the IPC handler. While that handler is in flight,
+    // Tauri 2's IPC dispatcher and Windows-side WebView2 protocol
+    // handler can't service the new window's own bootstrap fetches
+    // (HTML / JS / CSS over `tauri.localhost`, IPC commands like
+    // take_pending_profile_id over `ipc.localhost`). Net result:
+    // the new window is created at the OS level but its renderer
+    // stalls on its initial document load, looks blank, and won't
+    // even respond to F12 / right-click / X (all of which need
+    // a live renderer).
     //
-    // macOS-only — see the matching note in lib.rs's setup hook.
-    // Calling decorum on Windows strips the native frame without
-    // providing a CSS replacement, which hides the caption buttons
-    // (issue #7).
-    #[cfg(target_os = "macos")]
-    {
-        use tauri_plugin_decorum::WebviewWindowExt;
-        if let Err(err) = _window.create_overlay_titlebar() {
-            log::warn!("spawned window {}: create_overlay_titlebar: {}", label, err);
+    // tauri::async_runtime::spawn moves the build to a tokio task,
+    // letting this command return Ok(label) immediately. The
+    // calling renderer's await resolves; the IPC dispatcher is
+    // free; Tauri 2's protocol handler can serve the new window's
+    // bootstrap requests. migrate_session and the new window's own
+    // mount-time IPCs (take_pending_*) all touch state that exists
+    // independently of whether build() has finished, so there's no
+    // race here — they read AppState directly.
+    let app_clone = app.clone();
+    let label_for_task = label.clone();
+    tauri::async_runtime::spawn(async move {
+        let url = WebviewUrl::default();
+        // `title_bar_style` and `hidden_title` only exist on the
+        // macOS builder API — chaining them unconditionally breaks
+        // the Windows + Linux compiles (E0599). On macOS they match
+        // the main window's overlay-titlebar treatment from
+        // tauri.conf.json so spawned windows look identical to
+        // main; other platforms get the default decorated chrome
+        // the conf file describes.
+        //
+        // `.devtools(true)` stays enabled across the 0.9.4 alpha
+        // track for diagnostic visibility — gated by tauri/devtools
+        // feature in Cargo.toml. Will be dialled back off in 0.9.4
+        // stable.
+        #[allow(unused_mut)]
+        let mut builder = WebviewWindowBuilder::new(&app_clone, &label_for_task, url)
+            .title(title)
+            .inner_size(1100.0, 720.0)
+            .min_inner_size(800.0, 500.0)
+            .devtools(true);
+        #[cfg(target_os = "macos")]
+        {
+            builder = builder
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .hidden_title(true);
         }
-        if let Err(err) = _window.set_traffic_lights_inset(14.0, 20.0) {
-            log::warn!(
-                "spawned window {}: set_traffic_lights_inset: {}",
-                label,
-                err
-            );
+        match builder.build() {
+            Ok(_window) => {
+                // macOS-only chrome touch-ups via decorum. Failures
+                // aren't fatal — window still opens, chrome just
+                // looks default. Calling decorum on Windows strips
+                // the native frame without providing a CSS
+                // replacement (would hide caption buttons; issue #7).
+                #[cfg(target_os = "macos")]
+                {
+                    use tauri_plugin_decorum::WebviewWindowExt;
+                    if let Err(err) = _window.create_overlay_titlebar() {
+                        log::warn!(
+                            "spawned window {}: create_overlay_titlebar: {}",
+                            label_for_task,
+                            err
+                        );
+                    }
+                    if let Err(err) = _window.set_traffic_lights_inset(14.0, 20.0) {
+                        log::warn!(
+                            "spawned window {}: set_traffic_lights_inset: {}",
+                            label_for_task,
+                            err
+                        );
+                    }
+                }
+                // No explicit set_focus() — newly-created windows
+                // come to foreground naturally on every desktop OS,
+                // and the explicit call was the original suspect for
+                // the Windows hang (turned out only part of the
+                // problem; this task-spawn covers the rest).
+            }
+            Err(err) => {
+                log::error!(
+                    "spawned window {} build failed: {}",
+                    label_for_task,
+                    err
+                );
+            }
         }
-    }
-    // Deliberately NOT calling `window.set_focus()` here. On Windows
-    // it blocks when the WebView2 child hasn't finished initializing
-    // (Win32 SetForegroundWindow waits for the target window to
-    // become processable, and a Tauri-spawned window mid-load isn't
-    // — Tauri 2's internal initialization can hold a per-window
-    // mutex that set_focus is also after). With the IPC handler
-    // sitting in that wait, the spawned window's renderer can't
-    // dispatch its bootstrap IPCs (take_pending_profile_id, …),
-    // those calls deadlock with the parent's still-pending
-    // open_profile_window — and the user sees a blank, unresponsive
-    // window the OS can't even close.
-    //
-    // Windows / macOS / Linux all bring a newly-created window to
-    // focus naturally (last-created wins for foreground), so the UX
-    // impact of skipping the explicit call is nil in practice.
+    });
 
     Ok(label)
 }
