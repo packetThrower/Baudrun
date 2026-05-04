@@ -125,6 +125,58 @@
   // Preview button below it.
   let modalCloseEl: HTMLButtonElement | null = $state(null);
 
+  // Section filter. `filterText` is the current substring; sections
+  // whose title doesn't include it (case-insensitive) fade out.
+  // `Cmd+F` / `Ctrl+F` focuses + selects the input from anywhere
+  // in the Settings window; `/` does the same when no other input
+  // currently has focus (so a user typing in a text field doesn't
+  // get hijacked). `Escape` while the filter is focused clears it
+  // and returns focus to the page.
+  let filterText = $state("");
+  let filterInputEl: HTMLInputElement | null = $state(null);
+
+  function fade(title: string): boolean {
+    if (!filterText) return false;
+    return !title.toLowerCase().includes(filterText.toLowerCase());
+  }
+
+  function isOtherInputFocused(): boolean {
+    const el = document.activeElement;
+    if (!el) return false;
+    if (el === filterInputEl) return false;
+    return (
+      el.tagName === "INPUT" ||
+      el.tagName === "TEXTAREA" ||
+      el.tagName === "SELECT" ||
+      (el as HTMLElement).isContentEditable
+    );
+  }
+
+  function onSettingsKeydown(e: KeyboardEvent) {
+    // Cmd/Ctrl+F — always focus + select the filter (override
+    // any browser-native Find behavior the webview might honour).
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      filterInputEl?.focus();
+      filterInputEl?.select();
+      return;
+    }
+    // `/` — focus the filter only when no other input owns focus.
+    if (e.key === "/" && !isOtherInputFocused()) {
+      e.preventDefault();
+      filterInputEl?.focus();
+      return;
+    }
+    // Esc while the filter is focused — clear + blur.
+    if (
+      e.key === "Escape" &&
+      document.activeElement === filterInputEl
+    ) {
+      filterText = "";
+      filterInputEl?.blur();
+    }
+  }
+
   function openPreview(t: Theme) {
     previewTheme = t;
   }
@@ -409,24 +461,37 @@
   });
 </script>
 
+<svelte:window onkeydown={onSettingsKeydown} />
+
 <div class="settings">
   <div class="titlebar" data-tauri-drag-region></div>
 
   <header>
     <div class="header-left">
       <h1>Settings</h1>
+      {#if appVersion}
+        <span
+          class="version"
+          title="Baudrun version (from the bundle's tauri.conf.json)"
+          >v{appVersion}</span
+        >
+      {/if}
     </div>
-    {#if appVersion}
-      <span
-        class="version"
-        title="Baudrun version (from the bundle's tauri.conf.json)"
-        >v{appVersion}</span
-      >
-    {/if}
+    <div class="header-right">
+      <input
+        type="text"
+        class="filter"
+        placeholder="Filter…"
+        bind:value={filterText}
+        bind:this={filterInputEl}
+        aria-label="Filter Settings sections"
+      />
+      <span class="filter-hint" aria-hidden="true">{IS_MAC ? "⌘F" : "Ctrl+F"}</span>
+    </div>
   </header>
 
   <div class="scroll">
-  <section>
+  <section class:filtered-out={fade("App Skin chrome appearance light dark")}>
     <h3>App Skin</h3>
     <p class="section-hint">
       The overall look of the app's chrome — colors, typography, radii.
@@ -456,7 +521,7 @@
     </div>
   </section>
 
-  <section class="flat">
+  <section class="flat" class:filtered-out={fade("Installed Skins import custom appearance")}>
     <div class="section-head">
       <h3>Installed Skins</h3>
       <button
@@ -514,7 +579,7 @@
     {/if}
   </section>
 
-  <section>
+  <section class:filtered-out={fade("Default Theme terminal viewport color scheme")}>
     <h3>Default Theme</h3>
     <p class="section-hint">
       Used by any profile that doesn't set its own theme.
@@ -530,7 +595,7 @@
     </div>
   </section>
 
-  <section>
+  <section class:filtered-out={fade("Terminal Defaults font size scrollback lines")}>
     <h3>Terminal Defaults</h3>
     <p class="section-hint">
       Font size and scrollback for every profile's terminal viewport.
@@ -560,7 +625,7 @@
     </div>
   </section>
 
-  <section>
+  <section class:filtered-out={fade("Keyboard Shortcuts clear send break suspend")}>
     <h3>Keyboard Shortcuts</h3>
     <p class="section-hint">
       Session-header actions. Click a binding to record a new key combo;
@@ -586,7 +651,7 @@
     </div>
   </section>
 
-  <section class="flat">
+  <section class="flat" class:filtered-out={fade("Installed Themes import itermcolors color scheme")}>
     <div class="section-head">
       <h3>Installed Themes</h3>
       <button
@@ -654,7 +719,7 @@
     </ul>
   </section>
 
-  <section class="advanced">
+  <section class="advanced" class:filtered-out={fade("Syntax Highlighting packs cisco junos aruba arista mikrotik vendor regex")}>
     <details>
       <summary>
         <h3>Syntax Highlighting</h3>
@@ -748,7 +813,7 @@
     </details>
   </section>
 
-  <section class="advanced">
+  <section class="advanced" class:filtered-out={fade("Advanced session log directory usb driver detection copy select screen reader updates pre-release config directory")}>
     <details>
       <summary>
         <h3>Advanced</h3>
@@ -974,11 +1039,68 @@
     user-select: text;
   }
 
+  .header-left {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+  }
+
   .header-left h1 {
     margin: 0;
     font-size: 24px;
     font-weight: 600;
     letter-spacing: -0.01em;
+  }
+
+  /* Right cluster: filter input + keyboard hint. The hint sits flush
+     against the input so the pair reads as one affordance and the
+     header still balances the title on the left. */
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .filter {
+    width: 200px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--fg-primary);
+    background: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    outline: none;
+    transition:
+      border-color 0.12s,
+      background 0.12s;
+  }
+  .filter::placeholder {
+    color: var(--fg-tertiary);
+  }
+  .filter:hover {
+    border-color: var(--border-strong);
+  }
+  .filter:focus {
+    border-color: var(--accent);
+    background: var(--bg-input-focus, var(--bg-input));
+  }
+
+  .filter-hint {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-tertiary);
+    letter-spacing: 0.02em;
+    user-select: none;
+  }
+
+  /* When a section's title doesn't match the active filter, fade and
+     disable interactions so the matching sections stand out without
+     reflowing the page. Pointer-events:none keeps focus from drifting
+     into a hidden section. */
+  .filtered-out {
+    opacity: 0.25;
+    pointer-events: none;
+    transition: opacity 0.12s;
   }
 
   section {
