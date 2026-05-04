@@ -491,7 +491,7 @@
   </header>
 
   <div class="scroll">
-  <section class:filtered-out={fade("App Skin chrome appearance light dark")}>
+  <section class:filtered-out={fade("App Skin chrome appearance light dark auto system theme")}>
     <h3>App Skin</h3>
     <p class="section-hint">
       The overall look of the app's chrome — colors, typography, radii.
@@ -625,7 +625,7 @@
     </div>
   </section>
 
-  <section class:filtered-out={fade("Keyboard Shortcuts clear send break suspend")}>
+  <section class:filtered-out={fade("Keyboard Shortcuts clear send break suspend binding key hotkey")}>
     <h3>Keyboard Shortcuts</h3>
     <p class="section-hint">
       Session-header actions. Click a binding to record a new key combo;
