@@ -1,4 +1,50 @@
 <script lang="ts">
+  // ─── perf instrumentation (alpha track) ───────────────────────────
+  // Mark this point ASAP so all subsequent timestamps are relative to
+  // the moment the JS bundle began executing in this webview. Doing
+  // this at module scope (outside onMount) catches the import-cost
+  // overhead that mount-time marks would miss.
+  const PERF_T0 =
+    typeof performance !== "undefined" ? performance.now() : Date.now();
+  if (typeof performance !== "undefined") {
+    performance.mark("app:script-start");
+  }
+  /** Log + record a Performance API mark. The mark shows up in the
+   *  DevTools → Performance flame chart; the console line provides a
+   *  copy-pasteable summary that doesn't require re-recording. */
+  function perfMark(name: string): void {
+    const t =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    if (typeof performance !== "undefined") {
+      performance.mark(`app:${name}`);
+    }
+    // eslint-disable-next-line no-console
+    console.log(`[perf] app:${name} t=${Math.round(t - PERF_T0)}ms`);
+  }
+  /** Time a single async call and log the elapsed ms. The call's
+   *  result is forwarded unchanged so this is a transparent wrap. */
+  async function timed<T>(name: string, fn: () => Promise<T>): Promise<T> {
+    const start =
+      typeof performance !== "undefined" ? performance.now() : Date.now();
+    try {
+      return await fn();
+    } finally {
+      const end =
+        typeof performance !== "undefined" ? performance.now() : Date.now();
+      const elapsed = Math.round(end - start);
+      if (typeof performance !== "undefined") {
+        // duration form is well-supported in modern WebView2 / WebKit.
+        performance.measure(`ipc:${name}`, {
+          start,
+          duration: elapsed,
+        } as PerformanceMeasureOptions);
+      }
+      // eslint-disable-next-line no-console
+      console.log(`[perf] ipc:${name} took=${elapsed}ms`);
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────
+
   import { onMount, onDestroy, tick } from "svelte";
   import Sidebar from "./lib/Sidebar.svelte";
   import ProfileForm from "./lib/ProfileForm.svelte";
@@ -254,6 +300,9 @@
   );
 
   onMount(async () => {
+    perfMark(
+      isSettingsWindow ? "settings-onmount" : "main-onmount",
+    );
     // Svelte has no formal error boundaries; without these two
     // listeners an unhandled promise rejection or a runtime error
     // silently blanks the UI with no indication of what went wrong.
@@ -269,16 +318,19 @@
       console.error(e.reason);
     });
 
+    perfMark("before-promise-all");
     await Promise.all([
-      loadProfiles(),
-      loadThemes(),
-      loadSkins(),
-      loadSettings(),
-      loadHighlightPacks(),
+      timed("loadProfiles", loadProfiles),
+      timed("loadThemes", loadThemes),
+      timed("loadSkins", loadSkins),
+      timed("loadSettings", loadSettings),
+      timed("loadHighlightPacks", loadHighlightPacks),
     ]);
+    perfMark("after-promise-all");
     activeSkinID.set($settings.skinId || "baudrun");
     appearance.set(($settings.appearance as Appearance) || "auto");
     applySkin(resolveSkin($activeSkinID, $skins), $appearance, $systemIsDark);
+    perfMark("after-skin-apply");
     // Initial apply happens here; the $effect below picks up any
     // subsequent settings or profile-override changes.
     applyEnabledHighlightPresets(effectiveEnabledHighlightPresets);
@@ -304,13 +356,20 @@
     // empty strings on Windows / Linux because the early-return
     // below skipped these calls.)
     try {
-      defaultLogDir = await api.defaultLogDirectory();
+      defaultLogDir = await timed("defaultLogDirectory", () =>
+        api.defaultLogDirectory(),
+      );
     } catch {}
 
     try {
-      configDir = await api.getConfigDirectory();
-      defaultConfigDir = await api.getDefaultConfigDirectory();
+      configDir = await timed("getConfigDirectory", () =>
+        api.getConfigDirectory(),
+      );
+      defaultConfigDir = await timed("getDefaultConfigDirectory", () =>
+        api.getDefaultConfigDirectory(),
+      );
     } catch {}
+    perfMark("after-dir-loads");
 
     // Session listeners + terminal snapshot restoration + the pending
     // profile id only matter for the main window or a profile tear-
@@ -319,6 +378,11 @@
     // these saves several IPC roundtrips on Windows where each call
     // is non-trivial via WebView2's message channel.
     if (isSettingsWindow) {
+      // Paint mark: rAF after the data is in place fires on the
+      // next frame, which is the earliest the user could see a
+      // populated UI. Subtract this from script-start to get the
+      // user-perceived "Settings window opened" latency.
+      requestAnimationFrame(() => perfMark("settings-first-paint"));
       return;
     }
 
@@ -399,7 +463,25 @@
     if (!$settings.disableUpdateCheck) {
       void runUpdateCheck();
     }
+    // Same first-paint marker as the Settings branch above, for
+    // apples-to-apples comparison between window types.
+    requestAnimationFrame(() =>
+      perfMark(
+        isProfileWindow() ? "profile-first-paint" : "main-first-paint",
+      ),
+    );
   });
+
+  /** Profile tear-off windows use a `win-<uuid>` label. We can't
+   *  cache this at module init because window-label detection might
+   *  race the Tauri runtime — call lazily inside the paint marker. */
+  function isProfileWindow(): boolean {
+    try {
+      return getCurrentWebviewWindow().label.startsWith("win-");
+    } catch {
+      return false;
+    }
+  }
 
   async function runUpdateCheck() {
     try {

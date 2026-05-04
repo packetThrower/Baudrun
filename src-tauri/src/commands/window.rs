@@ -71,6 +71,10 @@ pub fn open_profile_window(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<String, String> {
+    // Perf instrumentation (alpha track) — same `[perf]` tag as the
+    // Settings window path so both code paths grep into one timeline.
+    let ipc_enter = std::time::Instant::now();
+    log::info!("[perf] profile-window: ipc-handler-enter");
     let safe_id = safe_profile_id(&profile_id);
     if safe_id.is_empty() {
         return Err("profile id required".into());
@@ -120,6 +124,11 @@ pub fn open_profile_window(
     let app_clone = app.clone();
     let label_for_task = label.clone();
     tauri::async_runtime::spawn(async move {
+        log::info!(
+            "[perf] profile-window: task-start (after-spawn={}ms)",
+            ipc_enter.elapsed().as_millis()
+        );
+        let build_start = std::time::Instant::now();
         let url = WebviewUrl::default();
         // `title_bar_style` and `hidden_title` only exist on the
         // macOS builder API — chaining them unconditionally breaks
@@ -148,6 +157,11 @@ pub fn open_profile_window(
         }
         match builder.build() {
             Ok(_window) => {
+                log::info!(
+                    "[perf] profile-window: built (build={}ms total-since-ipc={}ms)",
+                    build_start.elapsed().as_millis(),
+                    ipc_enter.elapsed().as_millis()
+                );
                 // macOS-only chrome touch-ups via decorum. Failures
                 // aren't fatal — window still opens, chrome just
                 // looks default. Calling decorum on Windows strips
@@ -170,6 +184,7 @@ pub fn open_profile_window(
                             err
                         );
                     }
+                    log::info!("[perf] profile-window: chrome-applied");
                 }
                 // No explicit set_focus() — newly-created windows
                 // come to foreground naturally on every desktop OS,
@@ -383,6 +398,13 @@ pub fn toggle_settings_window(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
 ) -> Result<bool, String> {
+    // Perf instrumentation (alpha track only — strip when devtools
+    // feature is dropped). Tagged `[perf]` so it greps cleanly out of
+    // the rest of the log file. tauri-plugin-log forwards everything
+    // to the JS DevTools console so all perf phases (Rust + JS) land
+    // in the same stream.
+    let ipc_enter = std::time::Instant::now();
+    log::info!("[perf] settings-window: ipc-handler-enter");
     if let Some(existing) = app.get_webview_window(SETTINGS_WINDOW_LABEL) {
         // Singleton hit — toggle behavior closes the existing
         // window. The Destroyed event handler in lib.rs persists
@@ -426,6 +448,11 @@ pub fn toggle_settings_window(
     // runs against a fully-ready window.
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
+        log::info!(
+            "[perf] settings-window: task-start (after-spawn={}ms)",
+            ipc_enter.elapsed().as_millis()
+        );
+        let build_start = std::time::Instant::now();
         let url = WebviewUrl::default();
         #[allow(unused_mut)]
         let mut builder = WebviewWindowBuilder::new(&app_clone, SETTINGS_WINDOW_LABEL, url)
@@ -452,6 +479,11 @@ pub fn toggle_settings_window(
         }
         match builder.build() {
             Ok(_window) => {
+                log::info!(
+                    "[perf] settings-window: built (build={}ms total-since-ipc={}ms)",
+                    build_start.elapsed().as_millis(),
+                    ipc_enter.elapsed().as_millis()
+                );
                 // macOS-only chrome touch-ups via decorum, matching
                 // the open_profile_window pattern. The underscore on
                 // `_window` keeps the binding non-fatal on Linux /
@@ -472,6 +504,7 @@ pub fn toggle_settings_window(
                             err
                         );
                     }
+                    log::info!("[perf] settings-window: chrome-applied");
                 }
             }
             Err(err) => {
