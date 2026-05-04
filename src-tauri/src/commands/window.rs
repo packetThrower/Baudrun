@@ -122,7 +122,12 @@ pub fn open_profile_window(
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true);
     }
-    let window = builder
+    // Underscore-prefixed because the only use site is the
+    // macOS-gated block below; on Windows / Linux the binding is
+    // unused after build() and clippy -D warnings rejects it
+    // otherwise. Rust allows reading from `_name` bindings, so the
+    // macOS branch can still call methods on it.
+    let _window = builder
         .build()
         .map_err(|e| format!("create window: {}", e))?;
 
@@ -138,10 +143,10 @@ pub fn open_profile_window(
     #[cfg(target_os = "macos")]
     {
         use tauri_plugin_decorum::WebviewWindowExt;
-        if let Err(err) = window.create_overlay_titlebar() {
+        if let Err(err) = _window.create_overlay_titlebar() {
             log::warn!("spawned window {}: create_overlay_titlebar: {}", label, err);
         }
-        if let Err(err) = window.set_traffic_lights_inset(14.0, 20.0) {
+        if let Err(err) = _window.set_traffic_lights_inset(14.0, 20.0) {
             log::warn!(
                 "spawned window {}: set_traffic_lights_inset: {}",
                 label,
