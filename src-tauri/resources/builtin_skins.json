@@ -53,6 +53,9 @@
       "--titlebar-height": "38px",
       "--warn": "#f5d76e"
     },
+    "darkVars": {
+      "--shell-bg": "#1d1d1e"
+    },
     "lightVars": {
       "--accent": "#0071e3",
       "--accent-hover": "#0a7aee",

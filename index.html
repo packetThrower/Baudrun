@@ -4,35 +4,30 @@
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Baudrun</title>
-    <!-- Pre-paint the page so a freshly-spawned WebView2 / WebKitGTK
-         / WKWebView instance doesn't show its default black surface
-         during the boot sequence. There are two distinct gaps to
-         cover:
-           (a) HTML parsed, external CSS still loading -> body's
-               inline rule paints.
-           (b) External CSS loaded, JS bundle still parsing -> our
-               own style.css resets body to var(--bg-window) which
-               is transparent for skins that need macOS vibrancy.
-               #app stays painted because no later rule overrides
-               its background, so it keeps the surface opaque from
-               first paint until Svelte mounts the .shell /
-               .settings-window-shell wrapper on top.
-         The media query matches the user's system theme on the
-         first-ever launch when the saved appearance preference
-         hasn't been applied yet. `color-scheme` keeps form-control
-         defaults (focus rings, scrollbars) coherent with the bg. -->
+    <!-- Pre-paint body during the brief moment between HTML parse
+         and external CSS loading. Once style.css applies, body bg
+         resets to var(--bg-window) — which is transparent for the
+         default Baudrun skin (so macOS NSVisualEffectView vibrancy
+         shows through) and solid for skins like Windows-11. The
+         OS-level webview surface is painted via Tauri's builder
+         `background_color` from the saved appearance, which covers
+         the same gap on Windows / Linux without overpainting macOS
+         vibrancy.
+         An earlier alpha pre-painted `#app` too, but that broke
+         skins like Baudrun dark whose translucent panels rely on
+         the vibrancy substrate underneath — `#app` ended up sitting
+         OVER vibrancy and the panels mixed with the wrong base
+         layer. Body-only is the right scope.
+         `color-scheme` keeps form-control defaults (focus rings,
+         scrollbars) coherent with the painted bg. -->
     <style>
         html, body {
             background: #1d1d1d;
             color-scheme: dark light;
             margin: 0;
         }
-        #app {
-            min-height: 100vh;
-            background: #1d1d1d;
-        }
         @media (prefers-color-scheme: light) {
-            html, body, #app { background: #f2f2f7; }
+            html, body { background: #f2f2f7; }
         }
     </style>
 </head>
