@@ -11,13 +11,66 @@ export default defineConfig({
 		starlight({
 			title: 'Baudrun',
 			description:
-				'A serial terminal for network gear — console sessions for switches, routers, and firewalls.',
+				'A serial terminal for network gear. Console sessions for switches, routers, and firewalls.',
 			logo: {
 				src: './src/assets/icon.svg',
 				replacesTitle: false,
 			},
 			favicon: '/favicon.svg',
 			customCss: ['./src/styles/theme.css'],
+
+			// Site-wide head additions for discoverability:
+			//
+			// 1. Open Graph / Twitter image. Without this, link-preview
+			//    unfurlers (Slack, Discord, Twitter, iMessage, etc.)
+			//    render every share as a bare text card.
+			// 2. Google Search Console verification slot. Replace the
+			//    `content` value with the token Search Console gives
+			//    you after you claim the property at
+			//    https://search.google.com/search-console — once
+			//    verified, you can submit
+			//    https://packetthrower.github.io/Baudrun/sitemap-index.xml
+			//    and see crawl + search-performance reports.
+			head: [
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image',
+						content: 'https://packetthrower.github.io/Baudrun/og-image.png',
+					},
+				},
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image:width',
+						content: '1200',
+					},
+				},
+				{
+					tag: 'meta',
+					attrs: {
+						property: 'og:image:height',
+						content: '630',
+					},
+				},
+				{
+					tag: 'meta',
+					attrs: {
+						name: 'twitter:image',
+						content: 'https://packetthrower.github.io/Baudrun/og-image.png',
+					},
+				},
+				{
+					tag: 'meta',
+					attrs: {
+						name: 'google-site-verification',
+						// TODO: replace with the token from Search Console.
+						// Until then this tag is harmless filler — Google
+						// just won't recognize the verification.
+						content: 'REPLACE_WITH_SEARCH_CONSOLE_TOKEN',
+					},
+				},
+			],
 			components: {
 				Hero: './src/components/Hero.astro',
 				// Wraps Starlight's default SocialIcons to add a "Docs"

@@ -13,6 +13,44 @@ hero:
       link: https://github.com/packetThrower/Baudrun
       icon: external
       variant: secondary
+# JSON-LD SoftwareApplication schema. Lets Google render rich
+# results on the homepage — operating-system list, free-of-cost
+# offer, install link, screenshot. Only attached to index because
+# inner pages aren't really application surfaces in the
+# schema.org sense.
+head:
+  - tag: script
+    attrs:
+      type: application/ld+json
+    content: |
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Baudrun",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Serial terminal",
+        "operatingSystem": "macOS, Windows, Linux",
+        "description": "A serial terminal for network gear. Console sessions for switches, routers, and firewalls with profiles for different devices and syntax highlighting.",
+        "url": "https://packetthrower.github.io/Baudrun/",
+        "downloadUrl": "https://github.com/packetThrower/Baudrun/releases/latest",
+        "license": "https://github.com/packetThrower/Baudrun/blob/main/LICENSE",
+        "image": "https://packetthrower.github.io/Baudrun/og-image.png",
+        "screenshot": "https://packetthrower.github.io/Baudrun/screenshots/macos-dark-baudrun.png",
+        "author": {
+          "@type": "Person",
+          "name": "Will Lehnertz",
+          "url": "https://github.com/packetThrower"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "softwareHelp": {
+          "@type": "CreativeWork",
+          "url": "https://packetthrower.github.io/Baudrun/install/"
+        }
+      }
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
