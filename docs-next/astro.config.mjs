@@ -64,10 +64,12 @@ export default defineConfig({
 					tag: 'meta',
 					attrs: {
 						name: 'google-site-verification',
-						// TODO: replace with the token from Search Console.
-						// Until then this tag is harmless filler — Google
-						// just won't recognize the verification.
-						content: 'REPLACE_WITH_SEARCH_CONSOLE_TOKEN',
+						// Issued by Search Console for
+						// https://packetthrower.github.io/Baudrun/. Don't
+						// remove it: Search Console re-validates this tag
+						// periodically and the property loses verified
+						// status if the tag disappears.
+						content: 'tCAEO_FaKHi5IgbdZ83ZbNYJ4orBbsCLDYFTO1tjqbg',
 					},
 				},
 			],
