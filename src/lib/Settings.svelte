@@ -552,7 +552,7 @@
 
 <svelte:window onkeydown={onSettingsKeydown} />
 
-<div class="settings">
+<div class="settings" class:mac={IS_MAC}>
   <div class="titlebar" data-tauri-drag-region></div>
 
   <header>
@@ -1191,6 +1191,14 @@
     gap: 16px;
     padding: 0 28px 18px 28px;
     border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* macOS traffic lights occupy ~14-78px in the top-left of the window
+     when overlay-titlebar is active. Bump the header's left padding so
+     the H1 starts to the right of the lights, matching native Apple
+     apps' content offset. Other platforms keep the standard 28px. */
+  .settings.mac header {
+    padding-left: 84px;
   }
 
   /* Quick glance to confirm which build is running without competing

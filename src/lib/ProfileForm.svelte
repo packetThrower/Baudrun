@@ -63,6 +63,10 @@
     onResume,
   }: Props = $props();
 
+  // Platform marker — gates the macOS traffic-light header offset.
+  const IS_MAC =
+    typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
+
   let draft = $state<Profile>({ ...profile } as Profile);
 
   // ─── Tab navigation ───────────────────────────────────────────────
@@ -403,7 +407,7 @@
   });
 </script>
 
-<div class="form">
+<div class="form" class:mac={IS_MAC}>
   <div class="titlebar" data-tauri-drag-region></div>
 
   <header>
@@ -1012,6 +1016,14 @@
     gap: 16px;
     padding: 0 28px 18px 28px;
     border-bottom: 1px solid var(--border-subtle);
+  }
+
+  /* macOS traffic lights occupy ~14-78px in the top-left of the
+     window when overlay-titlebar is active. Bump the header's left
+     padding so the profile name input doesn't sit underneath them.
+     Matches the same offset used in Settings.svelte. */
+  .form.mac header {
+    padding-left: 84px;
   }
 
   .header-left {
