@@ -178,25 +178,20 @@ pub fn open_profile_window(
         // need the WebView2 / WebKit DevTools UI exposed by default.
         // Re-enable by adding `"devtools"` to the tauri feature list
         // in Cargo.toml plus a `.devtools(true)` builder call here.
-        // Show-on-ready: build invisible, let App.svelte's onMount
-        // call .show() after applySkin paints. The bg flash users
-        // were seeing wasn't an HTML/CSS-cascade issue (we covered
-        // those with the inline #app pre-paint and Tauri builder
-        // background_color). It was the OS-level webview compositing
-        // an empty surface for the ~100-200ms window before any
-        // content reached first paint, regardless of our
-        // background_color hint. Building invisible removes that
-        // gap entirely — the window only appears once content has
-        // already been composited. The background_color call below
-        // is kept as a safety net in case JS doesn't run for some
-        // reason and a Rust-side fallback ends up showing the
-        // window without the JS path completing.
+        // Show-on-ready was tried in alpha.8 (`.visible(false)` + a
+        // JS `.show()` after applySkin) and reverted: it made
+        // windows feel slow because the user saw nothing for the
+        // 300-500ms it took to build + parse the bundle + bootstrap
+        // + apply the skin. The flash is a smaller visual nuisance
+        // than the unresponsive feel of a window that doesn't
+        // appear when clicked. We keep the `background_color` hint
+        // (and the inline #app pre-paint in index.html) which
+        // shrinks the flash to a single frame on most platforms.
         #[allow(unused_mut)]
         let mut builder = WebviewWindowBuilder::new(&app_clone, &label_for_task, url)
             .title(title)
             .inner_size(1100.0, 720.0)
             .min_inner_size(800.0, 500.0)
-            .visible(false)
             .background_color(bg_color);
         #[cfg(target_os = "macos")]
         {
@@ -216,6 +211,9 @@ pub fn open_profile_window(
                 // looks default. Calling decorum on Windows strips
                 // the native frame without providing a CSS
                 // replacement (would hide caption buttons; issue #7).
+                // Underscore prefix on `_window` keeps clippy happy
+                // on Linux / Windows where the binding is unused
+                // (CI runs `-D warnings`).
                 #[cfg(target_os = "macos")]
                 {
                     use tauri_plugin_decorum::WebviewWindowExt;
@@ -505,18 +503,13 @@ pub fn toggle_settings_window(
         );
         let build_start = std::time::Instant::now();
         let url = WebviewUrl::default();
-        // Show-on-ready (see open_profile_window for full reasoning).
-        // The Settings window benefits even more than profile windows
-        // because it has more layered chrome (decorum titlebar,
-        // .settings-window-shell wrapper) where the flash was most
-        // visible.
+        // See open_profile_window for the show-on-ready postmortem.
         #[allow(unused_mut)]
         let mut builder = WebviewWindowBuilder::new(&app_clone, SETTINGS_WINDOW_LABEL, url)
             .title("Baudrun Settings")
             .inner_size(width, height)
             .min_inner_size(SETTINGS_MIN_WIDTH, SETTINGS_MIN_HEIGHT)
             .resizable(true)
-            .visible(false)
             .background_color(bg_color);
         // macOS chrome treatment goes BEFORE positioning so the OS
         // window is created with the overlay-titlebar style baked in
@@ -542,11 +535,8 @@ pub fn toggle_settings_window(
                     build_start.elapsed().as_millis(),
                     ipc_enter.elapsed().as_millis()
                 );
-                // macOS-only chrome touch-ups via decorum, matching
-                // the open_profile_window pattern. The underscore on
-                // `_window` keeps the binding non-fatal on Linux /
-                // Windows where the variable is unused (clippy runs
-                // `-D warnings` in CI).
+                // macOS-only chrome touch-ups via decorum. Underscore
+                // prefix matches the open_profile_window pattern.
                 #[cfg(target_os = "macos")]
                 {
                     use tauri_plugin_decorum::WebviewWindowExt;
