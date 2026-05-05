@@ -1009,6 +1009,33 @@
   const shortcutSuspendSpec = $derived(
     effectiveShortcut("suspend", $settings.shortcuts, IS_MAC),
   );
+  const shortcutResumeSpec = $derived(
+    effectiveShortcut("resume", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutConnectSpec = $derived(
+    effectiveShortcut("connect", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutDisconnectSpec = $derived(
+    effectiveShortcut("disconnect", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutSendFileSpec = $derived(
+    effectiveShortcut("send-file", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutNewProfileSpec = $derived(
+    effectiveShortcut("new-profile", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutOpenWindowSpec = $derived(
+    effectiveShortcut("open-window", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutFontIncreaseSpec = $derived(
+    effectiveShortcut("font-increase", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutFontDecreaseSpec = $derived(
+    effectiveShortcut("font-decrease", $settings.shortcuts, IS_MAC),
+  );
+  const shortcutFontResetSpec = $derived(
+    effectiveShortcut("font-reset", $settings.shortcuts, IS_MAC),
+  );
   const shortcutClearLabel = $derived(formatShortcut(shortcutClearSpec, IS_MAC));
   const shortcutBreakLabel = $derived(formatShortcut(shortcutBreakSpec, IS_MAC));
   const shortcutSuspendLabel = $derived(
@@ -1023,49 +1050,112 @@
     // Cmd+, (Mac) / Ctrl+, (Win/Linux) toggles the Settings window
     // globally — same shortcut works from either the main window or
     // the Settings window itself, mirroring the universal macOS
-    // Preferences convention. Persona red flag fix: Alex's "no
-    // Cmd+, indicator" complaint from the Settings critique.
+    // Preferences convention. Kept hardcoded (not user-rebindable)
+    // for that reason.
     if ((e.metaKey || e.ctrlKey) && e.key === ",") {
       e.preventDefault();
       e.stopPropagation();
       void handleToggleSettings();
       return;
     }
-    // Zoom first — it hasn't moved to settings-driven config.
-    const mod = e.metaKey || e.ctrlKey;
-    if (mod) {
-      const current = $settings.fontSize || FONT_DEFAULT;
-      if (e.key === "=" || e.key === "+") {
+
+    // Font-size shortcuts.
+    if (matchesShortcut(e, shortcutFontIncreaseSpec)) {
+      adjustFontSize(e, +1);
+      return;
+    }
+    if (matchesShortcut(e, shortcutFontDecreaseSpec)) {
+      adjustFontSize(e, -1);
+      return;
+    }
+    if (matchesShortcut(e, shortcutFontResetSpec)) {
+      e.preventDefault();
+      e.stopPropagation();
+      statusMsg = `Font size: ${FONT_DEFAULT}`;
+      void applyFontSize(FONT_DEFAULT);
+      return;
+    }
+
+    // Window / profile management shortcuts. These run regardless
+    // of session state because they pertain to the surrounding UI,
+    // not the active session.
+    if (matchesShortcut(e, shortcutNewProfileSpec)) {
+      e.preventDefault();
+      e.stopPropagation();
+      void handleCreate();
+      return;
+    }
+    if (matchesShortcut(e, shortcutOpenWindowSpec)) {
+      // Needs a current profile to open. Falls through silently if
+      // the user hits this shortcut on the empty state (no profile
+      // selected, no draft) — same gate as the right-click menu.
+      const profile = currentProfile;
+      if (profile && !isNew) {
         e.preventDefault();
         e.stopPropagation();
-        statusMsg = `Font size: ${Math.min(FONT_MAX, current + 1)}`;
-        void applyFontSize(current + 1);
-        return;
-      } else if (e.key === "-" || e.key === "_") {
-        e.preventDefault();
-        e.stopPropagation();
-        statusMsg = `Font size: ${Math.max(FONT_MIN, current - 1)}`;
-        void applyFontSize(current - 1);
-        return;
-      } else if (e.key === "0") {
-        e.preventDefault();
-        e.stopPropagation();
-        statusMsg = `Font size: ${FONT_DEFAULT}`;
-        void applyFontSize(FONT_DEFAULT);
-        return;
+        void handleOpenInNewWindow(profile);
       }
+      return;
     }
 
     // Session shortcuts: match each binding against the event and
     // dispatch to the gated action. Each helper no-ops when its
-    // underlying button would be disabled.
+    // underlying button would be disabled, so a shortcut that
+    // doesn't apply to the current state silently does nothing
+    // rather than reporting an error.
     if (matchesShortcut(e, shortcutClearSpec)) {
       shortcutClear(e);
     } else if (matchesShortcut(e, shortcutBreakSpec)) {
       shortcutBreak(e);
     } else if (matchesShortcut(e, shortcutSuspendSpec)) {
       shortcutSuspend(e);
+    } else if (matchesShortcut(e, shortcutResumeSpec)) {
+      // Resume only fires while suspended — the inverse of the
+      // suspend gate.
+      if (suspended) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleResume();
+      }
+    } else if (matchesShortcut(e, shortcutConnectSpec)) {
+      // Connect needs a profile to connect to AND no live session
+      // (so we don't double-connect). Skips silently otherwise.
+      if (currentProfile && !hasSession) {
+        e.preventDefault();
+        e.stopPropagation();
+        void handleConnect();
+      }
+    } else if (matchesShortcut(e, shortcutDisconnectSpec)) {
+      // Disconnect fires while connected (or reconnecting); a
+      // suspended session also has the port held open and disconnect
+      // is the way to drop it, so we allow it there too.
+      if (hasSession) {
+        e.preventDefault();
+        e.stopPropagation();
+        void handleDisconnect();
+      }
+    } else if (matchesShortcut(e, shortcutSendFileSpec)) {
+      // Send file requires a connected session — the transfer
+      // dialog itself shows X/YMODEM controls that need a port to
+      // write to.
+      if (isConnected && !suspended) {
+        e.preventDefault();
+        e.stopPropagation();
+        openTransfer();
+      }
     }
+  }
+
+  /** Bump the font size by `delta`, clamped to [FONT_MIN, FONT_MAX].
+   *  Wraps the preventDefault + status-message + applyFontSize
+   *  triple that increase / decrease both need. */
+  function adjustFontSize(e: KeyboardEvent, delta: number): void {
+    e.preventDefault();
+    e.stopPropagation();
+    const current = $settings.fontSize || FONT_DEFAULT;
+    const next = Math.max(FONT_MIN, Math.min(FONT_MAX, current + delta));
+    statusMsg = `Font size: ${next}`;
+    void applyFontSize(next);
   }
 
   function shortcutClear(e: KeyboardEvent) {
