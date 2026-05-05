@@ -518,7 +518,12 @@
   }
 </script>
 
-<div class="wrap" style:background-color={theme?.background ?? "#0b0b0d"}>
+<div
+  class="wrap"
+  style:background-color={theme?.background ?? "#0b0b0d"}
+  style:color={theme?.foreground ?? "#e4e4e7"}
+  style:--xterm-sel-bg={theme?.selection ?? "#1a3a5c"}
+>
   <div class="host" bind:this={hostEl}></div>
   {#if pasteSending}
     <div
@@ -600,5 +605,37 @@
 
   :global(.xterm-viewport) {
     background: transparent !important;
+  }
+
+  /* Linux (WebKit2GTK) and Windows (WebView2) sometimes drop xterm's
+     runtime-injected <style> element — the one that sets default
+     foreground color on .xterm-rows and selection background on
+     .xterm-selection div from the theme. macOS WebKit doesn't have
+     this quirk; rendering looks fine without these fallbacks.
+     When the injection is dropped, glyph spans inherit `color` from
+     the page (body uses var(--fg-primary)) and selection divs end
+     up with no fill, so connected sessions look like a black box and
+     text "can't be selected" because the highlight is invisible.
+
+     The wrap element gets `color: <theme.foreground>` and a
+     --xterm-sel-bg CSS variable inline (see the markup above). The
+     foreground cascades down through .xterm-screen → .xterm-rows →
+     spans without any extra rule needed; the :global rules below
+     route the selection variable into xterm's selection divs.
+     !important is load-bearing — xterm's injected rule, if it does
+     run, would otherwise fight us at equal specificity. The color
+     value is identical to what xterm would have produced, so macOS
+     is visually unchanged. */
+  :global(.xterm .xterm-selection div) {
+    background-color: var(--xterm-sel-bg, transparent) !important;
+  }
+
+  /* Inactive selection (terminal not focused) — slightly muted.
+     xterm normally uses a separate `selectionInactiveBackground` color;
+     we don't track that distinction in our theme schema, so ramp the
+     same color down via opacity. The :not(.focus) selector mirrors
+     xterm's own focus class. */
+  :global(.xterm:not(.focus) .xterm-selection div) {
+    opacity: 0.6;
   }
 </style>

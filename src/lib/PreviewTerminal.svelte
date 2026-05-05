@@ -93,6 +93,8 @@
 <div
   class="wrap"
   style:background-color={theme?.background ?? "#0b0b0d"}
+  style:color={theme?.foreground ?? "#e4e4e7"}
+  style:--xterm-sel-bg={theme?.selection ?? "#1a3a5c"}
 >
   <div class="host" bind:this={hostEl}></div>
 </div>
@@ -118,5 +120,17 @@
 
   :global(.xterm-viewport) {
     background: transparent !important;
+  }
+
+  /* See Terminal.svelte for the long version. Short version: Linux
+     WebKit2GTK and Windows WebView2 sometimes drop xterm's runtime
+     <style> injection, so we backstop default-foreground color via
+     inheritance from .wrap and selection background via a CSS var. */
+  :global(.xterm .xterm-selection div) {
+    background-color: var(--xterm-sel-bg, transparent) !important;
+  }
+
+  :global(.xterm:not(.focus) .xterm-selection div) {
+    opacity: 0.6;
   }
 </style>
