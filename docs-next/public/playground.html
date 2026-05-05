@@ -1,0 +1,1549 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Highlight Rule Playground · Baudrun</title>
+    <meta
+      name="description"
+      content="Test Baudrun highlight rule packs against your own serial captures, in your browser."
+    />
+    <link
+      rel="icon"
+      href="https://raw.githubusercontent.com/packetThrower/Baudrun/main/build/appicon.png"
+    />
+    <!-- Plex Sans (UI) + Plex Mono (editors / output) via Google Fonts CDN.
+         Same font stack as the docs site at packetthrower.github.io/Baudrun/
+         and the packetThrower landing page, so the playground reads as part
+         of that family even though it's a standalone HTML page. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /*
+       * Playground chrome palette — mirrors the docs theme (navy +
+       * amber + cool-paper neutrals). Token names use the `pt-`
+       * (packetThrower) prefix because the palette is shared across
+       * Baudrun, PortFinder, and the landing page.
+       *
+       * The terminal palette below it (`--term-*`) is intentionally
+       * NOT navy/amber — it stays as Baudrun's default-theme terminal
+       * colors, kept in sync with src-tauri/resources/builtin_themes.json
+       * so the playground output matches what users will actually see
+       * in the app's terminal viewport.
+       */
+      :root {
+        /* Brand palette — same hex values as docs-next/src/styles/theme.css. */
+        --pt-navy-900: #04080e;
+        --pt-navy-800: #0c1420;
+        --pt-navy-700: #162237;
+        --pt-navy-600: #1f3052;
+        --pt-navy-500: #2e4368;
+        --pt-navy-400: #4a608a;
+        --pt-amber-200: #fff2c4;
+        --pt-amber-300: #f5d68b;
+        --pt-amber-400: #f0c060;
+        --pt-amber-500: #d49b3a;
+        --pt-amber-600: #a87420;
+        --pt-paper-50:  #fafbfd;
+        --pt-paper-100: #f3f5f9;
+        --pt-paper-200: #e7eaf1;
+        --pt-paper-300: #d3d8e1;
+        --pt-paper-400: #aab1c0;
+        --pt-paper-500: #6e7689;
+
+        /* Chrome — drenched navy with amber accent, paper ink. */
+        --bg: var(--pt-navy-800);
+        --bg-panel: var(--pt-navy-700);
+        --bg-input: var(--pt-navy-600);
+        --border: var(--pt-navy-600);
+        --border-strong: var(--pt-navy-500);
+        --fg: var(--pt-paper-100);
+        --fg-secondary: var(--pt-paper-300);
+        --fg-tertiary: var(--pt-paper-400);
+        --accent: var(--pt-amber-400);
+        --danger: #ff6961;
+        --warn: #f5d76e;
+
+        /* Baudrun default TERMINAL theme — DO NOT replace with brand
+           tokens. These are the actual ANSI colors Baudrun ships in
+           the default terminal theme; the playground output uses
+           them so highlight previews look exactly like the app. */
+        --term-bg: #0b0b0d;
+        --term-fg: #e4e4e7;
+        --term-red: #ff6961;
+        --term-green: #7cd992;
+        --term-yellow: #f5d76e;
+        --term-blue: #6cb6ff;
+        --term-magenta: #d794ff;
+        --term-cyan: #7ce0e0;
+        --term-dim: #75757e;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          system-ui, sans-serif;
+        font-feature-settings: "cv02" 1, "cv03" 1;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-panel);
+      }
+
+      .topbar h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      .topbar h1 .accent {
+        color: var(--accent);
+      }
+
+      .topbar .subtitle {
+        color: var(--fg-tertiary);
+        font-size: 12px;
+        margin-left: 8px;
+      }
+
+      .topbar a {
+        color: var(--fg-secondary);
+        text-decoration: none;
+        font-size: 12px;
+        margin-left: 16px;
+      }
+
+      .topbar a:hover {
+        color: var(--fg);
+      }
+
+      .layout {
+        display: flex;
+        gap: 0;
+        padding: 16px 24px 24px;
+        min-height: calc(100vh - 56px);
+      }
+
+      .col {
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        min-height: 0;
+      }
+      /* Where two panels stack inside a column (right col), keep some
+         spacing between them — the splitter sits in the gap. */
+      .col > .panel + .panel,
+      .col > .splitter + .panel,
+      .col > .panel + .splitter {
+        margin-top: 0;
+      }
+
+      /* Invisible spacer below the JSON panel in the left column. Lets
+         the splitter above it redistribute vertical space — shrinking
+         the panel grows the spacer (empty area), so the user can give
+         themselves a smaller JSON view if they want a wider pane on
+         the right or just less editor weight. Starts at zero size so
+         the JSON panel fills the column by default. */
+      .col-spacer {
+        flex: 0 0 0;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          flex-direction: column;
+          gap: 16px;
+        }
+        /* Vertical splitter doesn't make sense in stacked mode. */
+        .splitter-v {
+          display: none;
+        }
+      }
+
+      .panel {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        min-height: 0;
+        /* Grow to fill the column. Without this, each panel sized to
+           its textarea's min-height, leaving the JSON-pack panel
+           visibly shorter than the (Sample + Output) stack on the
+           right. With `flex: 1` the JSON pack panel fills its full
+           column height, the right column splits between Sample and
+           Output, and the two columns line up at the bottom. */
+        flex: 1;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .panel-head h2 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .panel-head .meta {
+        font-size: 11px;
+        color: var(--fg-tertiary);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .panel-body {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      select,
+      button,
+      input[type="file"]::file-selector-button {
+        background: var(--bg-input);
+        color: var(--fg);
+        border: 1px solid var(--border-strong);
+        border-radius: 5px;
+        padding: 5px 10px;
+        font-size: 12px;
+        font-family: inherit;
+        cursor: pointer;
+      }
+
+      select:hover,
+      button:hover,
+      input[type="file"]::file-selector-button:hover {
+        border-color: var(--accent);
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: #0b0b0d;
+        border-color: var(--accent);
+      }
+
+      .controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .controls label {
+        font-size: 12px;
+        color: var(--fg-secondary);
+      }
+
+      .controls .stack-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-left: 8px;
+        padding-left: 8px;
+        border-left: 1px solid var(--border);
+        cursor: pointer;
+      }
+
+      .controls .stack-label input {
+        accent-color: var(--accent);
+        cursor: pointer;
+      }
+
+      textarea {
+        flex: 1;
+        min-height: 200px;
+        margin: 0;
+        padding: 12px 14px;
+        background: var(--bg-input);
+        color: var(--fg);
+        border: none;
+        outline: none;
+        font-family:
+          "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+        /* CSS `resize: vertical` doesn't compose with the flex layout
+           below — flex-grow re-claims the height the user just dragged
+           to. Custom splitters (`.splitter`) handle resize instead. */
+        resize: none;
+        tab-size: 2;
+      }
+
+      /* Draggable splitter — sits between two flex children and lets
+         the user redistribute their flex-basis. The horizontal variant
+         (between Sample and Output panels) is 6px tall; the vertical
+         variant (between left and right columns) is 6px wide. Hit area
+         is bigger via padding so it's easy to grab without making the
+         visible line thick. */
+      .splitter {
+        position: relative;
+        flex: 0 0 auto;
+        background: transparent;
+        z-index: 1;
+        touch-action: none;
+      }
+      .splitter::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: var(--border);
+        transition: background 120ms ease;
+      }
+      .splitter:hover::before,
+      .splitter.dragging::before {
+        background: var(--accent);
+      }
+      .splitter-h {
+        height: 6px;
+        margin: -2px 0;
+        padding: 2px 0;
+        cursor: row-resize;
+      }
+      .splitter-v {
+        width: 6px;
+        margin: 0 -2px;
+        padding: 0 2px;
+        cursor: col-resize;
+      }
+      /* While a drag is in progress, lock the cursor across the whole
+         page so it doesn't flicker when the pointer leaves the
+         splitter strip. */
+      body.dragging-h, body.dragging-h * { cursor: row-resize !important; }
+      body.dragging-v, body.dragging-v * { cursor: col-resize !important; }
+      body.dragging-h *, body.dragging-v * {
+        user-select: none;
+      }
+
+      textarea.json-editor.invalid {
+        outline: 2px solid var(--danger);
+        outline-offset: -2px;
+      }
+
+      .status-bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        padding: 8px 14px;
+        font-size: 11px;
+        color: var(--fg-tertiary);
+        background: rgba(0, 0, 0, 0.2);
+        border-top: 1px solid var(--border);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .status-bar .err {
+        color: var(--danger);
+      }
+
+      .status-bar .warn {
+        color: var(--warn);
+      }
+
+      .status-bar .ok {
+        color: var(--accent);
+      }
+
+      .output {
+        flex: 1;
+        margin: 0;
+        padding: 12px 14px;
+        background: var(--term-bg);
+        color: var(--term-fg);
+        font-family:
+          "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas,
+          monospace;
+        font-size: 12.5px;
+        line-height: 1.55;
+        overflow: auto;
+        white-space: pre;
+        word-wrap: normal;
+      }
+
+      .output .red {
+        color: var(--term-red);
+      }
+      .output .green {
+        color: var(--term-green);
+      }
+      .output .yellow {
+        color: var(--term-yellow);
+      }
+      .output .blue {
+        color: var(--term-blue);
+      }
+      .output .magenta {
+        color: var(--term-magenta);
+      }
+      .output .cyan {
+        color: var(--term-cyan);
+      }
+      .output .dim {
+        color: var(--term-dim);
+      }
+
+      .hint-row {
+        font-size: 11px;
+        color: var(--fg-tertiary);
+        padding: 0 24px 12px;
+      }
+
+      .hint-row code {
+        background: var(--bg-input);
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-size: 11px;
+      }
+
+      .hint-row a {
+        color: var(--fg-secondary);
+      }
+
+      .drop-target {
+        position: relative;
+      }
+
+      .drop-target.dragover::after {
+        content: "Drop file to load";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(124, 217, 146, 0.08);
+        border: 2px dashed var(--accent);
+        color: var(--accent);
+        font-size: 13px;
+        pointer-events: none;
+        z-index: 1;
+        backdrop-filter: blur(2px);
+      }
+
+      .file-input {
+        display: none;
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="topbar">
+      <h1>
+        <span class="accent">Baudrun</span> · highlight rule playground
+        <span class="subtitle"
+          >paste a pack, drop a log, see the colors</span
+        >
+      </h1>
+      <nav>
+        <a
+          href="https://github.com/packetThrower/Baudrun/tree/main/src-tauri/resources/highlight"
+          target="_blank"
+          rel="noopener"
+          >Bundled packs ↗</a
+        >
+        <a href="https://packetthrower.github.io/Baudrun/" target="_blank" rel="noopener">Docs ↗</a>
+      </nav>
+    </header>
+
+    <p class="hint-row">
+      All processing is local — your file never leaves the browser. Pick a
+      bundled pack as a starting point, edit the rules, and drop a real
+      capture (config dump, <code>show interface</code>, syslog, anything
+      text) into the right pane to see the colors apply. The regex engine
+      and color mapping match what Baudrun uses on a live serial session.
+    </p>
+
+    <main class="layout">
+      <section class="col">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Highlight pack (JSON)</h2>
+            <div class="controls">
+              <label for="pack-select">Load:</label>
+              <select id="pack-select">
+                <option value="baudrun-default">Baudrun default</option>
+                <option value="cisco-ios">Cisco IOS / IOS XE / IOS XR</option>
+                <option value="junos">Juniper Junos</option>
+                <option value="aruba-cx">Aruba AOS-CX</option>
+                <option value="arista-eos">Arista EOS</option>
+                <option value="mikrotik-routeros">MikroTik RouterOS</option>
+                <option value="empty">Empty (start from scratch)</option>
+              </select>
+              <label class="stack-label" title="Apply baudrun-default's rules underneath the pack you're editing — matches how Baudrun stacks bundled packs at runtime.">
+                <input type="checkbox" id="stack-default" checked />
+                Stack with Baudrun default
+              </label>
+            </div>
+          </div>
+          <div class="panel-body">
+            <textarea
+              id="pack-input"
+              class="json-editor"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+            ></textarea>
+            <div class="status-bar" id="pack-status">Ready.</div>
+          </div>
+        </div>
+
+        <div
+          class="splitter splitter-h"
+          data-splitter="left-col"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize Highlight pack panel"
+          tabindex="0"
+        ></div>
+
+        <!-- Invisible spacer that the splitter redistributes against.
+             The JSON panel above starts at flex:1 (filling the col)
+             and the spacer at flex:0 — dragging the splitter up
+             shrinks the panel and grows the spacer (empty space).
+             Dragging down expands the panel back. -->
+        <div class="col-spacer"></div>
+      </section>
+
+      <div
+        class="splitter splitter-v"
+        data-splitter="cols"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize columns"
+        tabindex="0"
+      ></div>
+
+      <section class="col">
+        <div class="panel drop-target" id="sample-drop">
+          <div class="panel-head">
+            <h2>Sample text</h2>
+            <div class="controls">
+              <label for="sample-select">Load sample:</label>
+              <select id="sample-select">
+                <option value="baudrun-default">Mixed (IPs + MACs + interfaces)</option>
+                <option value="cisco-ios">Cisco IOS show output</option>
+                <option value="junos">Junos show output</option>
+                <option value="aruba-cx">Aruba AOS-CX show output</option>
+                <option value="arista-eos">Arista EOS show output</option>
+                <option value="mikrotik-routeros">MikroTik RouterOS /export</option>
+              </select>
+              <button id="load-file-btn" type="button" title="Open a local text file">
+                Open file…
+              </button>
+              <input
+                type="file"
+                id="file-input"
+                class="file-input"
+                accept=".txt,.log,.cfg,.conf,.cisco,.ios,.config,text/plain"
+              />
+            </div>
+          </div>
+          <div class="panel-body">
+            <textarea
+              id="sample-input"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+            ></textarea>
+          </div>
+        </div>
+
+        <div
+          class="splitter splitter-h"
+          data-splitter="rows"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize Sample / Output"
+          tabindex="0"
+        ></div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Output</h2>
+            <span class="meta" id="output-meta"></span>
+          </div>
+          <pre class="output" id="output"></pre>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // -------- draggable splitters --------
+      // Two splitters: a vertical one between the JSON-pack column and
+      // the right column (col-resize), and a horizontal one inside the
+      // right column between Sample and Output (row-resize). Both work
+      // by reassigning `flex-basis` on the two flex siblings on either
+      // side of the splitter. Browser-native `resize: vertical` doesn't
+      // compose with the flex layout below — flex-grow re-claims any
+      // height the user just dragged to, so this is the only way to
+      // give the user real control.
+      function setupSplitters() {
+        for (const splitter of document.querySelectorAll(".splitter")) {
+          const isHorizontal = splitter.classList.contains("splitter-h");
+          let prev, next, total, startPos, startPrev, minPrev, minNext;
+
+          /** Compute the space available to prev + next combined.
+           *  Using the parent's content size minus all OTHER siblings
+           *  (and the splitter itself) handles the case where one
+           *  sibling is currently sized to 0 — naive sum of prev+next
+           *  rects would under-report available space. */
+          const measure = () => {
+            const parent = splitter.parentElement;
+            const parentSize = isHorizontal
+              ? parent.clientHeight
+              : parent.clientWidth;
+            let consumed = 0;
+            for (const child of parent.children) {
+              if (child === prev || child === next) continue;
+              const r = child.getBoundingClientRect();
+              consumed += isHorizontal ? r.height : r.width;
+            }
+            total = parentSize - consumed;
+          };
+
+          /** Real panels need a visible minimum so they don't collapse
+           *  to a useless sliver. Spacers exist precisely to be
+           *  allowed to collapse to 0, so the floor is per-sibling. */
+          const minFor = (el) => (el.classList.contains("col-spacer") ? 0 : 80);
+
+          const onMove = (e) => {
+            const pos = isHorizontal ? e.clientY : e.clientX;
+            const delta = pos - startPos;
+            let nextPrev = startPrev + delta;
+            nextPrev = Math.max(minPrev, Math.min(total - minNext, nextPrev));
+            const nextNext = total - nextPrev;
+            const dim = isHorizontal ? "height" : "width";
+            prev.style[dim] = nextPrev + "px";
+            next.style[dim] = nextNext + "px";
+            // Reset flex-grow/shrink so the explicit pixel size sticks.
+            prev.style.flex = "0 0 auto";
+            next.style.flex = "0 0 auto";
+          };
+
+          const onUp = () => {
+            window.removeEventListener("pointermove", onMove);
+            window.removeEventListener("pointerup", onUp);
+            splitter.classList.remove("dragging");
+            document.body.classList.remove(
+              isHorizontal ? "dragging-h" : "dragging-v",
+            );
+          };
+
+          const grabSiblings = () => {
+            prev = splitter.previousElementSibling;
+            next = splitter.nextElementSibling;
+            if (!prev || !next) return false;
+            const prevRect = prev.getBoundingClientRect();
+            measure();
+            startPrev = isHorizontal ? prevRect.height : prevRect.width;
+            minPrev = minFor(prev);
+            minNext = minFor(next);
+            return true;
+          };
+
+          splitter.addEventListener("pointerdown", (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            if (!grabSiblings()) return;
+            startPos = isHorizontal ? e.clientY : e.clientX;
+            splitter.classList.add("dragging");
+            document.body.classList.add(
+              isHorizontal ? "dragging-h" : "dragging-v",
+            );
+            window.addEventListener("pointermove", onMove);
+            window.addEventListener("pointerup", onUp, { once: true });
+          });
+
+          // Keyboard — focus the splitter, then arrow keys nudge by
+          // 24px (96 with Shift). Useful without a pointer.
+          splitter.addEventListener("keydown", (e) => {
+            const step = e.shiftKey ? 96 : 24;
+            const sign = isHorizontal
+              ? e.key === "ArrowDown"
+                ? +1
+                : e.key === "ArrowUp"
+                  ? -1
+                  : 0
+              : e.key === "ArrowRight"
+                ? +1
+                : e.key === "ArrowLeft"
+                  ? -1
+                  : 0;
+            if (sign === 0) return;
+            e.preventDefault();
+            if (!grabSiblings()) return;
+            startPos = 0;
+            startPrev = startPrev + sign * step;
+            onMove({ clientY: 0, clientX: 0 });
+          });
+        }
+      }
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", setupSplitters);
+      } else {
+        setupSplitters();
+      }
+
+      // -------- bundled packs --------
+      // These are the same JSON files shipped in the binary at
+      // src-tauri/resources/highlight/. Inlined so the playground works
+      // offline and on GitHub Pages without a fetch round-trip.
+      const BUNDLED_PACKS = {
+        "baudrun-default": {
+          "id": "baudrun-default",
+          "name": "Baudrun default",
+          "description": "Vendor-neutral highlights — IPs, MACs, interface names, status keywords, timestamps. Enabled by default; turn it off if you only want device-specific presets.",
+          "rules": [
+            { "pattern": "\\b\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\b", "color": "dim", "group": "timestamps" },
+            { "pattern": "\\b\\d{4}-\\d{2}-\\d{2}\\b", "color": "dim", "group": "dates" },
+            { "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}(?:\\/\\d{1,2})?\\b", "color": "cyan", "group": "ipv4" },
+            { "pattern": "\\b(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}\\b", "color": "magenta", "group": "mac" },
+            { "pattern": "\\b[0-9a-fA-F]{4}\\.[0-9a-fA-F]{4}\\.[0-9a-fA-F]{4}\\b", "color": "magenta", "group": "mac-cisco" },
+            { "pattern": "\\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\\b", "color": "cyan", "group": "ipv6" },
+            { "pattern": "\\b(?:GigabitEthernet|FastEthernet|TenGigabitEthernet|TwentyFiveGigE|HundredGigE|FortyGigE|Ethernet|Serial|Loopback|Vlan|Port-channel|Tunnel|Management|Bundle-Ether|Null)\\s?\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b", "color": "blue", "group": "interface-cisco-full" },
+            { "pattern": "\\b(?:Gi|Fa|Te|Twe|Hun|Fo|Eth|Se|Lo|Vl|Po|Tu|Mg|Bu|Nu)\\d+\\/\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b", "color": "blue", "group": "interface-cisco-short" },
+            { "pattern": "\\b(?:ge|xe|et|fe|me|xl|em|lo|fxp|irb|lt|st|mt|ae|pp|bme|vcp|vme|vt|sp|reth)-\\d+\\/\\d+\\/\\d+(?:\\.\\d+)?\\b", "color": "blue", "group": "interface-juniper" },
+            { "pattern": "\\b(?:up|online|active|established|connected|enabled|forwarding|FULL|passed|OK|success)\\b", "color": "green", "ignoreCase": true, "group": "state-good" },
+            { "pattern": "\\b(?:down|offline|inactive|failed|err-?disabled|error|denied|disabled|rejected|timeout|lost|critical|fatal|alert|unreachable)\\b", "color": "red", "ignoreCase": true, "group": "state-bad" },
+            { "pattern": "\\b(?:warning|warn|degraded|partial|init|learning|listening|blocking|pending)\\b", "color": "yellow", "ignoreCase": true, "group": "state-warn" },
+            { "pattern": "\\bVLAN\\s?\\d+\\b", "color": "yellow", "ignoreCase": true, "group": "vlan" }
+          ]
+        },
+        "cisco-ios": {
+          "id": "cisco-ios",
+          "name": "Cisco IOS / IOS XE / IOS XR",
+          "description": "Patterns common to Cisco's CLI output AND running-configs: line-protocol states, STP/OSPF/BGP states, log mnemonics, config-section headers, routing/service protocols. Config vocabulary set informed by Osama Abbas's Notepad++ UDL (github.com/Tes3awy/Cisco-IOS-XE-NotepadPlusPlus-Syntax-Highlight).",
+          "rules": [
+            { "pattern": "\\bline protocol is (up|down)\\b", "color": "yellow", "ignoreCase": true, "group": "interface-state" },
+            { "pattern": "%\\w+(?:-\\w+)*-\\d+-\\w+", "color": "yellow", "group": "log-mnemonic" },
+            { "pattern": "\\b(?:DESG|ROOT|ALTN|BLK|DSBL|BKN|LRN|FWD|LIS|EXC)\\b", "color": "blue", "group": "stp-role" },
+            { "pattern": "\\b(?:Full|Init|2-Way|ExStart|Exchange|Loading|Down)\\b", "color": "green", "ignoreCase": false, "group": "ospf-neighbor-state" },
+            { "pattern": "\\b(?:Idle|Connect|Active|OpenSent|OpenConfirm|Established)\\b", "color": "green", "ignoreCase": false, "group": "bgp-fsm-state" },
+            { "pattern": "\\bAS\\s?\\d{1,10}\\b", "color": "magenta", "group": "as-number" },
+            { "pattern": "\\(config(?:-[a-z0-9-]+)?\\)#", "color": "dim", "group": "config-prompt" },
+            { "pattern": "\\b(?:permit|deny)\\b", "color": "yellow", "ignoreCase": true, "group": "acl-action" },
+            { "pattern": "\\b(?:tagged|untagged|access|trunk|hybrid)\\b", "color": "blue", "ignoreCase": true, "group": "vlan-mode" },
+            { "pattern": "^\\s*no\\s+", "color": "red", "ignoreCase": false, "group": "negation" },
+            { "pattern": "\\bshutdown\\b", "color": "red", "ignoreCase": true, "group": "shutdown" },
+            { "pattern": "^\\s*(?:interface|router|line|vrf|crypto|access-list|route-map|policy-map|class-map|banner|vlan|vtp|hostname|logging|spanning-tree|boot|service|username|ip\\s+access-list|ipv6\\s+access-list|aaa|radius-server|tacacs-server|snmp-server|ntp|lldp|cdp|dot1x|mpls|device-tracking)\\b", "color": "blue", "ignoreCase": true, "group": "config-section" },
+            { "pattern": "\\b(?:switchport|encapsulation|channel-group|channel-protocol|duplex|speed|mtu|description|ip\\s+address|no\\s+ip\\s+address|ip\\s+helper-address|standby|bridge-group|service-policy|priority|bandwidth)\\b", "color": "blue", "ignoreCase": true, "group": "interface-subcmd" },
+            { "pattern": "\\b(?:ospf|bgp|eigrp|rip|isis|pim|bfd|hsrp|vrrp|glbp)\\b", "color": "magenta", "ignoreCase": true, "group": "routing-proto" },
+            { "pattern": "\\b(?:snmp|ssh|telnet|tftp|ftp|http|https|ntp|syslog|tacacs|radius|dhcp|dns|icmp|ipsec|gre|lacp|pagp|cdp|lldp|stp|mstp|rstp|pvst|cef)\\b", "color": "magenta", "ignoreCase": true, "group": "service-proto" }
+          ]
+        },
+        "junos": {
+          "id": "junos",
+          "name": "Juniper Junos",
+          "description": "Patterns for Junos OS output AND configuration: chassis hardware status, BGP/OSPF/IS-IS neighbor states, commit messages, set/delete statement annotations, stanza headers (interfaces/protocols/policy-options/firewall/routing-instances/…), policy-action keywords (accept/permit/reject/discard). Stanza and keyword set informed by nprintz/junos-sublime-pkg and wildsubnet/npp-junos.",
+          "rules": [
+            { "pattern": "\\b(?:Online|Offline|Present|Empty|Ready|Restart)\\b", "color": "green", "ignoreCase": false, "group": "chassis-status" },
+            { "pattern": "\\b(?:Estab|EstabSync|Active|Idle|Connect|OpenSent|OpenConfirm)\\b", "color": "green", "ignoreCase": false, "group": "bgp-state" },
+            { "pattern": "\\b(?:Full|Init|2Way|ExStart|Exchange|Loading|Down|Attempt)\\b", "color": "green", "ignoreCase": false, "group": "ospf-state" },
+            { "pattern": "\\bL[12](?:Pseudonode)?\\b", "color": "blue", "group": "isis-level" },
+            { "pattern": "\\[edit(?:[^\\]]*)?\\]", "color": "dim", "group": "edit-banner" },
+            { "pattern": "^\\+\\s+\\S+", "color": "green", "group": "config-add" },
+            { "pattern": "^-\\s+\\S+", "color": "red", "group": "config-remove" },
+            { "pattern": "\\bcommit complete\\b", "color": "green", "ignoreCase": false, "group": "commit-success" },
+            { "pattern": "\\bcommit failed\\b", "color": "red", "ignoreCase": false, "group": "commit-fail" },
+            { "pattern": "\\b(?:lo0|lo|fxp0|fxp1|me0|em\\d+)(?:\\.\\d+)?\\b", "color": "blue", "group": "mgmt-interface" },
+            { "pattern": "^\\s*no\\s+", "color": "red", "ignoreCase": false, "group": "negation" },
+            { "pattern": "^\\s*(?:set|delete|edit|show|request|activate|deactivate|rollback|run|annotate|replace|load)\\b", "color": "yellow", "ignoreCase": false, "group": "action-verb" },
+            { "pattern": "\\b(?:deny|discard|reject)\\b", "color": "red", "ignoreCase": false, "group": "policy-deny" },
+            { "pattern": "\\b(?:accept|permit)\\b", "color": "green", "ignoreCase": false, "group": "policy-accept" },
+            { "pattern": "^\\s*(?:system|interfaces|chassis|security|firewall|protocols|vlans|services|schedulers|applications|access|snmp|groups|apply-groups|forwarding-options|routing-options|routing-instances|logical-systems|bridge-domains|dynamic-profiles|ethernet-switching-options|policy-options|virtual-chassis|event-options|class-of-service|accounting-options|switch-options|multi-chassis|redundant-power-system|poe)\\b", "color": "blue", "ignoreCase": false, "group": "config-section" },
+            { "pattern": "\\b(?:ospf|ospfv3|bgp|isis|mpls|ldp|rsvp|pim|igmp|msdp|rip|ripng|bfd|vrrp|lacp|lldp|stp|rstp|mstp)\\b", "color": "magenta", "ignoreCase": false, "group": "protocol" }
+          ]
+        },
+        "aruba-cx": {
+          "id": "aruba-cx",
+          "name": "Aruba AOS-CX",
+          "description": "Patterns for HPE/Aruba AOS-CX switches AND running-configs: VSX/VSF chassis state, LAG/MCLAG status, STP, ACL actions, daemon names in event logs, config-section headers, routing/service protocols. Vocabulary set informed by Drannor-Dosalith's ArubaOS TextMate grammar.",
+          "rules": [
+            { "pattern": "\\bVSX\\b", "color": "magenta", "group": "vsx" },
+            { "pattern": "\\bVSF\\b", "color": "magenta", "group": "vsf" },
+            { "pattern": "\\b(?:lag|trk)\\d+\\b", "color": "blue", "ignoreCase": true, "group": "lag" },
+            { "pattern": "\\b(?:Designated|Root|Alternate|Backup|Disabled)\\s+(?:Forwarding|Discarding|Learning|Listening)\\b", "color": "blue", "ignoreCase": true, "group": "stp-role" },
+            { "pattern": "\\b(?:hpe|hpe-aaa|hpe-snmp|hpe-syslog|hpe-mgmd|hpe-stp|hpe-vrrp|hpe-vsf|hpe-vsx|hpe-l2|hpe-routing)[^\\s\\]]*", "color": "dim", "group": "daemon" },
+            { "pattern": "\\b(?:permit|deny|drop|count|log|reflect)\\b", "color": "yellow", "ignoreCase": true, "group": "acl-action" },
+            { "pattern": "\\b(?:Operational|Administrative)\\s+(?:up|down)\\b", "color": "yellow", "ignoreCase": true, "group": "interface-state" },
+            { "pattern": "\\b(?:Active|Inactive|Standby|Mismatch|Sync|InSync)\\b", "color": "green", "group": "vsx-role" },
+            { "pattern": "^\\s*no\\s+", "color": "red", "ignoreCase": false, "group": "negation" },
+            { "pattern": "^\\s*(?:interface|vlan|hostname|router|aaa|access-list|banner|logging|snmp-server|ntp|sntp|ip\\s+route|ipv6\\s+route|spanning-tree|qos|dhcp-snooping|device-profile|system|telnet-server|ssh\\s+server|radius-server|tacacs-server|user|username|mac-auth|port-access|nae-script|nae-agent|rest|mirror\\s+session|poe-policy|power-over-ethernet|vsx|vsf|vrf|console)\\b", "color": "blue", "ignoreCase": true, "group": "config-section" },
+            { "pattern": "\\b(?:ospf|ospfv3|bgp|isis|pim|vrrp|rip|ripng|bfd|msdp|igmp|ldp|mpls)\\b", "color": "magenta", "ignoreCase": true, "group": "routing-proto" },
+            { "pattern": "\\b(?:snmp|ssh|telnet|tftp|ftp|http|https|ntp|sntp|syslog|radius|tacacs|dhcp|dns|lldp|lacp|mstp|rstp|pvst|bpdu|icmp|ipsec|gre)\\b", "color": "magenta", "ignoreCase": true, "group": "service-proto" }
+          ]
+        },
+        "arista-eos": {
+          "id": "arista-eos",
+          "name": "Arista EOS",
+          "description": "Patterns for Arista EOS switches AND running-configs: MLAG peer state, VXLAN/EVPN fabric keywords, EOS-specific interface short forms (Et1/1), log facility format, config-section headers, routing/service protocols. Informed by og124's vscode-arista-eos extension.",
+          "rules": [
+            { "pattern": "\\b(?:MLAG)\\b", "color": "magenta", "ignoreCase": false, "group": "mlag" },
+            { "pattern": "\\b(?:mlag-peer|peer-link|dual-primary|peer-address|domain-id)\\b", "color": "blue", "ignoreCase": true, "group": "mlag-cfg" },
+            { "pattern": "\\b(?:VXLAN|VTEP|VNI|EVPN)\\b", "color": "magenta", "ignoreCase": false, "group": "fabric" },
+            { "pattern": "\\b(?:vxlan|vtep|vni|flood|route-target|route-distinguisher|rd)\\b", "color": "blue", "ignoreCase": true, "group": "fabric-cfg" },
+            { "pattern": "\\b(?:Aboot|Arista|EOS(?:-\\d+\\.\\d+(?:\\.\\d+[A-Za-z]?)*)?|TerminAttr)\\b", "color": "dim", "ignoreCase": false, "group": "platform" },
+            { "pattern": "\\bEt\\d+(?:\\/\\d+)+(?:\\.\\d+)?\\b", "color": "blue", "ignoreCase": false, "group": "interface-eos-short" },
+            { "pattern": "^\\s*no\\s+", "color": "red", "ignoreCase": false, "group": "negation" },
+            { "pattern": "\\bshutdown\\b", "color": "red", "ignoreCase": true, "group": "shutdown" },
+            { "pattern": "^\\s*(?:interface|router|vlan|vrf|hostname|banner|logging|snmp-server|ntp|spanning-tree|mlag|aaa|radius-server|tacacs-server|ip\\s+access-list|ipv6\\s+access-list|ip\\s+route|ipv6\\s+route|access-list|class-map|policy-map|route-map|prefix-list|peer-filter|username|role|event-handler|daemon|management|monitor|errdisable|qos|dot1x|port-security|lldp|cdp)\\b", "color": "blue", "ignoreCase": true, "group": "config-section" },
+            { "pattern": "\\b(?:switchport|encapsulation|channel-group|description|duplex|speed|mtu|ip\\s+address|ipv6\\s+address|ip\\s+helper-address|lacp\\s+mode|lacp\\s+fallback|storm-control|priority-flow-control|port-channel|trunk\\s+group|trunk\\s+native|trunk\\s+allowed)\\b", "color": "blue", "ignoreCase": true, "group": "interface-subcmd" },
+            { "pattern": "\\b(?:ospf|ospfv3|bgp|isis|pim|bfd|vrrp|rip|ldp|msdp|igmp)\\b", "color": "magenta", "ignoreCase": true, "group": "routing-proto" },
+            { "pattern": "\\b(?:snmp|ssh|telnet|tftp|ftp|http|https|ntp|syslog|radius|tacacs|dhcp|dns|lldp|lacp|mstp|rstp|bpdu|ipsec|gre|gnmi|netconf|restconf)\\b", "color": "magenta", "ignoreCase": true, "group": "service-proto" },
+            { "pattern": "\\b(?:consistent|synchronized|InSync)\\b", "color": "green", "ignoreCase": false, "group": "mlag-state-good" },
+            { "pattern": "\\b(?:inconsistent|unsynchronized|OutOfSync|dual-primary-detected)\\b", "color": "red", "ignoreCase": false, "group": "mlag-state-bad" },
+            { "pattern": "%[A-Z][A-Z0-9_]*-\\d-[A-Z][A-Z0-9_]*", "color": "yellow", "ignoreCase": false, "group": "log-facility" },
+            { "pattern": "\\b(?:Idle|Connect|Active|OpenSent|OpenConfirm|Established)\\b", "color": "green", "ignoreCase": false, "group": "bgp-state" }
+          ]
+        },
+        "mikrotik-routeros": {
+          "id": "mikrotik-routeros",
+          "name": "MikroTik RouterOS",
+          "description": "Patterns for RouterOS output and /export dumps: section paths (/ip address, /interface ethernet, /ip firewall filter), key=value parameter syntax, firewall chains + actions, connection states, MikroTik-style interface names (ether1, wlan1, wg0). Informed by dokai/routeros-conf VSCode grammar.",
+          "rules": [
+            { "pattern": "(?<=\\baction=)(?:accept|passthrough|fasttrack-connection)\\b", "color": "green", "ignoreCase": false, "group": "fw-action-accept" },
+            { "pattern": "(?<=\\baction=)(?:drop|reject|tarpit)\\b", "color": "red", "ignoreCase": false, "group": "fw-action-deny" },
+            { "pattern": "(?<=\\baction=)(?:log|jump|return|mark-connection|mark-packet|mark-routing|add-src-to-address-list|add-dst-to-address-list|src-nat|dst-nat|netmap|masquerade|redirect|change-ttl|change-dscp|change-mss)\\b", "color": "yellow", "ignoreCase": false, "group": "fw-action-other" },
+            { "pattern": "(?<=\\bchain=)(?:input|output|forward|srcnat|dstnat|prerouting|postrouting)\\b", "color": "blue", "ignoreCase": false, "group": "fw-chain" },
+            { "pattern": "(?<=\\bconnection-state=)[a-z,]+", "color": "yellow", "ignoreCase": false, "group": "conn-state" },
+            { "pattern": "(?<=\\bprotocol=)(?:tcp|udp|icmp|icmpv6|igmp|gre|ipip|ah|esp|ospf|pim|vrrp|sctp)\\b", "color": "magenta", "ignoreCase": false, "group": "fw-protocol" },
+            { "pattern": "(?<==)(?:yes|true)\\b", "color": "green", "ignoreCase": false, "group": "bool-true" },
+            { "pattern": "(?<==)(?:no|false)\\b", "color": "red", "ignoreCase": false, "group": "bool-false" },
+            { "pattern": "^\\s*\\/[a-z][a-z0-9-]*(?:\\s+[a-z][a-z0-9-]*)*", "color": "blue", "ignoreCase": false, "group": "section-path" },
+            { "pattern": "^\\s*(?:add|set|remove|print|get|find|move|disable|enable|export|import|comment|reset-configuration)\\b", "color": "yellow", "ignoreCase": false, "group": "action-verb" },
+            { "pattern": "^\\[[^@]*@[^\\]]+\\]\\s*(?:\\/[^>]*)?\\s*>", "color": "dim", "ignoreCase": false, "group": "prompt" },
+            { "pattern": "^\\s*#.*$", "color": "dim", "ignoreCase": false, "group": "comment" },
+            { "pattern": "\\b(?:ether|sfp-sfpplus|sfpplus|sfp|wlan|bridge|vlan|wg|bond|pppoe-out|pppoe-in|ovpn-out|ovpn-in|l2tp-out|l2tp-in|sstp-out|sstp-in|gre-tunnel|ipip-tunnel|eoip-tunnel|ifname)\\d+\\b", "color": "blue", "ignoreCase": false, "group": "mikrotik-interface" },
+            { "pattern": "\\b([a-z][a-z0-9_-]*)=", "color": "magenta", "ignoreCase": false, "group": "param-key" }
+          ]
+        },
+        "empty": {
+          id: "user",
+          name: "Custom",
+          description: "",
+          rules: [],
+        },
+      };
+
+      const SAMPLES = {
+        "baudrun-default": [
+          "2026-01-14 09:42:18  Interface GigabitEthernet0/0/1 changed state to up",
+          "2026-01-14 09:42:18  Line protocol on Interface Gi0/0/1, changed state to up",
+          "2026-01-14 09:42:19  Neighbor 10.0.12.1 (VRF default) is Established",
+          "2026-01-14 09:43:02  MAC 00:1a:2b:3c:4d:5e learned on Vlan10 port Gi0/0/3",
+          "2026-01-14 09:43:02  MAC aabb.ccdd.eeff aged out on TenGigabitEthernet1/0/24",
+          "2026-01-14 09:43:11  IPv6 neighbor 2001:db8::1 reachable via Loopback0",
+          "2026-01-14 09:44:00  WARNING: Interface FortyGigE2/0/1 entering err-disabled state",
+          "2026-01-14 09:44:01  Tunnel100 down — peer 192.0.2.42/32 unreachable",
+          "2026-01-14 09:44:30  VLAN 200 forwarding · ge-0/0/4 active",
+          "2026-01-14 09:45:00  Loopback0 192.0.2.1/32 up · admin enabled",
+          "2026-01-14 09:45:12  ERROR: BFD session to 198.51.100.5 timeout (lost adjacency)",
+        ].join("\n"),
+        "cisco-ios": [
+          "Router#show ip ospf neighbor",
+          "",
+          "Neighbor ID     Pri   State           Dead Time   Address         Interface",
+          "10.0.0.2          1   FULL/DR         00:00:38    10.0.12.2       GigabitEthernet0/0/1",
+          "10.0.0.3          1   2-Way/DROTHER   00:00:35    10.0.13.3       GigabitEthernet0/0/2",
+          "10.0.0.4          1   ExStart         00:00:31    10.0.14.4       GigabitEthernet0/0/3",
+          "",
+          "Router#show bgp summary",
+          "",
+          "Neighbor      V    AS  MsgRcvd MsgSent State/PfxRcd",
+          "10.0.12.2     4 65001    81234   81210 Established",
+          "10.0.13.3     4 65002    11      11    Active",
+          "10.0.14.4     4 65003    0       0     Idle",
+          "",
+          "Router#show spanning-tree",
+          "Gi0/0/1   DESG FWD 4    128.1   P2p",
+          "Gi0/0/2   ROOT FWD 4    128.2   P2p",
+          "Gi0/0/3   ALTN BLK 4    128.3   P2p",
+          "",
+          "Jan 14 09:44:01.234: %LINK-3-UPDOWN: Interface GigabitEthernet0/0/4, changed state to down",
+          "Jan 14 09:44:01.236: %LINEPROTO-5-UPDOWN: Line protocol on Interface Gi0/0/4, changed state to down",
+          "",
+          "Router#show running-config",
+          "!",
+          "hostname core-sw01",
+          "!",
+          "service timestamps debug datetime msec",
+          "service timestamps log datetime msec",
+          "!",
+          "boot system flash:cat9k_iosxe.17.09.04.SPA.bin",
+          "!",
+          "vrf definition MGMT",
+          " address-family ipv4",
+          "!",
+          "username admin privilege 15 secret 9 $9$xxx",
+          "!",
+          "aaa new-model",
+          "aaa authentication login default local group tacacs+",
+          "!",
+          "spanning-tree mode rapid-pvst",
+          "spanning-tree portfast bpduguard default",
+          "!",
+          "interface GigabitEthernet0/0/5",
+          " description link to spine-01",
+          " no shutdown",
+          " switchport mode trunk",
+          " switchport trunk allowed vlan 10,20,30",
+          " channel-group 1 mode active",
+          "!",
+          "interface Vlan10",
+          " ip address 10.0.10.1 255.255.255.0",
+          " no shutdown",
+          "!",
+          "router ospf 1",
+          " router-id 10.0.0.1",
+          " network 10.0.0.0 0.255.255.255 area 0",
+          "!",
+          "router bgp 65001",
+          " neighbor 10.0.12.2 remote-as 65001",
+          " neighbor 10.0.13.3 remote-as 65002",
+          "!",
+          "ip access-list extended FILTER",
+          " permit tcp any any eq 443",
+          " deny   ip any any log",
+          "!",
+          "snmp-server community public RO",
+          "ntp server 10.0.0.10",
+          "logging host 10.0.0.20",
+          "line vty 0 15",
+          " transport input ssh",
+          "!",
+          "end",
+        ].join("\n"),
+        "junos": [
+          "[edit]",
+          "user@junos> show chassis hardware",
+          "",
+          "Hardware inventory:",
+          "Item             Version  Part number  Serial number    Description",
+          "Chassis                                JN1234ABCD       MX204",
+          "Midplane         REV 06   711-079053   AAEX1234         MX204 Midplane",
+          "Routing Engine   BUILTIN  BUILTIN      BUILTIN          Routing Engine",
+          "FPC 0            REV 18   750-066884   CABL5678         FPC0  Online",
+          "  PIC 0                                BUILTIN          4x10GE SFP+",
+          "    Xcvr 0       REV 01   740-031980   AB12CD34         SFP+-10G-SR",
+          "FPC 1            -        -            -                Empty",
+          "",
+          "user@junos> show bgp summary",
+          "Peer                     AS      InPkt     OutPkt    OutQ   Flaps Last Up/Dwn State",
+          "10.0.0.2              65001     123456     123455       0       0     2w3d Estab",
+          "10.0.0.3              65002        102        101       0       1     00:01:42 Active",
+          "10.0.0.4              65003          0          0       0       0     never Idle",
+          "",
+          "user@junos> show ospf neighbor",
+          "Address          Interface              State     ID               Pri  Dead",
+          "10.0.12.2        ge-0/0/1.0             Full      10.0.0.2         128    37",
+          "10.0.13.3        ge-0/0/2.0             2Way      10.0.0.3         128    33",
+          "10.0.14.4        ge-0/0/3.0             ExStart   10.0.0.4         128    31",
+          "",
+          "user@junos> show interfaces lo0 terse",
+          "Interface               Admin Link Proto    Local                 Remote",
+          "lo0                     up    up",
+          "lo0.0                   up    up   inet     192.0.2.1/32",
+          "",
+          "user@junos# show configuration | display set | match ospf",
+          "set protocols ospf area 0.0.0.0 interface ge-0/0/0.0",
+          "set protocols ospf area 0.0.0.0 interface ge-0/0/1.0",
+          "set policy-options policy-statement EXPORT-OSPF term 1 from protocol direct",
+          "set policy-options policy-statement EXPORT-OSPF term 1 then accept",
+          "set policy-options policy-statement EXPORT-OSPF term 2 then reject",
+          "",
+          "user@junos# show | compare",
+          "[edit interfaces ge-0/0/4]",
+          "+   description \"link to spine-01\";",
+          "-   disable;",
+          "+   unit 0 family inet address 10.0.24.1/30;",
+          "[edit firewall filter MGMT-IN]",
+          "+   term DROP-INVALID {",
+          "+       then {",
+          "+           discard;",
+          "+       }",
+          "+   }",
+          "",
+          "user@junos# show system",
+          "system {",
+          "    host-name core-rtr-01;",
+          "    domain-name example.net;",
+          "    time-zone UTC;",
+          "    root-authentication {",
+          "        encrypted-password \"$6$xxx\";",
+          "    }",
+          "    services {",
+          "        ssh;",
+          "        netconf { ssh; }",
+          "    }",
+          "    syslog { host 10.0.0.20 any info; }",
+          "}",
+          "",
+          "user@junos# commit",
+          "commit complete",
+        ].join("\n"),
+        "mikrotik-routeros": [
+          "[admin@MikroTik] > /export compact",
+          "# 2026-01-14 09:42:18 by RouterOS 7.14.3",
+          "# software id = ABCD-1234",
+          "#",
+          "# model = CCR2004-16G-2S+",
+          "# serial number = HEF084B2M8C",
+          "",
+          "/interface ethernet",
+          "set [ find default-name=ether1 ] comment=\"WAN uplink\" name=ether1-wan",
+          "set [ find default-name=ether2 ] comment=\"LAN trunk\" name=ether2-lan",
+          "",
+          "/interface bridge",
+          "add admin-mac=48:A9:8A:12:34:56 auto-mac=no comment=\"LAN bridge\" name=bridge-lan",
+          "",
+          "/interface vlan",
+          "add interface=bridge-lan name=vlan10-users vlan-id=10",
+          "add interface=bridge-lan name=vlan20-voice vlan-id=20",
+          "",
+          "/interface wireguard",
+          "add listen-port=51820 mtu=1420 name=wg0",
+          "",
+          "/ip pool",
+          "add name=pool-users ranges=10.10.10.100-10.10.10.200",
+          "",
+          "/ip address",
+          "add address=10.10.10.1/24 interface=vlan10-users network=10.10.10.0",
+          "add address=10.20.20.1/24 interface=vlan20-voice network=10.20.20.0",
+          "add address=203.0.113.2/30 interface=ether1-wan network=203.0.113.0",
+          "",
+          "/ip dhcp-server",
+          "add address-pool=pool-users disabled=no interface=vlan10-users lease-time=1h name=dhcp-users",
+          "",
+          "/ip route",
+          "add disabled=no distance=1 dst-address=0.0.0.0/0 gateway=203.0.113.1",
+          "add blackhole disabled=no distance=250 dst-address=192.0.2.0/24",
+          "",
+          "/ip firewall filter",
+          "add action=accept chain=input comment=\"established & related\" connection-state=established,related",
+          "add action=drop chain=input comment=\"invalid\" connection-state=invalid",
+          "add action=accept chain=input protocol=icmp",
+          "add action=accept chain=input dst-port=22 protocol=tcp src-address-list=mgmt-allow",
+          "add action=drop chain=input comment=\"drop everything else\"",
+          "add action=fasttrack-connection chain=forward connection-state=established,related",
+          "add action=reject chain=forward out-interface=ether1-wan reject-with=icmp-admin-prohibited src-address=!10.10.10.0/24",
+          "",
+          "/ip firewall nat",
+          "add action=masquerade chain=srcnat comment=\"default masquerade\" out-interface=ether1-wan",
+          "add action=dst-nat chain=dstnat dst-port=443 in-interface=ether1-wan protocol=tcp to-addresses=10.10.10.50 to-ports=443",
+          "",
+          "/routing bgp instance",
+          "set default as=65001 router-id=10.10.10.1",
+          "",
+          "/routing bgp peer",
+          "add name=upstream-v4 remote-address=203.0.113.1 remote-as=65000",
+          "",
+          "/system identity",
+          "set name=edge-rtr-01",
+          "",
+          "/system ntp client",
+          "set enabled=yes primary-ntp=10.0.0.10",
+          "",
+          "/system logging",
+          "add topics=error,!debug action=memory",
+          "add topics=critical action=disk",
+          "",
+          "[admin@edge-rtr-01] > /ip address print",
+          "Flags: X - disabled, I - invalid, D - dynamic",
+          " #   ADDRESS              NETWORK         INTERFACE",
+          " 0   10.10.10.1/24        10.10.10.0      vlan10-users",
+          " 1   10.20.20.1/24        10.20.20.0      vlan20-voice",
+          " 2   203.0.113.2/30       203.0.113.0     ether1-wan",
+          " 3 D fe80::4aa9:8aff:fe12:3456/64           bridge-lan",
+          "",
+          "[admin@edge-rtr-01] > /interface print",
+          "Flags: D - dynamic, X - disabled, R - running, S - slave",
+          " #    NAME                        TYPE           ACTUAL-MTU L2MTU  MAX-L2MTU",
+          " 0  R ether1-wan                  ether            1500     1580  9580",
+          " 1  R ether2-lan                  ether            1500     1580  9580",
+          " 2  RS ether3                     ether            1500     1580  9580",
+          " 3   X ether4                     ether            1500     1580  9580",
+          " 4  R bridge-lan                  bridge           1500     1580",
+          " 5  R vlan10-users                vlan             1500     1576",
+          " 6  R wg0                         wireguard        1420",
+          "",
+          "[admin@edge-rtr-01] > /system routerboard print",
+          "       routerboard: yes",
+          "       board-name: CCR2004-16G-2S+",
+          "             model: CCR2004-16G-2S+",
+          "     serial-number: HEF084B2M8C",
+          "     firmware-type: tilegx",
+          "  factory-firmware: 7.6",
+          "  current-firmware: 7.14.3",
+          "  upgrade-firmware: 7.14.3",
+        ].join("\n"),
+        "arista-eos": [
+          "leaf1# show version",
+          "Arista DCS-7050SX3-48YC8-F",
+          "Hardware version: 11.01",
+          "Serial number: JPE12345678",
+          "System MAC address: 001c.7312.3456",
+          "",
+          "Software image version: EOS-4.30.3M",
+          "Architecture: x86_64",
+          "Internal build version: 4.30.3M-32895641.4303M",
+          "Aboot version: Aboot-veos-serial-8.0.2-4-g03be-3",
+          "",
+          "Uptime: 12 weeks, 3 days, 4 hours and 12 minutes",
+          "",
+          "leaf1# show mlag",
+          "MLAG Configuration:",
+          "  domain-id                 :                  POD1",
+          "  local-interface           :              Vlan4094",
+          "  peer-address              :               10.0.0.1",
+          "  peer-link                 :         Port-Channel10",
+          "",
+          "MLAG Status:",
+          "  state                     :                 Active",
+          "  negotiation status        :             Connected",
+          "  peer-link status          :                     Up",
+          "  local-int status          :                     Up",
+          "  system-id                 :         02:1c:73:12:34:56",
+          "  dual-primary detection    :               Enabled",
+          "",
+          "MLAG Ports:",
+          "  Disabled                  :                      0",
+          "  Configured                :                      0",
+          "  Inactive                  :                      2",
+          "  Active-partial            :                      0",
+          "  Active-full               :                     46",
+          "",
+          "leaf1# show bgp evpn summary",
+          "BGP summary information for VRF default",
+          "Router identifier 10.0.0.1, local AS number 65001",
+          "Neighbor Status Codes: m - Under maintenance",
+          "  Neighbor         V  AS           MsgRcvd   MsgSent  InQ OutQ  Up/Down State   PfxRcd",
+          "  10.0.0.2         4  65000         152345    152340    0    0    1w2d Estab   1024",
+          "  10.0.0.3         4  65000         152289    152286    0    0    1w2d Estab    987",
+          "",
+          "leaf1# show vxlan vni",
+          "VNI to VLAN Mapping for Vxlan1",
+          "VNI        VLAN       Source       Interface       802.1Q Tag",
+          "----------- ---------- ------------ --------------- ----------",
+          "10010       10         static       Vxlan1          10",
+          "10020       20         static       Vxlan1          20",
+          "10100      100         static       Vxlan1          100",
+          "",
+          "leaf1# show interfaces status",
+          "Port       Name               Status       Vlan       Duplex Speed Type",
+          "Et1        spine1-et1         connected    trunk      full   100G  100GBASE-AR",
+          "Et2        spine2-et1         connected    trunk      full   100G  100GBASE-AR",
+          "Et3                           notconnect   1          full   25G   25GBASE-CR",
+          "Et48       mgmt-svr           connected    10         full   10G   10GBASE-SR",
+          "Ma1                           connected    routed     full   1G    10/100/1000",
+          "Po10       mlag-peer          connected    trunk      full   200G  N/A",
+          "",
+          "Jan 14 09:44:01 leaf1 %BGP-5-ADJCHANGE: peer 10.0.0.2 Established",
+          "Jan 14 09:44:10 leaf1 %ETH-4-TRANSCEIVER_SEEN: Transceiver inserted in Et3",
+          "Jan 14 09:44:15 leaf1 %LLDP-5-NEIGHBOR_NEW: Discovered on Et1 via LLDP",
+          "",
+          "leaf1# show running-config",
+          "! device: leaf1 (DCS-7050SX3-48YC8-F, EOS-4.30.3M)",
+          "!",
+          "hostname leaf1",
+          "ip name-server vrf default 10.0.0.10",
+          "!",
+          "daemon TerminAttr",
+          "   exec /usr/bin/TerminAttr -cvaddr=cvp.example.net:9910 -cvauth=token",
+          "   no shutdown",
+          "!",
+          "spanning-tree mode mstp",
+          "!",
+          "aaa authentication login default group tacacs+ local",
+          "!",
+          "username admin privilege 15 role network-admin secret sha512 $6$xxx",
+          "!",
+          "vlan 10",
+          "   name USERS",
+          "vlan 4094",
+          "   name MLAG-PEER",
+          "   trunk group MLAG-PEER",
+          "!",
+          "vrf instance MGMT",
+          "!",
+          "interface Port-Channel10",
+          "   description mlag peer-link",
+          "   switchport mode trunk",
+          "   switchport trunk group MLAG-PEER",
+          "!",
+          "interface Ethernet1",
+          "   description spine1 Et1",
+          "   no switchport",
+          "   ip address 10.0.12.1/31",
+          "!",
+          "interface Vxlan1",
+          "   vxlan source-interface Loopback0",
+          "   vxlan udp-port 4789",
+          "   vxlan vlan 10 vni 10010",
+          "   vxlan vlan 20 vni 10020",
+          "!",
+          "router bgp 65001",
+          "   router-id 10.0.0.1",
+          "   neighbor SPINES peer-group",
+          "   neighbor SPINES remote-as 65000",
+          "   neighbor 10.0.12.0 peer-group SPINES",
+          "   address-family evpn",
+          "      neighbor SPINES activate",
+          "   address-family ipv4",
+          "      neighbor SPINES activate",
+          "!",
+          "mlag configuration",
+          "   domain-id POD1",
+          "   local-interface Vlan4094",
+          "   peer-address 10.0.0.1",
+          "   peer-link Port-Channel10",
+          "!",
+          "management api http-commands",
+          "   protocol https",
+          "   no shutdown",
+          "!",
+          "end",
+        ].join("\n"),
+        "aruba-cx": [
+          "switch# show vsx status",
+          "",
+          "VSX Operational State",
+          "  ISL channel: In-Sync   Sync",
+          "  ISL mgmt channel: operational",
+          "  Config Sync Status: InSync",
+          "  NAE: Active",
+          "  HTTPS Server: Active",
+          "  Device Role: primary",
+          "",
+          "switch# show lacp aggregates",
+          "Aggregate name  : lag1",
+          "Aggregated interfaces : 1/1/1 1/1/2",
+          "Aggregate mode  : active",
+          "Operational state: Active",
+          "",
+          "switch# show spanning-tree",
+          "Port   Role        State        Cost     Pri  Type",
+          "1/1/1  Designated  Forwarding   2000     128  point-to-point",
+          "1/1/2  Root        Forwarding   2000     128  point-to-point",
+          "1/1/3  Alternate   Discarding   2000     128  point-to-point",
+          "",
+          "switch# show interface 1/1/4 brief",
+          "Port    Native VLAN  Mode    Operational  Administrative  Reason",
+          "1/1/4   1            access  Operational up  Administrative up",
+          "",
+          "switch# show events -d hpe-stp",
+          "2026-01-14T09:42:18.123Z hpe-stp[1234]: Interface 1/1/3 transitioned to Discarding",
+          "2026-01-14T09:43:02.987Z hpe-vsx[5678]: peer 192.0.2.2 keepalive Active",
+          "2026-01-14T09:44:01.456Z hpe-syslog[91011]: ACL FILTER deny tcp any any eq 23",
+          "",
+          "switch# show running-config",
+          "hostname core-sw01",
+          "user admin group administrators password ciphertext AQB...",
+          "ntp server 10.0.0.10 iburst",
+          "snmp-server community public",
+          "logging 10.0.0.20 severity info",
+          "!",
+          "vlan 10",
+          "    name USERS",
+          "    no shutdown",
+          "vlan 200",
+          "    name MGMT",
+          "    no shutdown",
+          "!",
+          "spanning-tree mode mstp",
+          "spanning-tree priority 4",
+          "!",
+          "interface 1/1/1",
+          "    no shutdown",
+          "    description link to spine-01",
+          "    lag 1",
+          "interface lag 1",
+          "    no shutdown",
+          "    vlan trunk native 1",
+          "    vlan trunk allowed 10,200",
+          "    lacp mode active",
+          "!",
+          "router ospf 1",
+          "    router-id 10.0.0.1",
+          "    area 0.0.0.0",
+          "!",
+          "router bgp 65001",
+          "    bgp router-id 10.0.0.1",
+          "    neighbor 10.0.12.2 remote-as 65001",
+          "!",
+          "access-list ip MGMT",
+          "    10 permit tcp 10.0.0.0/24 any eq 22",
+          "    20 deny   ip any any count log",
+          "!",
+          "vsx",
+          "    system-mac 02:00:00:00:65:01",
+          "    inter-switch-link lag 255",
+          "    role primary",
+        ].join("\n"),
+      };
+
+      const COLOR_CLASS = {
+        red: "red",
+        green: "green",
+        yellow: "yellow",
+        blue: "blue",
+        magenta: "magenta",
+        cyan: "cyan",
+        dim: "dim",
+      };
+
+      // -------- DOM --------
+      const packSelect = document.getElementById("pack-select");
+      const packInput = document.getElementById("pack-input");
+      const packStatus = document.getElementById("pack-status");
+      const stackDefault = document.getElementById("stack-default");
+      const sampleSelect = document.getElementById("sample-select");
+      const sampleInput = document.getElementById("sample-input");
+      const fileInput = document.getElementById("file-input");
+      const loadFileBtn = document.getElementById("load-file-btn");
+      const dropTarget = document.getElementById("sample-drop");
+      const output = document.getElementById("output");
+      const outputMeta = document.getElementById("output-meta");
+
+      let compiledRules = [];
+
+      // -------- pack handling --------
+      function loadBundledPack(id) {
+        const pack = BUNDLED_PACKS[id];
+        packInput.value = JSON.stringify(pack, null, 2);
+        recompile();
+      }
+
+      // Compile a list of rule objects (pattern + color + ignoreCase)
+      // into our internal {re, cls} shape. Patterns that fail to compile
+      // are dropped and reported back via the returned `dropped` array
+      // so the status bar can surface them.
+      function compileRuleList(rules) {
+        const out = [];
+        const dropped = [];
+        for (const r of rules) {
+          if (typeof r?.pattern !== "string") {
+            dropped.push("(missing pattern)");
+            continue;
+          }
+          let flags = "g";
+          if (r.ignoreCase) flags += "i";
+          try {
+            const re = new RegExp(r.pattern, flags);
+            const cls = COLOR_CLASS[r.color] ?? COLOR_CLASS.dim;
+            out.push({ re, cls });
+          } catch (err) {
+            dropped.push(`${r.pattern}  →  ${err.message}`);
+          }
+        }
+        return { compiled: out, dropped };
+      }
+
+      function recompile() {
+        let pack;
+        try {
+          pack = JSON.parse(packInput.value);
+        } catch (err) {
+          packInput.classList.add("invalid");
+          packStatus.innerHTML = `<span class="err">JSON: ${escapeHtml(String(err.message || err))}</span>`;
+          compiledRules = [];
+          render();
+          return;
+        }
+        packInput.classList.remove("invalid");
+
+        const editorRules = Array.isArray(pack?.rules) ? pack.rules : [];
+        // Stacking model mirrors the runtime: baudrun-default first,
+        // then the user's pack — so user rules win on overlap.
+        // Skip the stack when the editor already holds baudrun-default
+        // (otherwise its rules would be applied twice for no reason).
+        const stack = stackDefault.checked && pack?.id !== "baudrun-default";
+
+        const editor = compileRuleList(editorRules);
+        const stacked = stack ? compileRuleList(BUNDLED_PACKS["baudrun-default"].rules) : { compiled: [], dropped: [] };
+
+        compiledRules = [...stacked.compiled, ...editor.compiled];
+        const dropped = [...stacked.dropped, ...editor.dropped];
+
+        const totalRules = compiledRules.length;
+        const editorCount = editor.compiled.length;
+        let baseMsg;
+        if (stack) {
+          baseMsg = `${editorCount} rule${editorCount === 1 ? "" : "s"} compiled · ${stacked.compiled.length} stacked from default`;
+        } else {
+          baseMsg = `${totalRules} rule${totalRules === 1 ? "" : "s"} compiled`;
+        }
+        if (dropped.length === 0) {
+          packStatus.innerHTML = `<span class="ok">${baseMsg}.</span>`;
+        } else {
+          packStatus.innerHTML =
+            `<span class="ok">${baseMsg}.</span> ` +
+            `<span class="warn">${dropped.length} dropped:</span> ` +
+            `<span class="warn">${escapeHtml(dropped.slice(0, 3).join(" · "))}` +
+            (dropped.length > 3 ? ` · …` : "") +
+            `</span>`;
+        }
+        render();
+      }
+
+      // -------- highlighting --------
+      // Mirror of src/lib/highlight.ts: try every rule, collect non-
+      // overlapping matches, render in start-order. First match wins on
+      // overlap so earlier rules in the pack take precedence over later
+      // ones (matches the in-app behavior).
+      function highlightLine(line) {
+        if (line.length === 0) return "";
+        const matches = [];
+        for (const rule of compiledRules) {
+          rule.re.lastIndex = 0;
+          let m;
+          while ((m = rule.re.exec(line)) !== null) {
+            const start = m.index;
+            const end = start + m[0].length;
+            if (end === start) {
+              rule.re.lastIndex = end + 1;
+              continue;
+            }
+            const overlaps = matches.some(
+              (e) => !(end <= e.start || start >= e.end),
+            );
+            if (!overlaps) {
+              matches.push({ start, end, cls: rule.cls });
+            }
+          }
+        }
+        if (matches.length === 0) return escapeHtml(line);
+        matches.sort((a, b) => a.start - b.start);
+
+        let out = "";
+        let pos = 0;
+        for (const mt of matches) {
+          out += escapeHtml(line.slice(pos, mt.start));
+          out += `<span class="${mt.cls}">${escapeHtml(line.slice(mt.start, mt.end))}</span>`;
+          pos = mt.end;
+        }
+        out += escapeHtml(line.slice(pos));
+        return out;
+      }
+
+      function render() {
+        const text = sampleInput.value;
+        const lines = text.split(/\r\n|\n/);
+        let totalMatches = 0;
+        const html = lines
+          .map((line) => {
+            const before = output.querySelectorAll
+              ? null
+              : null;
+            const rendered = highlightLine(line);
+            // Quick match counter — count <span tags in the line.
+            const m = rendered.match(/<span /g);
+            if (m) totalMatches += m.length;
+            return rendered;
+          })
+          .join("\n");
+        output.innerHTML = html;
+        outputMeta.textContent = `${lines.length.toLocaleString()} lines · ${totalMatches.toLocaleString()} match${totalMatches === 1 ? "" : "es"}`;
+      }
+
+      function escapeHtml(s) {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      // -------- file loading --------
+      function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsText(file);
+        });
+      }
+
+      async function loadFile(file) {
+        try {
+          sampleInput.value = await readFileAsText(file);
+          render();
+        } catch (err) {
+          alert(`Failed to read file: ${err.message || err}`);
+        }
+      }
+
+      // -------- wire-up --------
+      packSelect.addEventListener("change", () => loadBundledPack(packSelect.value));
+      packInput.addEventListener("input", recompile);
+      stackDefault.addEventListener("change", recompile);
+      sampleInput.addEventListener("input", render);
+      sampleSelect.addEventListener("change", () => {
+        sampleInput.value = SAMPLES[sampleSelect.value] ?? "";
+        render();
+      });
+      loadFileBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        const f = fileInput.files?.[0];
+        if (f) loadFile(f);
+        fileInput.value = ""; // allow re-selecting same file later
+      });
+
+      // Drag-and-drop onto the sample panel.
+      ["dragenter", "dragover"].forEach((ev) =>
+        dropTarget.addEventListener(ev, (e) => {
+          e.preventDefault();
+          dropTarget.classList.add("dragover");
+        }),
+      );
+      ["dragleave", "drop"].forEach((ev) =>
+        dropTarget.addEventListener(ev, (e) => {
+          e.preventDefault();
+          if (ev === "dragleave" && dropTarget.contains(e.relatedTarget))
+            return;
+          dropTarget.classList.remove("dragover");
+        }),
+      );
+      dropTarget.addEventListener("drop", (e) => {
+        const f = e.dataTransfer?.files?.[0];
+        if (f) loadFile(f);
+      });
+
+      // -------- boot --------
+      loadBundledPack("baudrun-default");
+      sampleInput.value = SAMPLES["baudrun-default"];
+      render();
+    </script>
+  </body>
+</html>

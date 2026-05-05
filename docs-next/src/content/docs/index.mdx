@@ -1,0 +1,57 @@
+---
+title: Baudrun
+description: A serial terminal for network gear — console sessions for switches, routers, and firewalls without the screen / minicom / putty dance.
+template: splash
+hero:
+  tagline: A serial terminal for network gear. Console sessions for switches, routers, and firewalls — without the screen / minicom / putty dance.
+  actions:
+    - text: Install for your platform
+      link: /Baudrun/install/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/packetThrower/Baudrun
+      icon: external
+      variant: secondary
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What it does
+
+Baudrun is the console session you actually want when you plug a USB-serial adapter into a switch. Profiles for every device you touch, a real terminal that doesn't fight you, and a UI that gets out of the way once a session is live.
+
+<CardGrid>
+  <Card title="Profiles, not flags" icon="seti:default">
+    Every device gets a profile with port, baud, parity, line endings, and per-profile theme + highlighting. Click a profile, hit Connect — done. No remembering whether this Cisco wants `8N1` or `7E1`.
+  </Card>
+  <Card title="Real terminal" icon="laptop">
+    Powered by xterm.js with proper VT processing, scrollback, search, and a syntax-highlighting pass for IPs, MACs, interface names, and vendor-specific output.
+  </Card>
+  <Card title="Cross-platform native" icon="setting">
+    macOS, Windows, and Linux from the same Tauri 2 codebase. Native window chrome on each, single binary, no JVM. Auto-update on stable + pre-release channels.
+  </Card>
+  <Card title="Designed for adapters" icon="seti:powershell">
+    Knows about CH340, CP210x, FTDI, and the rest of the USB-serial driver landscape. Tells you when a driver is missing instead of just refusing to open the port.
+  </Card>
+</CardGrid>
+
+## Get started
+
+<CardGrid>
+  <Card title="Install" icon="rocket">
+    Homebrew, Scoop, or direct downloads — both stable and pre-release channels. [Install instructions →](/Baudrun/install/)
+  </Card>
+  <Card title="Profiles" icon="document">
+    The profile system is the centre of how Baudrun works. [Profiles guide →](/Baudrun/usage/profiles/)
+  </Card>
+  <Card title="Syntax highlighting" icon="seti:default">
+    Vendor-aware highlight packs for Cisco / Juniper / Aruba / Arista / MikroTik, plus your own. Try regexes live in the [rule playground](/Baudrun/playground.html). [Authoring guide →](/Baudrun/authoring/highlighting/)
+  </Card>
+  <Card title="Customize" icon="seti:json">
+    Author your own terminal themes (`.itermcolors`) and chrome skins (Baudrun JSON). [Themes →](/Baudrun/authoring/themes/) · [Skins →](/Baudrun/authoring/skins/)
+  </Card>
+  <Card title="See it" icon="laptop">
+    A guided tour of every screen and built-in skin, in light and dark, on macOS / Windows / Linux. [Screenshots →](/Baudrun/usage/screenshots/)
+  </Card>
+</CardGrid>
