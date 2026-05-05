@@ -1,6 +1,6 @@
 ---
 title: Advanced settings
-description: 'Reference for everything beyond basic connect-and-type — hex view, session logs, syntax highlighting, and more.'
+description: 'Reference for everything beyond basic connect-and-type: hex view, session logs, syntax highlighting, file transfer.'
 editUrl: https://github.com/packetThrower/Baudrun/edit/main/docs/ADVANCED.md
 ---
 
@@ -13,8 +13,8 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
 
 - Session-header **Break** button.
 - Sends a 300 ms break condition (TX line held low).
-- Implemented via the `serialport` crate's `set_break()` /
-  `clear_break()` pair (with a `sleep(duration)` between) — backed
+- Implemented via the `serialport` crate's `set_break()` and
+  `clear_break()` pair (with a `sleep(duration)` between), backed
   by `tcsendbreak` on Unix, `SetCommBreak` / `ClearCommBreak` on
   Windows. Direct-USB CP210x uses the SET_BREAK control transfer.
 - Disabled while the session is in the reconnecting state.
@@ -39,7 +39,7 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
 - Per-profile toggle.
 - Renders incoming bytes as a 16-byte-per-line hex dump with an
   ASCII sidebar.
-- Mutually exclusive with the syntax highlighter — toggling either
+- Mutually exclusive with the syntax highlighter. Toggling either
   mode resets the other's buffer.
 - Scrollback is not shared with plain view; switching modes mid-
   session clears the viewport.
@@ -65,14 +65,14 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
 
 - Session-header **Send File** button opens a modal.
 - Protocol options:
-  - **YMODEM** — 1024-byte blocks with CRC-16 and a header block
+  - **YMODEM.** 1024-byte blocks with CRC-16 and a header block
     carrying filename and size. Receivers that speak `rb`, `loady`
     on U-Boot, or most modern MCU bootloader "Receive YMODEM" menus.
-  - **XMODEM-1K** — 1024-byte blocks with CRC-16, no filename
+  - **XMODEM-1K.** 1024-byte blocks with CRC-16, no filename
     metadata. Sometimes called XMODEM-CRC with 1K blocks or YAM.
-  - **XMODEM-CRC** — 128-byte blocks with CRC-16. Receiver
+  - **XMODEM-CRC.** 128-byte blocks with CRC-16. Receiver
     initiates with `C`.
-  - **XMODEM** — 128-byte blocks with an 8-bit checksum. Receiver
+  - **XMODEM.** 128-byte blocks with an 8-bit checksum. Receiver
     initiates with `NAK`. Legacy; present in some older ROMs and
     boot loaders.
 - The transfer runs entirely in the Go backend. While in progress,
@@ -88,9 +88,9 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
   the receiver to send `C` or `NAK`. Per-block ACK waits are 10 s
   with up to 10 retries per block. A stuck receiver eventually
   surfaces as a retry-exhaustion error rather than a hang.
-- **ZMODEM is not implemented** — its state machine is an order of
+- **ZMODEM is not implemented.** Its state machine is an order of
   magnitude larger than XMODEM/YMODEM and most embedded bootloader
-  targets don't speak it. Add-on request.
+  targets don't speak it. Open an issue if you need it.
 
 **Sequence for a typical firmware upload:**
 
@@ -111,7 +111,7 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
 - Prefixes each newly committed line with `[HH:MM:SS.mmm]`.
 - Applied at line commit time; enabling mid-session does not
   retroactively timestamp existing scrollback.
-- Only visible in plain view — hex view has no per-line concept to
+- Only visible in plain view; hex view has no per-line concept to
   prefix.
 
 ## Config-directory relocation
@@ -129,7 +129,7 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
   and contains the absolute path of the custom directory. On startup,
   `appdata.SupportDir()` reads it; if absent, falls back to the
   default. Deleting the file resets to default.
-- **Takes effect on next launch** — stores are loaded once at
+- **Takes effect on next launch.** Stores are loaded once at
   startup. The Settings UI shows a "Restart Baudrun to apply"
   status message.
 - **Existing files are not migrated.** Moving the config pointer is
@@ -145,7 +145,7 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
 - Default `<logdir>` is `<support>/logs/`; overridable in
   Settings → Advanced → Session Log Directory.
 - One file per session. No built-in rotation or rollover.
-- Writes raw incoming bytes only — no framing, no timestamps, no
+- Writes raw incoming bytes only. No framing, no timestamps, no
   captured keystrokes. Device echo of user input appears if the
   device itself echoes.
 - The writer is closed cleanly on disconnect.
@@ -153,7 +153,7 @@ see [PROFILES.md](/Baudrun/usage/profiles/).
 ## Auto-reconnect
 
 - Per-profile toggle (`autoReconnect`, default `true`).
-- Triggered when the session's read pump exits with an error —
+- Triggered when the session's read pump exits with an error,
   typically "port disappeared" after a USB-serial adapter
   re-enumerates.
 - Runs in the Go backend, independent of UI state, so it keeps
@@ -251,16 +251,16 @@ identical regardless of which one you reach for.
 If the profile you're tearing off is *currently connected* in the
 source window, the live session moves with it:
 
-- The serial port stays open the entire time — no mid-session bytes
-  lost, no DTR/RTS pulse, no need to re-authenticate the device-side
-  shell.
+- The serial port stays open the entire time. No mid-session bytes
+  are lost, no DTR/RTS pulse fires, and there is no need to re-
+  authenticate the device-side shell.
 - The visible xterm scrollback rides along too (serialized via
   `@xterm/addon-serialize` and replayed in the new window's terminal
   on mount), so you don't lose what was on screen.
-- The source window's session UI clears — the connection now belongs
+- The source window's session UI clears. The connection now belongs
   to the new window.
 - An in-flight XMODEM/YMODEM transfer blocks migration with a
-  `transfer in progress — wait for it to finish or cancel before
+  `transfer in progress: wait for it to finish or cancel before
   migrating` error. Wait for the transfer or click Cancel transfer
   first.
 
@@ -278,9 +278,9 @@ per-window. Closing a window disconnects only that window's session,
 not the others.
 
 A single physical port can still only be opened once at the OS
-level — if window A is connected to `/dev/cu.usbserial-1234` and you
+level. If window A is connected to `/dev/cu.usbserial-1234` and you
 try to connect window B to the same port, the OS returns busy.
-Migrate instead of trying to open twice.
+Migrate the session instead of trying to open the port twice.
 
 ### Cross-platform behavior
 
@@ -289,7 +289,7 @@ Migrate instead of trying to open twice.
   active skin.
 - Windows + Linux: spawned windows get the OS's default decorated
   chrome (titlebar with title + min/max/close). The drag-out
-  gesture works the same — Tauri queries the OS cursor position
+  gesture works the same: Tauri queries the OS cursor position
   directly rather than trusting browser-event coordinates, which
   side-steps the WebKitGTK / WebView2 quirks around `dragend`.
 
@@ -315,21 +315,21 @@ notes and download manually. Stable toasts get an additional
 
 1. Downloads the platform-specific bundle from the GitHub release.
 2. Verifies the bundle's minisign signature against the public key
-   embedded in `tauri.conf.json` — bundles signed with any other
+   embedded in `tauri.conf.json`. Bundles signed with any other
    key are rejected before they touch disk.
 3. Replaces the installed binary in place and relaunches into the
    new version.
 
 The signing keypair is held outside the repo. Per-platform mechanics:
 
-- **macOS** — auto-update unpacks `Baudrun.app.tar.gz` next to the
+- **macOS.** Auto-update unpacks `Baudrun.app.tar.gz` next to the
   installed `.app` and replaces it. Builds are ad-hoc codesigned
   (no paid Apple Developer account yet), so each downloaded update
   triggers Gatekeeper's "right-click → Open" prompt the first time
   on each user's machine.
-- **Windows** — downloads the NSIS `setup.exe` and runs it in
+- **Windows.** Downloads the NSIS `setup.exe` and runs it in
   silent mode.
-- **Linux** — AppImage updater. `.deb` / `.rpm` / Arch users update
+- **Linux.** AppImage updater. `.deb`, `.rpm`, and Arch users update
   through their distro's package manager (or download a fresh
   package from the release page); the in-app updater leaves those
   alone.
@@ -364,14 +364,14 @@ manually.
   by editing `settings.json` directly and are preserved, surfaced in
   the dropdown as `N lines (custom)` so they don't silently reset.
 - Changing the setting tears down and rebuilds the `<Terminal>`
-  component — xterm doesn't resize the ring buffer in place. The
+  component, since xterm doesn't resize the ring buffer in place. The
   rebuild snapshots the existing buffer as plain text and writes it
   back into the fresh instance. Tradeoffs on the existing scrollback:
   plain text survives, ANSI color attributes are flattened, current
   selection is lost. New output after the rebuild is colored as
   normal. Same mechanism the font-size live-update uses.
 - The buffer is strictly in-memory. Independent of, and not
-  affected by, the Session logging feature — if you need permanent
+  affected by, the Session logging feature. If you need permanent
   history, enable `logEnabled` on the profile.
 
 **Memory cost (approximate, at a 200-column terminal):**
@@ -404,7 +404,7 @@ scale linearly with line count.
   the OS flips.
 - Only swaps the CSS palette. The window's own
   `NSVisualEffectView` material on macOS is pinned to the dark
-  system appearance at startup — Tauri v2's runtime appearance
+  system appearance at startup. Tauri v2's runtime appearance
   setters don't reliably swap NSAppearance live on macOS, so the
   vibrancy material cannot change after launch.
 - Dark-only skins (CRT, Cyberpunk) ignore the preference and pin
@@ -418,7 +418,7 @@ scale linearly with line count.
   pack-override list. Settings → Syntax Highlighting picks the global
   default packs; profiles override under their own collapsible
   Syntax Highlighting card.
-- Rules ship as **packs** — JSON files with a list of `{pattern, color,
+- Rules ship as **packs**: JSON files with a list of `{pattern, color,
   ignoreCase?, group?}` entries. Built-in packs:
 
   | Pack | Covers |
@@ -431,12 +431,12 @@ scale linearly with line count.
   | **MikroTik RouterOS** | `/export` section paths (`/ip firewall filter`, `/interface vlan`), `k=v` parameter syntax, firewall chain + action semantics (accept/drop/reject), connection states, RouterOS-style interface names (`ether1`, `wlan1`, `wg0`) |
 
 - The "User overrides" pack lives at
-  `$SUPPORT_DIR/highlight-rules.json` and is editable on disk —
-  rules there layer on top of bundled packs.
+  `$SUPPORT_DIR/highlight-rules.json` and is editable on disk.
+  Rules there layer on top of bundled packs.
 - Available colors: `red`, `green`, `yellow`, `blue`, `magenta`,
   `cyan`, `dim`. First match wins on overlap; rules within a pack
   are tried in array order, packs in load order.
-- Mutually exclusive with hex view — toggling either mode resets
+- Mutually exclusive with hex view. Toggling either mode resets
   the other's line buffer.
 - Device-supplied ANSI CSI colors pass through unchanged. The
   highlighter only applies color to text that arrived uncolored.
@@ -452,20 +452,20 @@ with a bundled pack or the reserved `user` scratchpad are rejected.
 Two starter packs are documented with a copy-button code block plus
 a download link:
 
-- [Minimal example](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/highlight-pack.example.md) — near-empty
-  skeleton showing the schema. Copy, rename `id` + `name`, add rules,
-  import.
-- [Syslog / journald](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/syslog.example.md) — practical starter
-  for generic syslog / journald output (severity keywords, systemd
-  unit states, sshd accepted/denied lines, `[OK]`/`[FAILED]` markers,
-  daemon tags, PIDs).
+- [Minimal example](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/highlight-pack.example.md):
+  near-empty skeleton showing the schema. Copy, rename `id` and `name`,
+  add rules, import.
+- [Syslog / journald](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/syslog.example.md):
+  practical starter for generic syslog / journald output (severity
+  keywords, systemd unit states, sshd accepted/denied lines,
+  `[OK]`/`[FAILED]` markers, daemon tags, PIDs).
 
 ### Playground
 
 Want to try a regex before saving it? Open the
-[**rule playground**](/Baudrun/playground.html) — paste or drop a real capture,
-edit the pack JSON, see the colors apply live. Everything runs in your
-browser; the file you drop never leaves your machine.
+[**rule playground**](/Baudrun/playground.html), paste or drop a real
+capture, edit the pack JSON, and see the colors apply live. Everything
+runs in your browser; the file you drop never leaves your machine.
 
 ## Theme preview
 
@@ -503,10 +503,10 @@ MosChip / ASIX, Magic Control, Moxa UPort, Brainboxes.
 
 **Special cases:**
 
-- **Siemens RUGGEDCOM RST2228** — CP210x reprogrammed with Siemens
+- **Siemens RUGGEDCOM RST2228.** CP210x reprogrammed with Siemens
   VID:PID (`0908:01FF`). Mapped via a known-rebrand table back to
   the SiLabs driver.
-- **Counterfeit-Prolific** — older genuine Prolific PL2303 chips
+- **Counterfeit-Prolific.** Older genuine Prolific PL2303 chips
   that Prolific's current driver refuses as counterfeit (TRENDnet
   TU-S9 is the canonical example). Detected via manufacturer-string
   heuristic; banner points at the legacy Prolific driver.

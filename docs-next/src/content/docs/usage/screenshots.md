@@ -11,10 +11,10 @@ when you toggle this site's theme in the top navigation bar.
 
 ## Profiles
 
-The profile list and editor — per-device connection settings (port,
-baud, framing, flow control, line ending, send-on-connect sequence,
-and more) stored as plain JSON. Clicking a profile opens the serial
-port and drops you straight into the terminal.
+The profile list and editor. Per-device connection settings (port,
+baud, framing, flow control, line ending, send-on-connect sequence)
+stored as plain JSON. Clicking a profile opens the serial port and
+drops you straight into the terminal.
 
 ![Profile list (light)](/Baudrun/screenshots/macos-profiles-light.png#only-light)
 ![Profile list (dark)](/Baudrun/screenshots/macos-profiles-dark.png#only-dark)
@@ -36,7 +36,7 @@ detection).
 Per-profile hex view formats incoming bytes as a 16-byte-per-line
 hex + ASCII dump instead of a text stream. Useful for raw protocols
 (Modbus RTU, custom binary framing) where you need to see every
-byte — including non-printable control characters.
+byte, including non-printable control characters.
 
 ![Hex view (light)](/Baudrun/screenshots/macos-hex-view-light.png#only-light)
 ![Hex view (dark)](/Baudrun/screenshots/macos-hex-view-dark.png#only-dark)
@@ -66,8 +66,8 @@ full reference on every flag.
 Baudrun ships with 14 skins spanning modern OSes, retro OSes,
 aesthetic styles, and accessibility. Skins swap the app chrome
 (colors, window styling, font choices) independently of the terminal
-theme — mix freely. See [Skins](/Baudrun/authoring/skins/) for the full reference and
-the authoring guide for custom skins.
+theme; mix them freely. See [Skins](/Baudrun/authoring/skins/) for
+the full reference and the authoring guide for custom skins.
 
 ### Baudrun (default)
 
@@ -96,7 +96,7 @@ the authoring guide for custom skins.
 
 ### CRT (Green Phosphor)
 
-A dark-only skin evoking a classic phosphor terminal — green-on-
+A dark-only skin evoking a classic phosphor terminal. Green-on-
 black, DotGothic16 type, subtle scanline treatment.
 
 ![CRT](/Baudrun/screenshots/macos-dark-crt.png)

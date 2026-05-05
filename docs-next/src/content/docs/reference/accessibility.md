@@ -16,7 +16,7 @@ OS settings they interact with, and the known gaps.
 - When enabled, xterm routes incoming terminal output through an
   ARIA live region, which macOS VoiceOver / Windows Narrator / NVDA
   / Orca can narrate.
-- Off by default — there's a small performance cost on heavy
+- Off by default. There's a small performance cost on heavy
   output (the live region gets updated on every write), so users
   who don't need it don't pay for it.
 
@@ -44,11 +44,11 @@ Baudrun respects the OS-level `prefers-reduced-motion` preference.
 
 **What's gated on it:**
 
-- The **reconnecting pulse** — the amber dot in the session header
+- The **reconnecting pulse**: the amber dot in the session header
   while auto-reconnect polls for the port. With Reduce Motion on,
   the dot stays visible as a static amber indicator instead of
   pulsing.
-- The **port-scanning pulse** — the accent-colored dot next to the
+- The **port-scanning pulse**: the accent-colored dot next to the
   "Scanning for COM ports…" status in the footer. Static under
   Reduce Motion.
 
@@ -71,19 +71,19 @@ registered.
 
 Zoom writes through to `Settings.fontSize`, so it persists across
 app launches. The xterm instance rebuilds on each change to pick
-up the new cell metrics — xterm caches glyph dimensions at
-construction, so an in-place font-size change wouldn't re-measure.
+up the new cell metrics, since xterm caches glyph dimensions at
+construction and an in-place font-size change wouldn't re-measure.
 
 ## Session shortcuts
 
 For the three session-header buttons that are otherwise mouse-only
-— **Clear**, **Send Break**, **Suspend**. See
+(**Clear**, **Send Break**, **Suspend**). See
 [Keyboard shortcuts](/Baudrun/usage/shortcuts/) for the default bindings table,
 the per-OS rationale, and how to rebind them via
 Settings → Keyboard Shortcuts.
 
 Each shortcut gates on the same enablement as the button it
-mirrors — Break and Suspend are no-ops without an active
+mirrors. Break and Suspend are no-ops without an active
 (unsuspended, not-reconnecting) session; Clear needs the terminal
 view to be up. The shortcuts also appear in each button's
 `title` tooltip and `aria-keyshortcuts` attribute so
@@ -124,4 +124,4 @@ without changing the OS setting:
 - **Emulate CSS media feature** → `prefers-reduced-motion: reduce`
   to test the static-dot behavior.
 - **Emulate vision deficiencies** → blurred vision, achromatopsia,
-  etc. — useful for evaluating color contrast on themes and skins.
+  and similar. Useful for evaluating color contrast on themes and skins.

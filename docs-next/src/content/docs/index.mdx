@@ -1,9 +1,9 @@
 ---
 title: Baudrun
-description: A serial terminal for network gear — console sessions for switches, routers, and firewalls without the screen / minicom / putty dance.
+description: A serial terminal for network gear. Console sessions for switches, routers, and firewalls with profiles for different devices and syntax highlighting.
 template: splash
 hero:
-  tagline: A serial terminal for network gear. Console sessions for switches, routers, and firewalls — without the screen / minicom / putty dance.
+  tagline: A serial terminal for network gear. Console sessions for switches, routers, and firewalls with profiles for different devices and syntax highlighting.
   actions:
     - text: Install for your platform
       link: /Baudrun/install/
@@ -19,20 +19,20 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 
 ## What it does
 
-Baudrun is the console session you actually want when you plug a USB-serial adapter into a switch. Profiles for every device you touch, a real terminal that doesn't fight you, and a UI that gets out of the way once a session is live.
+Baudrun keeps named profiles for each device, runs a full terminal emulator with vendor-aware syntax highlighting, and identifies USB-serial adapters that need a driver. macOS, Windows, and Linux from a single download.
 
 <CardGrid>
-  <Card title="Profiles, not flags" icon="seti:default">
-    Every device gets a profile with port, baud, parity, line endings, and per-profile theme + highlighting. Click a profile, hit Connect — done. No remembering whether this Cisco wants `8N1` or `7E1`.
+  <Card title="Profiles" icon="seti:default">
+    Each device gets a saved profile with port, baud rate, parity, line endings, and a theme. Connection takes one click.
   </Card>
-  <Card title="Real terminal" icon="laptop">
-    Powered by xterm.js with proper VT processing, scrollback, search, and a syntax-highlighting pass for IPs, MACs, interface names, and vendor-specific output.
+  <Card title="Terminal" icon="laptop">
+    Built on xterm.js with VT processing, scrollback, search, and syntax highlighting for IPs, MACs, interface names, and vendor-specific output.
   </Card>
-  <Card title="Cross-platform native" icon="setting">
-    macOS, Windows, and Linux from the same Tauri 2 codebase. Native window chrome on each, single binary, no JVM. Auto-update on stable + pre-release channels.
+  <Card title="Cross-platform" icon="setting">
+    macOS, Windows, and Linux from a single Tauri 2 codebase. Native window chrome on each platform, single binary install, automatic updates on stable and pre-release channels.
   </Card>
-  <Card title="Designed for adapters" icon="seti:powershell">
-    Knows about CH340, CP210x, FTDI, and the rest of the USB-serial driver landscape. Tells you when a driver is missing instead of just refusing to open the port.
+  <Card title="Adapter detection" icon="seti:powershell">
+    Recognizes CH340, CP210x, FTDI, and other common USB-serial chipsets. Identifies missing drivers and links to the vendor download.
   </Card>
 </CardGrid>
 
@@ -40,18 +40,18 @@ Baudrun is the console session you actually want when you plug a USB-serial adap
 
 <CardGrid>
   <Card title="Install" icon="rocket">
-    Homebrew, Scoop, or direct downloads — both stable and pre-release channels. [Install instructions →](/Baudrun/install/)
+    Homebrew, Scoop, and direct downloads on stable and pre-release channels. [Install instructions](/Baudrun/install/).
   </Card>
   <Card title="Profiles" icon="document">
-    The profile system is the centre of how Baudrun works. [Profiles guide →](/Baudrun/usage/profiles/)
+    Connection settings saved per device. Set port, baud, parity, line endings, and theme once. [Profiles guide](/Baudrun/usage/profiles/).
   </Card>
   <Card title="Syntax highlighting" icon="seti:default">
-    Vendor-aware highlight packs for Cisco / Juniper / Aruba / Arista / MikroTik, plus your own. Try regexes live in the [rule playground](/Baudrun/playground.html). [Authoring guide →](/Baudrun/authoring/highlighting/)
+    Vendor-aware highlight packs for Cisco, Juniper, Aruba, Arista, and MikroTik. Author your own packs and test patterns in the [rule playground](/Baudrun/playground.html). [Authoring guide](/Baudrun/authoring/highlighting/).
   </Card>
-  <Card title="Customize" icon="seti:json">
-    Author your own terminal themes (`.itermcolors`) and chrome skins (Baudrun JSON). [Themes →](/Baudrun/authoring/themes/) · [Skins →](/Baudrun/authoring/skins/)
+  <Card title="Themes and skins" icon="seti:json">
+    Author terminal [themes](/Baudrun/authoring/themes/) (`.itermcolors`) and app chrome [skins](/Baudrun/authoring/skins/) (Baudrun JSON).
   </Card>
-  <Card title="See it" icon="laptop">
-    A guided tour of every screen and built-in skin, in light and dark, on macOS / Windows / Linux. [Screenshots →](/Baudrun/usage/screenshots/)
+  <Card title="Screenshots" icon="laptop">
+    Every screen and every built-in skin in light and dark on macOS, Windows, and Linux. [View screenshots](/Baudrun/usage/screenshots/).
   </Card>
 </CardGrid>

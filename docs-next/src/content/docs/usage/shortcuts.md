@@ -6,7 +6,7 @@ editUrl: https://github.com/packetThrower/Baudrun/edit/main/docs/SHORTCUTS.md
 
 Baudrun binds a small set of global keyboard shortcuts for terminal
 zoom and the session-level actions that would otherwise be
-mouse-only. The session shortcuts are user-editable — see
+mouse-only. The session shortcuts are user-editable; see
 [Customizing](#customizing) below.
 
 ## Default bindings
@@ -32,7 +32,7 @@ about what gets sent to them.
   Terminal.app and iTerm2) and pick any `⌘+letter` it wants without
   fighting for the keystroke with the device.
 - On **Linux and Windows**, `Ctrl+letter` often *is* a control
-  byte a user would want to send — `Ctrl+B` is STX (0x02),
+  byte a user would want to send: `Ctrl+B` is STX (0x02),
   `Ctrl+K` is VT (0x0B), `Ctrl+S` is XOFF (0x13). Binding the app
   actions to plain `Ctrl+K` would silently steal the keystroke
   from devices that rely on it. Adding `Shift` to the UI
@@ -83,15 +83,15 @@ Each session-header button exposes its current shortcut two ways:
 - **`aria-keyshortcuts`** attribute, announced by screen readers
   on focus.
 
-Both update live when you change a binding — no app relaunch.
+Both update live when you change a binding. No app relaunch.
 
 ## Interaction with the terminal
 
 When the terminal view has focus, xterm captures most keystrokes
 to forward to the device. The shortcut handler sits at the
 `window` level and fires in the normal event-bubble phase, so it
-doesn't intercept key events meant for the terminal — it only
+doesn't intercept key events meant for the terminal. It only
 claims a keystroke when the modifier+key combo matches a bound
-shortcut. Plain `Ctrl+C`, `Ctrl+Z`, `Ctrl+D`, `Ctrl+L`, etc. all
+shortcut. Plain `Ctrl+C`, `Ctrl+Z`, `Ctrl+D`, `Ctrl+L`, and the rest
 continue to reach the device, sending the corresponding control
 bytes.

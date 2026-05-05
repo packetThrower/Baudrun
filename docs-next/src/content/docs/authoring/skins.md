@@ -1,10 +1,10 @@
 ---
 title: App skins
-description: 'Authoring custom Baudrun chrome skins — colors, typography, radii, and elevation.'
+description: 'Authoring custom Baudrun chrome skins: colors, typography, radii, and elevation.'
 editUrl: https://github.com/packetThrower/Baudrun/edit/main/docs/SKINS.md
 ---
 
-Skins swap Baudrun's app chrome — colors, typography, radii, elevation,
+Skins swap Baudrun's app chrome: colors, typography, radii, elevation,
 layout shape. Distinct from **themes**, which only recolor the terminal
 viewport. A skin is a flat map of CSS custom-property values applied to
 `document.documentElement`.
@@ -43,7 +43,7 @@ a user skin from Settings also removes the file.
 | `description`   | no       | One-line hint, reserved for future UI surfaces.                                                                                                                        |
 | `supportsLight` | no       | Default `false`. Set `true` if your skin has a working `lightVars` overlay. When `false`, the skin is pinned dark regardless of the user's Appearance preference.      |
 | `vars`          | yes\*    | Always-applied variables. Effectively the dark base, since the window material itself is pinned dark.                                                                  |
-| `darkVars`      | no       | Overlay applied when appearance = dark. Usually omitted — most dark skins put everything in `vars`.                                                                    |
+| `darkVars`      | no       | Overlay applied when appearance = dark. Usually omitted; most dark skins put everything in `vars`.                                                                     |
 | `lightVars`     | no       | Overlay applied when appearance = light. Use opaque surfaces (see [Light / dark handling](#light--dark-handling)).                                                     |
 
 \* At least one of `vars` / `darkVars` / `lightVars` must be non-empty.
@@ -150,7 +150,7 @@ Grouped for navigation:
 
 | Variable     | Purpose                                                                                                                                              |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--overlay`  | Applied as `body::after` background. Any valid `background` value — images, gradients, repeating patterns. Drives CRT scanlines, Blueprint grid, etc. |
+| `--overlay`  | Applied as `body::after` background. Any valid `background` value (images, gradients, repeating patterns). Drives CRT scanlines, Blueprint grid, etc. |
 
 ## Light / dark handling
 
@@ -159,7 +159,7 @@ startup. Tauri v2's runtime appearance setters don't reliably swap
 NSAppearance live on macOS, so the vibrancy material can't follow
 the user's light/dark preference. Practical consequence for skin
 authors: **light-mode overlays need opaque or near-opaque surface
-colors** — translucent light CSS on a dark vibrancy backdrop reads
+colors**, since translucent light CSS on a dark vibrancy backdrop reads
 as muddy gray.
 
 ```json
@@ -200,16 +200,16 @@ for those regardless of the user's Appearance preference.
 For a complete working skin with every option set and a per-field
 comment on what it does, see:
 
-- [`docs/https://github.com/packetThrower/Baudrun/blob/main/docs/examples/skin.example.jsonc`](examples/skin.example.jsonc) —
+- [`docs/examples/skin.example.jsonc`](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/skin.example.jsonc):
   annotated version, for reading and learning. Not directly
   importable (Baudrun's JSON parser doesn't accept comments).
-- [`docs/https://github.com/packetThrower/Baudrun/blob/main/docs/examples/skin.example.json`](examples/skin.example.json) —
+- [`docs/examples/skin.example.json`](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/skin.example.json):
   stripped version with the same values, importable via
   **Settings → Installed Skins → Import skin…** or by dropping into
   the skins directory.
 
 The annotated file is the recommended starting point: read it,
-copy the stripped version, rename the `id` + `name`, and tweak
+copy the stripped version, rename the `id` and `name`, and tweak
 the values you care about.
 
 ## Example: minimal complete skin
@@ -284,6 +284,6 @@ Skin dropdown.
 
 ## Sharing
 
-Skins are plain JSON. Sharing is email/gist/paste — no registry.
+Skins are plain JSON. Sharing is email, gist, or paste; no registry.
 Recipients drop the file into their skins directory or use
 Settings → Import.

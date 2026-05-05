@@ -4,7 +4,7 @@ description: 'Authoring connection profiles for switches, routers, and firewalls
 editUrl: https://github.com/packetThrower/Baudrun/edit/main/docs/PROFILES.md
 ---
 
-Profiles are named serial-connection settings — port, baud, framing,
+Profiles are named serial-connection settings: port, baud, framing,
 and the various per-session toggles. Baudrun stores every profile in
 a single JSON file, which makes them easy to hand-edit, version-
 control, or generate programmatically from inventory data.
@@ -71,7 +71,7 @@ updated through the form until it gets one.
 
 | Field         | Type   | Required | Valid values                                         | Default  |
 | ------------- | ------ | -------- | ---------------------------------------------------- | -------- |
-| `baudRate`    | int    | **yes**  | Any positive integer. Common: `9600`, `19200`, `38400`, `57600`, `115200`. | — |
+| `baudRate`    | int    | **yes**  | Any positive integer. Common: `9600`, `19200`, `38400`, `57600`, `115200`. | _none_ |
 | `dataBits`    | int    | **yes**  | `5`, `6`, `7`, `8`                                   | `8`      |
 | `parity`      | string | **yes**  | `"none"`, `"odd"`, `"even"`, `"mark"`, `"space"`     | `"none"` |
 | `stopBits`    | string | **yes**  | `"1"`, `"1.5"`, `"2"` (strings, not numbers)         | `"1"`    |
@@ -100,7 +100,7 @@ lines on connect/disconnect. All four accept the same enum:
 | Value         | Meaning                                                                          |
 | ------------- | -------------------------------------------------------------------------------- |
 | `"default"`   | Leave the line in the OS default state (both asserted on Unix; RTS asserted on Windows). |
-| `""`          | Same as `"default"` — treated as unset.                                          |
+| `""`          | Same as `"default"`. Treated as unset.                                           |
 | `"assert"`    | Force the line high at the bookend.                                              |
 | `"deassert"`  | Force the line low at the bookend.                                               |
 
@@ -112,10 +112,10 @@ lines on connect/disconnect. All four accept the same enum:
 | `rtsOnDisconnect` | Port close    |
 
 Common uses:
-- **RS-485 direction** — some adapters use RTS to toggle TX/RX; pin it.
-- **Arduino DTR reset** — deassert DTR on connect to avoid auto-reset
+- **RS-485 direction.** Some adapters use RTS to toggle TX/RX; pin it.
+- **Arduino DTR reset.** Deassert DTR on connect to avoid auto-reset
   on port open.
-- **Device state gating** — some firmwares require a specific DTR
+- **Device state gating.** Some firmwares require a specific DTR
   state to accept input.
 
 Live DTR/RTS toggle pills in the session header let you flip the
@@ -313,7 +313,7 @@ a private git repo, symlink it into `<support>/profiles.json` on
 each workstation. Hand-edits become commits; diffs show who changed
 what when.
 
-The file has no secrets (passwords aren't stored — this is a
+The file has no secrets (passwords aren't stored, since this is a
 serial terminal, not SSH), so a shared team repo works without
 additional encryption.
 
@@ -326,5 +326,5 @@ There's no per-profile file format today. Workarounds:
 - Keep a shared JSON snippets file alongside `profiles.json` and
   import by hand.
 
-A "profiles export/import" UI is a candidate feature if this becomes
-a real workflow — file an issue with the use case.
+A profiles export/import UI is a candidate feature if this becomes
+a real workflow. File an issue with the use case.

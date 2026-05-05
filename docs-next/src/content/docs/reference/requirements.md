@@ -14,13 +14,13 @@ These are the floors for end users downloading from the Releases page.
 ### macOS
 - **macOS 11 Big Sur or later.** Per-arch builds: `arm64` for Apple
   Silicon, `amd64` for Intel. Pick the artifact matching your CPU.
-- **Gatekeeper warning on first launch** — the app is ad-hoc signed
+- **Gatekeeper warning on first launch.** The app is ad-hoc signed
   but not notarized. Right-click → Open to bypass. If macOS still
   refuses with "damaged" or "unidentified developer," strip the
   quarantine flag: `xattr -cr Baudrun.app`. The .dmg installer
   handles signatures correctly out of the box; the .zip works once
   unpacked with Finder or `ditto -x -k`.
-- **USB-to-serial drivers** where applicable — see the chipset table
+- **USB-to-serial drivers** where applicable. See the chipset table
   in [README.md](https://github.com/packetThrower/Baudrun/blob/main/README.md#usb-to-serial-adapter-drivers).
 
 The 11.0 floor is set by Tauri v2's webview baseline (Apple Silicon's
@@ -30,11 +30,11 @@ own minimum) and `bundle.macOS.minimumSystemVersion` in
 ### Windows
 - **Windows 10 21H2 or later**, or Windows 11. amd64 and arm64 builds
   shipped separately; pick the matching artifact.
-- **[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)**
-  — already installed on Windows 11 and most recent Windows 10
+- **[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)**.
+  Already installed on Windows 11 and most recent Windows 10
   builds. Baudrun surfaces a pointer to the installer if it's
   missing.
-- **SmartScreen warning on first launch** — unsigned, so click "More
+- **SmartScreen warning on first launch.** Unsigned, so click "More
   info" → "Run anyway". Code signing is tracked in
   [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md).
 - Windows 10 1803–21H1 will technically run WebView2, but nothing
@@ -59,7 +59,7 @@ own minimum) and `bundle.macOS.minimumSystemVersion` in
   in. They also install a udev rule
   (`/usr/lib/udev/rules.d/60-baudrun-serial.rules`) that grants the
   console user ACL access to `/dev/ttyUSB*` via systemd-logind's
-  `uaccess` tag — no need to add yourself to the `dialout` group.
+  `uaccess` tag, with no need to add yourself to the `dialout` group.
 - **AppImage** has the same runtime requirement plus **FUSE**
   (`libfuse2` on Ubuntu, `fuse2` on most others). Run with
   `--appimage-extract-and-run` if FUSE is unavailable. The AppImage
@@ -91,8 +91,8 @@ npm install
 - **libusb + pkg-config** (`brew install libusb pkg-config`) for the
   link against `rusb` inside the vendored `src-tauri/src/usbserial/`
   CP210x backend.
-- Producing a **universal** artifact is not in the build flow —
-  each release ships a native per-arch binary instead
+- Producing a **universal** artifact is not in the build flow.
+  Each release ships a native per-arch binary instead
   (`npm run tauri build -- --target aarch64-apple-darwin` on Apple
   Silicon, `--target x86_64-apple-darwin` on Intel). Homebrew's
   libusb is per-arch only, so a universal binary would need a
@@ -105,7 +105,7 @@ npm install
   run on macOS 26 hosts.
 
 ### Windows host
-- **Visual Studio Build Tools 2022** (MSVC + Windows SDK) — the
+- **Visual Studio Build Tools 2022** (MSVC + Windows SDK). The
   `link.exe` toolchain Tauri / `wry` / `webview2-com-sys` need.
 - **Native ARM for arm64 builds.** Like Wails before it, Tauri v2
   doesn't cleanly cross-compile to Windows-on-ARM from x86 Windows;
@@ -126,12 +126,12 @@ npm install
 - **Cross-compiling Linux from macOS or Windows is not supported.**
   Use a Linux host, a Linux VM, or CI.
 - Extra tools only needed for packaging:
-  - **`fpm`** — drives `.pkg.tar.zst` output
+  - **`fpm`** drives `.pkg.tar.zst` output
     (`sudo gem install fpm`). Tauri's bundler handles `.deb`, `.rpm`,
     and `.AppImage` natively but doesn't target pacman.
-  - **`libarchive-tools`** — provides `bsdtar`, which fpm shells out
+  - **`libarchive-tools`** provides `bsdtar`, which fpm shells out
     to when building `.pkg.tar.zst`.
-  - **`file`** + **`libfuse2t64`** — needed by Tauri's AppImage
+  - **`file`** and **`libfuse2t64`** are needed by Tauri's AppImage
     bundler (`appimagetool` is downloaded on-demand by the
     bundler).
 
@@ -154,7 +154,7 @@ npm install
 
 ## Upstream references
 
-- **Tauri v2 prerequisites** — https://tauri.app/start/prerequisites/
-- **Microsoft Edge WebView2 supported OSes** — https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
-- **Svelte 5 runtime requirements** — https://svelte.dev/
-- **WebKit2GTK releases** — https://webkitgtk.org/releases
+- **Tauri v2 prerequisites**: https://tauri.app/start/prerequisites/
+- **Microsoft Edge WebView2 supported OSes**: https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
+- **Svelte 5 runtime requirements**: https://svelte.dev/
+- **WebKit2GTK releases**: https://webkitgtk.org/releases

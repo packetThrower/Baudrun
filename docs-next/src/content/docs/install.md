@@ -1,19 +1,20 @@
 ---
 title: Install
-description: 'Install Baudrun via Homebrew, Scoop, or direct download — stable and pre-release channels.'
+description: 'Install Baudrun via Homebrew, Scoop, or direct download. Stable and pre-release channels available.'
 editUrl: https://github.com/packetThrower/Baudrun/edit/main/docs/INSTALL.md
 ---
 
-The fastest path on macOS and Windows is a package manager — auto-update
-on `brew upgrade` / `scoop update`, no Gatekeeper or SmartScreen friction
-on first launch, and a pre-release channel alongside stable. Linux users
-grab the matching `.deb` / `.rpm` / `.AppImage` / `.pkg.tar.zst` straight
-from GitHub.
+On macOS and Windows the recommended path is a package manager. Both
+Homebrew and Scoop ship Baudrun with auto-update on `brew upgrade` or
+`scoop update`, sidestep Gatekeeper and SmartScreen friction on first
+launch, and expose a pre-release channel alongside stable. Linux users
+grab the matching `.deb`, `.rpm`, `.AppImage`, or `.pkg.tar.zst` from
+GitHub.
 
 System requirements (OS floors, runtime dependencies) live in
 [Requirements](/Baudrun/reference/requirements/). Building from source is also covered there.
 
-## macOS — Homebrew
+## macOS (Homebrew)
 
 The tap [`packetThrower/tap`](https://github.com/packetThrower/homebrew-tap)
 ships two casks: `baudrun` (stable) and `baudrun@alpha` (pre-release). They
@@ -28,9 +29,9 @@ brew install --cask baudrun@alpha     # pre-release
 ```
 
 The cask strips the macOS quarantine xattr on install, so the app launches
-without the right-click → Open dance. Baudrun ships ad-hoc signed but not
-notarized — the cask handles that for you so direct downloads stay the
-only path that hits Gatekeeper.
+without the right-click → Open prompt. Baudrun ships ad-hoc signed but
+not notarized; the cask handles that for you so the only path that hits
+Gatekeeper is a direct download.
 
 Per-arch DMG, picked automatically based on `arch`:
 
@@ -43,7 +44,7 @@ Update with `brew upgrade --cask baudrun` (or `baudrun@alpha`). The tap's
 auto-bump workflow polls upstream every 6 hours, so a new tag is normally
 installable within a quarter day.
 
-## Windows — Scoop
+## Windows (Scoop)
 
 The bucket [`packetThrower/scoop-bucket`](https://github.com/packetThrower/scoop-bucket)
 ships two manifests: `baudrun` (stable) and `baudrun-prerelease`. They
@@ -62,7 +63,7 @@ scoop install baudrun-prerelease      # pre-release
 
 If you skip the `scoop install git` line and try to add the bucket
 directly, Scoop fails fast with `ERROR Git is required for buckets.
-Run 'scoop install git' and try again.` — same fix.
+Run 'scoop install git' and try again.` (same fix).
 
 Both manifests use the per-arch NSIS setup (`_x64-setup.exe` /
 `_arm64-setup.exe`), picked by Scoop based on host architecture. Scoop
@@ -81,10 +82,10 @@ and most Windows 10 builds from 21H2 onward; if Baudrun launches with a
 
 ## Linux
 
-No package-manager bucket equivalent for Linux — `apt` / `dnf` / `pacman`
-each work against their own repo formats and packetThrower doesn't run an
-APT/DNF mirror. The release artifacts install cleanly into each distro's
-native package format:
+There is no package-manager bucket equivalent for Linux. `apt`, `dnf`,
+and `pacman` each work against their own repo formats and packetThrower
+doesn't run an APT or DNF mirror. The release artifacts install cleanly
+into each distro's native package format:
 
 === "Debian / Ubuntu"
 
@@ -128,7 +129,7 @@ native package format:
 
     Works on any glibc-based distro with FUSE (`libfuse2` on Ubuntu).
     AppImages don't run install hooks, so the udev rule isn't applied
-    automatically — add yourself to the `dialout` group manually
+    automatically. Add yourself to the `dialout` group manually
     (`sudo usermod -aG dialout $USER`) or apply the rule by hand.
 
 Substitute `<version>` with the tag you want (e.g. `0.9.2` for the
@@ -151,7 +152,8 @@ the same artifacts the package managers consume:
 | Windows arm64 | `Baudrun_<version>_arm64-setup.exe` | Native ARM |
 | Linux | `.deb` / `.rpm` / `.pkg.tar.zst` / `.AppImage` | per arch |
 
-First-launch friction lives here — the brew/scoop paths sidestep both:
+First-launch friction lives in this path. The brew and scoop installs
+sidestep both items below:
 
 - **macOS Gatekeeper.** Direct DMGs are ad-hoc signed but not notarized.
   Right-click → Open on first launch, or `xattr -cr Baudrun.app` to
@@ -160,16 +162,16 @@ First-launch friction lives here — the brew/scoop paths sidestep both:
   info" → "Run anyway".
 
 The auto-updater inside Baudrun handles signature verification on its
-own (minisign keypair embedded in the binary), so once you're past the
-first launch, updates are seamless regardless of how you installed.
+own via a minisign keypair embedded in the binary. Once past the first
+launch, subsequent updates apply regardless of how the app was installed.
 
 ## Pre-release channel
 
 Pre-release tags (`vX.Y.Z-alpha.N`, `-beta.N`, `-rc.N`) trigger the same
 release workflow as stable but publish under GitHub's "Pre-release" badge
 and don't displace the "Latest release" pointer. Both Homebrew and Scoop
-expose a separate manifest for that channel — installs land side-by-side
-with stable so you can run both:
+expose a separate manifest for that channel. Installs land side-by-side
+with stable so both can run on the same machine:
 
 | Channel | macOS install | Windows install |
 |---|---|---|
@@ -177,14 +179,13 @@ with stable so you can run both:
 | Pre-release | `brew install --cask baudrun@alpha` | `scoop install baudrun-prerelease` |
 
 Linux users grab a pre-release tag's artifact directly from the
-[Releases](https://github.com/packetThrower/Baudrun/releases) page (no
-"latest/download/" shortcut for pre-release because that pointer always
-tracks stable).
+[Releases](https://github.com/packetThrower/Baudrun/releases) page. The
+"latest/download/" shortcut always tracks stable so it isn't useful for
+pre-release downloads.
 
-The in-app updater can be configured to follow the pre-release channel
-too — Settings → Advanced → Updates → "Include pre-releases" makes the
-launch update check consider pre-release tags. This works regardless of
-how you installed.
+The in-app updater can also follow the pre-release channel: Settings →
+Advanced → Updates → "Include pre-releases" makes the launch update
+check consider pre-release tags. This works on any install path.
 
 ## Update
 
