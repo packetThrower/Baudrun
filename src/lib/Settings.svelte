@@ -1161,7 +1161,12 @@
   }
   .tab-entry.active {
     background: var(--bg-active);
-    color: var(--accent);
+    /* `--fg-primary` rather than `--accent` because some skins use
+       `--bg-active` as a near-fully-saturated accent fill (Windows
+       XP's #316ac5, e.g.) where the accent-tinted text would sit
+       blue-on-blue and become unreadable. fg-primary is the most
+       legible foreground in each skin's palette by definition. */
+    color: var(--fg-primary);
   }
   /* Filter feedback: when the user types something that doesn't
      match any section in a given tab, that tab dims. Lets the user

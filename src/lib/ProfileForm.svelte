@@ -993,7 +993,10 @@
   }
   .tab-entry.active {
     background: var(--bg-active);
-    color: var(--accent);
+    /* See Settings.svelte for the `--fg-primary` rationale (Windows XP's
+       saturated `--bg-active` would render `--accent` text blue-on-blue
+       and become unreadable). */
+    color: var(--fg-primary);
   }
 
   .titlebar {
