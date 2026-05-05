@@ -369,6 +369,28 @@
     // subsequent settings or profile-override changes.
     applyEnabledHighlightPresets(effectiveEnabledHighlightPresets);
 
+    // Show-on-ready: settings + profile windows are built invisible
+    // by the Rust side (commands/window.rs). Now that the skin has
+    // applied to the DOM, request one more frame so the OS
+    // compositor commits the painted surface, then reveal the
+    // window. The user perceives: click → brief delay → fully-
+    // painted window appears. No black flash possible — the OS
+    // never had a chance to show an empty webview.
+    //
+    // Skipped for the main window (already visible from
+    // tauri.conf.json) — calling show() on an already-visible
+    // window is harmless but pointless.
+    if (isSettingsWindow || isProfileWindow()) {
+      requestAnimationFrame(async () => {
+        try {
+          await getCurrentWebviewWindow().show();
+          perfMark(isSettingsWindow ? "settings-shown" : "profile-shown");
+        } catch (err) {
+          console.error("show window:", err);
+        }
+      });
+    }
+
     // Settings broadcast — fires in EVERY window (including the one
     // that originated the change) so renderers can refresh local
     // stores cross-window. Without this, changing the skin in the
