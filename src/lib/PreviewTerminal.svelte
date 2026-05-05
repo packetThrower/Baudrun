@@ -88,14 +88,34 @@
     term?.dispose();
     term = null;
   });
+
+  // See Terminal.svelte for the long story. Mirror the same CSS-var
+  // backstop here so theme previews look right on Linux / Windows
+  // when xterm's runtime stylesheet injection drops.
+  const wrapStyle = $derived.by(() => {
+    const t = theme;
+    const bg = t?.background ?? "#0b0b0d";
+    const fg = t?.foreground ?? "#e4e4e7";
+    const sel = t?.selection ?? "#1a3a5c";
+    const cursor = t?.cursor ?? "#ffffff";
+    const cursorAccent = t?.cursorAccent || bg;
+    return (
+      `background-color:${bg};color:${fg};` +
+      `--xterm-sel-bg:${sel};` +
+      `--xterm-cursor:${cursor};--xterm-cursor-accent:${cursorAccent};` +
+      `--xterm-c0:${t?.black};--xterm-c1:${t?.red};` +
+      `--xterm-c2:${t?.green};--xterm-c3:${t?.yellow};` +
+      `--xterm-c4:${t?.blue};--xterm-c5:${t?.magenta};` +
+      `--xterm-c6:${t?.cyan};--xterm-c7:${t?.white};` +
+      `--xterm-c8:${t?.brightBlack};--xterm-c9:${t?.brightRed};` +
+      `--xterm-c10:${t?.brightGreen};--xterm-c11:${t?.brightYellow};` +
+      `--xterm-c12:${t?.brightBlue};--xterm-c13:${t?.brightMagenta};` +
+      `--xterm-c14:${t?.brightCyan};--xterm-c15:${t?.brightWhite};`
+    );
+  });
 </script>
 
-<div
-  class="wrap"
-  style:background-color={theme?.background ?? "#0b0b0d"}
-  style:color={theme?.foreground ?? "#e4e4e7"}
-  style:--xterm-sel-bg={theme?.selection ?? "#1a3a5c"}
->
+<div class="wrap" style={wrapStyle}>
   <div class="host" bind:this={hostEl}></div>
 </div>
 

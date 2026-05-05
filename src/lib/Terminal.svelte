@@ -463,6 +463,49 @@
     ro.observe(hostEl);
   });
 
+  // Build the inline-style string fed to .wrap. The CSS variables it
+  // sets back the :global rules in the style block below — they're
+  // the Linux / Windows backstop for xterm's runtime-injected per-color
+  // stylesheet, which sometimes silently drops on those renderers.
+  // See the long comment near :global(.xterm .xterm-fg-0).
+  // background-color and color are folded into the same string so the
+  // wrap has a single source of truth — mixing `style:` directives with
+  // a `style=` attribute can produce surprising precedence depending on
+  // Svelte's update path.
+  const wrapStyle = $derived.by(() => {
+    const t = theme;
+    const bg = t?.background ?? "#0b0b0d";
+    const fg = t?.foreground ?? "#e4e4e7";
+    const sel = t?.selection ?? "#1a3a5c";
+    const cursor = t?.cursor ?? "#ffffff";
+    const cursorAccent = t?.cursorAccent || bg;
+    const c0 = t?.black ?? "#1e1e22";
+    const c1 = t?.red ?? "#ff6961";
+    const c2 = t?.green ?? "#7cd992";
+    const c3 = t?.yellow ?? "#f5d76e";
+    const c4 = t?.blue ?? "#6cb6ff";
+    const c5 = t?.magenta ?? "#d794ff";
+    const c6 = t?.cyan ?? "#7ce0e0";
+    const c7 = t?.white ?? "#d4d4d8";
+    const c8 = t?.brightBlack ?? "#4a4a52";
+    const c9 = t?.brightRed ?? "#ff8a80";
+    const c10 = t?.brightGreen ?? "#a2e5b3";
+    const c11 = t?.brightYellow ?? "#fce488";
+    const c12 = t?.brightBlue ?? "#94ccff";
+    const c13 = t?.brightMagenta ?? "#e5b6ff";
+    const c14 = t?.brightCyan ?? "#a6ecec";
+    const c15 = t?.brightWhite ?? "#ffffff";
+    return (
+      `background-color:${bg};color:${fg};` +
+      `--xterm-sel-bg:${sel};` +
+      `--xterm-cursor:${cursor};--xterm-cursor-accent:${cursorAccent};` +
+      `--xterm-c0:${c0};--xterm-c1:${c1};--xterm-c2:${c2};--xterm-c3:${c3};` +
+      `--xterm-c4:${c4};--xterm-c5:${c5};--xterm-c6:${c6};--xterm-c7:${c7};` +
+      `--xterm-c8:${c8};--xterm-c9:${c9};--xterm-c10:${c10};--xterm-c11:${c11};` +
+      `--xterm-c12:${c12};--xterm-c13:${c13};--xterm-c14:${c14};--xterm-c15:${c15};`
+    );
+  });
+
   onDestroy(() => {
     if (pendingFontResize) {
       clearTimeout(pendingFontResize);
@@ -518,12 +561,7 @@
   }
 </script>
 
-<div
-  class="wrap"
-  style:background-color={theme?.background ?? "#0b0b0d"}
-  style:color={theme?.foreground ?? "#e4e4e7"}
-  style:--xterm-sel-bg={theme?.selection ?? "#1a3a5c"}
->
+<div class="wrap" style={wrapStyle}>
   <div class="host" bind:this={hostEl}></div>
   {#if pasteSending}
     <div
@@ -608,24 +646,30 @@
   }
 
   /* Linux (WebKit2GTK) and Windows (WebView2) sometimes drop xterm's
-     runtime-injected <style> element — the one that sets default
-     foreground color on .xterm-rows and selection background on
-     .xterm-selection div from the theme. macOS WebKit doesn't have
-     this quirk; rendering looks fine without these fallbacks.
-     When the injection is dropped, glyph spans inherit `color` from
-     the page (body uses var(--fg-primary)) and selection divs end
-     up with no fill, so connected sessions look like a black box and
-     text "can't be selected" because the highlight is invisible.
+     runtime-injected stylesheet — the one that carries every theme-
+     derived rule: default foreground on .xterm-rows, selection
+     background on .xterm-selection div, the 16 ANSI color classes
+     (.xterm-fg-0..15 / .xterm-bg-0..15), and the cursor's block fill.
+     macOS WebKit doesn't have this quirk; rendering works without any
+     of these fallbacks.
 
-     The wrap element gets `color: <theme.foreground>` and a
-     --xterm-sel-bg CSS variable inline (see the markup above). The
-     foreground cascades down through .xterm-screen → .xterm-rows →
-     spans without any extra rule needed; the :global rules below
-     route the selection variable into xterm's selection divs.
-     !important is load-bearing — xterm's injected rule, if it does
-     run, would otherwise fight us at equal specificity. The color
-     value is identical to what xterm would have produced, so macOS
-     is visually unchanged. */
+     When the injection drops:
+       * default-fg spans inherit color from body (var(--fg-primary)),
+         making text invisible on dark themes;
+       * .xterm-fg-N classes lose their per-color rule, so syntax-
+         highlighted output (every CSI 3Nm escape from the highlight
+         packs) collapses to default foreground — Cisco / Junos packs
+         look unhighlighted;
+       * the selection highlight has no fill;
+       * the cursor block has no fill.
+
+     wrapStyle in the script block sets the full theme palette as CSS
+     variables on .wrap (--xterm-c0..15, --xterm-cursor, --xterm-sel-bg,
+     etc.). The rules below route those variables into the right
+     internal xterm nodes. !important is load-bearing: xterm's
+     injected rule, when it does run, targets the same selectors at
+     equal specificity. Color values match xterm's output exactly so
+     macOS is visually unchanged. */
   :global(.xterm .xterm-selection div) {
     background-color: var(--xterm-sel-bg, transparent) !important;
   }
@@ -637,5 +681,48 @@
      xterm's own focus class. */
   :global(.xterm:not(.focus) .xterm-selection div) {
     opacity: 0.6;
+  }
+
+  /* ANSI palette — every CSI 3Nm and CSI 4Nm SGR escape lands in
+     one of these classes. xterm v6 uses the same numbering for both
+     the standard 8 (0-7) and bright 8 (8-15). 16 fg + 16 bg rules. */
+  :global(.xterm .xterm-fg-0)  { color: var(--xterm-c0)  !important; }
+  :global(.xterm .xterm-fg-1)  { color: var(--xterm-c1)  !important; }
+  :global(.xterm .xterm-fg-2)  { color: var(--xterm-c2)  !important; }
+  :global(.xterm .xterm-fg-3)  { color: var(--xterm-c3)  !important; }
+  :global(.xterm .xterm-fg-4)  { color: var(--xterm-c4)  !important; }
+  :global(.xterm .xterm-fg-5)  { color: var(--xterm-c5)  !important; }
+  :global(.xterm .xterm-fg-6)  { color: var(--xterm-c6)  !important; }
+  :global(.xterm .xterm-fg-7)  { color: var(--xterm-c7)  !important; }
+  :global(.xterm .xterm-fg-8)  { color: var(--xterm-c8)  !important; }
+  :global(.xterm .xterm-fg-9)  { color: var(--xterm-c9)  !important; }
+  :global(.xterm .xterm-fg-10) { color: var(--xterm-c10) !important; }
+  :global(.xterm .xterm-fg-11) { color: var(--xterm-c11) !important; }
+  :global(.xterm .xterm-fg-12) { color: var(--xterm-c12) !important; }
+  :global(.xterm .xterm-fg-13) { color: var(--xterm-c13) !important; }
+  :global(.xterm .xterm-fg-14) { color: var(--xterm-c14) !important; }
+  :global(.xterm .xterm-fg-15) { color: var(--xterm-c15) !important; }
+  :global(.xterm .xterm-bg-0)  { background-color: var(--xterm-c0)  !important; }
+  :global(.xterm .xterm-bg-1)  { background-color: var(--xterm-c1)  !important; }
+  :global(.xterm .xterm-bg-2)  { background-color: var(--xterm-c2)  !important; }
+  :global(.xterm .xterm-bg-3)  { background-color: var(--xterm-c3)  !important; }
+  :global(.xterm .xterm-bg-4)  { background-color: var(--xterm-c4)  !important; }
+  :global(.xterm .xterm-bg-5)  { background-color: var(--xterm-c5)  !important; }
+  :global(.xterm .xterm-bg-6)  { background-color: var(--xterm-c6)  !important; }
+  :global(.xterm .xterm-bg-7)  { background-color: var(--xterm-c7)  !important; }
+  :global(.xterm .xterm-bg-8)  { background-color: var(--xterm-c8)  !important; }
+  :global(.xterm .xterm-bg-9)  { background-color: var(--xterm-c9)  !important; }
+  :global(.xterm .xterm-bg-10) { background-color: var(--xterm-c10) !important; }
+  :global(.xterm .xterm-bg-11) { background-color: var(--xterm-c11) !important; }
+  :global(.xterm .xterm-bg-12) { background-color: var(--xterm-c12) !important; }
+  :global(.xterm .xterm-bg-13) { background-color: var(--xterm-c13) !important; }
+  :global(.xterm .xterm-bg-14) { background-color: var(--xterm-c14) !important; }
+  :global(.xterm .xterm-bg-15) { background-color: var(--xterm-c15) !important; }
+
+  /* Block cursor backstop. We set cursorStyle: "block" in
+     buildTerminal, so we only need to handle the block variant. */
+  :global(.xterm .xterm-cursor.xterm-cursor-block) {
+    background-color: var(--xterm-cursor) !important;
+    color: var(--xterm-cursor-accent) !important;
   }
 </style>
