@@ -64,6 +64,88 @@
   }: Props = $props();
 
   let draft = $state<Profile>({ ...profile } as Profile);
+
+  // ─── Tab navigation ───────────────────────────────────────────────
+  // Mirrors the pattern in Settings.svelte (single source of truth +
+  // sections rendered with `hidden` based on the active tab). Three
+  // tabs:
+  //   - Connection: connection params, terminal behavior, appearance.
+  //                 The "primary" tab — what most users edit most of
+  //                 the time.
+  //   - Highlighting: per-profile syntax highlighting overrides.
+  //                   Conditional on having packs available; the
+  //                   tab is hidden when there are none.
+  //   - Advanced: control lines, hex view, timestamps, session log.
+  type TabEntry = { key: string; label: string; sectionKeys: string[] };
+  type SectionMeta = { key: string };
+
+  const sectionMeta: SectionMeta[] = [
+    { key: "connection" },
+    { key: "terminal" },
+    { key: "appearance" },
+    { key: "syntax-highlighting" },
+    { key: "advanced" },
+  ];
+
+  // Highlighting tab is dropped from the rail when no packs are
+  // installed (matches the existing `{#if highlightPacks.length > 0}`
+  // gate around the inline section). Computed inline below from the
+  // `highlightPacks` prop.
+  function tabEntriesFor(hasPacks: boolean): TabEntry[] {
+    const tabs: TabEntry[] = [
+      {
+        key: "connection",
+        label: "Connection",
+        sectionKeys: ["connection", "terminal", "appearance"],
+      },
+    ];
+    if (hasPacks) {
+      tabs.push({
+        key: "highlighting",
+        label: "Highlighting",
+        sectionKeys: ["syntax-highlighting"],
+      });
+    }
+    tabs.push({
+      key: "advanced",
+      label: "Advanced",
+      sectionKeys: ["advanced"],
+    });
+    return tabs;
+  }
+
+  function sectionId(key: string): string {
+    return `profile-section-${key}`;
+  }
+  function tabForSection(
+    sectionKey: string,
+    tabs: TabEntry[],
+  ): TabEntry | undefined {
+    return tabs.find((t) => t.sectionKeys.includes(sectionKey));
+  }
+
+  // Active tab. Defaults to first.
+  let activeTabKey = $state("connection");
+
+  // Reactive list of currently-visible tabs. The Highlighting tab
+  // disappears when the user has no packs installed.
+  const visibleTabs = $derived(
+    tabEntriesFor((highlightPacks ?? []).length > 0),
+  );
+
+  function inActiveTab(sectionKey: string): boolean {
+    return tabForSection(sectionKey, visibleTabs)?.key === activeTabKey;
+  }
+
+  /** Reset active tab if it disappeared (e.g. user uninstalled all
+   *  highlight packs while sitting on the Highlighting tab). Picks
+   *  the first available tab so we never leave the user staring at
+   *  an empty pane with no obvious recovery. */
+  $effect(() => {
+    if (!visibleTabs.some((t) => t.key === activeTabKey)) {
+      activeTabKey = visibleTabs[0]?.key ?? "connection";
+    }
+  });
   // syncedFrom deliberately NOT $state — writing to it inside $effect
   // where the effect also reads it would otherwise retrigger the
   // effect (even though the condition self-stabilizes, cleaner to
@@ -383,12 +465,29 @@
     </div>
   </header>
 
+  <div class="body">
+  <!-- Vertical tabs. Mirrors the Settings-window pattern: groups
+       related sections so the form pane is focused. -->
+  <nav class="tabs" aria-label="Profile sections">
+    {#each visibleTabs as tab (tab.key)}
+      <button
+        type="button"
+        class="tab-entry"
+        class:active={activeTabKey === tab.key}
+        onclick={() => (activeTabKey = tab.key)}
+        aria-current={activeTabKey === tab.key ? "true" : undefined}
+      >
+        {tab.label}
+      </button>
+    {/each}
+  </nav>
+
   <div class="scroll">
     {#if error}
       <div class="error">{error}</div>
     {/if}
 
-  <section>
+  <section id={sectionId("connection")} hidden={!inActiveTab("connection")}>
     <h3>Connection</h3>
 
     {#if visibleMissing.length > 0}
@@ -539,7 +638,7 @@
     </div>
   </section>
 
-  <section>
+  <section id={sectionId("terminal")} hidden={!inActiveTab("terminal")}>
     <h3>Terminal</h3>
     <div class="grid">
       <div class="field">
@@ -579,7 +678,7 @@
     </div>
   </section>
 
-  <section>
+  <section id={sectionId("appearance")} hidden={!inActiveTab("appearance")}>
     <h3>Appearance</h3>
     <div class="grid">
       <div class="field full">
@@ -594,23 +693,26 @@
     </div>
   </section>
 
-  {#if highlightPacks.length > 0}
-    <section class="advanced">
-      <details>
-        <summary>
-          <h3>Syntax Highlighting</h3>
-          <span class="hint">
-            {#if !draft.highlight}
-              Disabled
-            {:else if overrideHighlightPacks}
-              Overriding global · {effectiveHighlightPresets.length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled
-            {:else}
-              Inheriting from Settings · {effectiveHighlightPresets.length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled
-            {/if}
-          </span>
-        </summary>
+  <section
+    id={sectionId("syntax-highlighting")}
+    class="advanced"
+    hidden={!inActiveTab("syntax-highlighting")}
+  >
+    <h3>Syntax Highlighting</h3>
+    <p class="section-hint">
+      {#if !draft.highlight}
+        Disabled.
+      {:else if overrideHighlightPacks}
+        Overriding global · {effectiveHighlightPresets.length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled.
+      {:else}
+        Inheriting from Settings · {effectiveHighlightPresets.length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled.
+      {/if}
+      Pick which highlight rule packs apply to this profile's session.
+      By default profiles inherit the selection from <strong>Settings →
+      Highlighting</strong>; flip "Override" to choose a different set
+      just for this profile.
+    </p>
 
-        <section class="sub">
           <label class="toggle">
             <input
               type="checkbox"
@@ -619,13 +721,6 @@
             />
             Enable syntax highlighting
           </label>
-
-          <p class="section-hint" style="margin-top: 12px;">
-            Pick which highlight rule packs apply to this profile's session.
-            By default profiles inherit the selection from <strong>Settings →
-            Syntax Highlighting</strong>; flip "Override" to choose a
-            different set just for this profile.
-          </p>
 
           <label class="toggle" class:disabled={!draft.highlight}>
             <input
@@ -667,17 +762,15 @@
               </label>
             {/each}
           </div>
-        </section>
-      </details>
-    </section>
-  {/if}
+  </section>
 
-  <section class="advanced">
-    <details>
-      <summary>
-        <h3>Advanced</h3>
-        <span class="hint">Control lines, hex view, timestamps, session logging</span>
-      </summary>
+  <section
+    id={sectionId("advanced")}
+    class="advanced"
+    hidden={!inActiveTab("advanced")}
+  >
+    <h3>Advanced</h3>
+    <p class="section-hint">Control lines, hex view, timestamps, session logging.</p>
 
       <section class="sub">
         <h4>Control Lines</h4>
@@ -830,8 +923,8 @@
           </div>
         </div>
       </section>
-    </details>
   </section>
+  </div>
   </div>
 </div>
 
@@ -843,11 +936,64 @@
     flex-direction: column;
   }
 
+  /* Row layout: tab rail on the left, scrolling content on the right.
+     Same pattern used in Settings.svelte. */
+  .body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+
   .scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     padding: 20px 28px 28px 28px;
+  }
+
+  /* Vertical tabs. Mirrors Settings.svelte's tab styling so the two
+     window types feel consistent. Active state uses --bg-active +
+     accent text (no side-stripe border per DESIGN.md). */
+  .tabs {
+    flex-shrink: 0;
+    width: 168px;
+    padding: 14px 10px 14px 16px;
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .tab-entry {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: 0;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background 0.12s,
+      color 0.12s;
+  }
+  .tab-entry:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+  .tab-entry:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .tab-entry.active {
+    background: var(--bg-active);
+    color: var(--accent);
   }
 
   .titlebar {
@@ -1032,52 +1178,9 @@
     font-size: 12px;
   }
 
-  .advanced details summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    list-style: none;
-    padding: 6px 0;
-    margin-bottom: 14px;
-    border-radius: var(--radius-sm);
-    user-select: none;
-  }
-
-  .advanced details summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .advanced details summary h3 {
-    margin: 0;
-  }
-
-  .advanced details summary::before {
-    content: "";
-    display: inline-block;
-    width: 0;
-    height: 0;
-    border-top: 5px solid transparent;
-    border-bottom: 5px solid transparent;
-    border-left: 7px solid var(--fg-secondary);
-    margin-right: 2px;
-    transition: transform 0.15s ease;
-    flex-shrink: 0;
-  }
-
-  .advanced details summary:hover::before {
-    border-left-color: var(--fg-primary);
-  }
-
-  .advanced details[open] summary::before {
-    transform: rotate(90deg);
-  }
-
-  .advanced .hint {
-    font-size: 12px;
-    color: var(--fg-tertiary);
-    font-weight: normal;
-  }
+  /* (Removed dead `.advanced details` rules — Syntax Highlighting and
+     Advanced no longer collapse, since each lives in its own tab now.
+     Same cleanup that landed in Settings.svelte.) */
 
   .advanced .sub {
     padding: 16px;
