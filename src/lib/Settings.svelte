@@ -125,6 +125,95 @@
   // Preview button below it.
   let modalCloseEl: HTMLButtonElement | null = $state(null);
 
+  // ─── Tab navigation ───────────────────────────────────────────────
+  // Settings is organized into vertical tabs along the left rail.
+  // Each tab groups one or more sections; only the active tab's
+  // sections are visible at a time. Sections are kept in the DOM
+  // (via `hidden` attribute) rather than removed, so any per-section
+  // local state (pending-delete timers, modal focus) survives a tab
+  // switch.
+  //
+  // To add a new section: define it in `sectionMeta` (label +
+  // keywords for filter), drop it in the right tab's `sectionKeys`,
+  // and render the matching <section id={sectionId(key)} ...>.
+  type SectionMeta = { key: string; label: string; keywords: string };
+  type TabEntry = { key: string; label: string; sectionKeys: string[] };
+
+  const sectionMeta: SectionMeta[] = [
+    { key: "app-skin", label: "App Skin",
+      keywords: "App Skin chrome appearance light dark auto system theme" },
+    { key: "installed-skins", label: "Installed Skins",
+      keywords: "Installed Skins import custom appearance" },
+    { key: "terminal-defaults", label: "Terminal Defaults",
+      keywords: "Terminal Defaults font size scrollback lines" },
+    { key: "default-theme", label: "Default Theme",
+      keywords: "Default Theme terminal viewport color scheme" },
+    { key: "installed-themes", label: "Installed Themes",
+      keywords: "Installed Themes import itermcolors color scheme" },
+    { key: "keyboard-shortcuts", label: "Keyboard Shortcuts",
+      keywords: "Keyboard Shortcuts clear send break suspend binding key hotkey" },
+    { key: "syntax-highlighting", label: "Syntax Highlighting",
+      keywords: "Syntax Highlighting packs cisco junos aruba arista mikrotik vendor regex" },
+    { key: "advanced", label: "Advanced",
+      keywords: "Advanced session log directory usb driver detection copy select screen reader updates pre-release config directory" },
+  ];
+
+  const tabEntries: TabEntry[] = [
+    { key: "appearance", label: "Appearance",
+      sectionKeys: ["app-skin", "installed-skins", "terminal-defaults"] },
+    { key: "themes", label: "Themes",
+      sectionKeys: ["default-theme", "installed-themes"] },
+    { key: "shortcuts", label: "Shortcuts",
+      sectionKeys: ["keyboard-shortcuts"] },
+    { key: "highlighting", label: "Highlighting",
+      sectionKeys: ["syntax-highlighting"] },
+    { key: "advanced", label: "Advanced",
+      sectionKeys: ["advanced"] },
+  ];
+
+  function sectionId(key: string): string {
+    return `section-${key}`;
+  }
+  function sectionKeywords(key: string): string {
+    return sectionMeta.find((s) => s.key === key)?.keywords ?? key;
+  }
+  function tabForSection(sectionKey: string): TabEntry | undefined {
+    return tabEntries.find((t) => t.sectionKeys.includes(sectionKey));
+  }
+
+  // Active tab. Defaults to first.
+  let activeTabKey = $state(tabEntries[0].key);
+
+  /** True when the section is part of the currently active tab.
+   *  Used to set the `hidden` attribute on each section. */
+  function inActiveTab(sectionKey: string): boolean {
+    return tabForSection(sectionKey)?.key === activeTabKey;
+  }
+
+  /** True when the filter has any matching section in the given
+   *  tab. Drives the dim-non-matching-tabs behavior so the user
+   *  can SEE which tabs contain hits without auto-switching. When
+   *  the filter is empty, every tab is "matching" trivially. */
+  function tabHasFilterMatches(tabKey: string): boolean {
+    if (!filterText) return true;
+    const tab = tabEntries.find((t) => t.key === tabKey);
+    if (!tab) return false;
+    return tab.sectionKeys.some(
+      (k) => sectionKeywords(k).toLowerCase().includes(filterText.toLowerCase()),
+    );
+  }
+
+  /** Switch to a tab AND auto-clear the filter if doing so would
+   *  leave the user staring at an empty pane. Otherwise the filter
+   *  is preserved (so a user can type once, scan tabs for matches,
+   *  click into the right one without re-typing). */
+  function activateTab(key: string): void {
+    activeTabKey = key;
+    if (filterText && !tabHasFilterMatches(key)) {
+      filterText = "";
+    }
+  }
+
   // Section filter. `filterText` is the current substring; sections
   // whose title doesn't include it (case-insensitive) fade out.
   // `Cmd+F` / `Ctrl+F` focuses + selects the input from anywhere
@@ -490,8 +579,30 @@
     </div>
   </header>
 
+  <div class="body">
+  <!-- Vertical tabs. Each tab groups related sections; only the
+       active tab's sections are visible (the rest stay in the DOM,
+       hidden, so per-section state survives switches). When the
+       filter is active, tabs that have no matching section get
+       dimmed so the user can SEE which tab to look in without
+       auto-switching mid-typing. -->
+  <nav class="tabs" aria-label="Settings categories">
+    {#each tabEntries as tab (tab.key)}
+      <button
+        type="button"
+        class="tab-entry"
+        class:active={activeTabKey === tab.key}
+        class:filtered-out={!tabHasFilterMatches(tab.key)}
+        onclick={() => activateTab(tab.key)}
+        aria-current={activeTabKey === tab.key ? "true" : undefined}
+      >
+        {tab.label}
+      </button>
+    {/each}
+  </nav>
+
   <div class="scroll">
-  <section class:filtered-out={fade("App Skin chrome appearance light dark auto system theme")}>
+  <section id={sectionId("app-skin")} hidden={!inActiveTab("app-skin")} class:filtered-out={fade(sectionKeywords("app-skin"))}>
     <h3>App Skin</h3>
     <p class="section-hint">
       The overall look of the app's chrome — colors, typography, radii.
@@ -521,7 +632,7 @@
     </div>
   </section>
 
-  <section class="flat" class:filtered-out={fade("Installed Skins import custom appearance")}>
+  <section id={sectionId("installed-skins")} hidden={!inActiveTab("installed-skins")} class="flat" class:filtered-out={fade(sectionKeywords("installed-skins"))}>
     <div class="section-head">
       <h3>Installed Skins</h3>
       <button
@@ -579,7 +690,7 @@
     {/if}
   </section>
 
-  <section class:filtered-out={fade("Default Theme terminal viewport color scheme")}>
+  <section id={sectionId("default-theme")} hidden={!inActiveTab("default-theme")} class:filtered-out={fade(sectionKeywords("default-theme"))}>
     <h3>Default Theme</h3>
     <p class="section-hint">
       Used by any profile that doesn't set its own theme.
@@ -595,7 +706,7 @@
     </div>
   </section>
 
-  <section class:filtered-out={fade("Terminal Defaults font size scrollback lines")}>
+  <section id={sectionId("terminal-defaults")} hidden={!inActiveTab("terminal-defaults")} class:filtered-out={fade(sectionKeywords("terminal-defaults"))}>
     <h3>Terminal Defaults</h3>
     <p class="section-hint">
       Font size and scrollback for every profile's terminal viewport.
@@ -625,7 +736,7 @@
     </div>
   </section>
 
-  <section class:filtered-out={fade("Keyboard Shortcuts clear send break suspend binding key hotkey")}>
+  <section id={sectionId("keyboard-shortcuts")} hidden={!inActiveTab("keyboard-shortcuts")} class:filtered-out={fade(sectionKeywords("keyboard-shortcuts"))}>
     <h3>Keyboard Shortcuts</h3>
     <p class="section-hint">
       Session-header actions. Click a binding to record a new key combo;
@@ -651,7 +762,7 @@
     </div>
   </section>
 
-  <section class="flat" class:filtered-out={fade("Installed Themes import itermcolors color scheme")}>
+  <section id={sectionId("installed-themes")} hidden={!inActiveTab("installed-themes")} class="flat" class:filtered-out={fade(sectionKeywords("installed-themes"))}>
     <div class="section-head">
       <h3>Installed Themes</h3>
       <button
@@ -719,26 +830,19 @@
     </ul>
   </section>
 
-  <section class="advanced" class:filtered-out={fade("Syntax Highlighting packs cisco junos aruba arista mikrotik vendor regex")}>
-    <details>
-      <summary>
-        <h3>Syntax Highlighting</h3>
-        <span class="hint">
-          {(settings.enabledHighlightPresets ?? []).length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled — profile-level "Highlight" must be on
-        </span>
-      </summary>
-
-      <div class="sub">
-        <p class="section-hint">
-          Highlight rules grouped into packs. The default vendor-neutral set
-          covers IPs, MACs, interface names, and status keywords. Device-
-          specific packs (Cisco IOS, Junos, Aruba CX, Arista EOS, MikroTik
-          RouterOS) add patterns common to each platform's output. Bundled
-          packs are read-only; the "User overrides" scratchpad is editable
-          at <code>$SUPPORT_DIR/highlight-rules.json</code>. Imported packs
-          live under <code>$SUPPORT_DIR/highlight/&lt;id&gt;.json</code> and
-          can be removed from here.
-        </p>
+  <section id={sectionId("syntax-highlighting")} hidden={!inActiveTab("syntax-highlighting")} class="advanced" class:filtered-out={fade(sectionKeywords("syntax-highlighting"))}>
+    <h3>Syntax Highlighting</h3>
+    <p class="section-hint">
+      {(settings.enabledHighlightPresets ?? []).length} of {highlightPacks.length} pack{highlightPacks.length === 1 ? "" : "s"} enabled — profile-level "Highlight" must be on.
+      Highlight rules grouped into packs. The default vendor-neutral set
+      covers IPs, MACs, interface names, and status keywords. Device-
+      specific packs (Cisco IOS, Junos, Aruba CX, Arista EOS, MikroTik
+      RouterOS) add patterns common to each platform's output. Bundled
+      packs are read-only; the "User overrides" scratchpad is editable
+      at <code>$SUPPORT_DIR/highlight-rules.json</code>. Imported packs
+      live under <code>$SUPPORT_DIR/highlight/&lt;id&gt;.json</code> and
+      can be removed from here.
+    </p>
 
         <div class="section-head">
           <button
@@ -809,16 +913,11 @@
             </div>
           {/each}
         </div>
-      </div>
-    </details>
   </section>
 
-  <section class="advanced" class:filtered-out={fade("Advanced session log directory usb driver detection copy select screen reader updates pre-release config directory")}>
-    <details>
-      <summary>
-        <h3>Advanced</h3>
-        <span class="hint">Session logging and other global defaults</span>
-      </summary>
+  <section id={sectionId("advanced")} hidden={!inActiveTab("advanced")} class="advanced" class:filtered-out={fade(sectionKeywords("advanced"))}>
+    <h3>Advanced</h3>
+    <p class="section-hint">Session logging and other global defaults.</p>
 
       <div class="sub">
         <h4>Session Log Directory</h4>
@@ -955,8 +1054,8 @@
           </p>
         {/if}
       </div>
-    </details>
   </section>
+  </div>
   </div>
 </div>
 
@@ -1002,11 +1101,76 @@
     flex-direction: column;
   }
 
+  /* Row layout: TOC rail on the left, scrolling content on the right.
+     Both children are full-height; only `.scroll` actually scrolls. */
+  .body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+
   .scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
     padding: 20px 28px 28px 28px;
+  }
+
+  /* Vertical tabs. Fixed-width left rail; each entry is a full-
+     bleed button. Active state uses --bg-active (operator-blue
+     tint) + accent color text. No side-stripe borders (banned per
+     DESIGN.md) — the bg fill IS the active affordance. Hover and
+     filter-fade follow the standard opacity ladder. */
+  .tabs {
+    flex-shrink: 0;
+    width: 168px;
+    padding: 14px 10px 14px 16px;
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .tab-entry {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: 0;
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-secondary);
+    text-align: left;
+    cursor: pointer;
+    transition:
+      background 0.12s,
+      color 0.12s,
+      opacity 0.12s;
+  }
+  .tab-entry:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+  .tab-entry:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .tab-entry.active {
+    background: var(--bg-active);
+    color: var(--accent);
+  }
+  /* Filter feedback: when the user types something that doesn't
+     match any section in a given tab, that tab dims. Lets the user
+     scan the rail to find which tab contains hits without auto-
+     switching mid-typing. The active tab itself stays dim if it
+     has no matches — clicking another tab clears the filter via
+     activateTab(). */
+  .tab-entry.filtered-out {
+    opacity: 0.4;
   }
 
   .titlebar {
@@ -1294,52 +1458,9 @@
     line-height: 1.4;
   }
 
-  .advanced details summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    list-style: none;
-    padding: 6px 0;
-    margin-bottom: 14px;
-    border-radius: var(--radius-sm);
-    user-select: none;
-  }
-
-  .advanced details summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .advanced details summary h3 {
-    margin: 0;
-  }
-
-  .advanced details summary::before {
-    content: "";
-    display: inline-block;
-    width: 0;
-    height: 0;
-    border-top: 5px solid transparent;
-    border-bottom: 5px solid transparent;
-    border-left: 7px solid var(--fg-secondary);
-    margin-right: 2px;
-    transition: transform 0.15s ease;
-    flex-shrink: 0;
-  }
-
-  .advanced details summary:hover::before {
-    border-left-color: var(--fg-primary);
-  }
-
-  .advanced details[open] summary::before {
-    transform: rotate(90deg);
-  }
-
-  .advanced .hint {
-    font-size: 12px;
-    color: var(--fg-tertiary);
-    font-weight: normal;
-  }
+  /* (Removed dead .advanced details / summary rules — Syntax
+     Highlighting and Advanced no longer collapse, since each lives
+     in its own tab now.) */
 
   .advanced .sub {
     padding: 14px 16px;
