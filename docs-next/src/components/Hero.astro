@@ -9,6 +9,15 @@ import iconImage from '../assets/icon.svg';
 const { entry } = Astro.locals.starlightRoute;
 const { hero = {}, title: pageTitle } = entry.data;
 const { title = pageTitle, tagline, actions = [] } = hero;
+
+// Show the screenshot-tour text link only on the homepage hero.
+// On the 404 hero a "see screenshots" link would be confusing —
+// the user already missed the page they were looking for. URL
+// check rather than `entry.id` because Starlight 0.38's entry
+// IDs don't include the file extension reliably across content
+// loaders.
+const path = Astro.url.pathname.replace(/\/+$/, '');
+const isHomepage = path === '/Baudrun' || path === '';
 ---
 
 <section class="bd-hero">
@@ -36,6 +45,11 @@ const { title = pageTitle, tagline, actions = [] } = hero;
 					</a>
 				))}
 			</div>
+		)}
+		{isHomepage && (
+			<a class="bd-hero-tour" href="/Baudrun/usage/screenshots/">
+				See the screenshot tour
+			</a>
 		)}
 	</div>
 	<div class="bd-hero-glow" aria-hidden="true"></div>
@@ -142,6 +156,25 @@ const { title = pageTitle, tagline, actions = [] } = hero;
 	.bd-hero-cta--minimal:hover {
 		background: color-mix(in oklch, var(--pt-paper-100) 8%, transparent);
 		box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--pt-paper-100) 50%, transparent);
+	}
+
+	/* Subtle text link below the CTA buttons — points at the
+	   screenshot tour. No pill / button styling: the brief was "just
+	   the words" so it reads as a soft secondary affordance, not a
+	   third button. */
+	.bd-hero-tour {
+		display: inline-block;
+		margin-top: 0.4rem;
+		font-size: 0.92rem;
+		color: color-mix(in oklch, var(--pt-paper-100) 75%, transparent);
+		text-decoration: none;
+		border-bottom: 1px solid color-mix(in oklch, var(--pt-paper-100) 25%, transparent);
+		padding-bottom: 1px;
+		transition: color 140ms ease, border-color 140ms ease;
+	}
+	.bd-hero-tour:hover {
+		color: var(--pt-amber-300);
+		border-bottom-color: var(--pt-amber-300);
 	}
 
 	/* Subtle amber glow drifting behind the icon — reads as warmth, not decoration. */

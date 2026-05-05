@@ -20,6 +20,11 @@ export default defineConfig({
 			customCss: ['./src/styles/theme.css'],
 			components: {
 				Hero: './src/components/Hero.astro',
+				// Wraps Starlight's default SocialIcons to add a "Docs"
+				// quick-access pill linking to /install/ — the most
+				// common entry point for visitors landing on a deep
+				// page who want to start over.
+				SocialIcons: './src/components/SocialIcons.astro',
 			},
 			social: [
 				{
