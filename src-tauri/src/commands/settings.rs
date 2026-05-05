@@ -42,8 +42,12 @@ pub fn update_settings(
     Ok(updated)
 }
 
+/// `async` is load-bearing — see `pick_send_file` in transfer.rs for
+/// the long version. Short version: a sync command's `blocking_pick_folder`
+/// freezes the UI on Linux / Windows because Tauri 2 runs sync commands
+/// on the WebView main thread.
 #[tauri::command]
-pub fn pick_log_directory(app: AppHandle) -> Result<String, String> {
+pub async fn pick_log_directory(app: AppHandle) -> Result<String, String> {
     pick_directory(&app, "Choose session log directory")
 }
 
@@ -69,8 +73,12 @@ pub fn get_default_config_directory() -> Result<String, String> {
         .map_err(|e| e.to_string())
 }
 
+/// `async` is load-bearing — see `pick_send_file` in transfer.rs for
+/// the long version. Short version: a sync command's `blocking_pick_folder`
+/// freezes the UI on Linux / Windows because Tauri 2 runs sync commands
+/// on the WebView main thread.
 #[tauri::command]
-pub fn pick_config_directory(app: AppHandle) -> Result<String, String> {
+pub async fn pick_config_directory(app: AppHandle) -> Result<String, String> {
     pick_directory(&app, "Choose config directory")
 }
 

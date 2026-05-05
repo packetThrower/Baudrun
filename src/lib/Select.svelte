@@ -498,6 +498,13 @@
      the trigger's viewport rect at open time; :global so the
      scoped styles still apply once the node lives under <body>.
 
+     z-index sits one above the modal backdrops (10000) so a Select
+     opened inside the Send-File / Hex-Send / Settings modals still
+     paints over the backdrop. macOS WebKit happens to render the
+     portaled popover above siblings of equal z-index by source
+     order, but WebKit2GTK (Linux) and WebView2 (Windows) honor the
+     numeric stacking strictly, so 9999 < 10000 hides the popover.
+
      Uses --option-bg / --option-fg / --option-group-fg — the
      existing skin-defined variables for dropdown popups. Every
      built-in and documented custom skin sets these to solid
@@ -506,7 +513,7 @@
      opaque, skin-appropriate surface automatically. */
   :global(.select-list) {
     position: fixed;
-    z-index: 9999;
+    z-index: 10001;
     overflow-y: auto;
     margin: 0;
     padding: 4px;

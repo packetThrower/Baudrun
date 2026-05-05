@@ -14,8 +14,19 @@ pub fn list_skins(state: State<'_, Arc<AppState>>) -> Vec<Skin> {
     state.skins.list()
 }
 
+/// `async` is load-bearing — see `pick_send_file` in transfer.rs for
+/// the long version. Short version: a sync command's `blocking_pick_file`
+/// freezes the UI on Linux / Windows because Tauri 2 runs sync commands
+/// on the WebView main thread.
 #[tauri::command]
-pub fn import_skin(app: AppHandle, state: State<'_, Arc<AppState>>) -> Result<Skin, String> {
+pub async fn import_skin(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+) -> Result<Skin, String> {
+    // Clone the Arc out of State so we don't hold the (non-Send)
+    // State reference across an await point.
+    let state = state.inner().clone();
+
     let path = app
         .dialog()
         .file()

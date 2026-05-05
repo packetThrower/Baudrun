@@ -19,8 +19,16 @@ use crate::transfer::{self, ChannelReader, Options, XModemVariant};
 
 /// Native file picker, returning "" on cancel so the frontend can
 /// branch on empty string (matches the Go / Wails behaviour).
+///
+/// `async` is load-bearing: Tauri 2 dispatches sync commands onto the
+/// runtime's main thread, where a `blocking_pick_file()` call would
+/// deadlock the WebView event loop on Linux (WebKit2GTK) and Windows
+/// (WebView2) — the dialog can't pump events because the thread that
+/// drives it is parked. Marking the command `async` moves it onto the
+/// async runtime, which has its own worker thread for the blocking
+/// call while the main thread stays free to render the dialog.
 #[tauri::command]
-pub fn pick_send_file(app: AppHandle) -> Result<String, String> {
+pub async fn pick_send_file(app: AppHandle) -> Result<String, String> {
     let picked = app
         .dialog()
         .file()
