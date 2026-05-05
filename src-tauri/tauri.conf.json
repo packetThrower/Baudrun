@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Baudrun",
-  "version": "0.9.5-beta.5",
+  "version": "0.9.5-beta.6",
   "identifier": "io.github.packetThrower.Baudrun",
   "build": {
     "beforeDevCommand": "npm run dev",
