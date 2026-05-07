@@ -186,6 +186,7 @@ function plainLines(
   block: string,
   timestamps: boolean,
   prefixSource: () => string = timestampPrefix,
+  firstIsContinuation = false,
 ): string {
   if (!timestamps) return block;
   const parts = block.split("\n");
@@ -201,7 +202,9 @@ function plainLines(
     // "-- More --" prompt), CR then yanks the cursor to col 0 and
     // the new content overwrites from there, leaving timestamp
     // residue visible on the right half of the line.
-    out.push(leading + prefixSource() + rest + (isLast ? "" : "\n"));
+    const isContinuation = i === 0 && firstIsContinuation && leading.length === 0;
+    const stamp = rest.length > 0 && !isContinuation ? prefixSource() : "";
+    out.push(leading + stamp + rest + (isLast ? "" : "\n"));
   }
   return out.join("");
 }
@@ -294,6 +297,7 @@ export function highlightLines(
   block: string,
   timestamps = false,
   prefixSource: () => string = timestampPrefix,
+  firstIsContinuation = false,
 ): string {
   // block contains one or more complete lines ending in \n (with optional \r).
   // Split on \n, highlight each stripped line, rejoin preserving line endings.
@@ -310,7 +314,23 @@ export function highlightLines(
     const bare = cr ? raw.slice(0, -1) : raw;
     const { leading, rest } = splitRedrawPrefix(bare);
     const highlighted = highlightLine(rest);
-    const prefix = timestamps ? prefixSource() : "";
+    // Skip the stamp on the first line when it's a continuation of
+    // an already-stamped partial flush AND the device hasn't sent a
+    // redraw to clear that partial. If a redraw IS present
+    // (`leading.length > 0`), the previous content is being wiped,
+    // so we re-stamp on top of the cleared line.
+    //
+    // We also skip the stamp when there's no content to stamp
+    // (`rest.length === 0`) — a line of pure redraw bytes (`\r\n`
+    // from an Enter echo, residue of a pager erase) has no place
+    // for the prefix to land. Without this, xterm would write the
+    // timestamp at the cursor's current col (typically end of the
+    // previous line's content), then `\r` would snap the cursor
+    // back to col 0 — leaving the prefix glued to the tail of the
+    // prior visible line, which is the `test-C800#[09:53:14.771]`
+    // artifact users see on every Enter press at a Cisco prompt.
+    const isContinuation = i === 0 && firstIsContinuation && leading.length === 0;
+    const prefix = timestamps && rest.length > 0 && !isContinuation ? prefixSource() : "";
     out.push(leading + prefix + highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
   }
   return out.join("");
@@ -334,6 +354,19 @@ export class TerminalHighlighter {
   private rawTail = "";
   private rawTailTs: number | null = null;
   private readonly maxRawLines: number;
+
+  // Partial-line stamping. When the flush timer fires while we're
+  // still mid-line (a `--More--` pager prompt, a Cisco shell prompt
+  // waiting on input — anything without a trailing `\n`), we stamp
+  // the partial buffer on its way out so the user sees a timestamp
+  // in front of the prompt. `partialPending` then guards against
+  // double-stamping when the rest of that line eventually arrives:
+  // the continuation skips its own prefix unless the device sent a
+  // redraw (`\r` / backspace-erase) that would have wiped our partial
+  // off the screen anyway. `lastTimestamps` mirrors the most recent
+  // `feed()`'s timestamp flag because flushNow has no caller args.
+  private partialPending = false;
+  private lastTimestamps = false;
 
   constructor(
     private writeCb: (text: string) => void,
@@ -380,9 +413,14 @@ export class TerminalHighlighter {
       while (this.rawLines.length > this.maxRawLines) this.rawLines.shift();
     }
 
+    this.lastTimestamps = timestamps;
+
     if (!highlight && !timestamps) {
       this.flushNow();
       this.writeCb(text);
+      // Without highlighting or timestamps there's no stamping to
+      // worry about; the partial-pending bookkeeping doesn't apply.
+      this.partialPending = false;
       return;
     }
     this.buffer += text;
@@ -390,9 +428,15 @@ export class TerminalHighlighter {
     if (lastNL >= 0) {
       const complete = this.buffer.slice(0, lastNL + 1);
       this.buffer = this.buffer.slice(lastNL + 1);
+      // Capture the partial-pending state BEFORE processing — the
+      // first line in `complete` is a continuation of the partial
+      // we already stamped on a previous flush. Reset for subsequent
+      // lines (which are fresh) and for the next round.
+      const continuation = this.partialPending;
+      this.partialPending = false;
       const processed = highlight
-        ? highlightLines(complete, timestamps)
-        : plainLines(complete, timestamps);
+        ? highlightLines(complete, timestamps, undefined, continuation)
+        : plainLines(complete, timestamps, undefined, continuation);
       this.writeCb(processed);
     }
     this.scheduleFlush();
@@ -455,11 +499,15 @@ export class TerminalHighlighter {
 
   /** Drop the raw history. Wired to the session-clear path in
    *  Terminal.svelte so a subsequent highlight toggle doesn't
-   *  resurrect content the user explicitly cleared. */
+   *  resurrect content the user explicitly cleared. Also resets
+   *  the partial-stamp tracking — after `term.clear()` the cursor
+   *  is back at col 0 with nothing on screen, so the next content
+   *  starts a fresh line and should get its own stamp. */
   clearHistory(): void {
     this.rawLines = [];
     this.rawTail = "";
     this.rawTailTs = null;
+    this.partialPending = false;
   }
 
   private scheduleFlush() {
@@ -479,13 +527,39 @@ export class TerminalHighlighter {
       this.flushTimer = null;
     }
     if (this.buffer.length > 0) {
-      this.writeCb(this.buffer);
+      // Stamp the partial on the way out, but only if (a) timestamps
+      // are on, (b) we haven't already stamped this logical line in
+      // an earlier partial flush (`partialPending`), and (c) the
+      // partial actually has user-visible content — pure redraw
+      // bytes (`\r`, backspace runs) get nothing prefixed because
+      // there's nowhere on screen for the stamp to land.
+      let toWrite = this.buffer;
+      if (this.lastTimestamps && !this.partialPending) {
+        const { leading, rest } = splitRedrawPrefix(this.buffer);
+        if (rest.length > 0) {
+          // Same prefix-positioning rule as highlightLines: redraw
+          // bytes run first (cursor returns to col 0), then the
+          // timestamp lands at col 0, then the content.
+          toWrite = leading + timestampPrefix() + rest;
+        }
+      }
+      this.writeCb(toWrite);
       this.buffer = "";
+      // Mark this logical line as already stamped (or attempted-
+      // stamped) so the eventual newline-terminated continuation
+      // doesn't double-stamp it. Reset on the next \n in feed().
+      this.partialPending = true;
     }
   }
 
   reset() {
     this.flushNow();
+    // After reset, the highlight pipeline is being restarted (the
+    // calling $effect just toggled highlight or hexView). The next
+    // feed should not inherit the just-flushed partial's "already
+    // stamped" status — that bookkeeping belongs to the previous
+    // pipeline configuration.
+    this.partialPending = false;
   }
 
   dispose() {
