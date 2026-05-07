@@ -147,13 +147,15 @@ pub fn detect_missing_drivers() -> Result<Vec<USBSerialCandidate>, String> {
     Ok(missing)
 }
 
-/// Whether the host CPU (not the build target) is ARM64. Baudrun's
-/// Windows builds are x64-only today; on a Windows-on-ARM machine
-/// they run under Microsoft's x64-on-ARM emulator. The emulator
-/// remaps `PROCESSOR_ARCHITECTURE` to `AMD64` for the emulated
-/// process and stashes the real host arch in `PROCESSOR_ARCHITEW6432`.
-/// So checking either env var (whichever is set to "ARM64") gives us
-/// the real host CPU regardless of how Baudrun itself was compiled.
+/// Whether the host CPU (not the build target) is ARM64. Baudrun
+/// ships both x64 and native ARM64 Windows builds, so a user on a
+/// Windows-on-ARM machine could be running either:
+///   * The native arm64-setup.exe — `PROCESSOR_ARCHITECTURE` = "ARM64".
+///   * The x64-setup.exe under Microsoft's x64-on-ARM emulator —
+///     `PROCESSOR_ARCHITECTURE` = "AMD64", with the real host arch
+///     stashed in `PROCESSOR_ARCHITEW6432` = "ARM64".
+/// Checking either env var for "ARM64" covers both cases regardless
+/// of how Baudrun itself was compiled.
 fn is_windows_on_arm64() -> bool {
     let native = std::env::var("PROCESSOR_ARCHITEW6432").unwrap_or_default();
     let proc_arch = std::env::var("PROCESSOR_ARCHITECTURE").unwrap_or_default();
