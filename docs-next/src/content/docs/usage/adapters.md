@@ -23,7 +23,7 @@ OS does.
 |---|---|---|---|---|
 | **FTDI** (stock VIDs `0403:*`, plus ~25 rebrand VIDs) | `ftdi_sio` ✓ | `AppleUSBFTDI` ✓ (97 PIDs covered) | FTDI VCP driver | Planned (parity) |
 | **Prolific PL2303** (modern PIDs `067b:2303`, `067b:2304`, `067b:a100`, `067b:e1f1`, `0557:2008` ATEN) | `pl2303` ✓ | `AppleUSBPLCOM` ✓ | Prolific driver | Planned (parity) |
-| **Prolific PL2303HXA** (legacy chip rev: TRENDnet TU-S9 and similar) | `pl2303` ✓ | ✗ (Apple's DEXT excludes; Prolific's current driver rejects as counterfeit) | Legacy Prolific driver (pre-2016) | Planned |
+| **Prolific PL2303HXA** (legacy chip rev: TRENDnet TU-S9 and similar) | `pl2303` ✓ | `AppleUSBPLCOM` ✓ | Legacy Prolific driver on x64 only — no working ARM64 path | Planned |
 | **Silicon Labs CP2102 / CP2102N / CP2104** (stock `10c4:ea60`) | `cp210x` ✓ | `AppleUSBSLCOM` ✓ | SiLabs VCP driver | ✓ |
 | **Silicon Labs CP2105** dual-UART (stock `10c4:ea70`) | `cp210x` ✓ | `AppleUSBSLCOM` ✓ | SiLabs VCP driver | ✓ (first UART only; second planned) |
 | **Silicon Labs CP2108** quad-UART (stock `10c4:ea71`) | `cp210x` ✓ | ✗ (not in Apple's id_table) | SiLabs VCP driver | ✓ (first UART only) |
@@ -89,7 +89,7 @@ path picks up the device without any sysfs setup.
 DriverKit extensions in `/System/Library/DriverExtensions/`:
 
 - `com.apple.DriverKit-AppleUSBFTDI.dext` covers 97 VID:PID pairs
-- `com.apple.DriverKit-AppleUSBPLCOM.dext` covers 5 pairs (Prolific)
+- `com.apple.DriverKit-AppleUSBPLCOM.dext` covers 5 pairs (Prolific) — matches by VID:PID only, with no `bcdDevice` constraint, so the legacy PL2303HXA chip rev (TRENDnet TU-S9 etc.) is bound out of the box. The "Prolific stops supporting older chips" story is a Windows driver issue, not a macOS one.
 - `com.apple.DriverKit-AppleUSBSLCOM.dext` covers 2 pairs (CP210x)
 - `com.apple.DriverKit-AppleUSBCHCOM.dext` covers 2 pairs (CH340)
 
@@ -97,8 +97,9 @@ The catch is that each DEXT matches only the specific VID:PID values
 hard-coded in its `Info.plist`. `AppleUSBSLCOM` covers stock SiLabs
 CP2102 (`10c4:ea60`) and CP2105 (`10c4:ea70`), but not CP2108 or
 rebrands. `AppleUSBCHCOM` covers the two most common CH34x PIDs and
-misses the rest. `AppleUSBPLCOM` deliberately excludes the legacy
-PL2303HXA chip revision that Prolific has stopped supporting.
+misses the rest. `AppleUSBPLCOM` covers all PL2303 chip revisions
+including the legacy HXA — that chip's well-known rejection issue
+is purely a Windows-driver story.
 
 Anything outside those lists falls through to `AppleUSBHostCompositeDevice`,
 the generic composite-device shim that acknowledges the device exists
@@ -122,6 +123,27 @@ Because shipping a signed userspace USB driver on Windows is its own
 cottage industry, the direct-USB backend is a no-op there. It falls
 through to the `serialport` crate, which opens the `COMn` that the
 vendor driver created.
+
+*Windows 11 ARM (Snapdragon laptops, Apple Silicon VMs):* the
+ARM64-vs-x64 driver story matters. Vendor drivers for x64 Windows
+do not load under emulation because Windows refuses to load
+non-ARM64 kernel modules in an ARM64 kernel. Per-vendor state:
+
+- **SiLabs CP210x:** ARM64 driver ships via Windows Update. Plug in,
+  it works. Lowest friction option.
+- **FTDI:** ARM64 driver exists (VCP 2.12.36.20+) but the auto-installer
+  isn't ARM64-compatible. Manual install: download the ARM64 driver
+  package from ftdichip.com, unzip, point Device Manager at the folder.
+  Once installed it works as well as it does on x64.
+- **WCH CH340/CH343:** WCH ships ARM64 drivers; quality varies by chip
+  generation. CH343 is better supported than CH340.
+- **Prolific PL2303 (modern chips — REV_05+):** Prolific driver
+  v4.6.0.0+ ships ARM64 binaries; v6.5.0.0 (Feb 2026) is current.
+- **Prolific PL2303HXA (legacy: TU-S9 etc.):** no working path. The
+  modern Prolific driver rejects HXA, the legacy driver is x64-only
+  and unsigned for ARM64, and the patched community drivers
+  (theAmberLion/Prolific, daniel-marschall) are also x64-only.
+  Replace the cable with FTDI or CP210x.
 
 **Direct USB** is the in-tree `src-tauri/src/usbserial/` module
 (originally vendored from
@@ -160,7 +182,8 @@ What to avoid if you can:
   install. They're cheap and everywhere (every no-name ESP32 dev
   board, most "3-pack USB serial cables" on Amazon), but the driver
   flow on Windows is less polished than FTDI's.
-- **Pre-2016 Prolific PL2303HXA cables** on modern macOS. Prolific's
-  current driver rejects them as counterfeit even when they're
-  genuine; Apple's DEXT excludes them. The legacy driver works but
-  it's unsigned, and macOS Gatekeeper blocks unsigned kexts.
+- **Pre-2016 Prolific PL2303HXA cables** on Windows. Prolific's
+  current Windows driver rejects them as counterfeit even when they're
+  genuine. The legacy x64 driver works but isn't signed for ARM64,
+  so Windows 11 ARM has no driver path at all. macOS and Linux both
+  drive these cables fine via their bundled drivers.

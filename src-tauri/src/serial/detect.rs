@@ -43,10 +43,17 @@ pub fn detect_suspect_enumerated_ports() -> Vec<USBSerialCandidate> {
             driver_url: info.driver_url.clone(),
             reason: String::new(),
         };
-        // Prolific's current driver rejects pre-2016 chip revisions
-        // with a scolding product string even when the chip is
-        // genuine. Common with reputable older cables like
-        // TRENDnet TU-S9.
+        // Prolific's current Windows driver rejects pre-2016 chip
+        // revisions with a scolding product string even when the chip
+        // is genuine. Common with reputable older cables like TRENDnet
+        // TU-S9. In practice this branch only fires on Windows: macOS
+        // (AppleUSBPLCOM matches by VID:PID with no bcdDevice filter)
+        // and Linux (kernel pl2303.ko) both bind HXA cables fine, so
+        // the device never appears in the suspect-product list there.
+        // Even so the message is written assuming a Windows reader
+        // because that's where the issue actually surfaces; if a
+        // future macOS/Linux driver regression starts injecting the
+        // same kind of error string we'd want to revisit this copy.
         if vid == "067b" {
             candidate.chipset = "Prolific PL2303 (older chip revision)".into();
             candidate.reason =
