@@ -25,9 +25,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
-dirs = "5"
+dirs = "6"
 plist = "1"
-thiserror = "1"
+thiserror = "2"
 anyhow = "1"
 serialport = "4"
 regex = "1"
