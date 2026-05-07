@@ -15,6 +15,153 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.9.5] — 2026-05-07
+
+A long iteration cycle (nine alphas, seven betas) covering a Settings
+overhaul, a docs-site rewrite, and a sustained pass on Linux + Windows
+rendering quality. Highlights below; the per-commit story lives in
+`git log`.
+
+### Added
+
+- **Settings is now its own Tauri window** rather than a modal over
+  the session view. Multi-window users can keep Settings open on a
+  second monitor while the main window stays focused on the device.
+  Cross-window settings sync keeps changes consistent even when the
+  user is editing in one window and connected in another.
+- **Settings section filter** with `⌘F` / `Ctrl+F` (or `/`) to jump
+  between Appearance, Themes, Highlighting, Shortcuts, and Advanced.
+  Keywords for App Skin and Shortcut sections are broad so search
+  hits intuitive terms.
+- **Vertical-tab layout** for Settings and the Profile editor.
+  Connection / Highlighting / Advanced groups in the profile form
+  mirror Settings's own grouping; less scrolling, clearer scope.
+- **Every keyboard shortcut is user-rebindable.** Settings →
+  Shortcuts now exposes every action (connect / disconnect, hex
+  view, send-break, font-size, copy / paste, send-file, clear,
+  toggle-DTR / RTS, etc.) with conflict detection and per-OS
+  defaults. Captured key combos render as `⌘+Shift+K` / `Ctrl+Shift+K`
+  pills.
+- **Highlight pack toggles update existing scrollback live.** Turn
+  Cisco IOS off, the Cisco-specific keywords go plain in the lines
+  already on screen, not just in newly-arrived output. Same for the
+  master Highlight switch and the Timestamps toggle. Per-line
+  arrival times are preserved across the replay so toggling
+  Timestamps on doesn't re-stamp every historical line as "now."
+- **Windows 11 ARM USB-serial detection.** Baudrun's missing-driver
+  banner now fires on Win11 ARM (was silently dropping rows due to
+  a JSON-parse bug on `Manufacturer: null`). Detection is
+  arch-aware: PL2303 cables on Win11 ARM get a tailored message
+  ("no compatible driver path; replace with a CP210x or FTDI cable")
+  and link to the adapters guide instead of a dead-end Prolific
+  download page.
+- **OG image, Twitter cards, JSON-LD `SoftwareApplication` schema,
+  and Google Search Console verification** on the docs site, so
+  link previews and search-engine listings render as a real product
+  page rather than a plain text card.
+
+### Changed
+
+- **Docs site rewritten on Astro + Starlight** (replaces MkDocs
+  Material). Same content, faster builds, integrated Pagefind
+  search, Cards / CardGrid components, custom Hero with
+  screenshot-tour link, "Docs" quick-access pill on every page.
+  Editorial pass across all twelve pages: removed AI-flavored
+  comparison phrasing in favor of feature-focused language;
+  no em dashes anywhere on the homepage.
+- **Tauri 2.10 → 2.11.1** with matching `@tauri-apps/api` and
+  `@tauri-apps/cli` updates. The 2.11.1 patch closes an IPC
+  origin-confusion advisory (GHSA-7gmj-67g7-phm9); see Security.
+- **Settings UI polish:** flat highlight section instead of nested
+  cards, destructive actions (reset, delete pack) prompt for
+  confirmation with an undo, ARIA labels on every toggle.
+
+### Fixed
+
+- **Linux + Windows: terminal output renders correctly on every
+  theme.** Cisco / Junos / Aruba syntax highlighting was collapsing
+  to one color and most themes rendered as a black box on
+  WebKit2GTK and WebView2. xterm.js's runtime-injected stylesheet
+  was getting silently dropped on these renderers, taking default
+  foreground, the 16 ANSI color classes, the cursor's block fill,
+  and the selection background with it. Fixed by routing all of
+  those through CSS variables on the wrap element instead, so the
+  cascade carries them down regardless of whether the injection
+  applied. macOS unaffected.
+- **Linux + Windows: text selection in connected sessions.** Same
+  root cause as above — the selection-overlay rule wasn't
+  applying, so click-and-drag computed a range but rendered no
+  visible highlight, making selection feel "read-only."
+- **Linux + Windows: Send File no longer freezes the app.** The
+  native file picker was using a sync Tauri command, which Tauri
+  2 dispatches on the WebView main thread. `blocking_pick_file()`
+  on that thread deadlocked the event loop on every renderer
+  except macOS. Same async-ification applied to `import_theme`,
+  `import_skin`, `pick_log_directory`, and `pick_config_directory`.
+- **Send File protocol dropdown shows above the modal.** The
+  `Select` popover sat at `z-index: 9999` while modal backdrops
+  sit at `10000`; portaled-popover stacking happened to work on
+  macOS WebKit by source order but not on WebKit2GTK or WebView2.
+  Bumped to `10001`.
+- **Pager rendering with timestamps on.** Cisco IOS / Aruba CX
+  pager prompts (`--More--`) now stamp cleanly, and the next page
+  of output lands on its own row with its own stamp. Previously
+  the device's redraw left our stamp untouched and a second stamp
+  landed on the same row, producing the `[ts1] [ts2] content`
+  artifact.
+- **Empty `\r\n` lines no longer stamp.** Pressing Enter at a
+  Cisco prompt was emitting `[ts]\r\n`, which xterm wrote at the
+  cursor's end-of-line position — gluing a phantom stamp onto
+  every prompt line.
+- **macOS: flash-of-black on window open** in release builds.
+  Both the Baudrun skin and Settings substrate now pre-paint via
+  `WebviewWindow::background_color` and an inline `<style>` in
+  `index.html`, so there's no white-then-skin transition.
+- **macOS: header padding offset past the traffic-light zone**
+  in Settings and the Profile editor windows so the title and
+  pills don't sit under the close / minimize / zoom buttons.
+- **Windows XP skin: tab readability.** Active tab was rendering
+  blue-on-blue; switched to `var(--fg-primary)`.
+- **Settings dir-load + cross-window sync.** The Settings window
+  had the wrong substrate color on first paint (transparent
+  instead of skin background), and edits didn't propagate back to
+  the main window's session header until next launch.
+- **Profile form drag-and-drop** when reordering profiles in the
+  sidebar.
+
+### Docs
+
+- **macOS PL2303HXA story corrected.** Apple's `AppleUSBPLCOM`
+  DEXT matches `067B:2303` with no `bcdDevice` constraint, so the
+  legacy chip rev (TRENDnet TU-S9 etc.) is bound out of the box on
+  every supported macOS. The "PL2303HXA is broken on macOS"
+  narrative was a Windows-driver story leaking into the wrong
+  column.
+- **New Windows 11 ARM section** in the adapters guide, with
+  per-vendor ARM64 driver state: SiLabs CP210x ships via Windows
+  Update; FTDI ARM64 driver requires manual install; Prolific HXA
+  has no working path; modern Prolific (REV_05+) needs the
+  v6.5.0.0 ARM installer.
+- **Scoop install on Windows** now mentions `scoop install git`
+  as a prerequisite (Scoop's bucket-add fails fast without it).
+
+### Security
+
+- **Tauri 2.11.0 → 2.11.1** patches GHSA-7gmj-67g7-phm9 (Origin
+  Confusion: remote pages could invoke local-only IPC commands).
+  Practical risk on Baudrun is low because our CSP restricts
+  `script-src` to `'self'`, but worth applying.
+- **`rand` 0.7.3 advisory** cleared via transitive bumps from
+  `cargo update`.
+
+### Internal
+
+- **Dependabot config matches the actual project layout.** Was
+  still scanning `gomod` at root (left over from the pre-Tauri Go
+  era) and `npm` at `/frontend` (path no longer exists). Now
+  scans `cargo` at `/src-tauri`, `npm` at the repo root, `npm` at
+  `/docs-next`, and GitHub Actions.
+
 ## [0.9.4] — 2026-05-04
 
 ### Added
