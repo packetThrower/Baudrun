@@ -9,6 +9,7 @@
   import { api, themeToXterm, type Theme } from "./api";
   import { TerminalHighlighter } from "./highlight";
   import { HexFormatter } from "./hexdump";
+  import { rulesVersion } from "../stores/highlight";
 
   type Props = {
     lineEnding?: "cr" | "lf" | "crlf";
@@ -91,6 +92,48 @@
   $effect(() => {
     const hv = hexView;
     if (highlighter && hv) highlighter.reset();
+  });
+
+  // Live re-render of the existing scrollback when the user changes
+  // anything that affects how text gets transformed: the highlight
+  // toggle, the timestamps toggle, or the active rule set (Settings →
+  // Highlighting checkboxes — recompiling the rules bumps
+  // $rulesVersion). Without this, only newly-arrived text reflects
+  // the new settings; existing scrollback stays stale.
+  //
+  // The first run is skipped via `replayPrimed` because we don't want
+  // to replay during initial mount (the rawHistory is empty anyway,
+  // and a snapshot may have been written into xterm by the multi-
+  // window migration path). Replay is also a no-op when rawHistory is
+  // empty — see `TerminalHighlighter.replay()` for why migrated
+  // sessions must not be wiped on toggle.
+  let replayPrimed = false;
+  $effect(() => {
+    // Read the reactive deps unconditionally so Svelte 5's tracker
+    // picks them up on the first run regardless of which branch we
+    // hit. Same hazard pattern as the theme effect above.
+    const h = highlight;
+    const ts = timestamps;
+    const _v = $rulesVersion;
+    void _v;
+    if (!replayPrimed) {
+      replayPrimed = true;
+      return;
+    }
+    // hexView is its own pipeline — replaying through the highlight
+    // path while hex is active would scramble the rendered output.
+    // The hexView toggle above already resets the hex formatter; when
+    // the user flips back out of hex, new data picks up the current
+    // highlight settings naturally so retroactive replay isn't needed.
+    if (!term || !highlighter || hexView) return;
+    if (!highlighter.hasHistory()) return;
+    const replay = highlighter.replay(h, ts);
+    // SerializeAddon's snapshot can leave the cursor wherever the
+    // last frame ended; reset() puts us back at row 0 col 0 and
+    // clears scrollback. Then write the replayed history. Focus is
+    // preserved by xterm across reset.
+    term.reset();
+    if (replay.length > 0) term.write(replay);
   });
 
   function eolBytes(): Uint8Array {
@@ -527,6 +570,12 @@
 
   export function clear() {
     term?.clear();
+    // Drop the raw history too — if we kept it, toggling highlight
+    // after a clear would resurrect the cleared scrollback via the
+    // replay path. The user's mental model of "Clear" is "wipe
+    // everything in this terminal", not "wipe the visible bit".
+    highlighter?.clearHistory();
+    hexFormatter?.reset();
   }
 
   export function refit() {

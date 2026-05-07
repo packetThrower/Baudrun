@@ -271,9 +271,35 @@ export class TerminalHighlighter {
   private flushTimer: number | null = null;
   private flushMs = 60;
 
-  constructor(private writeCb: (text: string) => void) {}
+  // Raw mirror of every byte we've seen, with device-emitted SGR
+  // escapes preserved but no highlighter additions. Used by replay()
+  // to re-render scrollback when the user toggles highlight on/off,
+  // toggles a pack in Settings, or flips timestamps. Capped because
+  // serial sessions can run for hours; the cap is in bytes rather
+  // than lines so we don't have to scan for newlines on every feed.
+  private rawHistory = "";
+  private readonly maxRawHistoryBytes: number;
+
+  constructor(
+    private writeCb: (text: string) => void,
+    maxRawHistoryBytes = 2_000_000,
+  ) {
+    this.maxRawHistoryBytes = maxRawHistoryBytes;
+  }
 
   feed(text: string, highlight: boolean, timestamps = false) {
+    // Always mirror to rawHistory regardless of the highlight/timestamp
+    // flags so a later toggle has the raw input to replay through the
+    // new pipeline. Truncate on a line boundary so replay doesn't
+    // start with a half-line at the top.
+    this.rawHistory += text;
+    if (this.rawHistory.length > this.maxRawHistoryBytes) {
+      const overflow = this.rawHistory.length - this.maxRawHistoryBytes;
+      const cutAt = this.rawHistory.indexOf("\n", overflow);
+      this.rawHistory =
+        cutAt >= 0 ? this.rawHistory.slice(cutAt + 1) : this.rawHistory.slice(overflow);
+    }
+
     if (!highlight && !timestamps) {
       this.flushNow();
       this.writeCb(text);
@@ -290,6 +316,36 @@ export class TerminalHighlighter {
       this.writeCb(processed);
     }
     this.scheduleFlush();
+  }
+
+  /** Re-render the entire raw history through the current highlight
+   *  pipeline. Returns the rendered text — caller is responsible for
+   *  clearing the terminal and writing it (we don't own the writeCb's
+   *  destination). Returns `""` when there's no raw history yet, which
+   *  signals "skip replay, leave xterm as-is" — the caller should not
+   *  clear in that case. This protects migrated sessions whose
+   *  scrollback came from a SerializeAddon snapshot rather than feed():
+   *  we have no raw text to replay, but the migrated scrollback is
+   *  still legitimate and shouldn't get wiped on a toggle. */
+  replay(highlight: boolean, timestamps: boolean): string {
+    if (this.rawHistory.length === 0) return "";
+    if (!highlight && !timestamps) return this.rawHistory;
+    return highlight
+      ? highlightLines(this.rawHistory, timestamps)
+      : plainLines(this.rawHistory, timestamps);
+  }
+
+  /** Whether replay() would produce content. Lets callers decide
+   *  whether to clear the terminal before writing the replay. */
+  hasHistory(): boolean {
+    return this.rawHistory.length > 0;
+  }
+
+  /** Drop the raw history. Wired to the session-clear path in
+   *  Terminal.svelte so a subsequent highlight toggle doesn't
+   *  resurrect content the user explicitly cleared. */
+  clearHistory(): void {
+    this.rawHistory = "";
   }
 
   private scheduleFlush() {

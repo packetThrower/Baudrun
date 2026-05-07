@@ -12,6 +12,19 @@ import { setActiveRules } from "../lib/highlight";
 export const highlightPacks = writable<HighlightPack[]>([]);
 
 /**
+ * Monotonic version counter that bumps every time the active rule
+ * set is recompiled (i.e. on every `applyEnabledHighlightPresets`
+ * call). Terminal.svelte subscribes to this so it can replay the
+ * raw scrollback through the new rules and update existing on-screen
+ * text — without this, only newly-arrived text picks up a pack toggle.
+ *
+ * The actual rules themselves live in the non-Svelte
+ * `lib/highlight.ts` module (a singleton, mutated via setActiveRules);
+ * this store is just the change signal Svelte components observe.
+ */
+export const rulesVersion = writable(0);
+
+/**
  * Load packs from the backend and update the store. Safe to call
  * any time. Does NOT recompile the active rule set on its own —
  * callers pair this with `applyEnabledHighlightPresets` once the
@@ -46,4 +59,7 @@ export function applyEnabledHighlightPresets(enabled: string[] | undefined): voi
     rules.push(...pack.rules);
   }
   setActiveRules(rules);
+  // Bump after setActiveRules so any subscriber that reacts to the
+  // version change observes the recompiled rules, not the previous set.
+  rulesVersion.update((n) => n + 1);
 }
