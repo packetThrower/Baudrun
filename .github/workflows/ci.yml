@@ -12,6 +12,9 @@ on:
       - "build/make-icon.sh"
       - "mkdocs.yml"
       - ".github/workflows/docs.yml"
+      - ".github/FUNDING.yml"
+      - ".github/dependabot.yml"
+      - ".github/ISSUE_TEMPLATE/**"
   pull_request:
     branches: [main]
     paths-ignore:
@@ -23,6 +26,9 @@ on:
       - "build/make-icon.sh"
       - "mkdocs.yml"
       - ".github/workflows/docs.yml"
+      - ".github/FUNDING.yml"
+      - ".github/dependabot.yml"
+      - ".github/ISSUE_TEMPLATE/**"
   workflow_call:
 
 jobs:
