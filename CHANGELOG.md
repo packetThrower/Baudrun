@@ -15,6 +15,46 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Added
+
+- **WebGL terminal renderer** with graceful DOM fallback. Glyphs
+  now render onto a GPU-accelerated canvas instead of DOM `<span>`
+  elements, which makes long-buffer scrolling (e.g. paging through
+  `show tech-support`) noticeably snappier. The DOM renderer
+  remains the fallback when WebGL2 isn't available — software-only
+  renderers, headless containers, RDP / X11 forwarding without GLX
+  — and on those paths the v0.9.5 CSS-variable backstop carries
+  rendering correctness as before. As a side benefit, the entire
+  class of "WebKit dropped xterm's runtime stylesheet" rendering
+  bugs (ANSI palette, selection background, cursor fill) physically
+  cannot recur on the WebGL path, since glyphs are painted with
+  explicit per-cell RGBA. Resolves #13.
+
+### Changed
+
+- **Cargo deps:** `dirs` 5 → 6 (deduplicates the dependency tree;
+  many transitive deps were already on 6), `thiserror` 1 → 2.
+- **Docs site (Astro + Starlight) deps:** Astro 6.2 → 6.3,
+  `@astrojs/starlight` 0.38 → 0.39 — both minor.
+- **Frontend deps:** Svelte 5.55.4 → 5.55.5, svelte-check 4.4.6 →
+  4.4.8, `@sveltejs/vite-plugin-svelte` 7.0 → 7.1.2,
+  `@tauri-apps/plugin-dialog` 2.7.0 → 2.7.1,
+  `@tauri-apps/plugin-opener` 2.5.3 → 2.5.4 — all patch / minor.
+- **GitHub Actions in the Docs workflow** bumped to current majors
+  (`actions/checkout@v6`, `pnpm/action-setup@v6`,
+  `actions/setup-node@v6`, `actions/upload-pages-artifact@v5`,
+  `actions/deploy-pages@v5`). The CI workflow was already on these
+  versions; this just brings Docs to parity.
+
+### Internal
+
+- **Dependabot config rewritten** to match the actual repo layout.
+  Previously scanned `gomod` at root (left over from the pre-Tauri
+  Go era) and `npm` at `/frontend` (path no longer exists). Now
+  scans `cargo` at `/src-tauri`, `npm` at the repo root, `npm` at
+  `/docs-next` (the Astro docs project), and GitHub Actions.
+  Resolves #14.
+
 ## [0.9.5] — 2026-05-07
 
 A long iteration cycle (nine alphas, seven betas) covering a Settings
