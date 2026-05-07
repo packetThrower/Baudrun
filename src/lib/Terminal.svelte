@@ -4,6 +4,7 @@
   import { FitAddon } from "@xterm/addon-fit";
   import { WebLinksAddon } from "@xterm/addon-web-links";
   import { SerializeAddon } from "@xterm/addon-serialize";
+  import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { api, themeToXterm, type Theme } from "./api";
@@ -69,6 +70,15 @@
   // attributes across the disposal + rebuild. Without it we'd have
   // to fall back to translateToString(true) which strips colors.
   let serializer: SerializeAddon | null = null;
+  // WebGL renderer instance. Held at component scope (not local to
+  // buildTerminal) because the theme-change effect needs to call
+  // `clearTextureAtlas()` on it — the GPU-cached glyphs are keyed to
+  // theme colors, and `term.options.theme = ...` doesn't auto-
+  // invalidate the cache. Without this, theme changes show as a
+  // half-painted screen until the next full redraw or scroll. Stays
+  // null when WebGL init failed and we fell back to the DOM renderer
+  // (the DOM renderer has no atlas, so no invalidation needed).
+  let webgl: WebglAddon | null = null;
   let unsubData: (() => void) | null = null;
   let ro: ResizeObserver | null = null;
   let highlighter: TerminalHighlighter | null = null;
@@ -299,6 +309,30 @@
     const t = theme;
     if (!term || !t || t.id === lastAppliedThemeId) return;
     term.options.theme = themeToXterm(t);
+    // The WebGL renderer's internal theme-change subscription
+    // doesn't reliably refresh the canvas when `term.options.theme`
+    // is mutated post-mount (verified empirically against
+    // @xterm/addon-webgl@0.19; calling `clearTextureAtlas()` alone
+    // and following with `term.refresh()` left existing glyphs
+    // drawn in the previous palette). Disposing the addon and
+    // reattaching a fresh instance forces a full re-init that reads
+    // the current theme at activate time. Skipped when `webgl` is
+    // null (DOM-renderer fallback; no atlas in play).
+    if (webgl && term) {
+      webgl.dispose();
+      webgl = null;
+      try {
+        const w = new WebglAddon();
+        w.onContextLoss(() => {
+          w.dispose();
+          webgl = null;
+        });
+        term.loadAddon(w);
+        webgl = w;
+      } catch (e) {
+        console.warn("WebGL re-init after theme change failed, using DOM:", e);
+      }
+    }
     try {
       term.refresh(0, term.rows - 1);
     } catch {}
@@ -450,6 +484,39 @@
     );
     t.open(hostEl);
     f.fit();
+
+    // WebGL renderer (canvas-backed). Tried first because:
+    //   * It's roughly an order of magnitude faster than the DOM
+    //     renderer at high data rates (irrelevant at 9600 baud, but
+    //     still a free win when the user does `show tech-support`
+    //     or scrolls back through a long buffer).
+    //   * Glyph colors are written into the canvas with explicit
+    //     RGBA tuples, so the runtime-CSS-injection class of bugs
+    //     that motivated the v0.9.5 wrap-CSS-variable backstop
+    //     can't recur on this code path. The DOM-renderer fallback
+    //     below still inherits those styles, so behavior on machines
+    //     without WebGL stays identical to v0.9.5.
+    //
+    // `loadAddon` throws synchronously if WebGL2 isn't available
+    // (software-only renderers, headless containers, RDP / X11
+    // forwarding without GLX, some bug-prone Intel-on-Linux combos).
+    // `onContextLoss` is the live failure path — the GPU resets,
+    // the canvas context goes away, we tear the addon down and
+    // xterm transparently swaps back to its DOM renderer with no
+    // visible interruption.
+    try {
+      const w = new WebglAddon();
+      w.onContextLoss(() => {
+        w.dispose();
+        webgl = null;
+      });
+      t.loadAddon(w);
+      webgl = w;
+    } catch (e) {
+      console.warn("WebGL renderer unavailable, using DOM:", e);
+      webgl = null;
+    }
+
     t.onData(handleInput);
     t.onSelectionChange(() => {
       if (!copyOnSelect || !t) return;

@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
+  import { WebglAddon } from "@xterm/addon-webgl";
   import "@xterm/xterm/css/xterm.css";
   import { themeToXterm, type Theme } from "./api";
   import { highlightLines } from "./highlight";
@@ -13,6 +14,9 @@
   let term: Terminal | null = null;
   let fit: FitAddon | null = null;
   let ro: ResizeObserver | null = null;
+  // See Terminal.svelte for why this lives at component scope:
+  // WebGL atlas cache must be cleared on theme change.
+  let webgl: WebglAddon | null = null;
 
   // Canned output that exercises most highlighter rules: interface names
   // (Cisco full/abbreviated + Junos), up/down/err-disabled/WARNING states,
@@ -43,6 +47,23 @@
   $effect(() => {
     if (term && theme) {
       term.options.theme = themeToXterm(theme);
+      // See Terminal.svelte for why we dispose+reattach the WebGL
+      // addon on theme change instead of `clearTextureAtlas()`.
+      if (webgl && term) {
+        webgl.dispose();
+        webgl = null;
+        try {
+          const w = new WebglAddon();
+          w.onContextLoss(() => {
+            w.dispose();
+            webgl = null;
+          });
+          term.loadAddon(w);
+          webgl = w;
+        } catch (e) {
+          console.warn("WebGL re-init after preview theme change failed, using DOM:", e);
+        }
+      }
     }
   });
 
@@ -65,6 +86,25 @@
     term.loadAddon(fit);
     term.open(hostEl);
     fit.fit();
+
+    // WebGL renderer with DOM fallback — same rationale as
+    // Terminal.svelte's buildTerminal. Important here because the
+    // theme preview is exactly where renderer-specific color quirks
+    // are most visible: if the user is auditioning a theme, we want
+    // them to see what the actual session will look like, and the
+    // WebGL renderer is what the actual session uses.
+    try {
+      const w = new WebglAddon();
+      w.onContextLoss(() => {
+        w.dispose();
+        webgl = null;
+      });
+      term.loadAddon(w);
+      webgl = w;
+    } catch (e) {
+      console.warn("WebGL renderer unavailable in preview, using DOM:", e);
+      webgl = null;
+    }
 
     const block = SAMPLE.join("\r\n") + "\r\n";
     term.write(highlightLines(block, false));
