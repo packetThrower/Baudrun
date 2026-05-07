@@ -182,7 +182,11 @@ function highlightLine(line: string): string {
     .join("");
 }
 
-function plainLines(block: string, timestamps: boolean): string {
+function plainLines(
+  block: string,
+  timestamps: boolean,
+  prefixSource: () => string = timestampPrefix,
+): string {
   if (!timestamps) return block;
   const parts = block.split("\n");
   const out: string[] = [];
@@ -197,7 +201,7 @@ function plainLines(block: string, timestamps: boolean): string {
     // "-- More --" prompt), CR then yanks the cursor to col 0 and
     // the new content overwrites from there, leaving timestamp
     // residue visible on the right half of the line.
-    out.push(leading + timestampPrefix() + rest + (isLast ? "" : "\n"));
+    out.push(leading + prefixSource() + rest + (isLast ? "" : "\n"));
   }
   return out.join("");
 }
@@ -235,8 +239,12 @@ function splitRedrawPrefix(raw: string): { leading: string; rest: string } {
   };
 }
 
-function timestampPrefix(): string {
-  const d = new Date();
+/// Format a Date as the bracketed dim-grey timestamp prefix used in
+/// front of every timestamped line. Pulled out so replay() can
+/// pre-compute a per-line prefix from a stored arrival time without
+/// going through `new Date()` (which would emit "now" instead of
+/// the original arrival time, drifting every replay forward in time).
+function formatTimestamp(d: Date): string {
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   const ss = String(d.getSeconds()).padStart(2, "0");
@@ -244,7 +252,19 @@ function timestampPrefix(): string {
   return `\x1b[90m[${hh}:${mm}:${ss}.${ms}]\x1b[0m `;
 }
 
-export function highlightLines(block: string, timestamps = false): string {
+/// Default prefix source — current wall-clock time, formatted as the
+/// bracketed dim-grey prefix. This is what the live feed path wants
+/// (lines arrive ~now, timestamps reflect that). The replay path
+/// passes a custom source backed by stored arrival times.
+function timestampPrefix(): string {
+  return formatTimestamp(new Date());
+}
+
+export function highlightLines(
+  block: string,
+  timestamps = false,
+  prefixSource: () => string = timestampPrefix,
+): string {
   // block contains one or more complete lines ending in \n (with optional \r).
   // Split on \n, highlight each stripped line, rejoin preserving line endings.
   const parts = block.split("\n");
@@ -260,7 +280,7 @@ export function highlightLines(block: string, timestamps = false): string {
     const bare = cr ? raw.slice(0, -1) : raw;
     const { leading, rest } = splitRedrawPrefix(bare);
     const highlighted = highlightLine(rest);
-    const prefix = timestamps ? timestampPrefix() : "";
+    const prefix = timestamps ? prefixSource() : "";
     out.push(leading + prefix + highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
   }
   return out.join("");
@@ -274,30 +294,60 @@ export class TerminalHighlighter {
   // Raw mirror of every byte we've seen, with device-emitted SGR
   // escapes preserved but no highlighter additions. Used by replay()
   // to re-render scrollback when the user toggles highlight on/off,
-  // toggles a pack in Settings, or flips timestamps. Capped because
-  // serial sessions can run for hours; the cap is in bytes rather
-  // than lines so we don't have to scan for newlines on every feed.
-  private rawHistory = "";
-  private readonly maxRawHistoryBytes: number;
+  // toggles a pack in Settings, or flips timestamps. Stored as
+  // per-line entries plus an in-progress tail because replay needs
+  // each line's original arrival time — replaying with `new Date()`
+  // would re-stamp every historical line as "now", which is the
+  // bug live testing turned up. Capped by line count so the bookkeeping
+  // arrays stay bounded over long-running sessions.
+  private rawLines: { text: string; ts: number }[] = [];
+  private rawTail = "";
+  private rawTailTs: number | null = null;
+  private readonly maxRawLines: number;
 
   constructor(
     private writeCb: (text: string) => void,
-    maxRawHistoryBytes = 2_000_000,
+    maxRawLines = 25_000,
   ) {
-    this.maxRawHistoryBytes = maxRawHistoryBytes;
+    this.maxRawLines = maxRawLines;
   }
 
   feed(text: string, highlight: boolean, timestamps = false) {
-    // Always mirror to rawHistory regardless of the highlight/timestamp
-    // flags so a later toggle has the raw input to replay through the
-    // new pipeline. Truncate on a line boundary so replay doesn't
-    // start with a half-line at the top.
-    this.rawHistory += text;
-    if (this.rawHistory.length > this.maxRawHistoryBytes) {
-      const overflow = this.rawHistory.length - this.maxRawHistoryBytes;
-      const cutAt = this.rawHistory.indexOf("\n", overflow);
-      this.rawHistory =
-        cutAt >= 0 ? this.rawHistory.slice(cutAt + 1) : this.rawHistory.slice(overflow);
+    // Mirror to rawLines / rawTail regardless of highlight/timestamps
+    // so a later toggle has the raw input to replay through the new
+    // pipeline. Each completed line carries the arrival time of the
+    // newline that closed it; the tail (still-buffering line) keeps
+    // its own first-seen ts so it stamps consistently when it
+    // eventually completes via a future feed.
+    const now = Date.now();
+    if (text.length > 0) {
+      let combined = this.rawTail + text;
+      let cursor = 0;
+      let nlIdx;
+      const startTs = this.rawTailTs ?? now;
+      while ((nlIdx = combined.indexOf("\n", cursor)) !== -1) {
+        const line = combined.slice(cursor, nlIdx + 1);
+        // Lines emitted in the same feed share `now`. The very first
+        // emitted line uses startTs (which respects an already-pending
+        // tail's first-seen time). After we cross the tail boundary,
+        // subsequent lines were definitely seen in this feed, so they
+        // use `now` directly.
+        const ts = cursor === 0 ? startTs : now;
+        this.rawLines.push({ text: line, ts });
+        cursor = nlIdx + 1;
+      }
+      if (cursor < combined.length) {
+        // Remaining bytes form the next tail. If we were already
+        // building a tail and never crossed a newline this feed, keep
+        // the original first-seen ts; otherwise this is a fresh tail
+        // started in this feed.
+        this.rawTail = combined.slice(cursor);
+        this.rawTailTs = cursor === 0 ? startTs : now;
+      } else {
+        this.rawTail = "";
+        this.rawTailTs = null;
+      }
+      while (this.rawLines.length > this.maxRawLines) this.rawLines.shift();
     }
 
     if (!highlight && !timestamps) {
@@ -326,26 +376,60 @@ export class TerminalHighlighter {
    *  clear in that case. This protects migrated sessions whose
    *  scrollback came from a SerializeAddon snapshot rather than feed():
    *  we have no raw text to replay, but the migrated scrollback is
-   *  still legitimate and shouldn't get wiped on a toggle. */
+   *  still legitimate and shouldn't get wiped on a toggle.
+   *
+   *  When timestamps are enabled, prefixes are produced from each
+   *  line's stored arrival time (`ts`) rather than `new Date()`, so
+   *  replaying an hour-old session shows the original arrival times
+   *  instead of stamping every line "now". The tail (in-progress
+   *  partial line) uses `rawTailTs` if it has one, falling back to
+   *  the most recent completed line's ts so a user who replays
+   *  before the tail completes still sees a sensible prefix. */
   replay(highlight: boolean, timestamps: boolean): string {
-    if (this.rawHistory.length === 0) return "";
-    if (!highlight && !timestamps) return this.rawHistory;
+    if (!this.hasHistory()) return "";
+    // Concatenate completed lines + tail. The parallel `lineTs` array
+    // carries the arrival time for each line in the concatenated
+    // block, in order; highlightLines / plainLines walk it via the
+    // closure below as they emit each line.
+    let raw = "";
+    const lineTs: number[] = [];
+    for (const { text, ts } of this.rawLines) {
+      raw += text;
+      lineTs.push(ts);
+    }
+    if (this.rawTail.length > 0) {
+      raw += this.rawTail;
+      const fallback =
+        this.rawLines.length > 0 ? this.rawLines[this.rawLines.length - 1].ts : Date.now();
+      lineTs.push(this.rawTailTs ?? fallback);
+    }
+
+    if (!highlight && !timestamps) return raw;
+
+    let lineIdx = 0;
+    const prefixSource = (): string => {
+      const ts = lineTs[lineIdx++] ?? Date.now();
+      return formatTimestamp(new Date(ts));
+    };
+
     return highlight
-      ? highlightLines(this.rawHistory, timestamps)
-      : plainLines(this.rawHistory, timestamps);
+      ? highlightLines(raw, timestamps, prefixSource)
+      : plainLines(raw, timestamps, prefixSource);
   }
 
   /** Whether replay() would produce content. Lets callers decide
    *  whether to clear the terminal before writing the replay. */
   hasHistory(): boolean {
-    return this.rawHistory.length > 0;
+    return this.rawLines.length > 0 || this.rawTail.length > 0;
   }
 
   /** Drop the raw history. Wired to the session-clear path in
    *  Terminal.svelte so a subsequent highlight toggle doesn't
    *  resurrect content the user explicitly cleared. */
   clearHistory(): void {
-    this.rawHistory = "";
+    this.rawLines = [];
+    this.rawTail = "";
+    this.rawTailTs = null;
   }
 
   private scheduleFlush() {
