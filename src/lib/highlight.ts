@@ -211,27 +211,57 @@ function plainLines(
 /// at the LAST redraw, not just the first, because the partial
 /// "-- More --" prompt from a paged CLI is often still sitting in
 /// the highlighter's buffer when the spacebar-reply bytes arrive —
-/// they get concatenated and the `\r\x1b[K` ends up mid-"line" (no
-/// `\n` between them).
+/// they get concatenated and the redraw ends up mid-"line" (no `\n`
+/// between them).
 ///
 /// Handles:
 ///   - bare `\r` (cursor to col 0; new content overwrites in place)
 ///   - `\r\x1b[K`, `\r\x1b[0K`, `\r\x1b[1K`, `\r\x1b[2K` (erase in line)
+///   - bare `\b+` (cursor back, no erase — rare)
+///   - `\b+ +\b+` (Cisco IOS pager pattern: backspace over the
+///     `--More--` prompt, write spaces, backspace again to land the
+///     cursor at the start). Without this branch, splitRedrawPrefix
+///     missed the erase entirely on Cisco's pager and our timestamp
+///     prefix landed at col 8 (end of `--More--`); the device's
+///     subsequent backspace-spaces-backspace then partially overwrote
+///     it, leaving the visible `--More-- [09:5...` artifact.
 function splitRedrawPrefix(raw: string): { leading: string; rest: string } {
   let lastSplit = 0;
   let i = 0;
   while (i < raw.length) {
-    if (raw[i] !== "\r") {
-      i += 1;
+    const ch = raw[i];
+    if (ch === "\r") {
+      let end = i + 1;
+      const match = raw.slice(end).match(/^\x1b\[[0-2]?K/);
+      if (match) {
+        end += match[0].length;
+      }
+      lastSplit = end;
+      i = end;
       continue;
     }
-    let end = i + 1;
-    const match = raw.slice(end).match(/^\x1b\[[0-2]?K/);
-    if (match) {
-      end += match[0].length;
+    if (ch === "\b") {
+      // Consume a run of backspaces. Look ahead for the spaces +
+      // backspaces tail — present in the Cisco pattern, absent for
+      // a plain "move cursor left" sequence. Either form is treated
+      // as a redraw (the cursor is now somewhere left of where it
+      // started; whatever follows is the actual content we want to
+      // see, prefixed by our timestamp).
+      let end = i;
+      while (end < raw.length && raw[end] === "\b") end++;
+      if (end < raw.length && raw[end] === " ") {
+        let probe = end;
+        while (probe < raw.length && raw[probe] === " ") probe++;
+        if (probe < raw.length && raw[probe] === "\b") {
+          while (probe < raw.length && raw[probe] === "\b") probe++;
+          end = probe;
+        }
+      }
+      lastSplit = end;
+      i = end;
+      continue;
     }
-    lastSplit = end;
-    i = end;
+    i += 1;
   }
   return {
     leading: raw.slice(0, lastSplit),
