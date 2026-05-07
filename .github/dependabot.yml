@@ -1,15 +1,44 @@
 version: 2
+
+# Dependency-update schedule for the three ecosystems Baudrun
+# actually uses today. Earlier history ran on Go (gomod) before the
+# Tauri 2 rewrite, and the frontend lived at /frontend before the
+# repo flattened — both of those legacy paths still surfaced as
+# Dependabot config drift, so this file is the post-migration view.
+#
+# Paths are explicit so renaming a workspace dir doesn't silently
+# stop scanning. Add a new entry whenever a new lockfile lands.
+
 updates:
-  - package-ecosystem: "gomod"
+  # Rust backend (Tauri 2 host process). The Cargo.toml + Cargo.lock
+  # under src-tauri/ are the source of truth for every native dep
+  # — tauri, tauri-plugin-*, serialport, rusb, etc.
+  - package-ecosystem: "cargo"
+    directory: "/src-tauri"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # Main app frontend (Svelte 5 + Vite, talks to Tauri via JS API).
+  # package.json + package-lock.json are at the repo root.
+  - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
 
+  # Docs site (Astro + Starlight, deploys to GitHub Pages). Lives
+  # under docs-next/ as a self-contained pnpm project. Dependabot's
+  # `npm` ecosystem reads pnpm-lock.yaml in the same way it reads
+  # package-lock.json, so no separate ecosystem id is needed.
   - package-ecosystem: "npm"
-    directory: "/frontend"
+    directory: "/docs-next"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 3
 
+  # GitHub Actions in .github/workflows/ — pin updates for actions
+  # like checkout, setup-node, cache, deploy-pages, etc.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
