@@ -202,9 +202,28 @@ function plainLines(
     // "-- More --" prompt), CR then yanks the cursor to col 0 and
     // the new content overwrites from there, leaving timestamp
     // residue visible on the right half of the line.
+    // Three branches for the first line when a partial was already
+    // stamped (`firstIsContinuation`):
+    //
+    //   * No redraw (`leading.length === 0`): the device is appending
+    //     to the partial in place. Skip the stamp — content extends
+    //     the previously-stamped line.
+    //   * Redraw present (`leading.length > 0`): the device is trying
+    //     to overwrite the partial in place (Cisco pager pattern:
+    //     backspace over `--More--` then write the next line). But
+    //     the device's erase only knows about the bytes it sent, not
+    //     the timestamp we prepended — so our stamp survives and the
+    //     new content lands AFTER it on the same row. Substituting
+    //     `\r\n` for the device's redraw forces the new content onto
+    //     its own row with its own fresh stamp, preserving the per-
+    //     row-one-stamp invariant timestamps mode promises.
+    //   * Not the first line (i > 0) or no continuation: normal
+    //     redraw passthrough + stamp if there's content.
+    const promotedNewline = i === 0 && firstIsContinuation && leading.length > 0;
     const isContinuation = i === 0 && firstIsContinuation && leading.length === 0;
     const stamp = rest.length > 0 && !isContinuation ? prefixSource() : "";
-    out.push(leading + stamp + rest + (isLast ? "" : "\n"));
+    const effectiveLeading = promotedNewline ? "\r\n" : leading;
+    out.push(effectiveLeading + stamp + rest + (isLast ? "" : "\n"));
   }
   return out.join("");
 }
@@ -329,9 +348,15 @@ export function highlightLines(
     // back to col 0 — leaving the prefix glued to the tail of the
     // prior visible line, which is the `test-C800#[09:53:14.771]`
     // artifact users see on every Enter press at a Cisco prompt.
+    // See the long comment in plainLines for why we substitute `\r\n`
+    // for the device's redraw on a continuation: the previously-
+    // stamped partial keeps its row; the new content gets its own
+    // row + stamp.
+    const promotedNewline = i === 0 && firstIsContinuation && leading.length > 0;
     const isContinuation = i === 0 && firstIsContinuation && leading.length === 0;
     const prefix = timestamps && rest.length > 0 && !isContinuation ? prefixSource() : "";
-    out.push(leading + prefix + highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
+    const effectiveLeading = promotedNewline ? "\r\n" : leading;
+    out.push(effectiveLeading + prefix + highlighted + (cr ? "\r" : "") + (isLast ? "" : "\n"));
   }
   return out.join("");
 }
@@ -533,15 +558,13 @@ export class TerminalHighlighter {
       // partial actually has user-visible content — pure redraw
       // bytes (`\r`, backspace runs) get nothing prefixed because
       // there's nowhere on screen for the stamp to land.
+      const { leading, rest } = splitRedrawPrefix(this.buffer);
       let toWrite = this.buffer;
-      if (this.lastTimestamps && !this.partialPending) {
-        const { leading, rest } = splitRedrawPrefix(this.buffer);
-        if (rest.length > 0) {
-          // Same prefix-positioning rule as highlightLines: redraw
-          // bytes run first (cursor returns to col 0), then the
-          // timestamp lands at col 0, then the content.
-          toWrite = leading + timestampPrefix() + rest;
-        }
+      if (this.lastTimestamps && !this.partialPending && rest.length > 0) {
+        // Same prefix-positioning rule as highlightLines: redraw
+        // bytes run first (cursor returns to col 0), then the
+        // timestamp lands at col 0, then the content.
+        toWrite = leading + timestampPrefix() + rest;
       }
       this.writeCb(toWrite);
       this.buffer = "";
