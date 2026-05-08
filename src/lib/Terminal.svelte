@@ -504,17 +504,33 @@
     // the canvas context goes away, we tear the addon down and
     // xterm transparently swaps back to its DOM renderer with no
     // visible interruption.
-    try {
-      const w = new WebglAddon();
-      w.onContextLoss(() => {
-        w.dispose();
+    //
+    // Manual override: `localStorage.setItem('baudrun-renderer', 'dom')`
+    // forces the DOM path even when WebGL would work. Useful for
+    // perf A/B testing — slow software-WebGL paths (some VMs without
+    // GPU passthrough fall back to SwiftShader) can be markedly
+    // worse than DOM. `localStorage.removeItem('baudrun-renderer')`
+    // restores WebGL. Reload the window after toggling.
+    const forceDom = (() => {
+      try {
+        return localStorage.getItem("baudrun-renderer") === "dom";
+      } catch {
+        return false;
+      }
+    })();
+    if (!forceDom) {
+      try {
+        const w = new WebglAddon();
+        w.onContextLoss(() => {
+          w.dispose();
+          webgl = null;
+        });
+        t.loadAddon(w);
+        webgl = w;
+      } catch (e) {
+        console.warn("WebGL renderer unavailable, using DOM:", e);
         webgl = null;
-      });
-      t.loadAddon(w);
-      webgl = w;
-    } catch (e) {
-      console.warn("WebGL renderer unavailable, using DOM:", e);
-      webgl = null;
+      }
     }
 
     t.onData(handleInput);
