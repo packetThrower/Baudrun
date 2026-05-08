@@ -110,6 +110,15 @@ impl TerminalGrid {
     /// dropped the `Render` impl in checkpoint #4 because the entity that
     /// owns this grid is `TerminalView` — `TerminalGrid` is now plain
     /// data, not a gpui entity, so it doesn't need to be `Render`.
+    ///
+    /// Cells with matching fg + bg in the same row are coalesced into
+    /// a single text span (see `row_runs`). This is the difference
+    /// between ~1920 nested flex children per render and a typical
+    /// ~30–100 — taffy's layout cost scales with element count, and
+    /// we measured the per-cell version as visibly slower than
+    /// `screen` against the same device. Most lines from a serial
+    /// console are mostly default-color, so coalescing collapses
+    /// them aggressively.
     pub fn element(&self) -> impl IntoElement {
         // No explicit cell width: the monospace font gives each
         // cell a natural advance and `flex_shrink_0` prevents the
@@ -124,15 +133,44 @@ impl TerminalGrid {
             .font_family("Menlo, SF Mono, monospace")
             .text_size(px(13.0))
             .text_color(rgb(pack(self.default_fg)))
-            .children(self.cells.iter().map(|row| {
-                div().flex().flex_row().h(cell_h).children(row.iter().map(|cell| {
-                    div()
-                        .flex_shrink_0()
-                        .h(cell_h)
-                        .bg(rgb(pack(cell.bg)))
-                        .text_color(rgb(pack(cell.fg)))
-                        .child(cell.ch.to_string())
-                }))
+            .children(self.cells.iter().map(move |row| {
+                div()
+                    .flex()
+                    .flex_row()
+                    .h(cell_h)
+                    .children(row_runs(row).into_iter().map(move |run| {
+                        div()
+                            .flex_shrink_0()
+                            .h(cell_h)
+                            .bg(rgb(pack(run.bg)))
+                            .text_color(rgb(pack(run.fg)))
+                            .child(run.text)
+                    }))
             }))
     }
+}
+
+/// A maximal run of cells in one row that share fg + bg colors,
+/// rendered as a single styled span.
+struct Run {
+    fg: Rgb,
+    bg: Rgb,
+    text: String,
+}
+
+fn row_runs(row: &[Cell]) -> Vec<Run> {
+    let mut runs: Vec<Run> = Vec::with_capacity(8);
+    for cell in row {
+        match runs.last_mut() {
+            Some(last) if last.fg == cell.fg && last.bg == cell.bg => {
+                last.text.push(cell.ch);
+            }
+            _ => runs.push(Run {
+                fg: cell.fg,
+                bg: cell.bg,
+                text: cell.ch.to_string(),
+            }),
+        }
+    }
+    runs
 }
