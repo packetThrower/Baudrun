@@ -28,6 +28,28 @@
 use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{div, prelude::*, px, rgb, IntoElement};
 
+/// Font family stack. macOS has Menlo / SF Mono natively; Windows
+/// ships Cascadia Mono (Windows Terminal's default since 2019) and
+/// Consolas; Linux distros usually have DejaVu Sans Mono. Without
+/// Windows entries the gpui DirectWrite backend falls back to Segoe
+/// UI, which is proportional — every character renders at a
+/// different advance and the grid alignment collapses.
+///
+/// `pub` so `terminal_view` can hand the same family string to
+/// gpui's text-system metric APIs when sizing the grid to the
+/// window. Mismatched font here vs. there would mean we'd render
+/// at one cell width and pack cells using another.
+pub const FONT_FAMILY: &str =
+    "Cascadia Mono, Menlo, SF Mono, Consolas, DejaVu Sans Mono, Courier New, monospace";
+
+/// Glyph point size — must match `FONT_SIZE_PX` for the same
+/// reason `FONT_FAMILY` is shared.
+pub const FONT_SIZE_PX: f32 = 13.0;
+
+/// Per-cell line height in pixels. Hand-tuned bigger than the
+/// font's natural bounding box to give breathing room.
+pub const CELL_HEIGHT_PX: f32 = 18.0;
+
 /// One terminal cell. RGB values are concrete (already resolved
 /// through whatever palette / theme is active) — the bridge does
 /// the abstract-to-concrete conversion at copy time, so the
@@ -74,7 +96,7 @@ impl TerminalGrid {
             cells: vec![vec![blank; cols]; rows],
             rows,
             cols,
-            cell_h_px: 18.0,
+            cell_h_px: CELL_HEIGHT_PX,
             grid_bg,
             default_fg,
         }
@@ -104,6 +126,36 @@ impl TerminalGrid {
             self.cells[row][c] = Cell { ch, fg, bg };
         }
     }
+
+    /// Reshape the grid to `rows × cols`. Cells in the overlap
+    /// region are kept verbatim; new cells (when growing) are
+    /// blanks; existing cells outside the new bounds (when
+    /// shrinking) are dropped. Called from `TerminalView` after
+    /// the window resizes so the next mirror has somewhere to
+    /// land. Pairs with `Term::resize` on the parser side, which
+    /// reflows scrollback / cursor itself.
+    pub fn resize(&mut self, rows: usize, cols: usize) {
+        if rows == self.rows && cols == self.cols {
+            return;
+        }
+        let blank = Cell::blank(self.default_fg, self.grid_bg);
+        // Resize each existing row's column count first.
+        for row in self.cells.iter_mut() {
+            row.resize(cols, blank);
+        }
+        // Then resize the row count, padding with all-blank rows.
+        self.cells.resize_with(rows, || vec![blank; cols]);
+        self.rows = rows;
+        self.cols = cols;
+    }
+
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    pub fn cols(&self) -> usize {
+        self.cols
+    }
 }
 
 impl TerminalGrid {
@@ -132,16 +184,8 @@ impl TerminalGrid {
             .flex()
             .flex_col()
             .bg(rgb(pack(self.grid_bg)))
-            // Cross-platform monospace fallback list. macOS has
-            // Menlo / SF Mono natively; Windows ships Cascadia Mono
-            // (Windows Terminal's default since 2019) and Consolas;
-            // Linux distros usually have DejaVu Sans Mono. Without
-            // Windows entries the gpui DirectWrite backend logs
-            // "font not found" and falls back to Segoe UI, which is
-            // proportional — every character renders at a different
-            // advance and the grid alignment collapses.
-            .font_family("Cascadia Mono, Menlo, SF Mono, Consolas, DejaVu Sans Mono, Courier New, monospace")
-            .text_size(px(13.0))
+            .font_family(FONT_FAMILY)
+            .text_size(px(FONT_SIZE_PX))
             .text_color(rgb(pack(self.default_fg)))
             .children(self.cells.iter().map(move |row| {
                 div()

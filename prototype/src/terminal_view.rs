@@ -29,12 +29,23 @@ use alacritty_terminal::{
     vte::ansi::{Processor, Rgb},
 };
 use gpui::{
-    div, prelude::*, px, rgb, App, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent,
-    Keystroke, Render, Window,
+    div, font, prelude::*, px, rgb, App, Context, FocusHandle, Focusable, IntoElement,
+    KeyDownEvent, Keystroke, Render, Window,
 };
 
-use crate::term_bridge::{make_term, mirror_to_grid};
-use crate::terminal_grid::{pack, TerminalGrid};
+use crate::term_bridge::{make_term, mirror_to_grid, Dims};
+use crate::terminal_grid::{pack, TerminalGrid, CELL_HEIGHT_PX, FONT_SIZE_PX};
+
+/// Padding between the window edge and the grid. Mirrors the `.p()`
+/// in `TerminalView::render` so the resize math knows how much of
+/// the viewport is unavailable for cells.
+const GRID_PADDING_PX: f32 = 8.0;
+
+/// Minimum grid dimensions. Smaller than this and `Term::resize`
+/// gets unhappy and TUIs render garbage. 4×10 is below every
+/// realistic terminal but above the breaking point.
+const MIN_ROWS: usize = 4;
+const MIN_COLS: usize = 10;
 
 pub struct TerminalView {
     term: Term<VoidListener>,
@@ -48,6 +59,12 @@ pub struct TerminalView {
     /// drives the grid via the read channel. `None` means loopback —
     /// keystrokes feed the local Term directly.
     serial_tx: Option<flume::Sender<Vec<u8>>>,
+    /// Cached cell-width measurement from gpui's text-system. Lazy
+    /// because the text-system isn't queryable until after the
+    /// platform window is up — we resolve on the first render and
+    /// then reuse, since neither the font nor the size changes
+    /// during a session yet.
+    cell_width_px: Option<f32>,
 }
 
 impl TerminalView {
@@ -74,6 +91,7 @@ impl TerminalView {
             default_fg,
             default_bg,
             serial_tx: None,
+            cell_width_px: None,
         }
     }
 
@@ -96,6 +114,66 @@ impl TerminalView {
 
     pub fn focus_handle(&self) -> &FocusHandle {
         &self.focus_handle
+    }
+
+    /// Resolve cell width via gpui's text-system, lazily and cached.
+    /// We measure against the platform's most-likely-present
+    /// monospace family so the result lines up with what the
+    /// renderer's `font_family` comma-list actually picks at draw
+    /// time. `resolve_font` falls back through gpui's own fallback
+    /// stack (Helvetica, Segoe UI, ...) if the requested family is
+    /// missing — which would give a proportional advance and break
+    /// our column math — so picking a name that's *known* to be
+    /// present per OS keeps the measurement honest.
+    fn cell_width(&mut self, cx: &mut App) -> f32 {
+        if let Some(w) = self.cell_width_px {
+            return w;
+        }
+        #[cfg(target_os = "macos")]
+        let family = "Menlo";
+        #[cfg(target_os = "windows")]
+        let family = "Cascadia Mono";
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        let family = "DejaVu Sans Mono";
+
+        let text_system = cx.text_system();
+        let font_id = text_system.resolve_font(&font(family));
+        let advance = text_system
+            .ch_advance(font_id, px(FONT_SIZE_PX))
+            .map(f32::from)
+            // Last-resort approximation: 0.6 × font size matches
+            // most monospace fonts within a pixel. Used only if
+            // the text-system can't measure '0' for some reason.
+            .unwrap_or(FONT_SIZE_PX * 0.6);
+        self.cell_width_px = Some(advance);
+        advance
+    }
+
+    /// Adjust the grid + Term to match the current window size,
+    /// if they don't already. Called on every render — idempotent
+    /// when dimensions haven't changed, so cheap when nothing
+    /// resized; only mirrors when the size actually moved.
+    fn maybe_resize(&mut self, window: &Window, cx: &mut App) {
+        let viewport = window.viewport_size();
+        let cell_w = self.cell_width(cx);
+        if cell_w <= 0.0 {
+            return;
+        }
+        let content_w = (f32::from(viewport.width) - GRID_PADDING_PX * 2.0).max(0.0);
+        let content_h = (f32::from(viewport.height) - GRID_PADDING_PX * 2.0).max(0.0);
+        let new_cols = ((content_w / cell_w).floor() as usize).max(MIN_COLS);
+        let new_rows = ((content_h / CELL_HEIGHT_PX).floor() as usize).max(MIN_ROWS);
+        if new_rows == self.grid.rows() && new_cols == self.grid.cols() {
+            return;
+        }
+        self.term.resize(Dims { rows: new_rows, cols: new_cols });
+        self.grid.resize(new_rows, new_cols);
+        // Re-mirror so the freshly-resized grid reflects whatever
+        // alacritty did to its own cells (cursor reposition,
+        // scrollback rotation). No `cx.notify()` — we're called
+        // from `render`; gpui will paint the up-to-date grid in
+        // the very next step.
+        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
     }
 
     fn handle_key_down(
@@ -129,17 +207,23 @@ impl Focusable for TerminalView {
 }
 
 impl Render for TerminalView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Reshape the grid + Term to fit the current window before
+        // rendering. Idempotent when nothing resized, so it costs
+        // nothing on steady-state frames; on a resize this is what
+        // makes the new column / row count take effect immediately.
+        self.maybe_resize(window, cx);
+
         // `size_full` + the background colour means the entire
         // window fills with the terminal background even when the
-        // 24×80 grid doesn't reach the window edges (which it
-        // doesn't on a 1100×720 window). Without this the unfilled
-        // region renders transparent on Windows — a known gpui
-        // default — and you can see whatever's behind the window.
+        // grid doesn't reach the window edges. Without this the
+        // unfilled region renders transparent on Windows — a known
+        // gpui default — and you can see whatever's behind the
+        // window.
         div()
             .size_full()
             .bg(rgb(pack(self.default_bg)))
-            .p(px(8.0))
+            .p(px(GRID_PADDING_PX))
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))
             .child(self.grid.element())
