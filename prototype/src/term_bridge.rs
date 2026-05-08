@@ -36,7 +36,7 @@ use alacritty_terminal::{
     vte::ansi::{Color, CursorShape, NamedColor, Processor, Rgb},
 };
 
-use crate::terminal_grid::{Cell as GridCell, TerminalGrid};
+use crate::terminal_grid::{Cell as GridCell, TerminalGrid, SELECTION_BG};
 
 /// Trivial `Dimensions` impl. `Term::new` requires this so it
 /// knows the initial buffer shape; we need our own type because
@@ -214,6 +214,7 @@ pub fn mirror_to_grid(
     let cursor_visible = !matches!(content.cursor.shape, CursorShape::Hidden);
     let cursor_display_row = content.cursor.point.line.0 + display_offset;
     let cursor_col = content.cursor.point.column.0;
+    let selection = content.selection;
 
     for indexed in content.display_iter {
         let row_signed = indexed.point.line.0 + display_offset;
@@ -229,12 +230,20 @@ pub fn mirror_to_grid(
 
         let mut fg = resolve(term_cell.fg, default_fg, default_bg);
         let mut bg = resolve(term_cell.bg, default_fg, default_bg);
-        if cursor_visible
+
+        let is_cursor = cursor_visible
             && cursor_display_row >= 0
             && cursor_display_row as usize == row
-            && col == cursor_col
-        {
+            && col == cursor_col;
+        let is_selected = selection.is_some_and(|r| r.contains(indexed.point));
+
+        // Cursor wins over selection on its own cell — easier to
+        // see where you're typing even when the cursor cell happens
+        // to fall inside an active selection.
+        if is_cursor {
             std::mem::swap(&mut fg, &mut bg);
+        } else if is_selected {
+            bg = SELECTION_BG;
         }
 
         out.set_cell(row, col, GridCell { ch: term_cell.c, fg, bg });

@@ -26,12 +26,16 @@
 use alacritty_terminal::{
     event::VoidListener,
     grid::Scroll,
+    index::{Column, Line, Point as GridPoint, Side},
+    selection::{Selection, SelectionType},
     term::Term,
     vte::ansi::{Processor, Rgb},
 };
 use gpui::{
-    div, font, prelude::*, px, rgb, App, Context, FocusHandle, Focusable, IntoElement,
-    KeyDownEvent, Keystroke, Render, ScrollDelta, ScrollWheelEvent, Window,
+    black, div, font, prelude::*, px, rgb, App, ClipboardItem, Context, FocusHandle, Focusable,
+    IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, TextRun,
+    Window,
 };
 
 use crate::term_bridge::{make_term, mirror_to_grid, Dims};
@@ -71,6 +75,11 @@ pub struct TerminalView {
     /// the fractional remainder, slow scrolls under one line per
     /// frame would never trigger.
     scroll_accum: f32,
+    /// `true` while the left mouse button is held and we're
+    /// extending an active selection. Set on mouse_down, cleared
+    /// on mouse_up. Without this gate, mouse_move events while the
+    /// button is up would still extend selection.
+    is_dragging: bool,
 }
 
 impl TerminalView {
@@ -99,6 +108,7 @@ impl TerminalView {
             serial_tx: None,
             cell_width_px: None,
             scroll_accum: 0.0,
+            is_dragging: false,
         }
     }
 
@@ -123,16 +133,25 @@ impl TerminalView {
         &self.focus_handle
     }
 
-    /// Resolve cell width via gpui's text-system, lazily and cached.
-    /// We measure against the platform's most-likely-present
-    /// monospace family so the result lines up with what the
-    /// renderer's `font_family` comma-list actually picks at draw
-    /// time. `resolve_font` falls back through gpui's own fallback
-    /// stack (Helvetica, Segoe UI, ...) if the requested family is
-    /// missing — which would give a proportional advance and break
-    /// our column math — so picking a name that's *known* to be
-    /// present per OS keeps the measurement honest.
-    fn cell_width(&mut self, cx: &mut App) -> f32 {
+    /// Resolve cell width by asking gpui's window-scoped text
+    /// system to lay out a 100-character string of `'0'`s, then
+    /// applying a 0.75 calibration factor.
+    ///
+    /// The factor is empirical: gpui's `layout_line` reports cell
+    /// advance assuming `font_size` is in CSS pixels (Menlo @ 13
+    /// → 7.82 px/cell), but the actual paint pipeline appears to
+    /// treat the same value as typography points and renders at
+    /// 13 / 1.333 ≈ 9.75 effective pixels of font (yielding
+    /// ~5.86 px/cell). 0.75 = 1/1.333 collapses the two views
+    /// into one number that's correct for both:
+    ///   * pixel-to-cell math (so drag-selection tracks the mouse)
+    ///   * the explicit `.w(cells × cell_w)` set on each run div
+    ///     (so the box sizes match the painted text — without the
+    ///     calibration the boxes were oversized and the rendered
+    ///     text inside them showed gaps where the next run began).
+    /// If/when gpui's text-system gets a more direct
+    /// "what-will-actually-paint" API, drop the constant.
+    fn cell_width(&mut self, window: &Window, _cx: &mut App) -> f32 {
         if let Some(w) = self.cell_width_px {
             return w;
         }
@@ -143,15 +162,26 @@ impl TerminalView {
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         let family = "DejaVu Sans Mono";
 
-        let text_system = cx.text_system();
-        let font_id = text_system.resolve_font(&font(family));
-        let advance = text_system
-            .ch_advance(font_id, px(FONT_SIZE_PX))
-            .map(f32::from)
-            // Last-resort approximation: 0.6 × font size matches
-            // most monospace fonts within a pixel. Used only if
-            // the text-system can't measure '0' for some reason.
-            .unwrap_or(FONT_SIZE_PX * 0.6);
+        const SAMPLE_LEN: usize = 100;
+        let sample = "0".repeat(SAMPLE_LEN);
+        let runs = [TextRun {
+            len: sample.len(),
+            font: font(family),
+            color: black(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }];
+        let layout = window.text_system().layout_line(
+            &sample,
+            px(FONT_SIZE_PX),
+            &runs,
+            None,
+        );
+        let measured = f32::from(layout.width) / SAMPLE_LEN as f32;
+        // See doc comment above for the source of 0.75.
+        const PAINT_CALIBRATION: f32 = 0.75;
+        let advance = measured * PAINT_CALIBRATION;
         self.cell_width_px = Some(advance);
         advance
     }
@@ -190,13 +220,137 @@ impl TerminalView {
         cx.notify();
     }
 
+    fn handle_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button != MouseButton::Left {
+            return;
+        }
+        // gpui delivers a focus-grabbing click separately; if this
+        // is the very first click into the window, also accept it
+        // as the focus event but don't start a selection drag.
+        if event.first_mouse {
+            return;
+        }
+        let Some(point) = self.pixel_to_point(event.position) else {
+            return;
+        };
+        // Fresh selection on every click. Drag-update extends; a
+        // single click without movement leaves an empty selection
+        // which `mirror_to_grid` ignores.
+        self.term.selection = Some(Selection::new(SelectionType::Simple, point, Side::Left));
+        self.is_dragging = true;
+        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        cx.notify();
+    }
+
+    fn handle_mouse_move(
+        &mut self,
+        event: &MouseMoveEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.is_dragging {
+            return;
+        }
+        let Some(point) = self.pixel_to_point(event.position) else {
+            return;
+        };
+        if let Some(sel) = self.term.selection.as_mut() {
+            sel.update(point, Side::Left);
+        }
+        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        cx.notify();
+    }
+
+    fn handle_mouse_up(
+        &mut self,
+        event: &MouseUpEvent,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        if event.button != MouseButton::Left {
+            return;
+        }
+        // Selection state survives the release so the user can
+        // copy it with Cmd-C / Ctrl-Shift-C; cleared on the next
+        // mouse_down (a fresh click drops the prior selection).
+        self.is_dragging = false;
+    }
+
+    /// Translate a window-coords pixel position into an alacritty
+    /// grid Point. Returns None if the point falls outside the grid
+    /// (clicks in the padding around the rendered cells, etc.).
+    /// The `Line` returned is in alacritty's screen-with-scrollback
+    /// coordinate system: positive = visible live screen, negative
+    /// = above the screen (scrollback).
+    fn pixel_to_point(&self, pos: PixelPoint<Pixels>) -> Option<GridPoint> {
+        let cell_w = self.cell_width_px?;
+        if cell_w <= 0.0 {
+            return None;
+        }
+        let local_x = (f32::from(pos.x) - GRID_PADDING_PX).max(0.0);
+        let local_y = (f32::from(pos.y) - GRID_PADDING_PX).max(0.0);
+        let col = (local_x / cell_w).floor() as usize;
+        let display_row = (local_y / CELL_HEIGHT_PX).floor() as i32;
+        let cols = self.grid.cols();
+        let rows = self.grid.rows();
+        if cols == 0 || rows == 0 {
+            return None;
+        }
+        let col = col.min(cols - 1);
+        let display_row = display_row.min(rows as i32 - 1);
+        let display_offset = self.term.grid().display_offset() as i32;
+        let line = display_row - display_offset;
+        Some(GridPoint::new(Line(line), Column(col)))
+    }
+
+    fn copy_selection(&mut self, cx: &mut App) {
+        if let Some(text) = self.term.selection_to_string().filter(|s| !s.is_empty()) {
+            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        }
+    }
+
+    fn paste_clipboard(&mut self, cx: &mut Context<Self>) {
+        let Some(text) = cx
+            .read_from_clipboard()
+            .as_ref()
+            .and_then(ClipboardItem::text)
+        else {
+            return;
+        };
+        if text.is_empty() {
+            return;
+        }
+        // Pasted CR/LF normalisation: incoming clipboards from
+        // Windows arrive as `\r\n`, from old macOS as `\r`, from
+        // Unix as `\n`. Serial devices universally want `\r` for
+        // line submission, so normalise everything to that. Skip
+        // the loopback echo translation (the device-side echo —
+        // or our `loopback_translate` for the no-device path —
+        // handles visualisation as if these had been typed).
+        let normalised: String = text
+            .replace("\r\n", "\r")
+            .replace('\n', "\r");
+        let bytes = normalised.into_bytes();
+        if let Some(tx) = &self.serial_tx {
+            let _ = tx.send(bytes);
+        } else {
+            let echoed = loopback_translate(&bytes);
+            self.feed_bytes(&echoed, cx);
+        }
+    }
+
     /// Adjust the grid + Term to match the current window size,
     /// if they don't already. Called on every render — idempotent
     /// when dimensions haven't changed, so cheap when nothing
     /// resized; only mirrors when the size actually moved.
     fn maybe_resize(&mut self, window: &Window, cx: &mut App) {
         let viewport = window.viewport_size();
-        let cell_w = self.cell_width(cx);
+        let cell_w = self.cell_width(window, cx);
         if cell_w <= 0.0 {
             return;
         }
@@ -223,6 +377,29 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Clipboard shortcuts come before the wire encoder. macOS
+        // uses Cmd-C / Cmd-V (which the encoder already drops to
+        // None because of `m.platform`). Linux / Windows use
+        // Ctrl-Shift-C / Ctrl-Shift-V — the bare Ctrl-C / Ctrl-V
+        // on those platforms keeps its terminal-control meaning
+        // (XOFF... actually 0x03 SIGINT and 0x16 SYN — both real
+        // serial-device codes), which is why network terminals
+        // moved to the Shift-modified variants.
+        let m = &event.keystroke.modifiers;
+        let key = event.keystroke.key.as_str();
+        let copy_combo = (m.platform && !m.control && !m.alt && key == "c")
+            || (m.control && m.shift && !m.platform && !m.alt && key == "c");
+        let paste_combo = (m.platform && !m.control && !m.alt && key == "v")
+            || (m.control && m.shift && !m.platform && !m.alt && key == "v");
+        if copy_combo {
+            self.copy_selection(cx);
+            return;
+        }
+        if paste_combo {
+            self.paste_clipboard(cx);
+            return;
+        }
+
         let Some(serial_bytes) = encode_for_serial(&event.keystroke) else {
             return;
         };
@@ -266,6 +443,7 @@ impl Render for TerminalView {
         // nothing on steady-state frames; on a resize this is what
         // makes the new column / row count take effect immediately.
         self.maybe_resize(window, cx);
+        let cell_w = self.cell_width(window, cx);
 
         // `size_full` + the background colour means the entire
         // window fills with the terminal background even when the
@@ -280,7 +458,10 @@ impl Render for TerminalView {
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))
             .on_scroll_wheel(cx.listener(Self::handle_scroll))
-            .child(self.grid.element())
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
+            .on_mouse_move(cx.listener(Self::handle_mouse_move))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
+            .child(self.grid.element(cell_w))
     }
 }
 

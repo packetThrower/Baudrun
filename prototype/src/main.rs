@@ -165,7 +165,15 @@ fn main() {
 const SEED_REPEATS: usize = 3;
 fn seed_loopback(view: &gpui::Entity<TerminalView>, cx: &mut App) {
     view.update(cx, |v, cx| {
-        for _ in 0..SEED_REPEATS {
+        for i in 0..SEED_REPEATS {
+            // SAMPLE_BYTES doesn't end with a newline, so without
+            // a separator each repeat would land on the trailing
+            // `Router# ` of the previous one. CRLF between them
+            // makes the loopback test view actually look like
+            // three discrete sessions.
+            if i > 0 {
+                v.feed_bytes(b"\r\n", cx);
+            }
             v.feed_bytes(SAMPLE_BYTES, cx);
         }
     });

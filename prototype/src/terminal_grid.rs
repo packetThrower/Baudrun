@@ -50,6 +50,10 @@ pub const FONT_SIZE_PX: f32 = 13.0;
 /// font's natural bounding box to give breathing room.
 pub const CELL_HEIGHT_PX: f32 = 18.0;
 
+/// Background colour for selected cells. Hardcoded for now;
+/// becomes a theme field when the theme system lands.
+pub const SELECTION_BG: Rgb = Rgb { r: 0x4a, g: 0x5a, b: 0x80 };
+
 /// One terminal cell. RGB values are concrete (already resolved
 /// through whatever palette / theme is active) — the bridge does
 /// the abstract-to-concrete conversion at copy time, so the
@@ -173,11 +177,17 @@ impl TerminalGrid {
     /// `screen` against the same device. Most lines from a serial
     /// console are mostly default-color, so coalescing collapses
     /// them aggressively.
-    pub fn element(&self) -> impl IntoElement {
-        // No explicit cell width: the monospace font gives each
-        // cell a natural advance and `flex_shrink_0` prevents the
-        // row from compressing them. See the checkpoint #2 commit
-        // message for why explicit widths were a dead end.
+    pub fn element(&self, cell_width_px: f32) -> impl IntoElement {
+        // Each run div gets an *explicit* pixel width of
+        // `run_cells * cell_width_px`. This is the only way the
+        // mouse-pixel → grid-cell math can be guaranteed to match
+        // what's painted on screen: gpui's actual font rendering
+        // applies scaling that neither `ch_advance` nor
+        // `layout_line` exposes (measured 7.82 px/cell on macOS
+        // Menlo @ 13pt, but the painted cells were ~5.86 px wide,
+        // breaking drag-selection). Forcing the box width pins the
+        // layout to our model regardless of what the text shaper
+        // does inside the box.
         let cell_h = px(self.cell_h_px);
 
         div()
@@ -193,8 +203,10 @@ impl TerminalGrid {
                     .flex_row()
                     .h(cell_h)
                     .children(row_runs(row).into_iter().map(move |run| {
+                        let run_cells = run.text.chars().count() as f32;
                         div()
                             .flex_shrink_0()
+                            .w(px(run_cells * cell_width_px))
                             .h(cell_h)
                             .bg(rgb(pack(run.bg)))
                             .text_color(rgb(pack(run.fg)))
