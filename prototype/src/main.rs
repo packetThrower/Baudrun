@@ -1,11 +1,10 @@
 //! Baudrun · alacritty + gpui prototype.
 //!
-//! Checkpoint #2: render a 2D grid of cells with per-cell
-//! foreground / background colors. Sample content below mimics
-//! the kind of output a Cisco IOS session produces — banner +
-//! highlighted keywords + an erred-disabled interface — so we can
-//! eyeball that the per-cell color routing works without yet
-//! plumbing a real VT parser.
+//! Checkpoint #2 (post-Rgb-adoption): render a 2D grid of cells
+//! with per-cell foreground / background colors. Sample content
+//! mimics a Cisco IOS session — banner + highlighted keywords +
+//! shutdown interface — so we can eyeball that the per-cell
+//! color routing works without yet plumbing a real VT parser.
 
 mod terminal_grid;
 
@@ -17,19 +16,26 @@ use terminal_grid::{Cell, TerminalGrid};
 
 /// Baudrun palette colors, copied out of `builtin_themes.json` so
 /// the prototype's sample looks recognizably like a real session.
+/// `const fn` constructor because `alacritty_terminal::vte::ansi::Rgb`
+/// has plain pub fields, so struct-literal syntax works in const
+/// context.
 mod color {
-    pub const BG: u32 = 0x0b0b0d;
-    pub const FG: u32 = 0xe4e4e7;
-    pub const DIM: u32 = 0x4a4a52;
-    pub const RED: u32 = 0xff6961;
-    pub const GREEN: u32 = 0x7cd992;
-    pub const YELLOW: u32 = 0xf5d76e;
-    pub const BLUE: u32 = 0x6cb6ff;
-    pub const MAGENTA: u32 = 0xd794ff;
-    pub const CYAN: u32 = 0x7ce0e0;
+    use alacritty_terminal::vte::ansi::Rgb;
+    const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
+        Rgb { r, g, b }
+    }
+    pub const BG: Rgb = rgb(0x0b, 0x0b, 0x0d);
+    pub const FG: Rgb = rgb(0xe4, 0xe4, 0xe7);
+    pub const DIM: Rgb = rgb(0x4a, 0x4a, 0x52);
+    pub const RED: Rgb = rgb(0xff, 0x69, 0x61);
+    pub const GREEN: Rgb = rgb(0x7c, 0xd9, 0x92);
+    pub const YELLOW: Rgb = rgb(0xf5, 0xd7, 0x6e);
+    pub const BLUE: Rgb = rgb(0x6c, 0xb6, 0xff);
+    pub const MAGENTA: Rgb = rgb(0xd7, 0x94, 0xff);
+    pub const CYAN: Rgb = rgb(0x7c, 0xe0, 0xe0);
     /// Selection background — used here just to demonstrate per-cell
     /// `bg` working for a highlighted region.
-    pub const SELECTION_BG: u32 = 0x1a3a5c;
+    pub const SELECTION_BG: Rgb = rgb(0x1a, 0x3a, 0x5c);
 }
 
 fn populate_sample(grid: &mut TerminalGrid) {
@@ -65,7 +71,7 @@ fn populate_sample(grid: &mut TerminalGrid) {
     grid.write_str(20, 38, " end", FG, BG);
 
     grid.write_str(22, 0, "Router#", MAGENTA, BG);
-    grid.set_cell(22, 7, Cell { ch: '_', fg: FG, bg: BG }); // fake cursor
+    grid.set_cell(22, 7, Cell { ch: '_', fg: color::FG, bg: color::BG }); // fake cursor
 }
 
 fn main() {
