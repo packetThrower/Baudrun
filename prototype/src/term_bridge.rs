@@ -29,8 +29,12 @@
 //! `term.damage()` and only mirror dirty rows. Defer until we
 //! have something to measure.
 
+use std::cell::Cell;
+use std::rc::Rc;
+use std::time::Instant;
+
 use alacritty_terminal::{
-    event::VoidListener,
+    event::{Event, EventListener},
     grid::Dimensions,
     term::{
         cell::{Cell as TermCell, Flags as TermFlags},
@@ -40,6 +44,39 @@ use alacritty_terminal::{
 };
 
 use crate::terminal_grid::{Cell as GridCell, CellFlags, TerminalGrid, SELECTION_BG};
+
+/// Shared state mutated by `TerminalListener` and read from
+/// `TerminalView`. Lives behind an `Rc` so the listener (held
+/// inside `Term`) and the view (which owns the `Term`) share
+/// the same instance — alacritty's `EventListener::send_event`
+/// takes `&self`, so any mutable state has to go through
+/// interior mutability. `Cell<Option<Instant>>` is enough for
+/// our current event surface (just `Bell` so far); add fields
+/// here as more event variants get wired up.
+#[derive(Default)]
+pub struct ListenerState {
+    /// Set to `Some(Instant::now())` whenever alacritty processes
+    /// a BEL byte. The view drains this with `take()` after each
+    /// `feed_bytes` and uses it to start a brief visual flash.
+    pub bell: Cell<Option<Instant>>,
+}
+
+/// Implements alacritty's `EventListener` by stashing relevant
+/// events into a shared `ListenerState`. Cheap to clone (just an
+/// `Rc` bump); cloned by `make_term` so both `Term` and the view
+/// get a handle to the same state.
+#[derive(Clone)]
+pub struct TerminalListener {
+    state: Rc<ListenerState>,
+}
+
+impl EventListener for TerminalListener {
+    fn send_event(&self, event: Event) {
+        if matches!(event, Event::Bell) {
+            self.state.bell.set(Some(Instant::now()));
+        }
+    }
+}
 
 /// Trivial `Dimensions` impl. `Term::new` requires this so it
 /// knows the initial buffer shape; we need our own type because
@@ -176,31 +213,32 @@ fn cube_step(v: u8) -> u8 {
 }
 
 /// Convenience: build a `Term` plus matching `Processor` for a
-/// given grid size. The Term's color palette starts empty;
+/// given grid size, plus the shared `ListenerState` the caller
+/// reads bell events from. The Term's color palette starts empty;
 /// resolution happens through our `resolve()` above.
-pub fn make_term(rows: usize, cols: usize) -> (Term<VoidListener>, Processor) {
-    let term = Term::new(Config::default(), &Dims { rows, cols }, VoidListener);
-    (term, Processor::new())
+pub fn make_term(
+    rows: usize,
+    cols: usize,
+) -> (Term<TerminalListener>, Processor, Rc<ListenerState>) {
+    let state = Rc::new(ListenerState::default());
+    let listener = TerminalListener { state: state.clone() };
+    let term = Term::new(Config::default(), &Dims { rows, cols }, listener);
+    (term, Processor::new(), state)
 }
 
 /// Walk the Term's display grid and write every cell into the
 /// render-side `TerminalGrid`. Resolves each cell's abstract
 /// foreground / background colors via `resolve()`. The cursor's
-/// cell is rendered as a static block by swapping fg/bg — done
-/// here in the mirror step rather than at render time so the
-/// run-coalescer naturally sees the cursor cell as a distinct
-/// style and breaks a run for it.
-///
-/// Cursor blink is deliberately NOT implemented. It would need a
-/// timer to drive periodic re-renders even when no bytes are
-/// arriving, plus a state field tracking the on/off phase. Static
-/// is fine for a research spike — every byte that flows through
-/// `feed_bytes` already triggers a re-mirror.
+/// cell is rendered as a block by swapping fg/bg, gated on the
+/// `show_cursor` parameter so callers can drive blink (passing
+/// `false` during the off-phase suppresses the inversion for
+/// that frame).
 pub fn mirror_to_grid(
-    term: &Term<VoidListener>,
+    term: &Term<TerminalListener>,
     out: &mut TerminalGrid,
     default_fg: Rgb,
     default_bg: Rgb,
+    show_cursor: bool,
 ) {
     let content = term.renderable_content();
     // When the user has scrolled into history, `display_iter()`
@@ -214,7 +252,7 @@ pub fn mirror_to_grid(
     // values, `set_cell` silently bounds-rejects them, and
     // scrolling produces no visible change.
     let display_offset = content.display_offset as i32;
-    let cursor_visible = !matches!(content.cursor.shape, CursorShape::Hidden);
+    let cursor_visible = show_cursor && !matches!(content.cursor.shape, CursorShape::Hidden);
     let cursor_display_row = content.cursor.point.line.0 + display_offset;
     let cursor_col = content.cursor.point.column.0;
     let selection = content.selection;

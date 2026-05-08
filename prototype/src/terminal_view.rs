@@ -23,8 +23,10 @@
 //! (multiple grids per window, settings panes that don't need a
 //! parser, etc.).
 
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
 use alacritty_terminal::{
-    event::VoidListener,
     grid::Scroll,
     index::{Column, Line, Point as GridPoint, Side},
     selection::{Selection, SelectionType},
@@ -34,12 +36,24 @@ use alacritty_terminal::{
 use gpui::{
     black, div, font, prelude::*, px, rgb, App, ClipboardItem, Context, FocusHandle, Focusable,
     IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, TextRun,
-    Window,
+    MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, Task,
+    TextRun, Window,
 };
 
-use crate::term_bridge::{make_term, mirror_to_grid, Dims};
+use crate::term_bridge::{make_term, mirror_to_grid, Dims, ListenerState, TerminalListener};
 use crate::terminal_grid::{pack, TerminalGrid, CELL_HEIGHT_PX, FONT_SIZE_PX};
+
+/// Cursor blink half-period. The cursor toggles visible/invisible
+/// every `BLINK_INTERVAL`. ~530ms matches xterm's historical
+/// default and the macOS system caret rate; long enough to be
+/// readable, short enough to feel alive.
+const BLINK_INTERVAL: Duration = Duration::from_millis(530);
+
+/// How long the bell flash overlay stays painted after a BEL byte
+/// is processed. Short enough to read as a flash rather than a
+/// solid colour; long enough to be unmistakable across one frame
+/// at 60fps (>= 16ms).
+const BELL_FLASH_DURATION: Duration = Duration::from_millis(120);
 
 /// Padding between the window edge and the grid. Mirrors the `.p()`
 /// in `TerminalView::render` so the resize math knows how much of
@@ -53,12 +67,16 @@ const MIN_ROWS: usize = 4;
 const MIN_COLS: usize = 10;
 
 pub struct TerminalView {
-    term: Term<VoidListener>,
+    term: Term<TerminalListener>,
     processor: Processor,
     grid: TerminalGrid,
     focus_handle: FocusHandle,
     default_fg: Rgb,
     default_bg: Rgb,
+    /// Shared with the `TerminalListener` inside `term`. Polled
+    /// after each `feed_bytes` to pick up bell events that fired
+    /// during the parser advance.
+    listener_state: Rc<ListenerState>,
     /// `Some` once a serial port has been attached via `set_serial_tx`.
     /// In that mode key bytes go on the wire and the device's echo
     /// drives the grid via the read channel. `None` means loopback —
@@ -80,6 +98,22 @@ pub struct TerminalView {
     /// on mouse_up. Without this gate, mouse_move events while the
     /// button is up would still extend selection.
     is_dragging: bool,
+    /// Cursor blink phase: `true` = visible, `false` = hidden.
+    /// Flipped by the blink task every `BLINK_INTERVAL`. Reset to
+    /// `true` on user input so the cursor doesn't disappear in the
+    /// middle of typing — the next blink-off lands one full
+    /// interval after the keystroke instead of mid-stroke.
+    cursor_blink_phase: bool,
+    /// `Some` if a `Bell` event fired recently and the flash
+    /// overlay is still being painted. Holds the timestamp at
+    /// which the flash ends; `paint` checks `Instant::now()` against
+    /// it. Cleared lazily on the next render after the timestamp
+    /// passes.
+    bell_flash_until: Option<Instant>,
+    /// Held to keep the periodic blink task alive. Dropping this
+    /// cancels the task; we never explicitly do so because the
+    /// view itself outlives the task's relevance.
+    _blink_task: Task<()>,
 }
 
 impl TerminalView {
@@ -90,14 +124,48 @@ impl TerminalView {
         default_bg: Rgb,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (term, processor) = make_term(rows, cols);
+        let (term, processor, listener_state) = make_term(rows, cols);
         let mut grid = TerminalGrid::new(rows, cols, default_fg, default_bg);
         // Paint the initial Term state into the grid so the cursor
         // is visible at startup. Without this the grid stays blank
         // (and cursor-less) until the first `feed_bytes` call —
         // i.e. you don't see where you're about to type until you
         // type something, which defeats the cursor's purpose.
-        mirror_to_grid(&term, &mut grid, default_fg, default_bg);
+        mirror_to_grid(&term, &mut grid, default_fg, default_bg, true);
+
+        // Periodic blink task: every `BLINK_INTERVAL`, flip the
+        // cursor's visible phase and notify so the renderer
+        // re-paints. Detached doesn't apply here — we hold the
+        // task in `_blink_task` so it lives exactly as long as
+        // the view, no longer.
+        let blink_task = cx.spawn(async move |weak, cx| {
+            loop {
+                cx.background_executor().timer(BLINK_INTERVAL).await;
+                if weak
+                    .update(cx, |this, cx| {
+                        this.cursor_blink_phase = !this.cursor_blink_phase;
+                        // Re-mirror so the cursor cell's fg/bg
+                        // swap (or absence of it) actually shows
+                        // up in the next paint. Without this the
+                        // phase flips internally but the grid
+                        // bytes the renderer reads from never
+                        // change.
+                        mirror_to_grid(
+                            &this.term,
+                            &mut this.grid,
+                            this.default_fg,
+                            this.default_bg,
+                            this.cursor_blink_phase,
+                        );
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
         Self {
             term,
             processor,
@@ -105,10 +173,14 @@ impl TerminalView {
             focus_handle: cx.focus_handle(),
             default_fg,
             default_bg,
+            listener_state,
             serial_tx: None,
             cell_width_px: None,
             scroll_accum: 0.0,
             is_dragging: false,
+            cursor_blink_phase: true,
+            bell_flash_until: None,
+            _blink_task: blink_task,
         }
     }
 
@@ -125,12 +197,42 @@ impl TerminalView {
     /// `cx.notify()` triggers a re-render.
     pub fn feed_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
         self.processor.advance(&mut self.term, bytes);
-        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        // Drain any bell that fired during the parser advance.
+        // Latches the flash window and schedules a one-shot notify
+        // after the flash duration so the overlay clears even
+        // when no other event triggers a re-render.
+        if let Some(rang_at) = self.listener_state.bell.take() {
+            self.bell_flash_until = Some(rang_at + BELL_FLASH_DURATION);
+            cx.spawn(async move |weak, cx| {
+                cx.background_executor().timer(BELL_FLASH_DURATION).await;
+                weak.update(cx, |_, cx| cx.notify()).ok();
+            })
+            .detach();
+        }
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            self.default_fg,
+            self.default_bg,
+            self.cursor_blink_phase,
+        );
         cx.notify();
     }
 
     pub fn focus_handle(&self) -> &FocusHandle {
         &self.focus_handle
+    }
+
+    /// Whether the bell flash overlay should still be painted.
+    /// `true` from the moment a BEL byte was processed until
+    /// `BELL_FLASH_DURATION` after, then permanently `false`
+    /// (until the next bell). Computed against `Instant::now()`
+    /// at render time rather than stored as state, so the same
+    /// `bell_flash_until` instant naturally lapses without us
+    /// having to clear it.
+    fn bell_flash_active(&self) -> bool {
+        self.bell_flash_until
+            .is_some_and(|deadline| Instant::now() < deadline)
     }
 
     /// Resolve cell width via gpui's window-scoped text system.
@@ -174,9 +276,15 @@ impl TerminalView {
             &runs,
             None,
         );
-        let measured = f32::from(layout.width) / SAMPLE_LEN as f32;
-        const PAINT_CALIBRATION: f32 = 0.75;
-        let advance = measured * PAINT_CALIBRATION;
+        // Use the layout-line reported advance directly — no
+        // calibration. Earlier iterations applied 0.75x to match
+        // an apparent paint-pipeline width difference, but that
+        // was only needed when text runs SKIPPED blank cells (so
+        // mid-line gaps came out wrong). With blanks now included
+        // in the runs, the natural advance matches the cell
+        // positioning end-to-end: glyph N at start + N*advance,
+        // cursor at (col+1)*advance = right after glyph N.
+        let advance = f32::from(layout.width) / SAMPLE_LEN as f32;
         self.cell_width_px = Some(advance);
         advance
     }
@@ -211,7 +319,13 @@ impl TerminalView {
         // internally to `[0, history_size]`, so we don't have to
         // bound-check.
         self.term.scroll_display(Scroll::Delta(whole));
-        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            self.default_fg,
+            self.default_bg,
+            self.cursor_blink_phase,
+        );
         cx.notify();
     }
 
@@ -238,7 +352,13 @@ impl TerminalView {
         // which `mirror_to_grid` ignores.
         self.term.selection = Some(Selection::new(SelectionType::Simple, point, Side::Left));
         self.is_dragging = true;
-        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            self.default_fg,
+            self.default_bg,
+            self.cursor_blink_phase,
+        );
         cx.notify();
     }
 
@@ -257,7 +377,13 @@ impl TerminalView {
         if let Some(sel) = self.term.selection.as_mut() {
             sel.update(point, Side::Left);
         }
-        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            self.default_fg,
+            self.default_bg,
+            self.cursor_blink_phase,
+        );
         cx.notify();
     }
 
@@ -363,7 +489,13 @@ impl TerminalView {
         // scrollback rotation). No `cx.notify()` — we're called
         // from `render`; gpui will paint the up-to-date grid in
         // the very next step.
-        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            self.default_fg,
+            self.default_bg,
+            self.cursor_blink_phase,
+        );
     }
 
     fn handle_key_down(
@@ -398,6 +530,10 @@ impl TerminalView {
         let Some(serial_bytes) = encode_for_serial(&event.keystroke) else {
             return;
         };
+        // Reset the blink phase so the cursor is visible during
+        // typing — without this the cursor can disappear mid-stroke
+        // if a key arrives just as the blink-off frame paints.
+        self.cursor_blink_phase = true;
         // Typing implies the user wants to see the response, so
         // snap the view back to the live screen if they were
         // scrolled into history. Standard convention (xterm,
@@ -407,7 +543,13 @@ impl TerminalView {
         // exists.
         if self.term.grid().display_offset() > 0 {
             self.term.scroll_display(Scroll::Bottom);
-            mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+            mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            self.default_fg,
+            self.default_bg,
+            self.cursor_blink_phase,
+        );
             cx.notify();
         }
         if let Some(tx) = &self.serial_tx {
@@ -456,7 +598,7 @@ impl Render for TerminalView {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
-            .child(self.grid.element(cell_w))
+            .child(self.grid.element(cell_w, self.bell_flash_active()))
     }
 }
 

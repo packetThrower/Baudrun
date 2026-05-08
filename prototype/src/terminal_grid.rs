@@ -29,7 +29,7 @@ use std::panic;
 
 use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{
-    fill, font, point, px, rgb, size, App, Bounds, Element, ElementId, FontWeight,
+    fill, font, point, px, rgb, rgba, size, App, Bounds, Element, ElementId, FontWeight,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Size, StrikethroughStyle,
     Style, TextRun, UnderlineStyle, Window,
 };
@@ -105,14 +105,6 @@ fn blend_50(a: Rgb, b: Rgb) -> Rgb {
         g: ((a.g as u16 + b.g as u16) / 2) as u8,
         b: ((a.b as u16 + b.b as u16) / 2) as u8,
     }
-}
-
-/// 50/50 blend toward white. Used to render alacritty's `BOLD` flag
-/// as a brighter foreground rather than a heavier font weight, so
-/// cell advance stays uniform across the row.
-#[inline]
-fn blend_white(a: Rgb) -> Rgb {
-    blend_50(a, Rgb { r: 0xff, g: 0xff, b: 0xff })
 }
 
 /// Pack an `Rgb { r, g, b }` into the `0xRRGGBB` `u32` shape
@@ -226,8 +218,8 @@ impl TerminalGrid {
     /// forcing `.w()` per div had its own clipping issues. With
     /// per-cell paint this is no longer a problem to design
     /// around.
-    pub fn element(&self, cell_w_px: f32) -> GridElement {
-        GridElement::new(self, cell_w_px)
+    pub fn element(&self, cell_w_px: f32, bell_flash: bool) -> GridElement {
+        GridElement::new(self, cell_w_px, bell_flash)
     }
 }
 
@@ -246,6 +238,11 @@ pub struct GridElement {
     cell_h_px: f32,
     default_fg: Rgb,
     default_bg: Rgb,
+    /// When `true`, paint a brief translucent overlay across the
+    /// whole grid bounds — visual bell. Caller (TerminalView)
+    /// computes this against a wall-clock deadline and passes the
+    /// boolean state per render.
+    bell_flash: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -265,7 +262,7 @@ struct RowTextRun {
 }
 
 impl GridElement {
-    fn new(grid: &TerminalGrid, cell_w_px: f32) -> Self {
+    fn new(grid: &TerminalGrid, cell_w_px: f32, bell_flash: bool) -> Self {
         let mut bg_rects = Vec::with_capacity(grid.rows * 2);
         let mut text_runs: Vec<RowTextRun> = Vec::with_capacity(grid.rows * 4);
 
@@ -304,13 +301,16 @@ impl GridElement {
             }
 
             // Text pass: contiguous same-(fg,flags) cells become
-            // one shape_line run. Pure-blank cells (default fg +
-            // a space) are skipped — no glyph to draw, and
-            // skipping splits the run so dim/bold/etc. flips
-            // don't drag a flag across an empty stretch.
+            // one shape_line run. We deliberately do NOT skip
+            // blank/space cells — including them in the run lets
+            // the shaper place subsequent glyphs at the spacing
+            // alacritty intended. Skipping them splits the run
+            // and the next sub-run starts at its own cell-aligned
+            // pixel position, but the previous sub-run's natural
+            // advance keeps painting glyphs into that gap, causing
+            // visible squishing (spaces disappear in typed input).
             let mut current_run: Option<RowTextRun> = None;
             for (col_idx, cell) in row.iter().enumerate() {
-                let is_blank = cell.ch == ' ' && cell.fg == grid.default_fg;
                 // Apply dim's fg-blend at extraction time — dim
                 // changes fg colour but not the underlying glyph,
                 // so doing it here keeps the run-coalescer's key
@@ -320,12 +320,6 @@ impl GridElement {
                 } else {
                     cell.fg
                 };
-                if is_blank {
-                    if let Some(r) = current_run.take() {
-                        text_runs.push(r);
-                    }
-                    continue;
-                }
                 let style_match = current_run
                     .as_ref()
                     .is_some_and(|r| r.fg == effective_fg && r.flags == cell.flags);
@@ -363,6 +357,7 @@ impl GridElement {
             cell_h_px: grid.cell_h_px,
             default_fg: grid.default_fg,
             default_bg: grid.grid_bg,
+            bell_flash,
         }
     }
 }
@@ -445,17 +440,20 @@ impl Element for GridElement {
             window.paint_quad(fill(Bounds::new(rect_origin, rect_size), rgb(pack(r.color))));
         }
 
-        // 3. Text. shape_line is called once per run; we paint at
-        //    the run's starting cell pixel position, then let the
-        //    shaper place glyphs at their natural advance from
-        //    there. `force_width` is left unset because the per-
-        //    glyph cell-snap math in gpui doesn't quite match the
-        //    actual paint width — if it's set higher than the
-        //    rendered glyph occupies, you get visible gaps; if
-        //    lower, glyphs overlap. Letting shape_line use natural
-        //    advance + relying on the calibrated `cell_w` to be
-        //    the right size for both positioning and shaping is
-        //    the consistent path.
+        // 3. Text. `shape_line` per run with `force_width = None`
+        //    (glyphs at their shaped natural advance from the run's
+        //    pixel origin). The expected approach was
+        //    `force_width = Some(cell_w)` — what Zed's terminal
+        //    pane uses — but on `gpui = "0.2.2"` from crates.io,
+        //    that path squeezes glyph positions below their natural
+        //    width and adjacent glyphs overlap visibly ("messed up
+        //    text"). Zed runs against a newer gpui via git pin
+        //    (see `gpui-component`'s README) and presumably the
+        //    snap math has changed. Until we move our gpui pin
+        //    forward (Phase 0.5-style work), the choice is between
+        //    cursor-block-slightly-overlaps-last-char (here) or
+        //    glyph-overlap (with `Some(cell_w)`); the former is
+        //    less visually disruptive.
         for run in &self.text_runs {
             let text_len_bytes = run.text.len();
             let pos = point(
@@ -496,6 +494,16 @@ impl Element for GridElement {
                 None,
             );
             let _ = shaped.paint(pos, cell_h, window, cx);
+        }
+
+        // 4. Bell flash. Painted last so it sits over everything
+        //    else. Translucent white at ~30% alpha — visible
+        //    against any reasonable terminal palette without
+        //    obliterating the underlying content. The TerminalView
+        //    keeps `bell_flash = true` for ~120ms after a BEL byte
+        //    is processed, then schedules a re-render to clear it.
+        if self.bell_flash {
+            window.paint_quad(fill(bounds, rgba(0xffffff4d)));
         }
 
         // Suppress the `default_fg` / `default_bg` "never read"
