@@ -1,57 +1,71 @@
 //! Baudrun · alacritty + gpui prototype.
 //!
-//! First-checkpoint goal: open a gpui window with a single text
-//! element that proves the dep graph resolves and the renderer
-//! draws something. Everything beyond this lives in follow-up
-//! commits — VT parsing wiring, serial port integration, input
-//! routing, eventual chrome.
+//! Checkpoint #2: render a 2D grid of cells with per-cell
+//! foreground / background colors. Sample content below mimics
+//! the kind of output a Cisco IOS session produces — banner +
+//! highlighted keywords + an erred-disabled interface — so we can
+//! eyeball that the per-cell color routing works without yet
+//! plumbing a real VT parser.
+
+mod terminal_grid;
 
 use gpui::{
-    div, prelude::*, px, rgb, App, Application, Bounds, Context, IntoElement, Render, Window,
-    WindowBounds, WindowOptions,
+    px, App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions,
 };
 
-/// Root view for the prototype. Just paints a centered string in
-/// the Baudrun color palette so the first checkpoint is "did the
-/// window open with text in it?" — not "is the terminal correct?"
-struct Prototype;
+use terminal_grid::{Cell, TerminalGrid};
 
-impl Render for Prototype {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        // Baudrun's dark-skin foreground / background. Hard-coded
-        // for the spike — theme system migration is way out of
-        // scope for the first checkpoint.
-        let bg = 0x0b0b0d_u32;
-        let fg = 0xe4e4e7_u32;
-        let accent = 0xd49b3a_u32;
+/// Baudrun palette colors, copied out of `builtin_themes.json` so
+/// the prototype's sample looks recognizably like a real session.
+mod color {
+    pub const BG: u32 = 0x0b0b0d;
+    pub const FG: u32 = 0xe4e4e7;
+    pub const DIM: u32 = 0x4a4a52;
+    pub const RED: u32 = 0xff6961;
+    pub const GREEN: u32 = 0x7cd992;
+    pub const YELLOW: u32 = 0xf5d76e;
+    pub const BLUE: u32 = 0x6cb6ff;
+    pub const MAGENTA: u32 = 0xd794ff;
+    pub const CYAN: u32 = 0x7ce0e0;
+    /// Selection background — used here just to demonstrate per-cell
+    /// `bg` working for a highlighted region.
+    pub const SELECTION_BG: u32 = 0x1a3a5c;
+}
 
-        div()
-            .size_full()
-            .flex()
-            .flex_col()
-            .justify_center()
-            .items_center()
-            .bg(rgb(bg))
-            .text_color(rgb(fg))
-            .gap_2()
-            .child(
-                div()
-                    .text_2xl()
-                    .child("Baudrun · prototype"),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(rgb(accent))
-                    .child("alacritty_terminal + gpui · checkpoint #1"),
-            )
-            .child(
-                div()
-                    .text_xs()
-                    .opacity(0.6)
-                    .child("If you can read this, the dep graph + renderer work."),
-            )
-    }
+fn populate_sample(grid: &mut TerminalGrid) {
+    use color::*;
+
+    // Banner — bright keywords, dim punctuation.
+    grid.write_str(0, 0, "Router>", FG, BG);
+    grid.write_str(0, 8, "show running-config", CYAN, BG);
+
+    grid.write_str(2, 0, "Building configuration...", DIM, BG);
+    grid.write_str(4, 0, "!", DIM, BG);
+    grid.write_str(5, 0, "version 15.4", DIM, BG);
+    grid.write_str(6, 0, "service timestamps debug datetime msec", DIM, BG);
+    grid.write_str(7, 0, "service password-encryption", DIM, BG);
+    grid.write_str(8, 0, "!", DIM, BG);
+
+    grid.write_str(10, 0, "interface GigabitEthernet0/1", BLUE, BG);
+    grid.write_str(11, 2, "ip address ", FG, BG);
+    grid.write_str(11, 13, "10.10.10.1", GREEN, BG);
+    grid.write_str(11, 24, " ", FG, BG);
+    grid.write_str(11, 25, "255.255.255.0", GREEN, BG);
+    grid.write_str(12, 2, "no ip redirects", FG, BG);
+    grid.write_str(13, 2, "duplex full", FG, BG);
+    grid.write_str(14, 2, "speed 1000", FG, BG);
+
+    grid.write_str(16, 0, "interface GigabitEthernet0/2", BLUE, BG);
+    grid.write_str(17, 2, "shutdown", RED, BG);
+    grid.write_str(18, 2, "description ", FG, BG);
+    grid.write_str(18, 14, "TO-CORE-SW1", YELLOW, BG);
+
+    grid.write_str(20, 0, "% Selection demo:", FG, BG);
+    grid.write_str(20, 18, " highlighted region ", FG, SELECTION_BG);
+    grid.write_str(20, 38, " end", FG, BG);
+
+    grid.write_str(22, 0, "Router#", MAGENTA, BG);
+    grid.set_cell(22, 7, Cell { ch: '_', fg: FG, bg: BG }); // fake cursor
 }
 
 fn main() {
@@ -62,13 +76,19 @@ fn main() {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(gpui::TitlebarOptions {
-                    title: Some("Baudrun (prototype)".into()),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Baudrun (prototype) · checkpoint #2".into()),
                     ..Default::default()
                 }),
                 ..Default::default()
             },
-            |_window, cx| cx.new(|_| Prototype),
+            |_window, cx| {
+                cx.new(|_| {
+                    let mut grid = TerminalGrid::new(24, 80, color::FG, color::BG);
+                    populate_sample(&mut grid);
+                    grid
+                })
+            },
         )
         .expect("open window");
         cx.activate(true);
