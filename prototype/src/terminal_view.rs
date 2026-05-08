@@ -29,12 +29,12 @@ use alacritty_terminal::{
     vte::ansi::{Processor, Rgb},
 };
 use gpui::{
-    div, prelude::*, App, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent, Keystroke,
-    Render, Window,
+    div, prelude::*, px, rgb, App, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent,
+    Keystroke, Render, Window,
 };
 
 use crate::term_bridge::{make_term, mirror_to_grid};
-use crate::terminal_grid::TerminalGrid;
+use crate::terminal_grid::{pack, TerminalGrid};
 
 pub struct TerminalView {
     term: Term<VoidListener>,
@@ -124,7 +124,16 @@ impl Focusable for TerminalView {
 
 impl Render for TerminalView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // `size_full` + the background colour means the entire
+        // window fills with the terminal background even when the
+        // 24×80 grid doesn't reach the window edges (which it
+        // doesn't on a 1100×720 window). Without this the unfilled
+        // region renders transparent on Windows — a known gpui
+        // default — and you can see whatever's behind the window.
         div()
+            .size_full()
+            .bg(rgb(pack(self.default_bg)))
+            .p(px(8.0))
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))
             .child(self.grid.element())

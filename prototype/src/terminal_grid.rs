@@ -47,9 +47,11 @@ impl Cell {
 
 /// Pack an `Rgb { r, g, b }` into the `0xRRGGBB` `u32` shape
 /// gpui's `rgb()` constructor expects. Inlined into the render
-/// loop; lifted to a function for clarity.
+/// loop; lifted to a function for clarity. `pub(crate)` so the
+/// outer `TerminalView` wrapper can colour its own background to
+/// match the grid without re-implementing the shift.
 #[inline]
-fn pack(c: Rgb) -> u32 {
+pub(crate) fn pack(c: Rgb) -> u32 {
     ((c.r as u32) << 16) | ((c.g as u32) << 8) | (c.b as u32)
 }
 
@@ -130,7 +132,15 @@ impl TerminalGrid {
             .flex()
             .flex_col()
             .bg(rgb(pack(self.grid_bg)))
-            .font_family("Menlo, SF Mono, monospace")
+            // Cross-platform monospace fallback list. macOS has
+            // Menlo / SF Mono natively; Windows ships Cascadia Mono
+            // (Windows Terminal's default since 2019) and Consolas;
+            // Linux distros usually have DejaVu Sans Mono. Without
+            // Windows entries the gpui DirectWrite backend logs
+            // "font not found" and falls back to Segoe UI, which is
+            // proportional — every character renders at a different
+            // advance and the grid alignment collapses.
+            .font_family("Cascadia Mono, Menlo, SF Mono, Consolas, DejaVu Sans Mono, Courier New, monospace")
             .text_size(px(13.0))
             .text_color(rgb(pack(self.default_fg)))
             .children(self.cells.iter().map(move |row| {
