@@ -32,11 +32,14 @@
 use alacritty_terminal::{
     event::VoidListener,
     grid::Dimensions,
-    term::{cell::Cell as TermCell, Config, Term},
+    term::{
+        cell::{Cell as TermCell, Flags as TermFlags},
+        Config, Term,
+    },
     vte::ansi::{Color, CursorShape, NamedColor, Processor, Rgb},
 };
 
-use crate::terminal_grid::{Cell as GridCell, TerminalGrid, SELECTION_BG};
+use crate::terminal_grid::{Cell as GridCell, CellFlags, TerminalGrid, SELECTION_BG};
 
 /// Trivial `Dimensions` impl. `Term::new` requires this so it
 /// knows the initial buffer shape; we need our own type because
@@ -227,9 +230,23 @@ pub fn mirror_to_grid(
         let row = row_signed as usize;
         let col = indexed.point.column.0;
         let term_cell: &TermCell = indexed.cell;
+        let term_flags = term_cell.flags;
 
         let mut fg = resolve(term_cell.fg, default_fg, default_bg);
         let mut bg = resolve(term_cell.bg, default_fg, default_bg);
+        // INVERSE / HIDDEN are handled here rather than passed
+        // through as flags because they're really fg/bg mutations,
+        // not paint-style attributes — a renderer that treated
+        // them as flags would have to know how to "undo" them
+        // around cursor / selection overrides below, which is
+        // exactly the dance we're avoiding by collapsing them
+        // into the resolved colours up front.
+        if term_flags.contains(TermFlags::INVERSE) {
+            std::mem::swap(&mut fg, &mut bg);
+        }
+        if term_flags.contains(TermFlags::HIDDEN) {
+            fg = bg;
+        }
 
         let is_cursor = cursor_visible
             && cursor_display_row >= 0
@@ -246,6 +263,15 @@ pub fn mirror_to_grid(
             bg = SELECTION_BG;
         }
 
-        out.set_cell(row, col, GridCell { ch: term_cell.c, fg, bg });
+        let flags = CellFlags {
+            bold: term_flags.contains(TermFlags::BOLD),
+            italic: term_flags.contains(TermFlags::ITALIC),
+            underline: term_flags
+                .intersects(TermFlags::ALL_UNDERLINES),
+            strikethrough: term_flags.contains(TermFlags::STRIKEOUT),
+            dim: term_flags.contains(TermFlags::DIM),
+        };
+
+        out.set_cell(row, col, GridCell { ch: term_cell.c, fg, bg, flags });
     }
 }

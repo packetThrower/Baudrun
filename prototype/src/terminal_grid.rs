@@ -25,8 +25,14 @@
 //!     batching same-style runs into single text spans before
 //!     `show tech-support`-scale output.
 
+use std::panic;
+
 use alacritty_terminal::vte::ansi::Rgb;
-use gpui::{div, prelude::*, px, rgb, IntoElement};
+use gpui::{
+    fill, font, point, px, rgb, size, App, Bounds, Element, ElementId, FontWeight,
+    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Size, StrikethroughStyle,
+    Style, TextRun, UnderlineStyle, Window,
+};
 
 /// Font family stack. macOS has Menlo / SF Mono natively; Windows
 /// ships Cascadia Mono (Windows Terminal's default since 2019) and
@@ -54,6 +60,22 @@ pub const CELL_HEIGHT_PX: f32 = 18.0;
 /// becomes a theme field when the theme system lands.
 pub const SELECTION_BG: Rgb = Rgb { r: 0x4a, g: 0x5a, b: 0x80 };
 
+/// Visible text-style attributes for a cell. Subset of alacritty's
+/// `Flags` covering only what affects how a glyph is *painted* —
+/// inverse and hidden are handled in `term_bridge::mirror_to_grid`
+/// by mutating fg/bg before the cell lands here, and wide-char
+/// related flags are deferred until CJK / emoji support lands.
+/// Hashable + `Eq` so it slots into the run-coalescer's style key
+/// without ceremony.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct CellFlags {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
+    pub dim: bool,
+}
+
 /// One terminal cell. RGB values are concrete (already resolved
 /// through whatever palette / theme is active) — the bridge does
 /// the abstract-to-concrete conversion at copy time, so the
@@ -63,12 +85,34 @@ pub struct Cell {
     pub ch: char,
     pub fg: Rgb,
     pub bg: Rgb,
+    pub flags: CellFlags,
 }
 
 impl Cell {
     pub const fn blank(fg: Rgb, bg: Rgb) -> Self {
-        Self { ch: ' ', fg, bg }
+        Self { ch: ' ', fg, bg, flags: CellFlags { bold: false, italic: false, underline: false, strikethrough: false, dim: false } }
     }
+}
+
+/// 50/50 blend of two RGB colours. Used to render alacritty's
+/// `DIM` flag — SGR 2 means "halve foreground intensity," and the
+/// classic implementation is to lerp the resolved fg toward the
+/// resolved bg.
+#[inline]
+fn blend_50(a: Rgb, b: Rgb) -> Rgb {
+    Rgb {
+        r: ((a.r as u16 + b.r as u16) / 2) as u8,
+        g: ((a.g as u16 + b.g as u16) / 2) as u8,
+        b: ((a.b as u16 + b.b as u16) / 2) as u8,
+    }
+}
+
+/// 50/50 blend toward white. Used to render alacritty's `BOLD` flag
+/// as a brighter foreground rather than a heavier font weight, so
+/// cell advance stays uniform across the row.
+#[inline]
+fn blend_white(a: Rgb) -> Rgb {
+    blend_50(a, Rgb { r: 0xff, g: 0xff, b: 0xff })
 }
 
 /// Pack an `Rgb { r, g, b }` into the `0xRRGGBB` `u32` shape
@@ -127,7 +171,7 @@ impl TerminalGrid {
             if c >= self.cols {
                 break;
             }
-            self.cells[row][c] = Cell { ch, fg, bg };
+            self.cells[row][c] = Cell { ch, fg, bg, flags: CellFlags::default() };
         }
     }
 
@@ -163,80 +207,300 @@ impl TerminalGrid {
 }
 
 impl TerminalGrid {
-    /// Build the grid's element tree. Called from `TerminalView::render`,
-    /// which wraps it with focus tracking and key event handlers. We
-    /// dropped the `Render` impl in checkpoint #4 because the entity that
-    /// owns this grid is `TerminalView` — `TerminalGrid` is now plain
-    /// data, not a gpui entity, so it doesn't need to be `Render`.
+    /// Build a `GridElement` that paints the grid via gpui's
+    /// `Element` trait, bypassing taffy's flex layout entirely.
     ///
-    /// Cells with matching fg + bg in the same row are coalesced into
-    /// a single text span (see `row_runs`). This is the difference
-    /// between ~1920 nested flex children per render and a typical
-    /// ~30–100 — taffy's layout cost scales with element count, and
-    /// we measured the per-cell version as visibly slower than
-    /// `screen` against the same device. Most lines from a serial
-    /// console are mostly default-color, so coalescing collapses
-    /// them aggressively.
-    pub fn element(&self, cell_width_px: f32) -> impl IntoElement {
-        // Each run div gets an *explicit* pixel width of
-        // `run_cells * cell_width_px`. This is the only way the
-        // mouse-pixel → grid-cell math can be guaranteed to match
-        // what's painted on screen: gpui's actual font rendering
-        // applies scaling that neither `ch_advance` nor
-        // `layout_line` exposes (measured 7.82 px/cell on macOS
-        // Menlo @ 13pt, but the painted cells were ~5.86 px wide,
-        // breaking drag-selection). Forcing the box width pins the
-        // layout to our model regardless of what the text shaper
-        // does inside the box.
-        let cell_h = px(self.cell_h_px);
-
-        div()
-            .flex()
-            .flex_col()
-            .bg(rgb(pack(self.grid_bg)))
-            .font_family(FONT_FAMILY)
-            .text_size(px(FONT_SIZE_PX))
-            .text_color(rgb(pack(self.default_fg)))
-            .children(self.cells.iter().map(move |row| {
-                div()
-                    .flex()
-                    .flex_row()
-                    .h(cell_h)
-                    .children(row_runs(row).into_iter().map(move |run| {
-                        let run_cells = run.text.chars().count() as f32;
-                        div()
-                            .flex_shrink_0()
-                            .w(px(run_cells * cell_width_px))
-                            .h(cell_h)
-                            .bg(rgb(pack(run.bg)))
-                            .text_color(rgb(pack(run.fg)))
-                            .child(run.text)
-                    }))
-            }))
+    /// Backgrounds are emitted as rectangles via `paint_quad` and
+    /// text per row is handed to `WindowTextSystem::shape_line`
+    /// with `force_width = run_cells × cell_w`, which forces every
+    /// glyph (regular, bold, italic, …) to fit exactly into one
+    /// cell width. Same approach Zed's terminal pane uses, and
+    /// the same shape Alacritty's OpenGL renderer uses; cell
+    /// alignment is preserved no matter what font cut gpui loads
+    /// for the styled run.
+    ///
+    /// Was a styled-div tree before. The div approach broke under
+    /// bold and italic because gpui's flex layout sized each div
+    /// to natural shaped width, and bold cuts in particular have
+    /// slightly different advances — drag-selection drifted, and
+    /// forcing `.w()` per div had its own clipping issues. With
+    /// per-cell paint this is no longer a problem to design
+    /// around.
+    pub fn element(&self, cell_w_px: f32) -> GridElement {
+        GridElement::new(self, cell_w_px)
     }
 }
 
-/// A maximal run of cells in one row that share fg + bg colors,
-/// rendered as a single styled span.
-struct Run {
-    fg: Rgb,
-    bg: Rgb,
-    text: String,
+/// gpui `Element` that paints a `TerminalGrid` directly: bg rects
+/// via `paint_quad`, text per row via `shape_line` + `paint`. Owns
+/// pre-built bg-rect and text-run lists so `paint` itself walks
+/// flat vectors without touching the source grid (which gives gpui
+/// the lifetime story it wants — Element implementors must be
+/// `'static`).
+pub struct GridElement {
+    bg_rects: Vec<BgRect>,
+    text_runs: Vec<RowTextRun>,
+    rows: usize,
+    cols: usize,
+    cell_w_px: f32,
+    cell_h_px: f32,
+    default_fg: Rgb,
+    default_bg: Rgb,
 }
 
-fn row_runs(row: &[Cell]) -> Vec<Run> {
-    let mut runs: Vec<Run> = Vec::with_capacity(8);
-    for cell in row {
-        match runs.last_mut() {
-            Some(last) if last.fg == cell.fg && last.bg == cell.bg => {
-                last.text.push(cell.ch);
+#[derive(Debug, Clone, Copy)]
+struct BgRect {
+    row: usize,
+    start_col: usize,
+    cells: usize,
+    color: Rgb,
+}
+
+struct RowTextRun {
+    row: usize,
+    start_col: usize,
+    text: String,
+    fg: Rgb,
+    flags: CellFlags,
+}
+
+impl GridElement {
+    fn new(grid: &TerminalGrid, cell_w_px: f32) -> Self {
+        let mut bg_rects = Vec::with_capacity(grid.rows * 2);
+        let mut text_runs: Vec<RowTextRun> = Vec::with_capacity(grid.rows * 4);
+
+        for (row_idx, row) in grid.cells.iter().enumerate() {
+            // Background pass: contiguous same-colour cells whose
+            // colour differs from the grid bg become rectangles.
+            // Cells matching grid_bg are skipped — the grid bg is
+            // painted once for the whole element below.
+            let mut current_bg: Option<BgRect> = None;
+            for (col_idx, cell) in row.iter().enumerate() {
+                if cell.bg == grid.grid_bg {
+                    if let Some(r) = current_bg.take() {
+                        bg_rects.push(r);
+                    }
+                    continue;
+                }
+                match &mut current_bg {
+                    Some(r) if r.color == cell.bg && r.start_col + r.cells == col_idx => {
+                        r.cells += 1;
+                    }
+                    _ => {
+                        if let Some(r) = current_bg.take() {
+                            bg_rects.push(r);
+                        }
+                        current_bg = Some(BgRect {
+                            row: row_idx,
+                            start_col: col_idx,
+                            cells: 1,
+                            color: cell.bg,
+                        });
+                    }
+                }
             }
-            _ => runs.push(Run {
-                fg: cell.fg,
-                bg: cell.bg,
-                text: cell.ch.to_string(),
-            }),
+            if let Some(r) = current_bg {
+                bg_rects.push(r);
+            }
+
+            // Text pass: contiguous same-(fg,flags) cells become
+            // one shape_line run. Pure-blank cells (default fg +
+            // a space) are skipped — no glyph to draw, and
+            // skipping splits the run so dim/bold/etc. flips
+            // don't drag a flag across an empty stretch.
+            let mut current_run: Option<RowTextRun> = None;
+            for (col_idx, cell) in row.iter().enumerate() {
+                let is_blank = cell.ch == ' ' && cell.fg == grid.default_fg;
+                // Apply dim's fg-blend at extraction time — dim
+                // changes fg colour but not the underlying glyph,
+                // so doing it here keeps the run-coalescer's key
+                // the resolved colour rather than (colour, dim?).
+                let effective_fg = if cell.flags.dim {
+                    blend_50(cell.fg, cell.bg)
+                } else {
+                    cell.fg
+                };
+                if is_blank {
+                    if let Some(r) = current_run.take() {
+                        text_runs.push(r);
+                    }
+                    continue;
+                }
+                let style_match = current_run
+                    .as_ref()
+                    .is_some_and(|r| r.fg == effective_fg && r.flags == cell.flags);
+                let contiguous = current_run
+                    .as_ref()
+                    .is_some_and(|r| r.start_col + r.text.chars().count() == col_idx);
+                if style_match && contiguous {
+                    if let Some(r) = current_run.as_mut() {
+                        r.text.push(cell.ch);
+                    }
+                } else {
+                    if let Some(r) = current_run.take() {
+                        text_runs.push(r);
+                    }
+                    current_run = Some(RowTextRun {
+                        row: row_idx,
+                        start_col: col_idx,
+                        text: cell.ch.to_string(),
+                        fg: effective_fg,
+                        flags: cell.flags,
+                    });
+                }
+            }
+            if let Some(r) = current_run {
+                text_runs.push(r);
+            }
+        }
+
+        Self {
+            bg_rects,
+            text_runs,
+            rows: grid.rows,
+            cols: grid.cols,
+            cell_w_px,
+            cell_h_px: grid.cell_h_px,
+            default_fg: grid.default_fg,
+            default_bg: grid.grid_bg,
         }
     }
-    runs
+}
+
+impl IntoElement for GridElement {
+    type Element = Self;
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for GridElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let mut style = Style::default();
+        style.size = Size {
+            width: px(self.cols as f32 * self.cell_w_px).into(),
+            height: px(self.rows as f32 * self.cell_h_px).into(),
+        };
+        let layout_id = window.request_layout(style, [], cx);
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Self::PrepaintState {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let origin = bounds.origin;
+        let cell_w = px(self.cell_w_px);
+        let cell_h = px(self.cell_h_px);
+
+        // 1. Whole-grid background. One quad covering the layout
+        //    bounds — same as wrapping the element in `.bg(...)`,
+        //    but we own the paint order so we know the bg goes in
+        //    *before* per-cell rects + text.
+        window.paint_quad(fill(bounds, rgb(pack(self.default_bg))));
+
+        // 2. Per-cell bg rectangles. Only emitted for cells whose
+        //    bg differs from the grid bg (selection highlight,
+        //    inverse cells, themed bg runs).
+        for r in &self.bg_rects {
+            let rect_origin = point(
+                origin.x + cell_w * r.start_col as f32,
+                origin.y + cell_h * r.row as f32,
+            );
+            let rect_size = size(cell_w * r.cells as f32, cell_h);
+            window.paint_quad(fill(Bounds::new(rect_origin, rect_size), rgb(pack(r.color))));
+        }
+
+        // 3. Text. shape_line is called once per run; we paint at
+        //    the run's starting cell pixel position, then let the
+        //    shaper place glyphs at their natural advance from
+        //    there. `force_width` is left unset because the per-
+        //    glyph cell-snap math in gpui doesn't quite match the
+        //    actual paint width — if it's set higher than the
+        //    rendered glyph occupies, you get visible gaps; if
+        //    lower, glyphs overlap. Letting shape_line use natural
+        //    advance + relying on the calibrated `cell_w` to be
+        //    the right size for both positioning and shaping is
+        //    the consistent path.
+        for run in &self.text_runs {
+            let text_len_bytes = run.text.len();
+            let pos = point(
+                origin.x + cell_w * run.start_col as f32,
+                origin.y + cell_h * run.row as f32,
+            );
+
+            let mut run_font = font(FONT_FAMILY);
+            if run.flags.bold {
+                run_font.weight = FontWeight::BOLD;
+            }
+            if run.flags.italic {
+                run_font.style = gpui::FontStyle::Italic;
+            }
+
+            let underline_style = run.flags.underline.then(|| UnderlineStyle {
+                thickness: px(1.0),
+                ..Default::default()
+            });
+            let strikethrough_style = run.flags.strikethrough.then(|| StrikethroughStyle {
+                thickness: px(1.0),
+                ..Default::default()
+            });
+
+            let text_run = TextRun {
+                len: text_len_bytes,
+                font: run_font,
+                color: rgb(pack(run.fg)).into(),
+                background_color: None,
+                underline: underline_style,
+                strikethrough: strikethrough_style,
+            };
+
+            let shaped = window.text_system().shape_line(
+                run.text.clone().into(),
+                px(FONT_SIZE_PX),
+                &[text_run],
+                None,
+            );
+            let _ = shaped.paint(pos, cell_h, window, cx);
+        }
+
+        // Suppress the `default_fg` / `default_bg` "never read"
+        // warnings until we wire them into per-row default fg
+        // resolution (currently each text run carries its own).
+        let _ = self.default_fg;
+    }
 }

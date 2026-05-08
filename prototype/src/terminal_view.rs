@@ -133,24 +133,20 @@ impl TerminalView {
         &self.focus_handle
     }
 
-    /// Resolve cell width by asking gpui's window-scoped text
-    /// system to lay out a 100-character string of `'0'`s, then
-    /// applying a 0.75 calibration factor.
-    ///
-    /// The factor is empirical: gpui's `layout_line` reports cell
-    /// advance assuming `font_size` is in CSS pixels (Menlo @ 13
-    /// → 7.82 px/cell), but the actual paint pipeline appears to
-    /// treat the same value as typography points and renders at
-    /// 13 / 1.333 ≈ 9.75 effective pixels of font (yielding
-    /// ~5.86 px/cell). 0.75 = 1/1.333 collapses the two views
-    /// into one number that's correct for both:
-    ///   * pixel-to-cell math (so drag-selection tracks the mouse)
-    ///   * the explicit `.w(cells × cell_w)` set on each run div
-    ///     (so the box sizes match the painted text — without the
-    ///     calibration the boxes were oversized and the rendered
-    ///     text inside them showed gaps where the next run began).
-    /// If/when gpui's text-system gets a more direct
-    /// "what-will-actually-paint" API, drop the constant.
+    /// Resolve cell width via gpui's window-scoped text system.
+    /// Lays out a 100-character string of `'0'`s, divides, then
+    /// applies a 0.75 calibration. The calibration survives the
+    /// move from div-rendering to a custom `Element` because
+    /// `shape_line` reports advance in the same unit as
+    /// `ch_advance` (both at ~7.82 px for Menlo @ 13pt), but
+    /// gpui's paint pipeline renders glyphs at 0.75× that
+    /// (~5.87 px) — looks like a typography point-vs-CSS-pixel
+    /// confusion deep in gpui that neither the layout APIs nor
+    /// the `force_width` per-glyph positioning escape. Without
+    /// the calibration, glyphs sit at the right *position* but
+    /// occupy less than the cell, producing visible extra
+    /// spacing between chars. Drop this when gpui exposes the
+    /// effective render-pixel size directly.
     fn cell_width(&mut self, window: &Window, _cx: &mut App) -> f32 {
         if let Some(w) = self.cell_width_px {
             return w;
@@ -179,7 +175,6 @@ impl TerminalView {
             None,
         );
         let measured = f32::from(layout.width) / SAMPLE_LEN as f32;
-        // See doc comment above for the source of 0.75.
         const PAINT_CALIBRATION: f32 = 0.75;
         let advance = measured * PAINT_CALIBRATION;
         self.cell_width_px = Some(advance);

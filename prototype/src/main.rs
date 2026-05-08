@@ -67,6 +67,9 @@ Router> \x1b[36mshow running-config\x1b[0m\r\n\
   \x1b[31mshutdown\x1b[0m\r\n\
   description \x1b[33mTO-CORE-SW1\x1b[0m\r\n\
 \r\n\
+\x1b[1mbold\x1b[0m \x1b[3mitalic\x1b[0m \x1b[4munderline\x1b[0m \
+\x1b[9mstrike\x1b[0m \x1b[2mdim\x1b[0m \x1b[7minverse\x1b[0m\r\n\
+\r\n\
 \x1b[35mRouter#\x1b[0m ";
 
 fn main() {
