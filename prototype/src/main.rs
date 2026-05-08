@@ -158,7 +158,15 @@ fn main() {
 /// In loopback mode (no device), feed the boot-time sample so the
 /// window opens with colored content rather than a blank grid. Real
 /// serial sessions skip this — the device's own output drives the
-/// screen instead.
+/// screen instead. Repeated `SEED_REPEATS` times so the prototype
+/// has enough content to push earlier lines into alacritty's
+/// scrollback — otherwise the wheel-scroll path can't be exercised
+/// without a chatty device on the wire.
+const SEED_REPEATS: usize = 3;
 fn seed_loopback(view: &gpui::Entity<TerminalView>, cx: &mut App) {
-    view.update(cx, |v, cx| v.feed_bytes(SAMPLE_BYTES, cx));
+    view.update(cx, |v, cx| {
+        for _ in 0..SEED_REPEATS {
+            v.feed_bytes(SAMPLE_BYTES, cx);
+        }
+    });
 }

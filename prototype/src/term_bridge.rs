@@ -200,20 +200,40 @@ pub fn mirror_to_grid(
     default_bg: Rgb,
 ) {
     let content = term.renderable_content();
+    // When the user has scrolled into history, `display_iter()`
+    // yields lines starting at `Line(-display_offset)` and counting
+    // up. The grid's `Line` is `i32` and goes negative for
+    // scrollback rows; the cursor's `Line` is in live-screen
+    // coordinates and stays >= 0. To paint either into our 0-
+    // indexed render grid, we add `display_offset` and treat the
+    // result as the display row. Without that addition, the old
+    // `as usize` cast wrap-converts negative line numbers into huge
+    // values, `set_cell` silently bounds-rejects them, and
+    // scrolling produces no visible change.
+    let display_offset = content.display_offset as i32;
     let cursor_visible = !matches!(content.cursor.shape, CursorShape::Hidden);
-    let cursor_row = content.cursor.point.line.0 as usize;
+    let cursor_display_row = content.cursor.point.line.0 + display_offset;
     let cursor_col = content.cursor.point.column.0;
 
     for indexed in content.display_iter {
-        // `Line(i32)` → `usize`. `display_iter()` yields lines in
-        // 0..screen_lines, so the cast is always non-negative.
-        let row = indexed.point.line.0 as usize;
+        let row_signed = indexed.point.line.0 + display_offset;
+        // Defensive: `display_iter` is supposed to stay within
+        // `[0, screen_lines)` after the offset adjustment, but
+        // skipping a stray out-of-range row beats panicking.
+        if row_signed < 0 {
+            continue;
+        }
+        let row = row_signed as usize;
         let col = indexed.point.column.0;
         let term_cell: &TermCell = indexed.cell;
 
         let mut fg = resolve(term_cell.fg, default_fg, default_bg);
         let mut bg = resolve(term_cell.bg, default_fg, default_bg);
-        if cursor_visible && row == cursor_row && col == cursor_col {
+        if cursor_visible
+            && cursor_display_row >= 0
+            && cursor_display_row as usize == row
+            && col == cursor_col
+        {
             std::mem::swap(&mut fg, &mut bg);
         }
 

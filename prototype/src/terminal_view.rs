@@ -25,12 +25,13 @@
 
 use alacritty_terminal::{
     event::VoidListener,
+    grid::Scroll,
     term::Term,
     vte::ansi::{Processor, Rgb},
 };
 use gpui::{
     div, font, prelude::*, px, rgb, App, Context, FocusHandle, Focusable, IntoElement,
-    KeyDownEvent, Keystroke, Render, Window,
+    KeyDownEvent, Keystroke, Render, ScrollDelta, ScrollWheelEvent, Window,
 };
 
 use crate::term_bridge::{make_term, mirror_to_grid, Dims};
@@ -65,6 +66,11 @@ pub struct TerminalView {
     /// then reuse, since neither the font nor the size changes
     /// during a session yet.
     cell_width_px: Option<f32>,
+    /// Sub-line accumulator for trackpad scrolling. macOS trackpads
+    /// emit Pixels deltas one frame at a time; without buffering
+    /// the fractional remainder, slow scrolls under one line per
+    /// frame would never trigger.
+    scroll_accum: f32,
 }
 
 impl TerminalView {
@@ -92,6 +98,7 @@ impl TerminalView {
             default_bg,
             serial_tx: None,
             cell_width_px: None,
+            scroll_accum: 0.0,
         }
     }
 
@@ -149,6 +156,40 @@ impl TerminalView {
         advance
     }
 
+    fn handle_scroll(
+        &mut self,
+        event: &ScrollWheelEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Convert the platform delta into whole lines. macOS
+        // trackpads emit fine-grained Pixels deltas; mice usually
+        // emit coarse Lines.
+        let lines = match event.delta {
+            ScrollDelta::Lines(p) => p.y,
+            ScrollDelta::Pixels(p) => f32::from(p.y) / CELL_HEIGHT_PX,
+        };
+        // Accumulate sub-line motion so slow trackpad scrolling
+        // doesn't drop every event below 1.0. Round-to-zero rather
+        // than floor so flick gestures still register on the first
+        // frame.
+        self.scroll_accum += lines;
+        let whole = self.scroll_accum.trunc() as i32;
+        if whole == 0 {
+            return;
+        }
+        self.scroll_accum -= whole as f32;
+
+        // Convention: positive `delta.y` means "user wants to see
+        // older content" (scroll up), which in alacritty is a
+        // positive `Scroll::Delta`. Both directions get clamped
+        // internally to `[0, history_size]`, so we don't have to
+        // bound-check.
+        self.term.scroll_display(Scroll::Delta(whole));
+        mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+        cx.notify();
+    }
+
     /// Adjust the grid + Term to match the current window size,
     /// if they don't already. Called on every render — idempotent
     /// when dimensions haven't changed, so cheap when nothing
@@ -185,6 +226,18 @@ impl TerminalView {
         let Some(serial_bytes) = encode_for_serial(&event.keystroke) else {
             return;
         };
+        // Typing implies the user wants to see the response, so
+        // snap the view back to the live screen if they were
+        // scrolled into history. Standard convention (xterm,
+        // iTerm2, screen, tmux). Output bytes from the device do
+        // NOT snap — letting users read scrollback while a chatty
+        // device keeps sending is the whole reason scrollback
+        // exists.
+        if self.term.grid().display_offset() > 0 {
+            self.term.scroll_display(Scroll::Bottom);
+            mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
+            cx.notify();
+        }
         if let Some(tx) = &self.serial_tx {
             // Serial mode: bytes go on the wire. The device's echo
             // (or lack thereof — a passwd prompt won't echo) is what
@@ -226,6 +279,7 @@ impl Render for TerminalView {
             .p(px(GRID_PADDING_PX))
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))
+            .on_scroll_wheel(cx.listener(Self::handle_scroll))
             .child(self.grid.element())
     }
 }
