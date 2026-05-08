@@ -67,8 +67,12 @@ pub async fn list_missing_drivers() -> Result<Vec<serial::USBSerialCandidate>, S
         .map_err(|e| format!("list_missing_drivers join: {}", e))?
 }
 
+/// `async` for the same reason as `send` — connect opens the OS
+/// serial port (potentially slow, especially first-open after
+/// driver enumeration), and we don't want it parked on the WebView
+/// main thread while it negotiates baud / parity / flow-control.
 #[tauri::command]
-pub fn connect(
+pub async fn connect(
     profile_id: String,
     window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
@@ -80,8 +84,10 @@ pub fn connect(
     open_session(&window, state.inner(), profile).map_err(|e| e.to_string())
 }
 
+/// `async` for symmetry with `connect`. Disconnect close-port can
+/// also block briefly on driver flush.
 #[tauri::command]
-pub fn disconnect(
+pub async fn disconnect(
     window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
@@ -104,8 +110,22 @@ pub fn disconnect(
     Ok(())
 }
 
+/// `async` is load-bearing: this command fires on EVERY keystroke
+/// the user types. Tauri 2 dispatches sync commands on the WebView
+/// main thread, so a sync `send` would serialize every keystroke
+/// through the same thread that's also responsible for receiving
+/// IPC events from Rust (incoming serial data, etc.) and for
+/// rendering the UI. On macOS WKWebView this overhead is small
+/// enough to be invisible, but on Windows-on-ARM (WebView2 under
+/// emulation, plus UTM-style USB pass-through) the per-call IPC
+/// latency stacks and produces multi-second typing lag. Making
+/// the command async drops it onto the Tokio runtime so the main
+/// thread stays free; the underlying `Session::send` is still a
+/// blocking serialport write under a mutex, but that blocks an
+/// async worker rather than the main thread, so other commands
+/// and inbound events keep flowing.
 #[tauri::command]
-pub fn send(
+pub async fn send(
     data: String,
     window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
@@ -117,8 +137,13 @@ pub fn send(
     sess.send(&bytes).map_err(|e| e.to_string())
 }
 
+/// `async` for the same reason as `send` — see that command's doc
+/// comment. Less critical for control-line toggles than for
+/// keystrokes (DTR/RTS pulses are infrequent), but consistent
+/// dispatching keeps a stuck `send` from queuing behind an
+/// occasional `set_rts` or vice versa.
 #[tauri::command]
-pub fn set_rts(
+pub async fn set_rts(
     v: bool,
     window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
@@ -127,8 +152,9 @@ pub fn set_rts(
     sess.set_rts(v).map_err(|e| e.to_string())
 }
 
+/// `async` for the same reason as `send` and `set_rts`.
 #[tauri::command]
-pub fn set_dtr(
+pub async fn set_dtr(
     v: bool,
     window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
@@ -137,8 +163,12 @@ pub fn set_dtr(
     sess.set_dtr(v).map_err(|e| e.to_string())
 }
 
+/// `async` for the same reason as `send` — `Session::send_break`
+/// holds the line low for a fixed duration (BREAK_DURATION), which
+/// is ~250ms of blocking time. Definitely not something we want
+/// parking the WebView main thread.
 #[tauri::command]
-pub fn send_break(
+pub async fn send_break(
     window: WebviewWindow,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
