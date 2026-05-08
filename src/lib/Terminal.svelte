@@ -33,6 +33,11 @@
     pasteSlow?: boolean;
     pasteCharDelayMs?: number;
     screenReaderMode?: boolean;
+    /** Renderer preference from Settings → Advanced. Empty / missing
+     *  = auto (Windows → DOM, macOS / Linux → WebGL). `"webgl"` and
+     *  `"dom"` force the respective renderer everywhere. The
+     *  localStorage `baudrun-renderer` key wins over this when set. */
+    rendererPref?: "" | "webgl" | "dom";
     onStatus?: (msg: string) => void;
     // Called when a multi-line paste arrives and pasteWarnMultiline is
     // enabled. Host app is expected to render a modal (window.confirm
@@ -57,6 +62,7 @@
     pasteSlow = false,
     pasteCharDelayMs = 10,
     screenReaderMode = false,
+    rendererPref = "",
     onStatus = () => {},
     onPasteConfirm,
   }: Props = $props();
@@ -506,21 +512,24 @@
     // visible interruption.
     //
     // Renderer selection precedence (highest first):
-    //   1. localStorage `baudrun-renderer` — explicit override per
-    //      install. Values: "dom" forces DOM, "webgl" forces WebGL,
-    //      anything else (or unset) defers to the platform default.
-    //   2. Windows default = DOM. WebView2's compositor produces
-    //      visibly jittery frame timing for terminal-style frequent-
-    //      tiny-updates, where the DOM renderer is consistently
-    //      smoother. macOS WKWebView and Linux WebKit2GTK don't have
-    //      this characteristic; both default to WebGL.
+    //   1. localStorage `baudrun-renderer` — developer override.
+    //      Wins over the user-facing setting so support / triage can
+    //      diagnose without persisting a change to the settings file.
+    //      Values: `"dom"` forces DOM, `"webgl"` forces WebGL.
+    //   2. The `rendererPref` prop, threaded from Settings →
+    //      Advanced via App.svelte. `"dom"` / `"webgl"` force, empty
+    //      string defers to the platform default below.
+    //   3. Platform default: Windows → DOM, macOS / Linux → WebGL.
+    //      WebView2's compositor produces visibly jittery frame
+    //      timing for terminal-style frequent-tiny-updates, where
+    //      the DOM renderer is consistently smoother. macOS WKWebView
+    //      and Linux WebKit2GTK don't share this characteristic.
     //
-    // Setting the localStorage key requires a window reload to take
-    // effect. Run from DevTools:
-    //   localStorage.setItem('baudrun-renderer', 'dom'); location.reload();
-    //   localStorage.setItem('baudrun-renderer', 'webgl'); location.reload();
-    //   localStorage.removeItem('baudrun-renderer'); location.reload();
-    const rendererPref = (() => {
+    // Changing the user-facing setting takes effect on next terminal
+    // mount (close + reopen the session, or restart the app). For
+    // the localStorage developer override, run from DevTools and
+    // `location.reload()`.
+    const localOverride = (() => {
       try {
         return localStorage.getItem("baudrun-renderer");
       } catch {
@@ -529,8 +538,12 @@
     })();
     const isWindows =
       typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent ?? "");
-    const forceDom =
-      rendererPref === "dom" || (rendererPref !== "webgl" && isWindows);
+    let forceDom: boolean;
+    if (localOverride === "dom") forceDom = true;
+    else if (localOverride === "webgl") forceDom = false;
+    else if (rendererPref === "dom") forceDom = true;
+    else if (rendererPref === "webgl") forceDom = false;
+    else forceDom = isWindows;
     if (!forceDom) {
       try {
         const w = new WebglAddon();

@@ -35,6 +35,7 @@
     onSetDetectDrivers: (enabled: boolean) => void;
     onSetCopyOnSelect: (enabled: boolean) => void;
     onSetScreenReaderMode: (enabled: boolean) => void;
+    onSetTerminalRenderer: (renderer: "" | "webgl" | "dom") => void;
     onPickConfigDir: () => void;
     onResetConfigDir: () => void;
     onSetSkin: (id: string) => void;
@@ -67,6 +68,7 @@
     onSetDetectDrivers,
     onSetCopyOnSelect,
     onSetScreenReaderMode,
+    onSetTerminalRenderer,
     onPickConfigDir,
     onResetConfigDir,
     onSetSkin,
@@ -993,6 +995,35 @@
           />
           Enable xterm screen-reader mode
         </label>
+      </div>
+
+      <div class="sub">
+        <h4>Terminal Renderer</h4>
+        <p class="section-hint">
+          How the terminal draws on screen. <strong>Auto</strong> is
+          right for almost everyone — it picks DOM on Windows
+          (WebView2's compositor produces visibly jittery frame
+          timing for terminal output) and WebGL on macOS / Linux for
+          smoother scrolling on large buffers. Force a specific
+          renderer if your machine has unusual GPU support (slow
+          software-emulated WebGL → pick DOM, or you've confirmed a
+          working hardware GPU on Windows → pick WebGL).
+          Takes effect on next session connect, or restart the app.
+        </p>
+        <label for="terminal-renderer-select" class="select-label-text">
+          Renderer
+        </label>
+        <Select
+          id="terminal-renderer-select"
+          value={settings.terminalRenderer ?? ""}
+          onchange={(v) =>
+            onSetTerminalRenderer(v as "" | "webgl" | "dom")}
+          options={[
+            { value: "", label: "Auto (recommended)" },
+            { value: "webgl", label: "WebGL — GPU-accelerated" },
+            { value: "dom", label: "DOM — no GPU, smoother on Windows" },
+          ]}
+        />
       </div>
 
       <div class="sub">

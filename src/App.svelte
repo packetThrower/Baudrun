@@ -1301,6 +1301,20 @@
     }
   }
 
+  async function handleSetTerminalRenderer(
+    renderer: "" | "webgl" | "dom",
+  ) {
+    try {
+      const updated = await api.updateSettings({
+        ...$settings,
+        terminalRenderer: renderer,
+      });
+      settings.set(updated);
+    } catch (e) {
+      statusMsg = `Setting update failed: ${e}`;
+    }
+  }
+
   async function handleSetUpdateCheckEnabled(enabled: boolean) {
     try {
       const updated = await api.updateSettings({
@@ -1516,6 +1530,7 @@
     onSetDetectDrivers={handleSetDetectDrivers}
     onSetCopyOnSelect={handleSetCopyOnSelect}
     onSetScreenReaderMode={handleSetScreenReaderMode}
+    onSetTerminalRenderer={handleSetTerminalRenderer}
     onSetUpdateCheckEnabled={handleSetUpdateCheckEnabled}
     onSetIncludePrereleaseUpdates={handleSetIncludePrereleaseUpdates}
     onPickConfigDir={handlePickConfigDir}
@@ -1690,6 +1705,7 @@
           backspaceKey={termBackspaceKey}
           copyOnSelect={termCopyOnSelect}
           screenReaderMode={termScreenReaderMode}
+          rendererPref={$settings.terminalRenderer ?? ""}
           pasteWarnMultiline={termPasteWarnMultiline}
           pasteSlow={termPasteSlow}
           pasteCharDelayMs={termPasteCharDelayMs}

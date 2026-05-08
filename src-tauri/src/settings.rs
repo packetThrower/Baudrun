@@ -49,6 +49,18 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "is_zero_i32")]
     pub scrollback_lines: i32,
 
+    /// Terminal renderer preference: `""` / missing = auto (Windows
+    /// → DOM, macOS / Linux → WebGL), `"webgl"` = force WebGL on
+    /// every platform, `"dom"` = force DOM on every platform. Lets
+    /// users on a slow software-WebGL path opt out of GPU rendering
+    /// without dropping to DevTools, and lets power users on Windows
+    /// re-enable WebGL when they have a working hardware GPU. The
+    /// localStorage `baudrun-renderer` key remains as a developer
+    /// override that wins over this setting (useful during diagnosis
+    /// when settings IPC isn't reaching the main window).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub terminal_renderer: String,
+
     /// Keyboard-shortcut overrides keyed by action id, values are
     /// W3C KeyboardEvent modifier+key strings (`"Meta+K"`). Unset
     /// falls back to a platform-appropriate default picked by the
@@ -125,6 +137,7 @@ impl Default for Settings {
             copy_on_select: false,
             screen_reader_mode: false,
             scrollback_lines: 10_000,
+            terminal_renderer: String::new(),
             shortcuts: None,
             disable_update_check: false,
             include_prerelease_updates: false,

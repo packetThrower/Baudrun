@@ -97,6 +97,10 @@ export type Settings = {
   includePrereleaseUpdates?: boolean;
   dismissedUpdateVersion?: string;
   enabledHighlightPresets?: string[];
+  /** Terminal renderer preference. `""` / missing = auto (Windows →
+   *  DOM, others → WebGL). `"webgl"` and `"dom"` force their
+   *  respective renderers on every platform. */
+  terminalRenderer?: "" | "webgl" | "dom";
 };
 
 export type HighlightColor =
