@@ -1,14 +1,14 @@
 //! Baudrun · alacritty + gpui prototype.
 //!
-//! Checkpoint #4: keyboard input. The window now mounts a
-//! `TerminalView` entity that owns the Term + Processor + grid,
-//! captures gpui keyboard events, encodes them as bytes, and feeds
-//! them through the same parser path the boot-time sample uses.
-//! Without a real serial port (checkpoint #5) the typed bytes loop
-//! straight back into our own Term as local echo — verifies the
-//! whole keyboard pipeline works, and gives us a terminal you can
-//! type into with no device attached.
+//! Checkpoint #5: real serial input. `cargo run -- <port>` opens a
+//! serial port at 9600 8N1, spawns a blocking read thread that ships
+//! bytes into a flume channel, and drains that channel from a gpui
+//! foreground task into `TerminalView::feed_bytes`. A second thread
+//! pumps typed bytes the other direction. With no `<port>` arg the
+//! prototype runs in checkpoint-#4 loopback mode so it stays usable
+//! without hardware on the dev machine.
 
+mod serial_io;
 mod term_bridge;
 mod terminal_grid;
 mod terminal_view;
@@ -28,6 +28,12 @@ use terminal_view::TerminalView;
 const DEFAULT_FG: Rgb = Rgb { r: 0xe4, g: 0xe4, b: 0xe7 };
 const DEFAULT_BG: Rgb = Rgb { r: 0x0b, g: 0x0b, b: 0x0d };
 
+/// Default baud rate. 9600 8N1 is the universal serial-console speed
+/// for the network gear Baudrun targets — Cisco, Juniper, Aruba,
+/// Mikrotik all default to it. A real settings panel will eventually
+/// parameterize this; for the spike a constant is fine.
+const DEFAULT_BAUD: u32 = 9600;
+
 /// Sample byte stream — what a Cisco IOS session might emit if
 /// you ran `show running-config` on a session with `terminal
 /// monitor` colorization enabled. Mixes:
@@ -37,10 +43,8 @@ const DEFAULT_BG: Rgb = Rgb { r: 0x0b, g: 0x0b, b: 0x0d };
 ///   * SGR reset (`\x1b[0m`) between runs
 ///   * Multiple lines + a final cursor-positioning prompt
 ///
-/// Every escape here is one alacritty parses; we're not feeding
-/// it anything exotic. If the rendered output matches what
-/// `printf "$BYTES" | less -R` would show in a real terminal,
-/// the bridge is working.
+/// Only fed at boot when running in loopback mode; with a real
+/// device attached, the device provides its own output.
 const SAMPLE_BYTES: &[u8] = b"\
 \x1b[0m\
 Router> \x1b[36mshow running-config\x1b[0m\r\n\
@@ -68,14 +72,19 @@ Router> \x1b[36mshow running-config\x1b[0m\r\n\
 fn main() {
     env_logger::init();
 
-    Application::new().run(|cx: &mut App| {
+    // Args: `cargo run -- <port_path>`. Anything after the binary
+    // name; we don't accept flags yet because there's nothing to
+    // configure besides the path.
+    let port_path = std::env::args().nth(1);
+
+    Application::new().run(move |cx: &mut App| {
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
         let window = cx
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Baudrun (prototype) · checkpoint #4".into()),
+                        title: Some("Baudrun (prototype) · checkpoint #5".into()),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -83,18 +92,56 @@ fn main() {
                 |_window, cx| {
                     let rows = 24;
                     let cols = 80;
-                    cx.new(|cx| {
-                        let mut view =
-                            TerminalView::new(rows, cols, DEFAULT_FG, DEFAULT_BG, cx);
-                        // Boot-time sample so the window opens with
-                        // colored content rather than a blank grid.
-                        // After this, all bytes come from the keyboard.
-                        view.feed_bytes(SAMPLE_BYTES, cx);
-                        view
-                    })
+                    cx.new(|cx| TerminalView::new(rows, cols, DEFAULT_FG, DEFAULT_BG, cx))
                 },
             )
             .expect("open window");
+
+        let view = window.entity(cx).expect("read terminal view entity");
+
+        match port_path.as_deref() {
+            Some(path) => match serial_io::open(path, DEFAULT_BAUD) {
+                Ok(channels) => {
+                    log::info!("opened serial port {path} at {DEFAULT_BAUD} 8N1");
+                    // Hand the write half to the view so its key
+                    // handler can push typed bytes onto the wire.
+                    view.update(cx, |v, _| v.set_serial_tx(channels.write_tx));
+
+                    // Foreground async task: drain the read channel
+                    // and pipe each chunk through `feed_bytes`.
+                    // Re-renders happen via `cx.notify()` inside
+                    // `feed_bytes` itself.
+                    let weak = view.downgrade();
+                    let read_rx = channels.read_rx;
+                    cx.spawn(async move |cx| {
+                        while let Ok(bytes) = read_rx.recv_async().await {
+                            if weak
+                                .update(cx, |v, cx| v.feed_bytes(&bytes, cx))
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    })
+                    .detach();
+                }
+                Err(e) => {
+                    eprintln!(
+                        "failed to open serial port {path}: {e}\n\
+                         falling back to loopback mode."
+                    );
+                    seed_loopback(&view, cx);
+                }
+            },
+            None => {
+                eprintln!(
+                    "no serial port specified — running in loopback mode.\n\
+                     usage: cargo run -- <port>      \
+                     (macOS: /dev/tty.usbserial-XXX, Windows: COM3, Linux: /dev/ttyUSB0)"
+                );
+                seed_loopback(&view, cx);
+            }
+        }
 
         // Focus the terminal view at startup so keystrokes land
         // without the user having to click first.
@@ -106,4 +153,12 @@ fn main() {
 
         cx.activate(true);
     });
+}
+
+/// In loopback mode (no device), feed the boot-time sample so the
+/// window opens with colored content rather than a blank grid. Real
+/// serial sessions skip this — the device's own output drives the
+/// screen instead.
+fn seed_loopback(view: &gpui::Entity<TerminalView>, cx: &mut App) {
+    view.update(cx, |v, cx| v.feed_bytes(SAMPLE_BYTES, cx));
 }

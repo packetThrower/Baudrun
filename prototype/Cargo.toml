@@ -23,6 +23,18 @@ alacritty_terminal = "0.26"
 log = "0.4"
 env_logger = "0.11"
 
+# Serial port I/O. Same major version (4.x) the main app uses so any
+# code that gets promoted to the real tree later doesn't need
+# revisiting. `serialport-rs` exposes a synchronous `Read`/`Write`
+# API; we pump it on dedicated OS threads (see `serial_io.rs`).
+serialport = "4"
+
+# `flume` is a sync+async channel — its sync `send`/`recv` is used
+# from the OS-thread side, and `recv_async` is awaited inside a gpui
+# foreground task. Already a transitive dep of `gpui`; pinning it
+# explicitly here keeps the dep graph honest.
+flume = "0.11"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1
