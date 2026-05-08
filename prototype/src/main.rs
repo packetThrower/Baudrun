@@ -1,27 +1,24 @@
 //! Baudrun · alacritty + gpui prototype.
 //!
-//! Checkpoint #3: feed bytes through `alacritty_terminal::Term`
-//! (driven by `vte::ansi::Processor`) instead of writing the
-//! grid by hand. The hardcoded sample now lives as a byte string
-//! with embedded ANSI escapes — the same shape a real device
-//! would emit. After feeding, `mirror_to_grid` walks the Term's
-//! grid and copies cells into the render-side `TerminalGrid`.
-//!
-//! Validates the integration end-to-end short of a real serial
-//! port: VT parsing works, color escapes resolve through our
-//! palette, and the rendering pipeline still produces the right
-//! output. Real PTY / serial input lands in checkpoint #4.
+//! Checkpoint #4: keyboard input. The window now mounts a
+//! `TerminalView` entity that owns the Term + Processor + grid,
+//! captures gpui keyboard events, encodes them as bytes, and feeds
+//! them through the same parser path the boot-time sample uses.
+//! Without a real serial port (checkpoint #5) the typed bytes loop
+//! straight back into our own Term as local echo — verifies the
+//! whole keyboard pipeline works, and gives us a terminal you can
+//! type into with no device attached.
 
 mod term_bridge;
 mod terminal_grid;
+mod terminal_view;
 
 use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{
     px, App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions,
 };
 
-use term_bridge::{make_term, mirror_to_grid};
-use terminal_grid::TerminalGrid;
+use terminal_view::TerminalView;
 
 /// Default foreground / background for the prototype. Matches the
 /// `baudrun` built-in theme. Used both to seed the Term's palette
@@ -73,33 +70,40 @@ fn main() {
 
     Application::new().run(|cx: &mut App| {
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                titlebar: Some(TitlebarOptions {
-                    title: Some("Baudrun (prototype) · checkpoint #3".into()),
+        let window = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    titlebar: Some(TitlebarOptions {
+                        title: Some("Baudrun (prototype) · checkpoint #4".into()),
+                        ..Default::default()
+                    }),
                     ..Default::default()
-                }),
-                ..Default::default()
-            },
-            |_window, cx| {
-                cx.new(|_| {
+                },
+                |_window, cx| {
                     let rows = 24;
                     let cols = 80;
-                    let mut grid = TerminalGrid::new(rows, cols, DEFAULT_FG, DEFAULT_BG);
+                    cx.new(|cx| {
+                        let mut view =
+                            TerminalView::new(rows, cols, DEFAULT_FG, DEFAULT_BG, cx);
+                        // Boot-time sample so the window opens with
+                        // colored content rather than a blank grid.
+                        // After this, all bytes come from the keyboard.
+                        view.feed_bytes(SAMPLE_BYTES, cx);
+                        view
+                    })
+                },
+            )
+            .expect("open window");
 
-                    // Build a Term + Processor pre-loaded with our
-                    // palette, feed it the sample bytes, then mirror
-                    // the resulting grid into our render-side cells.
-                    let (mut term, mut processor) = make_term(rows, cols);
-                    processor.advance(&mut term, SAMPLE_BYTES);
-                    mirror_to_grid(&term, &mut grid, DEFAULT_FG, DEFAULT_BG);
+        // Focus the terminal view at startup so keystrokes land
+        // without the user having to click first.
+        window
+            .update(cx, |view, window, _cx| {
+                view.focus_handle().clone().focus(window);
+            })
+            .expect("focus terminal view");
 
-                    grid
-                })
-            },
-        )
-        .expect("open window");
         cx.activate(true);
     });
 }

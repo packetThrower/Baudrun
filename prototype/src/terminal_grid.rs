@@ -26,7 +26,7 @@
 //!     `show tech-support`-scale output.
 
 use alacritty_terminal::vte::ansi::Rgb;
-use gpui::{div, prelude::*, px, rgb, Context, IntoElement, Render, Window};
+use gpui::{div, prelude::*, px, rgb, IntoElement};
 
 /// One terminal cell. RGB values are concrete (already resolved
 /// through whatever palette / theme is active) — the bridge does
@@ -104,8 +104,13 @@ impl TerminalGrid {
     }
 }
 
-impl Render for TerminalGrid {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+impl TerminalGrid {
+    /// Build the grid's element tree. Called from `TerminalView::render`,
+    /// which wraps it with focus tracking and key event handlers. We
+    /// dropped the `Render` impl in checkpoint #4 because the entity that
+    /// owns this grid is `TerminalView` — `TerminalGrid` is now plain
+    /// data, not a gpui entity, so it doesn't need to be `Render`.
+    pub fn element(&self) -> impl IntoElement {
         // No explicit cell width: the monospace font gives each
         // cell a natural advance and `flex_shrink_0` prevents the
         // row from compressing them. See the checkpoint #2 commit
