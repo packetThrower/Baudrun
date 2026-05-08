@@ -33,6 +33,7 @@ use gpui::{
     Keystroke, Render, Window,
 };
 
+use crate::serial_io::ts_us;
 use crate::term_bridge::{make_term, mirror_to_grid};
 use crate::terminal_grid::{pack, TerminalGrid};
 
@@ -83,6 +84,11 @@ impl TerminalView {
     /// the boot-time sample stream and for typed-input loopback.
     /// `cx.notify()` triggers a re-render.
     pub fn feed_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        eprintln!(
+            "[t={}us] feed_bytes: {} bytes",
+            ts_us(),
+            bytes.len()
+        );
         self.processor.advance(&mut self.term, bytes);
         mirror_to_grid(&self.term, &mut self.grid, self.default_fg, self.default_bg);
         cx.notify();
@@ -101,6 +107,12 @@ impl TerminalView {
         let Some(serial_bytes) = encode_for_serial(&event.keystroke) else {
             return;
         };
+        eprintln!(
+            "[t={}us] handle_key_down: key={:?} -> {} bytes",
+            ts_us(),
+            event.keystroke.key,
+            serial_bytes.len()
+        );
         if let Some(tx) = &self.serial_tx {
             // Serial mode: bytes go on the wire. The device's echo
             // (or lack thereof — a passwd prompt won't echo) is what
