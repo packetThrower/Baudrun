@@ -29,6 +29,28 @@ final stable entry at tag time.
   bugs (ANSI palette, selection background, cursor fill) physically
   cannot recur on the WebGL path, since glyphs are painted with
   explicit per-cell RGBA. Resolves #13.
+- **Per-install renderer override.** Setting
+  `localStorage.setItem('baudrun-renderer', 'dom')` from DevTools
+  forces the DOM path even when WebGL would work. Useful for VMs
+  where WebGL falls back to a CPU-only software renderer
+  (SwiftShader, Mesa LLVMpipe) and the canvas paint ends up slower
+  than DOM. Reload the window after toggling.
+
+### Fixed
+
+- **Multi-second typing lag on Windows-on-ARM.** The `send` Tauri
+  command (called on every keystroke) was a sync command, and Tauri
+  2 dispatches sync commands on the WebView main thread. WebView2's
+  IPC channel on ARM under emulation has enough per-call overhead
+  that serializing every keystroke through that thread compounded
+  visibly — multi-second lag in extreme cases. Same anti-pattern
+  we fixed for the file-picker freeze in v0.9.5-beta.5; this is the
+  same bug class wearing a different hat. Marking `send` (plus
+  `set_rts`, `set_dtr`, `send_break`, `connect`, `disconnect`)
+  `async` moves them onto the Tokio runtime so the main thread
+  stays free for inbound echoes and UI repaint. macOS WKWebView
+  was unaffected — its IPC dispatch is fast enough that the
+  serialization wasn't visible.
 
 ### Changed
 
