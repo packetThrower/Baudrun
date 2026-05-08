@@ -1,0 +1,31 @@
+[package]
+name = "baudrun-prototype"
+version = "0.0.1"
+description = "Research spike: alacritty_terminal + gpui as a replacement for xterm.js + Tauri."
+authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
+edition = "2021"
+publish = false
+
+[dependencies]
+# Zed's GPU-accelerated UI framework. Externally published to
+# crates.io as of late 2025; pinned here to avoid drift while the
+# spike is in progress. If this version 404s, fall back to a `git`
+# dep against a pinned commit of zed-industries/zed.
+gpui = "0.2"
+
+# alacritty's VT escape parser + grid state. Not the renderer — the
+# renderer is alacritty's own OpenGL code, which we deliberately do
+# NOT pull in (gpui owns rendering). Used by Zed's terminal pane.
+alacritty_terminal = "0.26"
+
+# Logging — matches the main app's log dep choice so any code that
+# eventually migrates from src-tauri lands without a rewrite.
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true
