@@ -1,3 +1,8 @@
+I'm not happy with xterm, Tauri and trying to leverage all the features I want to 
+implement. So, I'm currently going through a rewrite with rust only. So far,
+the performance is much better! Hopefully, I can get the new version out before
+too long.
+
 <p align="center">
   <img src="build/appicon.png" alt="Baudrun" width="128">
 </p>
