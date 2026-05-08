@@ -24,19 +24,7 @@
 //! serial layer doesn't know about TerminalView at all.
 
 use std::io::{self, Read, Write};
-use std::time::{Duration, SystemTime};
-
-/// Microseconds since the UNIX epoch — a wall-clock timestamp the
-/// gpui main thread, the write thread, and the read thread can all
-/// emit so we can stitch them into a single timeline by eye. Inlined
-/// because it's used from multiple log call sites in this module
-/// and `terminal_view.rs`. Cheap (~25ns).
-pub(crate) fn ts_us() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_micros() as u64
-}
+use std::time::Duration;
 
 /// Read timeout for the blocking `port.read` call.
 ///
@@ -127,7 +115,6 @@ fn read_loop(mut port: Box<dyn serialport::SerialPort>, tx: flume::Sender<Vec<u8
             Ok(_) => match port.read(&mut buf) {
                 Ok(0) => continue,
                 Ok(n) => {
-                    eprintln!("[t={}us] read_loop: got {n} bytes from port", ts_us());
                     if tx.send(buf[..n].to_vec()).is_err() {
                         break;
                     }
@@ -136,12 +123,12 @@ fn read_loop(mut port: Box<dyn serialport::SerialPort>, tx: flume::Sender<Vec<u8
                 // available — but handle it for symmetry.
                 Err(e) if e.kind() == io::ErrorKind::TimedOut => continue,
                 Err(e) => {
-                    eprintln!("[t={}us] read_loop: read ERROR {e}", ts_us());
+                    log::error!("serial read error: {e}");
                     break;
                 }
             },
             Err(e) => {
-                eprintln!("[t={}us] read_loop: bytes_to_read ERROR {e}", ts_us());
+                log::error!("serial bytes_to_read error: {e}");
                 break;
             }
         }
@@ -150,24 +137,14 @@ fn read_loop(mut port: Box<dyn serialport::SerialPort>, tx: flume::Sender<Vec<u8
 
 fn write_loop(mut port: Box<dyn serialport::SerialPort>, rx: flume::Receiver<Vec<u8>>) {
     while let Ok(bytes) = rx.recv() {
-        eprintln!(
-            "[t={}us] write_loop: got {} bytes from channel",
-            ts_us(),
-            bytes.len()
-        );
         // `write_all` because POSIX `write` is allowed to short-write;
         // we want every byte through. No `flush()` afterwards: on
         // Unix that calls `tcdrain` which blocks until the OS tx
         // buffer drains — adding tens of ms of latency on every
         // keystroke, exactly what this prototype is trying to avoid.
         if let Err(e) = port.write_all(&bytes) {
-            eprintln!("[t={}us] write_loop: ERROR {e}", ts_us());
+            log::error!("serial write error: {e}");
             break;
         }
-        eprintln!(
-            "[t={}us] write_loop: wrote {} bytes to port",
-            ts_us(),
-            bytes.len()
-        );
     }
 }
