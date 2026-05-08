@@ -29,12 +29,24 @@ final stable entry at tag time.
   bugs (ANSI palette, selection background, cursor fill) physically
   cannot recur on the WebGL path, since glyphs are painted with
   explicit per-cell RGBA. Resolves #13.
-- **Per-install renderer override.** Setting
-  `localStorage.setItem('baudrun-renderer', 'dom')` from DevTools
-  forces the DOM path even when WebGL would work. Useful for VMs
-  where WebGL falls back to a CPU-only software renderer
-  (SwiftShader, Mesa LLVMpipe) and the canvas paint ends up slower
-  than DOM. Reload the window after toggling.
+- **Settings → Advanced → Terminal Renderer** dropdown with three
+  options: Auto (the recommended default — picks the right
+  renderer per platform; see Changed below), WebGL (force GPU on
+  every platform), DOM (force CPU on every platform). The previous
+  `localStorage.setItem('baudrun-renderer', ...)` developer
+  override still works and wins over this setting, but most users
+  no longer need to touch DevTools.
+
+### Changed
+
+- **Windows defaults to the DOM renderer** instead of WebGL.
+  WebView2's compositor produces visibly jittery frame timing for
+  the terminal-style frequent-tiny-update pattern, where the DOM
+  renderer is consistently smoother. macOS WKWebView and Linux
+  WebKit2GTK don't share this characteristic; both still default
+  to WebGL. Users with confirmed working hardware GPUs on Windows
+  can flip the default via Settings → Advanced → Terminal
+  Renderer → WebGL.
 
 ### Fixed
 
@@ -51,6 +63,18 @@ final stable entry at tag time.
   stays free for inbound echoes and UI repaint. macOS WKWebView
   was unaffected — its IPC dispatch is fast enough that the
   serialization wasn't visible.
+- **Cursor invisible on Windows (DOM renderer).** The v0.9.5
+  CSS-variable backstop set `background-color` on the cursor
+  element, but xterm also emits an `animation:
+  blink_block_<id> ... infinite` declaration. When the matching
+  `@keyframes` definition gets dropped along with the rest of the
+  injected CSS (the same WebKit2GTK / WebView2 quirk that motivated
+  the original backstop), the orphaned animation reference wins
+  over our static fill and leaves the cursor permanently
+  transparent. Adding `animation: none !important` to the cursor
+  rule disarms the orphan, and a separate outline rule restores
+  the unfocused-cursor look. Side effect: cursor blink is gone
+  everywhere; "always-visible cursor" is the right trade.
 
 ### Changed
 
