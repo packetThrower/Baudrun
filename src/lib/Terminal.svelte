@@ -505,19 +505,32 @@
     // xterm transparently swaps back to its DOM renderer with no
     // visible interruption.
     //
-    // Manual override: `localStorage.setItem('baudrun-renderer', 'dom')`
-    // forces the DOM path even when WebGL would work. Useful for
-    // perf A/B testing — slow software-WebGL paths (some VMs without
-    // GPU passthrough fall back to SwiftShader) can be markedly
-    // worse than DOM. `localStorage.removeItem('baudrun-renderer')`
-    // restores WebGL. Reload the window after toggling.
-    const forceDom = (() => {
+    // Renderer selection precedence (highest first):
+    //   1. localStorage `baudrun-renderer` — explicit override per
+    //      install. Values: "dom" forces DOM, "webgl" forces WebGL,
+    //      anything else (or unset) defers to the platform default.
+    //   2. Windows default = DOM. WebView2's compositor produces
+    //      visibly jittery frame timing for terminal-style frequent-
+    //      tiny-updates, where the DOM renderer is consistently
+    //      smoother. macOS WKWebView and Linux WebKit2GTK don't have
+    //      this characteristic; both default to WebGL.
+    //
+    // Setting the localStorage key requires a window reload to take
+    // effect. Run from DevTools:
+    //   localStorage.setItem('baudrun-renderer', 'dom'); location.reload();
+    //   localStorage.setItem('baudrun-renderer', 'webgl'); location.reload();
+    //   localStorage.removeItem('baudrun-renderer'); location.reload();
+    const rendererPref = (() => {
       try {
-        return localStorage.getItem("baudrun-renderer") === "dom";
+        return localStorage.getItem("baudrun-renderer");
       } catch {
-        return false;
+        return null;
       }
     })();
+    const isWindows =
+      typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent ?? "");
+    const forceDom =
+      rendererPref === "dom" || (rendererPref !== "webgl" && isWindows);
     if (!forceDom) {
       try {
         const w = new WebglAddon();
@@ -852,9 +865,35 @@
   :global(.xterm .xterm-bg-15) { background-color: var(--xterm-c15) !important; }
 
   /* Block cursor backstop. We set cursorStyle: "block" in
-     buildTerminal, so we only need to handle the block variant. */
+     buildTerminal, so we only need to handle the block variant.
+     `animation: none` is load-bearing on Windows / WebView2 — when
+     xterm's runtime CSS injection is dropped (the same bug class
+     the rest of these :global rules backstop), xterm still emits
+     the `animation: blink_block_<id>` declaration on the cursor
+     element, but the matching `@keyframes` definition isn't
+     applied. The orphaned animation reference prevents our
+     static `background-color` from taking effect — the browser
+     treats animation properties as winning over static ones for
+     the targeted property even when the keyframes are missing,
+     which leaves the cursor permanently invisible on Windows DOM
+     renderer. Disabling the animation entirely keeps the static
+     fill we set above and surrenders the cursor blink — a
+     reasonable trade for "cursor is visible." */
   :global(.xterm .xterm-cursor.xterm-cursor-block) {
     background-color: var(--xterm-cursor) !important;
     color: var(--xterm-cursor-accent) !important;
+    animation: none !important;
+  }
+
+  /* Unfocused cursor (terminal not in focus) — xterm normally draws
+     a hollow outline rectangle when unfocused. The injected CSS that
+     does that gets dropped along with the rest, so we backstop with
+     an outline rule. The `:not(.focus)` selector mirrors xterm's
+     own focus class on the parent .xterm element. */
+  :global(.xterm:not(.focus) .xterm-cursor.xterm-cursor-block) {
+    background-color: transparent !important;
+    color: inherit !important;
+    outline: 1px solid var(--xterm-cursor);
+    outline-offset: -1px;
   }
 </style>
