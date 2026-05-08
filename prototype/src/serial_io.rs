@@ -40,27 +40,23 @@ pub(crate) fn ts_us() -> u64 {
 
 /// Read timeout for the blocking `port.read` call.
 ///
-/// **1ms, not 50ms** — and the reason matters. `serialport-rs` on
-/// Windows uses *synchronous* `ReadFile` / `WriteFile`. Even with
-/// `try_clone`'d handles into separate threads, the underlying NT
-/// I/O queue for the device serialises IRPs: while `ReadFile` is
-/// blocked waiting for the timeout, the other thread's `WriteFile`
-/// queues behind it. `COMMTIMEOUTS::WriteTotalTimeoutConstant`
-/// caps the *operation* time but does NOT cap the kernel-queue
-/// wait, so a write issued mid-read can sit for hundreds of ms.
-/// Measured on Windows ARM in UTM: the first keystroke after a
-/// pause took 791ms to surface in `WriteFile`, while in-burst
-/// writes that arrived while the pipeline was already warm took
-/// 15–20ms.
-///
-/// 1ms makes the read thread release the device ~1000×/sec, so
-/// write IRPs almost never wait more than a millisecond. Costs a
-/// few % of one CPU core to spin on `ReadFile` timeouts when the
-/// device is idle — fine for a spike. The "right" fix is overlapped
-/// I/O, which would mean either hand-rolling the Win32 calls or
-/// swapping `serialport-rs` for a crate that uses overlapped on
-/// Windows. Defer.
-const READ_TIMEOUT: Duration = Duration::from_millis(1);
+/// Only matters now as a safety upper bound: the read loop only
+/// calls `read()` after `bytes_to_read()` reports a non-zero count,
+/// so the read should always satisfy from the driver's cached
+/// buffer and return immediately. The previous "shorter timeout =
+/// less queue contention" approach didn't work — measured on
+/// Windows ARM, 1ms was actually *worse* than 50ms for the first
+/// keystroke (1.6s vs 0.8s) because more frequent ReadFile IRPs
+/// just meant more chances to be in front of a pending WriteFile.
+const READ_TIMEOUT: Duration = Duration::from_millis(50);
+
+/// How long to sleep between `bytes_to_read` polls when the device
+/// buffer is empty. This is the lower bound on read latency: any
+/// byte coming from the device waits at most this long before we
+/// notice. 1ms is well under perception threshold and well under
+/// the per-byte time at any baud rate we care about (1ms = 1 byte
+/// at 9600, 10 bytes at 115200, 12 bytes at 1Mbaud).
+const POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 /// Per-read buffer size. 4 KiB matches what the main app uses and is
 /// well above any reasonable single-burst from a 9600-baud-class
@@ -115,21 +111,37 @@ pub fn open(port_path: &str, baud: u32) -> serialport::Result<SerialChannels> {
 fn read_loop(mut port: Box<dyn serialport::SerialPort>, tx: flume::Sender<Vec<u8>>) {
     let mut buf = [0u8; READ_BUF];
     loop {
-        match port.read(&mut buf) {
-            Ok(0) => continue,
-            Ok(n) => {
-                eprintln!("[t={}us] read_loop: got {n} bytes from port", ts_us());
-                // The receiver-dropped case = the gpui side has shut
-                // down. Stop reading; the OS thread exits cleanly.
-                if tx.send(buf[..n].to_vec()).is_err() {
+        // `bytes_to_read()` is `ClearCommError` under the hood — a
+        // non-blocking status query against the driver's cached
+        // buffer state. Crucially it does NOT issue an IRP to the
+        // device, so it doesn't compete with WriteFile for the NT
+        // I/O queue. That's the entire point of polling here vs.
+        // calling `read()` directly: a blocking ReadFile holds the
+        // device queue and writes from the other thread sit behind
+        // it for hundreds of ms.
+        match port.bytes_to_read() {
+            Ok(0) => {
+                std::thread::sleep(POLL_INTERVAL);
+                continue;
+            }
+            Ok(_) => match port.read(&mut buf) {
+                Ok(0) => continue,
+                Ok(n) => {
+                    eprintln!("[t={}us] read_loop: got {n} bytes from port", ts_us());
+                    if tx.send(buf[..n].to_vec()).is_err() {
+                        break;
+                    }
+                }
+                // Shouldn't fire — bytes_to_read said data was
+                // available — but handle it for symmetry.
+                Err(e) if e.kind() == io::ErrorKind::TimedOut => continue,
+                Err(e) => {
+                    eprintln!("[t={}us] read_loop: read ERROR {e}", ts_us());
                     break;
                 }
-            }
-            // The timeout fires every `READ_TIMEOUT` whenever there's
-            // nothing on the wire. Loop and try again.
-            Err(e) if e.kind() == io::ErrorKind::TimedOut => continue,
+            },
             Err(e) => {
-                eprintln!("[t={}us] read_loop: ERROR {e}", ts_us());
+                eprintln!("[t={}us] read_loop: bytes_to_read ERROR {e}", ts_us());
                 break;
             }
         }
