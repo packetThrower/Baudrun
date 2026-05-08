@@ -38,11 +38,29 @@ pub(crate) fn ts_us() -> u64 {
         .as_micros() as u64
 }
 
-/// Read timeout for the blocking `port.read` call. Short enough that
-/// a closed channel gets noticed promptly when the gpui app shuts
-/// down; long enough that we're not burning CPU when the device is
-/// idle. 50ms is roughly two frames at 60fps — invisible to a human.
-const READ_TIMEOUT: Duration = Duration::from_millis(50);
+/// Read timeout for the blocking `port.read` call.
+///
+/// **1ms, not 50ms** — and the reason matters. `serialport-rs` on
+/// Windows uses *synchronous* `ReadFile` / `WriteFile`. Even with
+/// `try_clone`'d handles into separate threads, the underlying NT
+/// I/O queue for the device serialises IRPs: while `ReadFile` is
+/// blocked waiting for the timeout, the other thread's `WriteFile`
+/// queues behind it. `COMMTIMEOUTS::WriteTotalTimeoutConstant`
+/// caps the *operation* time but does NOT cap the kernel-queue
+/// wait, so a write issued mid-read can sit for hundreds of ms.
+/// Measured on Windows ARM in UTM: the first keystroke after a
+/// pause took 791ms to surface in `WriteFile`, while in-burst
+/// writes that arrived while the pipeline was already warm took
+/// 15–20ms.
+///
+/// 1ms makes the read thread release the device ~1000×/sec, so
+/// write IRPs almost never wait more than a millisecond. Costs a
+/// few % of one CPU core to spin on `ReadFile` timeouts when the
+/// device is idle — fine for a spike. The "right" fix is overlapped
+/// I/O, which would mean either hand-rolling the Win32 calls or
+/// swapping `serialport-rs` for a crate that uses overlapped on
+/// Windows. Defer.
+const READ_TIMEOUT: Duration = Duration::from_millis(1);
 
 /// Per-read buffer size. 4 KiB matches what the main app uses and is
 /// well above any reasonable single-burst from a 9600-baud-class
