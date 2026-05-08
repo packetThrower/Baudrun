@@ -1,7 +1,12 @@
-I'm not happy with xterm, Tauri and trying to leverage all the features I want to 
+I'm not happy with xterm, Tauri and trying to leverage all the features I want to
 implement. So, I'm currently going through a rewrite with rust only. So far,
 the performance is much better! Hopefully, I can get the new version out before
 too long.
+
+The rewrite plan and current progress are tracked in [TODO.md](TODO.md). Active
+work happens on the [`experiments/alacritty-gpui`](https://github.com/packetThrower/Baudrun/tree/experiments/alacritty-gpui)
+branch; `main` continues to ship the existing Tauri-based app until parity is
+reached and the new stack cuts over.
 
 <p align="center">
   <img src="build/appicon.png" alt="Baudrun" width="128">
