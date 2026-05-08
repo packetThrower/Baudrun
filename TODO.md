@@ -24,6 +24,19 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       mouse-drag selection + clipboard copy, sanitized clipboard
       paste, cursor blink, bell handling (visual flash; sound
       deferred), basic keyboard layout / IME plumbing.
+- [ ] **Phase 0.5 — Swap to Zed-git gpui + adopt gpui-component.**
+      [gpui-component](https://github.com/longbridge/gpui-component)
+      is a 60+-component library (Apache-2.0/MIT, used in Longbridge
+      Pro) that covers exactly the chrome we'd otherwise build from
+      div primitives in Phases 2–3: sidebar, dialog, sheet, dock,
+      input, form, select, switch, table, list, tab, menu,
+      notification, tooltip, kbd, title_bar, resizable. The catch:
+      it pins to Zed's git HEAD, not crates.io, and uses a separate
+      `gpui_platform` crate that the 0.2.x crates.io build bundles.
+      Done as its own commit, no other changes, so any API drift
+      between gpui 0.2 and Zed-current is isolated and easy to
+      debug. **Pin a specific Zed commit** rather than tracking
+      HEAD so fresh builds stay reproducible.
 - [ ] **Phase 1 — Port the data layer.** Move existing pure-Rust
       modules from `src-tauri/src/` into the prototype workspace
       as-is — they're data/IO, not UI: `profiles`, `appdata`,
@@ -32,12 +45,20 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       `skins.rs`, `sanitize.rs`. All callable from gpui code, none
       used yet.
 - [ ] **Phase 2 — Profile sidebar + connection management.** Split-
-      pane (sidebar | terminal) layout, profile list, profile add /
-      edit form, connect-by-profile (replaces `cargo run -- <port>`),
-      connection state indicator, quick-connect dialog.
-- [ ] **Phase 3 — Settings panel.** Modal/panel structure, theme
-      picker with live preview, skin picker, keybinding editor,
-      connection defaults. All settings round-trip via Phase-1 code.
+      pane (sidebar | terminal) layout via gpui-component's
+      `resizable` + `sidebar`, profile list (`list`), profile
+      add/edit form (`form` + `input` + `select`), connect-by-
+      profile (replaces `cargo run -- <port>`), connection state
+      indicator (`notification` + `badge`), quick-connect dialog
+      (`dialog`).
+- [ ] **Phase 3 — Settings panel.** `sheet` or `dialog` for the
+      panel structure, theme picker with live preview (reuse the
+      viewport widget at small size), skin picker, keybinding
+      editor (`kbd` for display + custom capture), connection
+      defaults. All settings round-trip via Phase-1 code.
+      gpui-component has its own theme system — decide whether to
+      adopt it for app chrome or override; the *terminal viewport*
+      keeps its own palette either way.
 - [ ] **Phase 4 — Themes & skins.** Plug the theme parser into the
       viewport's color resolution (drop the hardcoded palette in
       [term_bridge.rs](prototype/src/term_bridge.rs)'s `resolve`).
@@ -65,8 +86,12 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       experiments/alacritty-gpui → main`. Cut a `1.0.0-rc`.
 
 Risks tracked alongside the plan:
-- gpui has no component library — every button, dropdown, modal is
-  built from div primitives. Volume, not difficulty.
+- We ride Zed's gpui git pin via gpui-component (Phase 0.5), so
+  picking up upstream gpui changes is a forced bump cadence rather
+  than a stable crates.io version. Counter-risk: if gpui-component
+  stalls, we lose 60+ widgets we'd then have to build ourselves.
+  Mitigation: pin a specific Zed commit; bump deliberately, not on
+  every fresh build.
 - Linux gpui is the least-mature platform; smoke-test early rather
   than late-cycle surprise.
 - Auto-updater is real work; gpui ships nothing.
