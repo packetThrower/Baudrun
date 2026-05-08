@@ -33,7 +33,7 @@ use alacritty_terminal::{
     event::VoidListener,
     grid::Dimensions,
     term::{cell::Cell as TermCell, Config, Term},
-    vte::ansi::{Color, NamedColor, Processor, Rgb},
+    vte::ansi::{Color, CursorShape, NamedColor, Processor, Rgb},
 };
 
 use crate::terminal_grid::{Cell as GridCell, TerminalGrid};
@@ -182,27 +182,41 @@ pub fn make_term(rows: usize, cols: usize) -> (Term<VoidListener>, Processor) {
 
 /// Walk the Term's display grid and write every cell into the
 /// render-side `TerminalGrid`. Resolves each cell's abstract
-/// foreground / background colors via `resolve()`.
+/// foreground / background colors via `resolve()`. The cursor's
+/// cell is rendered as a static block by swapping fg/bg — done
+/// here in the mirror step rather than at render time so the
+/// run-coalescer naturally sees the cursor cell as a distinct
+/// style and breaks a run for it.
+///
+/// Cursor blink is deliberately NOT implemented. It would need a
+/// timer to drive periodic re-renders even when no bytes are
+/// arriving, plus a state field tracking the on/off phase. Static
+/// is fine for a research spike — every byte that flows through
+/// `feed_bytes` already triggers a re-mirror.
 pub fn mirror_to_grid(
     term: &Term<VoidListener>,
     out: &mut TerminalGrid,
     default_fg: Rgb,
     default_bg: Rgb,
 ) {
-    for indexed in term.grid().display_iter() {
+    let content = term.renderable_content();
+    let cursor_visible = !matches!(content.cursor.shape, CursorShape::Hidden);
+    let cursor_row = content.cursor.point.line.0 as usize;
+    let cursor_col = content.cursor.point.column.0;
+
+    for indexed in content.display_iter {
         // `Line(i32)` → `usize`. `display_iter()` yields lines in
         // 0..screen_lines, so the cast is always non-negative.
         let row = indexed.point.line.0 as usize;
         let col = indexed.point.column.0;
         let term_cell: &TermCell = indexed.cell;
-        out.set_cell(
-            row,
-            col,
-            GridCell {
-                ch: term_cell.c,
-                fg: resolve(term_cell.fg, default_fg, default_bg),
-                bg: resolve(term_cell.bg, default_fg, default_bg),
-            },
-        );
+
+        let mut fg = resolve(term_cell.fg, default_fg, default_bg);
+        let mut bg = resolve(term_cell.bg, default_fg, default_bg);
+        if cursor_visible && row == cursor_row && col == cursor_col {
+            std::mem::swap(&mut fg, &mut bg);
+        }
+
+        out.set_cell(row, col, GridCell { ch: term_cell.c, fg, bg });
     }
 }
