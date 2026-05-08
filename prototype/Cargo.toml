@@ -35,6 +35,16 @@ serialport = "4"
 # explicitly here keeps the dep graph honest.
 flume = "0.11"
 
+# 60+-component widget library for gpui (Apache-2.0 / MIT). The
+# crates.io publish (0.5.x) targets `gpui = "0.2"` — same line we're
+# already on — so this drops in without forcing the Zed-git swap the
+# gpui-component README example uses. We'll use `sidebar`, `dialog`,
+# `sheet`, `form`, `input`, `select`, `table`, `list`, `tab`, `menu`,
+# `kbd`, `resizable`, etc. from Phase 2 onward; pulling it in here
+# (Phase 0.5) so any version-pin issues surface before we have a lot
+# of UI code on top of it.
+gpui-component = "0.5"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

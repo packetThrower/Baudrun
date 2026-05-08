@@ -24,19 +24,16 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       mouse-drag selection + clipboard copy, sanitized clipboard
       paste, cursor blink, bell handling (visual flash; sound
       deferred), basic keyboard layout / IME plumbing.
-- [ ] **Phase 0.5 — Swap to Zed-git gpui + adopt gpui-component.**
+- [x] **Phase 0.5 — Adopt gpui-component.** Done. The Zed-git swap
+      sketched here originally turned out unnecessary:
       [gpui-component](https://github.com/longbridge/gpui-component)
-      is a 60+-component library (Apache-2.0/MIT, used in Longbridge
-      Pro) that covers exactly the chrome we'd otherwise build from
-      div primitives in Phases 2–3: sidebar, dialog, sheet, dock,
-      input, form, select, switch, table, list, tab, menu,
-      notification, tooltip, kbd, title_bar, resizable. The catch:
-      it pins to Zed's git HEAD, not crates.io, and uses a separate
-      `gpui_platform` crate that the 0.2.x crates.io build bundles.
-      Done as its own commit, no other changes, so any API drift
-      between gpui 0.2 and Zed-current is isolated and easy to
-      debug. **Pin a specific Zed commit** rather than tracking
-      HEAD so fresh builds stay reproducible.
+      0.5.1 on crates.io targets `gpui ^0.2.2`, the same pin we're
+      already on. The README example uses git deps (their `main`
+      branch's newer development), but the published crate sticks to
+      crates.io. So the actual change was one line in
+      [prototype/Cargo.toml](prototype/Cargo.toml) — `gpui-component
+      = "0.5"` — with no API drift to fix. 60+ widgets now available
+      for Phase 2 onward.
 - [ ] **Phase 1 — Port the data layer.** Move existing pure-Rust
       modules from `src-tauri/src/` into the prototype workspace
       as-is — they're data/IO, not UI: `profiles`, `appdata`,
@@ -86,12 +83,11 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       experiments/alacritty-gpui → main`. Cut a `1.0.0-rc`.
 
 Risks tracked alongside the plan:
-- We ride Zed's gpui git pin via gpui-component (Phase 0.5), so
-  picking up upstream gpui changes is a forced bump cadence rather
-  than a stable crates.io version. Counter-risk: if gpui-component
-  stalls, we lose 60+ widgets we'd then have to build ourselves.
-  Mitigation: pin a specific Zed commit; bump deliberately, not on
-  every fresh build.
+- gpui-component bridge crate stalling on crates.io, leaving us on
+  a frozen 0.5.x line. Mitigation: we can either (a) ride out
+  whatever's already published, since the components we need are
+  in 0.5.1, or (b) move to their git tip later, which would force
+  the Zed-git pin we managed to avoid in Phase 0.5.
 - Linux gpui is the least-mature platform; smoke-test early rather
   than late-cycle surprise.
 - Auto-updater is real work; gpui ships nothing.
