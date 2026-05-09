@@ -11,15 +11,17 @@ use std::rc::Rc;
 
 use gpui::{
     div, prelude::*, px, rgb, rgba, AppContext, Context, Entity, IntoElement, MouseButton,
-    MouseUpEvent, Render, Subscription, Window,
+    MouseUpEvent, Render, SharedString, Subscription, Window,
 };
 use gpui_component::{
     checkbox::Checkbox,
     input::{Input, InputEvent, InputState},
-    Root, Sizable,
+    select::{Select, SelectEvent, SelectItem, SelectState},
+    IndexPath, Root, Sizable,
 };
 
 use crate::data::settings::{self, Settings};
+use crate::data::skins;
 
 /// Top-level Settings tabs. Order + labels mirror the Tauri
 /// `Settings.svelte` left rail (Appearance, Themes, Shortcuts,
@@ -55,32 +57,175 @@ impl SettingsTab {
     }
 }
 
-/// Root view for the Settings window. Owns its own clone of the
-/// settings store + a cached copy of the latest `Settings` value.
-/// Edits flow `widget → field handler → commit() → store.update →
-/// cache update → cx.notify`. The cache lets the next render read
-/// the new state without going back through `store.get()` for
-/// every widget.
+/// Local Select-item shape. Mirrors the same struct in
+/// `app_view.rs` (kept duplicated rather than shared because the
+/// SelectItem trait impl is the entire payload — moving it to a
+/// shared module would just shuffle 30 lines around). Carries an id
+/// + display title; `Value` is the id so selection events return a
+/// matchable string.
+#[derive(Clone)]
+struct Opt {
+    id: String,
+    title: SharedString,
+}
+
+impl Opt {
+    fn new(id: &str, title: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            title: SharedString::from(title.to_string()),
+        }
+    }
+}
+
+impl SelectItem for Opt {
+    type Value = String;
+    fn title(&self) -> SharedString {
+        self.title.clone()
+    }
+    fn value(&self) -> &Self::Value {
+        &self.id
+    }
+}
+
+/// Root view for the Settings window. Owns its own clones of the
+/// settings + skins stores + a cached copy of the latest `Settings`
+/// value. Edits flow `widget → field handler → commit() →
+/// store.update → cache update → cx.notify`. The cache lets the
+/// next render read the new state without going back through
+/// `store.get()` for every widget.
 pub struct SettingsView {
     settings_store: Rc<settings::Store>,
+    #[allow(dead_code)] // re-read on render via the entity cache; kept
+                        // around for live-apply (skin import etc.)
+    skins_store: Rc<skins::Store>,
     settings: Settings,
     tab: SettingsTab,
 
+    // -- Appearance tab state --
+    skin_select: Entity<SelectState<Vec<Opt>>>,
+    _skin_sub: Subscription,
+    appearance_select: Entity<SelectState<Vec<Opt>>>,
+    _appearance_sub: Subscription,
+    font_size: Entity<InputState>,
+    _font_size_sub: Subscription,
+
     // -- Advanced tab field state --
     log_dir: Entity<InputState>,
-    /// Subscription handle for the log-dir Blur listener. Held to
-    /// keep the subscription alive for the SettingsView's lifetime;
-    /// dropping it cancels the subscription.
+    /// Subscription handles held to keep the subscriptions alive
+    /// for the SettingsView's lifetime; dropping them cancels the
+    /// subscription. Underscore prefix marks "owned solely for
+    /// drop-time effect, never read."
     _log_dir_sub: Subscription,
 }
 
 impl SettingsView {
     pub fn new(
         settings_store: Rc<settings::Store>,
+        skins_store: Rc<skins::Store>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let current = settings_store.get();
+
+        // -- Appearance tab widgets --
+
+        let skin_opts: Vec<Opt> = skins_store
+            .list()
+            .into_iter()
+            .map(|s| {
+                // Append "(custom)" to user skins so they're
+                // distinguishable from built-ins in the picker.
+                let title = if s.source == "user" {
+                    format!("{} (custom)", s.name)
+                } else {
+                    s.name
+                };
+                Opt::new(&s.id, &title)
+            })
+            .collect();
+        let active_skin_id = if current.skin_id.is_empty() {
+            skins::DEFAULT_SKIN_ID
+        } else {
+            current.skin_id.as_str()
+        };
+        let skin_select = make_select(skin_opts, active_skin_id, window, cx);
+        let skin_sub = cx.subscribe(
+            &skin_select,
+            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+                if let SelectEvent::Confirm(Some(id)) = event {
+                    if &this.settings.skin_id != id {
+                        let mut next = this.settings.clone();
+                        next.skin_id = id.clone();
+                        this.commit(next, cx);
+                    }
+                }
+            },
+        );
+
+        let appearance_opts = vec![
+            Opt::new("auto", "Auto (follow system)"),
+            Opt::new("light", "Light"),
+            Opt::new("dark", "Dark"),
+        ];
+        let active_appearance = if current.appearance.is_empty() {
+            "auto"
+        } else {
+            current.appearance.as_str()
+        };
+        let appearance_select =
+            make_select(appearance_opts, active_appearance, window, cx);
+        let appearance_sub = cx.subscribe(
+            &appearance_select,
+            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+                if let SelectEvent::Confirm(Some(value)) = event {
+                    if &this.settings.appearance != value {
+                        let mut next = this.settings.clone();
+                        next.appearance = value.clone();
+                        this.commit(next, cx);
+                    }
+                }
+            },
+        );
+
+        let font_size_initial = if current.font_size > 0 {
+            current.font_size.to_string()
+        } else {
+            String::new()
+        };
+        let font_size = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("13")
+                .default_value(font_size_initial.as_str())
+        });
+        let font_size_sub =
+            cx.subscribe(&font_size, |this, input, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Blur) {
+                    let raw = input.read(cx).value().to_string();
+                    let parsed = raw.trim();
+                    let next_value = if parsed.is_empty() {
+                        // Empty resets to "use default" (stored as 0
+                        // so `skip_serializing_if = "is_zero"` keeps
+                        // settings.json clean).
+                        0
+                    } else {
+                        match parsed.parse::<i32>() {
+                            Ok(n) if n > 0 => n,
+                            _ => {
+                                log::warn!("font size: invalid value {raw:?}");
+                                return;
+                            }
+                        }
+                    };
+                    if next_value != this.settings.font_size {
+                        let mut next = this.settings.clone();
+                        next.font_size = next_value;
+                        this.commit(next, cx);
+                    }
+                }
+            });
+
+        // -- Advanced tab widgets --
 
         let log_dir = cx.new(|cx| {
             InputState::new(window, cx)
@@ -105,8 +250,15 @@ impl SettingsView {
 
         Self {
             settings_store,
+            skins_store,
             settings: current,
             tab: SettingsTab::default(),
+            skin_select,
+            _skin_sub: skin_sub,
+            appearance_select,
+            _appearance_sub: appearance_sub,
+            font_size,
+            _font_size_sub: font_size_sub,
             log_dir,
             _log_dir_sub: log_dir_sub,
         }
@@ -218,9 +370,45 @@ impl Render for SettingsView {
 impl SettingsView {
     fn pane_content(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         match self.tab {
+            SettingsTab::Appearance => self.appearance_pane().into_any_element(),
             SettingsTab::Advanced => self.advanced_pane(cx).into_any_element(),
             other => placeholder_pane(other.label()).into_any_element(),
         }
+    }
+
+    fn appearance_pane(&self) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(section_card_with_desc(
+                "App Skin",
+                Some(
+                    "How the app chrome (sidebar, panes, buttons) looks. \
+                     Doesn't affect the terminal palette — that's the \
+                     Themes tab. Imported user skins live next to the \
+                     built-ins after a launch.",
+                ),
+                Select::new(&self.skin_select).small(),
+            ))
+            .child(section_card_with_desc(
+                "Appearance",
+                Some(
+                    "Light or dark variant of the active skin. \"Auto\" \
+                     follows the system setting. Skins flagged dark-only \
+                     ignore this and pin dark.",
+                ),
+                Select::new(&self.appearance_select).small(),
+            ))
+            .child(section_card_with_desc(
+                "Terminal Font Size",
+                Some(
+                    "Pixel size of the terminal pane's monospace font. \
+                     Leave blank to use the default (13). Changes the \
+                     terminal grid only — chrome text size is fixed.",
+                ),
+                Input::new(&self.font_size).small().appearance(true),
+            ))
     }
 
     fn advanced_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -452,4 +640,21 @@ fn placeholder_pane(label: &'static str) -> impl IntoElement {
         .text_size(px(13.0))
         .text_color(rgba(FG_SECONDARY))
         .child(format!("{label} (coming soon)"))
+}
+
+/// Build a `SelectState<Vec<Opt>>` pre-selected to whichever option
+/// in `opts` has `id == selected`. Same shape as `app_view::make_select`
+/// but bound to `Context<SettingsView>` (gpui's `Context<T>` is
+/// invariant in `T` so the helper has to live where it's called).
+fn make_select(
+    opts: Vec<Opt>,
+    selected: &str,
+    window: &mut Window,
+    cx: &mut Context<SettingsView>,
+) -> Entity<SelectState<Vec<Opt>>> {
+    let idx = opts
+        .iter()
+        .position(|o| o.id == selected)
+        .map(IndexPath::new);
+    cx.new(|cx| SelectState::new(opts, idx, window, cx))
 }

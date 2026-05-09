@@ -46,6 +46,7 @@ use crate::data::profiles::{self, Profile};
 use crate::data::sanitize::SanitizingLogWriter;
 use crate::data::serial::ports;
 use crate::data::settings;
+use crate::data::skins;
 use crate::settings_view::SettingsView;
 use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
@@ -83,6 +84,12 @@ pub struct AppView {
     /// handle for future live-react paths (theme/skin swap → main
     /// window re-renders).
     settings_store: Rc<settings::Store>,
+    /// Skin store (built-in + user). Cloned into the SettingsView
+    /// so the Appearance tab can enumerate all skins for its
+    /// picker. AppView holds its own handle for the future live-
+    /// apply path (settings.skin_id changes → main window
+    /// re-renders with the new palette).
+    skins_store: Rc<skins::Store>,
     /// Handle to the standalone Settings window when it's open.
     /// `Some(_)` doesn't strictly mean "still alive" — the user may
     /// have closed the OS window. We probe with `handle.update(...)`
@@ -239,12 +246,14 @@ impl AppView {
         terminal: Entity<TerminalView>,
         profile_store: Rc<profiles::Store>,
         settings_store: Rc<settings::Store>,
+        skins_store: Rc<skins::Store>,
         _cx: &mut Context<Self>,
     ) -> Self {
         Self {
             terminal,
             profile_store,
             settings_store,
+            skins_store,
             settings_window: None,
             selected_profile_id: None,
             connected_profile_id: None,
@@ -827,7 +836,8 @@ impl AppView {
             self.settings_window = None;
         }
 
-        let store = self.settings_store.clone();
+        let settings = self.settings_store.clone();
+        let skins = self.skins_store.clone();
         let bounds = Bounds::centered(None, gpui::size(px(720.0), px(640.0)), cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -839,7 +849,7 @@ impl AppView {
                 ..Default::default()
             },
             move |window, cx| {
-                let view = cx.new(|cx| SettingsView::new(store, window, cx));
+                let view = cx.new(|cx| SettingsView::new(settings, skins, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );

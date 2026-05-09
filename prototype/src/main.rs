@@ -149,6 +149,13 @@ fn main() {
             },
             Err(err) => fallback_settings_store(format!("support dir unavailable: {err}")),
         };
+        let skins_store = match &support {
+            Ok(dir) => match data::skins::Store::new(dir) {
+                Ok(store) => Rc::new(store),
+                Err(err) => fallback_skins_store(format!("skins store init failed: {err}")),
+            },
+            Err(err) => fallback_skins_store(format!("support dir unavailable: {err}")),
+        };
 
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
 
@@ -158,6 +165,7 @@ fn main() {
 
         let profile_store_for_window = profile_store.clone();
         let settings_store_for_window = settings_store.clone();
+        let skins_store_for_window = skins_store.clone();
         let terminal_for_window = terminal.clone();
         let window = cx
             .open_window(
@@ -180,6 +188,7 @@ fn main() {
                             terminal_for_window,
                             profile_store_for_window,
                             settings_store_for_window,
+                            skins_store_for_window,
                             cx,
                         )
                     });
@@ -279,6 +288,20 @@ fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
     Rc::new(
         data::settings::Store::new(&tmp)
             .expect("temp settings store should always init"),
+    )
+}
+
+/// Skins-store fallback. Built-in skins are still available — they
+/// embed at compile time — so the user-skin import path is the only
+/// thing this fallback loses. Same trade as the other fallbacks:
+/// the UI keeps working, edits round-trip to the tmpdir until the
+/// real config dir comes back.
+fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
+    eprintln!("{reason}; using empty in-tmpdir skins store");
+    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    Rc::new(
+        data::skins::Store::new(&tmp)
+            .expect("temp skins store should always init"),
     )
 }
 
