@@ -156,6 +156,15 @@ fn main() {
             },
             Err(err) => fallback_skins_store(format!("support dir unavailable: {err}")),
         };
+        let highlight_store = match &support {
+            Ok(dir) => match data::highlight::Store::new(dir) {
+                Ok(store) => Rc::new(store),
+                Err(err) => fallback_highlight_store(format!(
+                    "highlight store init failed: {err}"
+                )),
+            },
+            Err(err) => fallback_highlight_store(format!("support dir unavailable: {err}")),
+        };
 
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
 
@@ -166,6 +175,7 @@ fn main() {
         let profile_store_for_window = profile_store.clone();
         let settings_store_for_window = settings_store.clone();
         let skins_store_for_window = skins_store.clone();
+        let highlight_store_for_window = highlight_store.clone();
         let terminal_for_window = terminal.clone();
         let window = cx
             .open_window(
@@ -189,6 +199,7 @@ fn main() {
                             profile_store_for_window,
                             settings_store_for_window,
                             skins_store_for_window,
+                            highlight_store_for_window,
                             cx,
                         )
                     });
@@ -302,6 +313,18 @@ fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
     Rc::new(
         data::skins::Store::new(&tmp)
             .expect("temp skins store should always init"),
+    )
+}
+
+/// Highlight-pack-store fallback. Bundled packs (built-in vendor
+/// rule sets) embed at compile time so the picker still has rows
+/// to render; only the user pack + custom imports are lost.
+fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
+    eprintln!("{reason}; using empty in-tmpdir highlight store");
+    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    Rc::new(
+        data::highlight::Store::new(&tmp)
+            .expect("temp highlight store should always init"),
     )
 }
 

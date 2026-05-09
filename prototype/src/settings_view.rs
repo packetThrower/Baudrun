@@ -20,6 +20,7 @@ use gpui_component::{
     IndexPath, Root, Sizable,
 };
 
+use crate::data::highlight;
 use crate::data::settings::{self, Settings};
 use crate::data::skins;
 
@@ -99,6 +100,11 @@ pub struct SettingsView {
     #[allow(dead_code)] // re-read on render via the entity cache; kept
                         // around for live-apply (skin import etc.)
     skins_store: Rc<skins::Store>,
+    /// Highlight pack store. Re-read on every render of the
+    /// Highlighting pane so the toggle list reflects packs the user
+    /// imported in the current session (post-launch import refreshes
+    /// without restarting Settings).
+    highlight_store: Rc<highlight::Store>,
     settings: Settings,
     tab: SettingsTab,
 
@@ -123,6 +129,7 @@ impl SettingsView {
     pub fn new(
         settings_store: Rc<settings::Store>,
         skins_store: Rc<skins::Store>,
+        highlight_store: Rc<highlight::Store>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -251,6 +258,7 @@ impl SettingsView {
         Self {
             settings_store,
             skins_store,
+            highlight_store,
             settings: current,
             tab: SettingsTab::default(),
             skin_select,
@@ -318,6 +326,37 @@ impl SettingsView {
         next.include_prerelease_updates = enabled;
         self.commit(next, cx);
     }
+
+    /// Effective enabled-pack list — falls back to `Settings::default`'s
+    /// value when the user hasn't made an explicit pick yet (the
+    /// `Option::None` state). Mirrors the Tauri reader, which treats
+    /// `None` as "use defaults" and only honours `Some(_)` (including
+    /// `Some(empty)` for the explicit "no highlighting" opt-out).
+    fn enabled_packs(&self) -> Vec<String> {
+        self.settings
+            .enabled_highlight_presets
+            .clone()
+            .unwrap_or_else(|| {
+                Settings::default()
+                    .enabled_highlight_presets
+                    .unwrap_or_default()
+            })
+    }
+
+    fn toggle_highlight_pack(&mut self, id: String, enabled: bool, cx: &mut Context<Self>) {
+        let mut packs = self.enabled_packs();
+        let already = packs.iter().any(|p| p == &id);
+        if enabled && !already {
+            packs.push(id);
+        } else if !enabled && already {
+            packs.retain(|p| p != &id);
+        } else {
+            return;
+        }
+        let mut next = self.settings.clone();
+        next.enabled_highlight_presets = Some(packs);
+        self.commit(next, cx);
+    }
 }
 
 // Palette mirrors `app_view.rs`'s Baudrun-skin constants verbatim
@@ -371,9 +410,79 @@ impl SettingsView {
     fn pane_content(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         match self.tab {
             SettingsTab::Appearance => self.appearance_pane().into_any_element(),
+            SettingsTab::Highlighting => self.highlighting_pane(cx).into_any_element(),
             SettingsTab::Advanced => self.advanced_pane(cx).into_any_element(),
             other => placeholder_pane(other.label()).into_any_element(),
         }
+    }
+
+    fn highlighting_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let enabled = self.enabled_packs();
+        let packs = self.highlight_store.list();
+        let rows = packs.into_iter().map(|p| {
+            let id_for_label = p.id.clone();
+            let id_for_setter = p.id.clone();
+            let is_on = enabled.iter().any(|e| e == &p.id);
+            // Append "(custom)" to user/imported packs so they're
+            // distinguishable from the built-in vendor presets.
+            let label = if p.source == "user" || p.source == "import" {
+                format!("{} (custom)", p.name)
+            } else {
+                p.name.clone()
+            };
+            // Fall back to the pack's own description; some bundled
+            // packs ship without one — show a quiet "—" rather than
+            // a blank row that looks like the data is missing.
+            let desc = p
+                .description
+                .clone()
+                .filter(|d| !d.is_empty())
+                .unwrap_or_else(|| "\u{2014}".to_string());
+
+            let cb_id = SharedString::from(format!("settings-highlight-{}", id_for_label));
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    Checkbox::new(cb_id)
+                        .checked(is_on)
+                        .label(label)
+                        .on_click(cx.listener(
+                            move |this, checked: &bool, _, cx| {
+                                this.toggle_highlight_pack(
+                                    id_for_setter.clone(),
+                                    *checked,
+                                    cx,
+                                );
+                            },
+                        )),
+                )
+                .child(
+                    div()
+                        .pl(px(24.0))
+                        .text_size(px(12.0))
+                        .text_color(rgba(FG_SECONDARY))
+                        .whitespace_normal()
+                        .child(desc),
+                )
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(section_card_with_desc(
+                "Highlight Packs",
+                Some(
+                    "Choose which built-in or imported rule packs colorize \
+                     terminal output. Stack as many as you want — matches \
+                     from each pack are merged in order. With every box \
+                     unchecked highlighting is off, even if a profile has \
+                     it enabled.",
+                ),
+                div().flex().flex_col().gap_3().children(rows),
+            ))
     }
 
     fn appearance_pane(&self) -> impl IntoElement {

@@ -42,6 +42,7 @@ use gpui_component::{
 use gpui::SharedString;
 
 use crate::data::appdata;
+use crate::data::highlight;
 use crate::data::profiles::{self, Profile};
 use crate::data::sanitize::SanitizingLogWriter;
 use crate::data::serial::ports;
@@ -90,6 +91,13 @@ pub struct AppView {
     /// apply path (settings.skin_id changes → main window
     /// re-renders with the new palette).
     skins_store: Rc<skins::Store>,
+    /// Highlight pack store (bundled vendor rules + the editable
+    /// user pack + imported third-party packs). Cloned into
+    /// SettingsView so the Highlighting tab can enumerate every
+    /// pack for its toggle list. Future slices read this from the
+    /// terminal pane to apply highlighting to live output.
+    #[allow(dead_code)]
+    highlight_store: Rc<highlight::Store>,
     /// Handle to the standalone Settings window when it's open.
     /// `Some(_)` doesn't strictly mean "still alive" — the user may
     /// have closed the OS window. We probe with `handle.update(...)`
@@ -247,6 +255,7 @@ impl AppView {
         profile_store: Rc<profiles::Store>,
         settings_store: Rc<settings::Store>,
         skins_store: Rc<skins::Store>,
+        highlight_store: Rc<highlight::Store>,
         _cx: &mut Context<Self>,
     ) -> Self {
         Self {
@@ -254,6 +263,7 @@ impl AppView {
             profile_store,
             settings_store,
             skins_store,
+            highlight_store,
             settings_window: None,
             selected_profile_id: None,
             connected_profile_id: None,
@@ -838,6 +848,7 @@ impl AppView {
 
         let settings = self.settings_store.clone();
         let skins = self.skins_store.clone();
+        let highlight = self.highlight_store.clone();
         let bounds = Bounds::centered(None, gpui::size(px(720.0), px(640.0)), cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -849,7 +860,9 @@ impl AppView {
                 ..Default::default()
             },
             move |window, cx| {
-                let view = cx.new(|cx| SettingsView::new(settings, skins, window, cx));
+                let view = cx.new(|cx| {
+                    SettingsView::new(settings, skins, highlight, window, cx)
+                });
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
