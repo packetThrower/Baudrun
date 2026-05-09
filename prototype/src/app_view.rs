@@ -21,6 +21,8 @@
 //! TerminalView so keystrokes still reach the grid; sidebar is
 //! pointer-driven.
 
+use std::fs::File;
+use std::io::Write;
 use std::rc::Rc;
 
 use gpui::{
@@ -36,7 +38,9 @@ use gpui_component::{
 };
 use gpui::SharedString;
 
+use crate::data::appdata;
 use crate::data::profiles::{self, Profile};
+use crate::data::sanitize::SanitizingLogWriter;
 use crate::data::serial::ports;
 use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
@@ -356,13 +360,45 @@ impl AppView {
             t.set_profile_settings(settings);
         });
 
+        // Optional session log. Opened lazily — failure to open
+        // (no support dir, perm issue) is logged and the session
+        // proceeds without recording, rather than refusing to
+        // connect. The file is moved into the drain task and held
+        // there for the session's lifetime; dropping the task on
+        // disconnect drops the file, which closes it.
+        let log_file = if profile.log_enabled {
+            match open_session_log(&profile) {
+                Ok((file, path)) => {
+                    log::info!("session log: {}", path.display());
+                    Some(file)
+                }
+                Err(e) => {
+                    log::error!("session log: open failed: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // Spawn the read drain. Held in `drain_task` so a
         // subsequent connect cancels this one by dropping the
-        // task field.
+        // task field. The log file is moved into the closure so
+        // it lives as long as the drain task.
         let weak_terminal = self.terminal.downgrade();
         let read_rx = channels.read_rx;
         let task = cx.spawn(async move |_, cx| {
+            let mut log = log_file;
             while let Ok(bytes) = read_rx.recv_async().await {
+                if let Some(f) = log.as_mut() {
+                    if let Err(e) = f.write_all(&bytes) {
+                        log::error!("session log write: {e}");
+                        // Stop trying to write to a broken file —
+                        // drop it so we don't keep erroring per
+                        // chunk. Terminal output keeps flowing.
+                        log = None;
+                    }
+                }
                 if weak_terminal
                     .update(cx, |t, cx| t.feed_bytes(&bytes, cx))
                     .is_err()
@@ -1108,6 +1144,50 @@ fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<
     // collapse to 0, which the store accepts.
     let delay_str = editor.paste_char_delay_ms.read(cx).value().to_string();
     profile.paste_char_delay_ms = delay_str.trim().parse::<i32>().ok().map(|v| v.max(0));
+}
+
+/// Open a session log file for the given profile. Path is
+/// `<support_dir>/logs/<slug>_<YYYY-MM-DD_HHMMSS>.log` — same
+/// shape the Tauri version uses, so log dirs port cleanly when
+/// the migration completes. Returns `(writer, path)`; the writer
+/// is a `SanitizingLogWriter` so the on-disk file reads like the
+/// terminal view (Cisco-style `\r\r\n` collapses to `\n`, ANSI
+/// CSI/OSC escapes are stripped, BS/CR-overwrite tricks are
+/// applied) instead of the raw wire bytes.
+fn open_session_log(
+    profile: &Profile,
+) -> std::io::Result<(SanitizingLogWriter<File>, std::path::PathBuf)> {
+    let support = appdata::support_dir().map_err(std::io::Error::other)?;
+    let dir = support.join("logs");
+    std::fs::create_dir_all(&dir)?;
+    let stamp = chrono::Local::now().format("%Y-%m-%d_%H%M%S");
+    let filename = format!("{}_{stamp}.log", slugify_name(&profile.name));
+    let path = dir.join(filename);
+    let file = File::create(&path)?;
+    Ok((SanitizingLogWriter::new(file), path))
+}
+
+/// Filename-safe slug for a profile name: lowercase ASCII + dash
+/// for separators, anything else dropped, falls back to "session"
+/// when the name reduces to nothing. Matches the Tauri version's
+/// `slugify_session_name` in `src-tauri/src/commands/serial.rs`
+/// so identically-named profiles produce identically-named log
+/// files across the two builds.
+fn slugify_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars().flat_map(char::to_lowercase) {
+        match ch {
+            'a'..='z' | '0'..='9' => out.push(ch),
+            ' ' | '-' | '_' | '.' => out.push('-'),
+            _ => {}
+        }
+    }
+    let trimmed = out.trim_matches('-').to_string();
+    if trimmed.is_empty() {
+        "session".into()
+    } else {
+        trimmed
+    }
 }
 
 /// Compare two profiles on the fields the editor actually exposes
