@@ -41,21 +41,29 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       verbatim. Path rewrite was mechanical (`crate::X` →
       `crate::data::X`) with `#![allow(dead_code, unused_imports)]`
       until later phases consume them.
-- [ ] **Phase 2 — Profile sidebar + connection management.**
-      Structure done — sidebar with profile list (hand-rolled, not
-      gpui-component `sidebar` yet), profile add/edit/delete form
-      with header + Connection card + Advanced card and a left-rail
-      sub-tab, connect-by-profile + Connect button (replaces
-      `cargo run -- <port>`), green/red status dots in the sidebar,
-      Serial Port enumeration with rescan. Quick-connect dialog
-      dropped — Tauri version doesn't have one.
-      *Remaining:* wire the per-profile-feature checkboxes the form
-      already saves but which don't actually do anything yet —
-      `paste_warn_multiline` + `paste_slow` + `paste_char_delay_ms`
-      (in progress; multi-line confirm dialog isn't appearing yet),
-      `dtr_on_*` / `rts_on_*` (needs `serial_io` extension),
-      `log_enabled`, `hex_view`, `timestamps`, `auto_reconnect`.
-      `local_echo` / `line_ending` / `backspace_key` already wired.
+- [x] **Phase 2 — Profile sidebar + connection management.** Done.
+      Sidebar with profile list (hand-rolled, not gpui-component
+      `sidebar` yet), profile add/edit/delete form with header +
+      Connection card + Advanced card and a left-rail sub-tab,
+      connect-by-profile + Connect button (replaces `cargo run --
+      <port>`), Serial Port enumeration with rescan, layered flow
+      mirroring Tauri (click profile → editor → Connect → terminal
+      → Disconnect → editor), session header with Clear/Disconnect
+      pills + status dot, welcome screen when no profile is
+      selected, status-bar footer (connected / editing / idle),
+      scrollback indicator on the terminal viewport, reactive Save
+      button (bright when dirty, dim when clean). All per-profile
+      feature checkboxes wired: `paste_warn_multiline` +
+      `paste_slow` + `paste_char_delay_ms`, `dtr_on_*` /
+      `rts_on_*`, `log_enabled` (sanitized session log to disk),
+      `hex_view` (xxd-style dump with idle flush), `timestamps`
+      (dim wall-clock prefix per line), `auto_reconnect` (2s
+      retry-poll for ~30s with amber-pulse indicator on both the
+      session header dot and the sidebar row dot, matching Tauri's
+      reconnect signal). `local_echo` / `line_ending` /
+      `backspace_key` already wired from the structure pass.
+      Quick-connect dialog dropped — Tauri version doesn't have
+      one.
 - [ ] **Phase 3 — Settings panel.** `sheet` or `dialog` for the
       panel structure, theme picker with live preview (reuse the
       viewport widget at small size), skin picker, keybinding
