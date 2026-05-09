@@ -54,7 +54,16 @@ const SIDEBAR_SELECTED: u32 = 0x2d3548;
 pub struct AppView {
     terminal: Entity<TerminalView>,
     profile_store: Rc<profiles::Store>,
+    /// Most recently clicked profile. Drives row highlight; survives
+    /// connect failures so the user can see *which* profile they
+    /// just tried (and the inline error text under it).
     selected_profile_id: Option<String>,
+    /// Profile whose serial port is currently open and feeding
+    /// bytes into the terminal. Distinct from `selected_profile_id`:
+    /// a click selects + attempts connect, but a failed open leaves
+    /// `selected` set while `connected` stays `None`. Used to paint
+    /// the green status dot in the sidebar.
+    connected_profile_id: Option<String>,
     /// Last-attempted-connection error for the selected profile,
     /// shown inline in the sidebar row. `Some` only while the
     /// failed profile is still selected; cleared when the user
@@ -78,6 +87,7 @@ impl AppView {
             terminal,
             profile_store,
             selected_profile_id: None,
+            connected_profile_id: None,
             connect_error: None,
             drain_task: None,
         }
@@ -116,6 +126,7 @@ impl AppView {
         // than completeness; both ends must drop for the threads
         // to wind up.
         self.drain_task = None;
+        self.connected_profile_id = None;
         self.terminal.update(cx, |t, _| t.clear_serial_tx());
 
         let port = profile.port_name.clone();
@@ -161,6 +172,7 @@ impl AppView {
             }
         });
         self.drain_task = Some(task);
+        self.connected_profile_id = Some(profile.id);
     }
 }
 
@@ -168,6 +180,7 @@ impl Render for AppView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let profiles = self.profile_store.list();
         let selected = self.selected_profile_id.clone();
+        let connected = self.connected_profile_id.clone();
 
         div()
             .size_full()
@@ -193,12 +206,25 @@ impl Render for AppView {
                     .child(section_label("PROFILES"))
                     .children(profiles.into_iter().map(|profile| {
                         let is_selected = selected.as_deref() == Some(profile.id.as_str());
+                        let is_connected = connected.as_deref() == Some(profile.id.as_str());
                         let row_error = if is_selected {
                             self.connect_error.clone()
                         } else {
                             None
                         };
-                        profile_row(profile, is_selected, row_error, cx)
+                        // Connected wins over Failed when both apply
+                        // (shouldn't happen — connect_to clears the
+                        // error before setting connected — but defining
+                        // the precedence keeps the indicator stable
+                        // if that invariant ever drifts).
+                        let status = if is_connected {
+                            Some(RowStatus::Connected)
+                        } else if is_selected && row_error.is_some() {
+                            Some(RowStatus::Failed)
+                        } else {
+                            None
+                        };
+                        profile_row(profile, is_selected, status, row_error, cx)
                     })),
             )
             // -- terminal viewport (existing entity) --
@@ -223,10 +249,39 @@ fn section_label(text: &'static str) -> impl IntoElement {
 /// under a profile row. Bright enough to read on the dark sidebar
 /// without being painful.
 const SIDEBAR_ERROR: u32 = 0xff7a8a;
+/// Live-connection status dot colour. Saturated green that reads
+/// at 8px against the dark sidebar without being neon.
+const STATUS_CONNECTED: u32 = 0x4ade80;
+/// Failed-connection status dot colour. Reuses the inline-error
+/// pink so the dot and the under-row error text agree visually.
+const STATUS_FAILED: u32 = SIDEBAR_ERROR;
+/// Diameter of the round status dot in the row header. 8px reads
+/// at the sidebar's font size without crowding the name text.
+const STATUS_DOT_PX: f32 = 8.0;
+
+/// Per-row connection state used to paint the status dot. `None`
+/// (in the caller) means no dot at all; an explicit `Connected`/
+/// `Failed` keeps the dot's two cases tagged so the row colour
+/// table stays a one-line lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RowStatus {
+    Connected,
+    Failed,
+}
+
+impl RowStatus {
+    fn color(self) -> u32 {
+        match self {
+            RowStatus::Connected => STATUS_CONNECTED,
+            RowStatus::Failed => STATUS_FAILED,
+        }
+    }
+}
 
 fn profile_row(
     profile: Profile,
     is_selected: bool,
+    status: Option<RowStatus>,
     error: Option<String>,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
@@ -248,6 +303,24 @@ fn profile_row(
         rgb(SIDEBAR_BG)
     };
 
+    // Header row: name on the left, status dot on the right (only
+    // when there's a status to show — `None` collapses the slot so
+    // unstatussed rows don't reserve space for an absent dot).
+    let header = div()
+        .w_full()
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_between()
+        .child(div().text_color(rgb(SIDEBAR_FG)).child(name))
+        .children(status.map(|s| {
+            div()
+                .w(px(STATUS_DOT_PX))
+                .h(px(STATUS_DOT_PX))
+                .rounded_full()
+                .bg(rgb(s.color()))
+        }));
+
     let mut row = div()
         .w_full()
         .px_2()
@@ -259,7 +332,7 @@ fn profile_row(
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_color(rgb(SIDEBAR_FG)).child(name))
+        .child(header)
         .child(
             div()
                 .text_size(px(11.0))
