@@ -32,7 +32,7 @@ use gpui_component::{
     input::{Input, InputState},
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
-    IndexPath, Sizable,
+    IndexPath, Root, Sizable,
 };
 use gpui::SharedString;
 
@@ -262,6 +262,12 @@ impl AppView {
             line_ending: profile.line_ending.clone(),
             backspace_key: profile.backspace_key.clone(),
             local_echo: profile.local_echo,
+            paste_warn_multiline: profile.paste_warn_multiline,
+            paste_slow: profile.paste_slow,
+            paste_char_delay_ms: profile
+                .paste_char_delay_ms
+                .unwrap_or(10)
+                .max(0) as u32,
         };
         self.terminal.update(cx, |t, _| {
             t.set_serial_tx(write_tx);
@@ -452,10 +458,21 @@ impl AppView {
 }
 
 impl Render for AppView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let profiles = self.profile_store.list();
         let selected = self.selected_profile_id.clone();
         let connected = self.connected_profile_id.clone();
+        // gpui-component's dialog / notification / sheet overlays
+        // don't render unless we explicitly ask for them here. The
+        // gpui_component::Root wrap in main.rs only paints `view`
+        // and the tooltip layer; everything else has to be added
+        // by the user (story/lib.rs follows the same pattern).
+        // Without this, `window.open_alert_dialog` queues the
+        // dialog into Root's `active_dialogs` Vec but nothing
+        // ever paints it — the build closure only fires from
+        // `render_dialog_layer`.
+        let dialog_layer = Root::render_dialog_layer(window, cx);
+        let notification_layer = Root::render_notification_layer(window, cx);
 
         // Right pane: form when an editor is open, terminal otherwise.
         // Branching here (instead of conditionally adding children to
@@ -472,9 +489,8 @@ impl Render for AppView {
 
         div()
             .size_full()
-            .flex()
-            .flex_row()
-            .bg(rgb(SIDEBAR_BG))
+            .relative()
+            .child(div().size_full().flex().flex_row().bg(rgb(SIDEBAR_BG))
             // -- sidebar --
             .child(
                 div()
@@ -522,7 +538,10 @@ impl Render for AppView {
                     })),
             )
             // -- right pane: form OR terminal --
-            .child(right_pane)
+            .child(right_pane))
+            // -- gpui-component overlay layers (dialogs, toasts) --
+            .children(dialog_layer)
+            .children(notification_layer)
     }
 }
 

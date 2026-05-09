@@ -40,6 +40,7 @@ use gpui::{
     MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, Task,
     TextRun, Window,
 };
+use gpui_component::WindowExt;
 
 use crate::term_bridge::{make_term, mirror_to_grid, Dims, ListenerState, TerminalListener};
 use crate::terminal_grid::{pack, TerminalGrid, CELL_HEIGHT_PX, FONT_SIZE_PX};
@@ -67,13 +68,13 @@ const GRID_PADDING_PX: f32 = 8.0;
 const MIN_ROWS: usize = 4;
 const MIN_COLS: usize = 10;
 
-/// Profile-driven keystroke + echo behaviour. Stays separate from
-/// the larger `Profile` struct because TerminalView only needs the
-/// bytes-on-the-wire knobs — paste settings, theme, hex view,
-/// logging etc. live elsewhere or are wired via separate paths.
-/// Defaults match `Profile::defaults`: CR line ending, DEL on
-/// backspace, no local echo (a real device echoes typed characters
-/// back).
+/// Profile-driven keystroke + echo + paste behaviour. Stays
+/// separate from the larger `Profile` struct because TerminalView
+/// only needs the runtime bytes-on-the-wire knobs — theme, hex
+/// view, logging etc. live elsewhere or are wired via separate
+/// paths. Defaults match `Profile::defaults`: CR line ending, DEL
+/// on backspace, no local echo, paste safety on, slow-paste off
+/// with a 10ms-per-char default delay.
 #[derive(Debug, Clone)]
 pub struct ProfileSettings {
     /// Bytes sent on Enter. `"cr"` → `\r` (default; what serial
@@ -89,6 +90,19 @@ pub struct ProfileSettings {
     /// if the device had echoed them — useful when talking to a
     /// device that doesn't echo (some bootloaders, custom firmware).
     pub local_echo: bool,
+    /// When true, prompt before pasting clipboard text that
+    /// contains line breaks — catches "I pasted into the wrong
+    /// terminal" mistakes before a routing config goes onto the
+    /// wrong device.
+    pub paste_warn_multiline: bool,
+    /// When true, send pasted bytes one character at a time with
+    /// `paste_char_delay_ms` between each. Lets slow UARTs (typical
+    /// on industrial gear) keep up without dropping bytes.
+    pub paste_slow: bool,
+    /// Per-character delay for `paste_slow`, in milliseconds.
+    /// Clamped to a non-negative value; 0 effectively disables the
+    /// delay even when `paste_slow` is on.
+    pub paste_char_delay_ms: u32,
 }
 
 impl Default for ProfileSettings {
@@ -97,6 +111,9 @@ impl Default for ProfileSettings {
             line_ending: "cr".into(),
             backspace_key: "del".into(),
             local_echo: false,
+            paste_warn_multiline: true,
+            paste_slow: true,
+            paste_char_delay_ms: 10,
         }
     }
 }
@@ -163,6 +180,12 @@ pub struct TerminalView {
     /// cancels the task; we never explicitly do so because the
     /// view itself outlives the task's relevance.
     _blink_task: Task<()>,
+    /// In-flight slow-paste task (one-byte-at-a-time write loop).
+    /// Held in a field so disconnect can drop it — otherwise a
+    /// previously-spawned slow paste keeps writing to the old
+    /// (dropped) sender after the user switches profiles. `None`
+    /// when no slow paste is in progress.
+    paste_task: Option<Task<()>>,
 }
 
 impl TerminalView {
@@ -232,6 +255,7 @@ impl TerminalView {
             cursor_blink_phase: true,
             bell_flash_until: None,
             _blink_task: blink_task,
+            paste_task: None,
         }
     }
 
@@ -246,8 +270,11 @@ impl TerminalView {
     /// loopback mode. Called by `AppView` before opening a
     /// different profile's port — releases the OS write thread
     /// in `serial_io` because its receiver returns an error.
+    /// Also cancels any in-flight slow paste so its remaining
+    /// bytes don't keep flowing into the now-detached port.
     pub fn clear_serial_tx(&mut self) {
         self.serial_tx = None;
+        self.paste_task = None;
     }
 
     /// Replace the active profile-keystroke settings. Called by
@@ -516,7 +543,7 @@ impl TerminalView {
         }
     }
 
-    fn paste_clipboard(&mut self, cx: &mut Context<Self>) {
+    fn paste_clipboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(text) = cx
             .read_from_clipboard()
             .as_ref()
@@ -534,15 +561,100 @@ impl TerminalView {
         // the loopback echo translation (the device-side echo —
         // or our `loopback_translate` for the no-device path —
         // handles visualisation as if these had been typed).
-        let normalised: String = text
-            .replace("\r\n", "\r")
-            .replace('\n', "\r");
+        let normalised: String = text.replace("\r\n", "\r").replace('\n', "\r");
+        let line_count = normalised.matches('\r').count() + 1;
         let bytes = normalised.into_bytes();
+
+        // Multi-line paste warning: prompt before sending text that
+        // contains line breaks. Catches "I pasted a routing config
+        // into the wrong device" mistakes. The dialog's `on_ok`
+        // callback fires asynchronously and only has `&mut App`, so
+        // we capture a weak handle to ourselves and re-enter via
+        // `weak.update`.
+        if self.profile_settings.paste_warn_multiline && line_count > 1 {
+            let weak = cx.entity().downgrade();
+            window.open_alert_dialog(cx, move |alert, _, _| {
+                let weak = weak.clone();
+                let bytes = bytes.clone();
+                alert
+                    .confirm()
+                    .title("Paste multiple lines?")
+                    .description(format!(
+                        "About to paste {line_count} lines into the terminal."
+                    ))
+                    .on_ok(move |_, window, cx| {
+                        let bytes = bytes.clone();
+                        if let Some(this) = weak.upgrade() {
+                            this.update(cx, |this, cx| {
+                                this.send_paste(bytes, window, cx);
+                            });
+                        }
+                        true
+                    })
+            });
+            return;
+        }
+
+        self.send_paste(bytes, window, cx);
+    }
+
+    /// Push paste bytes onto the wire (or into local Term in
+    /// loopback). Honors `paste_slow` by spawning a per-byte writer
+    /// task with `paste_char_delay_ms` between sends; otherwise
+    /// fires the whole buffer in one channel send.
+    fn send_paste(&mut self, bytes: Vec<u8>, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.profile_settings.paste_slow {
+            self.spawn_slow_paste(bytes, cx);
+            return;
+        }
         if let Some(tx) = &self.serial_tx {
             let _ = tx.send(bytes);
         } else {
             let echoed = loopback_translate(&bytes);
             self.feed_bytes(&echoed, cx);
+        }
+    }
+
+    fn spawn_slow_paste(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        let delay = Duration::from_millis(self.profile_settings.paste_char_delay_ms as u64);
+        // Held in `paste_task` so disconnect can drop it; otherwise
+        // an in-flight slow paste keeps writing to the old sender
+        // after `clear_serial_tx`.
+        match self.serial_tx.clone() {
+            Some(tx) => {
+                let task = cx.spawn(async move |_, cx| {
+                    for b in bytes {
+                        if tx.send(vec![b]).is_err() {
+                            break;
+                        }
+                        if !delay.is_zero() {
+                            cx.background_executor().timer(delay).await;
+                        }
+                    }
+                });
+                self.paste_task = Some(task);
+            }
+            None => {
+                // Loopback slow paste: echo bytes one-by-one
+                // through `feed_bytes` with the same delay so the
+                // visual pacing matches the wire pacing.
+                let weak = cx.entity().downgrade();
+                let task = cx.spawn(async move |_, cx| {
+                    for b in bytes {
+                        let chunk = loopback_translate(&[b]);
+                        if weak
+                            .update(cx, |this, cx| this.feed_bytes(&chunk, cx))
+                            .is_err()
+                        {
+                            break;
+                        }
+                        if !delay.is_zero() {
+                            cx.background_executor().timer(delay).await;
+                        }
+                    }
+                });
+                self.paste_task = Some(task);
+            }
         }
     }
 
@@ -582,7 +694,7 @@ impl TerminalView {
     fn handle_key_down(
         &mut self,
         event: &KeyDownEvent,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         // Clipboard shortcuts come before the wire encoder. macOS
@@ -604,7 +716,7 @@ impl TerminalView {
             return;
         }
         if paste_combo {
-            self.paste_clipboard(cx);
+            self.paste_clipboard(window, cx);
             return;
         }
 
