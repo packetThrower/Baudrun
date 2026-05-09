@@ -24,10 +24,16 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgb, Context, Entity, IntoElement, MouseButton, MouseUpEvent, Render,
-    Task, Window,
+    div, prelude::*, px, rgb, rgba, Context, Entity, IntoElement, MouseButton, MouseDownEvent,
+    MouseUpEvent, Render, Task, Window,
 };
-use gpui_component::input::{Input, InputState};
+use gpui_component::{
+    checkbox::Checkbox,
+    input::{Input, InputState},
+    select::{Select, SelectItem, SelectState},
+    IndexPath, Sizable,
+};
+use gpui::SharedString;
 
 use crate::data::profiles::{self, Profile};
 use crate::serial_io;
@@ -40,9 +46,11 @@ use crate::terminal_view::TerminalView;
 /// window.
 const SIDEBAR_WIDTH_PX: f32 = 220.0;
 
-/// Sidebar background colour. Slightly lighter than the terminal's
-/// default bg so the split is visually obvious without a border.
-const SIDEBAR_BG: u32 = 0x1a1a1e;
+/// Sidebar background — `--bg-sidebar` (4% white) composited over
+/// the Baudrun `--shell-bg` (#1d1d1e) and baked opaque. Slightly
+/// lighter than the form pane on the right, matching the Tauri
+/// version's layering.
+const SIDEBAR_BG: u32 = 0x262627;
 /// Sidebar separator (thin vertical line between sidebar and viewport).
 const SIDEBAR_BORDER: u32 = 0x2a2a30;
 /// Sidebar default text colour.
@@ -85,19 +93,42 @@ pub struct AppView {
     editor: Option<Editor>,
 }
 
-/// In-flight new-profile form state. Created by `open_editor` (which
-/// needs `&mut Window` because gpui-component's `InputState::new`
-/// hooks the window's text-system at construction). Read by
-/// `save_editor` to materialize a `Profile`. Dropped on cancel /
-/// successful save by setting `AppView::editor = None`.
+/// In-flight profile form state. Created by `open_editor` (new) or
+/// `open_editor_for` (existing). Both paths need `&mut Window`
+/// because gpui-component's `InputState::new` hooks the window's
+/// text-system at construction. Read by `save_editor` to materialize
+/// a `Profile`. Dropped on cancel / successful save / successful
+/// delete by setting `AppView::editor = None`.
 struct Editor {
+    /// `None` = creating a brand-new profile (Save → `Store::create`).
+    /// `Some(id)` = editing an existing one (Save → `Store::update`,
+    /// Delete → `Store::delete`). Distinguishing here lets the same
+    /// form pane drive both operations without a parallel widget tree.
+    profile_id: Option<String>,
+
+    // -- text inputs --
     name: Entity<InputState>,
     port: Entity<InputState>,
-    baud: Entity<InputState>,
+
+    // -- selects (Connection section) --
+    baud: Entity<SelectState<Vec<Opt>>>,
+    data_bits: Entity<SelectState<Vec<Opt>>>,
+    parity: Entity<SelectState<Vec<Opt>>>,
+    stop_bits: Entity<SelectState<Vec<Opt>>>,
+    flow_control: Entity<SelectState<Vec<Opt>>>,
+
+    // -- selects + checkbox (Terminal section) --
+    line_ending: Entity<SelectState<Vec<Opt>>>,
+    backspace_key: Entity<SelectState<Vec<Opt>>>,
+    /// Local-echo checkbox state. Stored as a plain `bool` (not an
+    /// entity) because gpui-component's `Checkbox` is stateless and
+    /// reports changes via callback — the callback writes back here.
+    local_echo: bool,
+
     /// Most recent validation/persistence error. Cleared when the
-    /// editor is reopened; populated when `Store::create` rejects
-    /// the form values (e.g. blank name, blank port, non-numeric
-    /// baud).
+    /// editor is reopened; populated when `Store::create` /
+    /// `Store::update` / `Store::delete` rejects the operation
+    /// (e.g. blank name, blank port, non-numeric baud).
     error: Option<String>,
 }
 
@@ -200,21 +231,29 @@ impl AppView {
         self.connected_profile_id = Some(profile.id);
     }
 
-    /// Open the new-profile form. Idempotent if already open
-    /// (re-creates the InputStates, so the user gets a fresh
-    /// blank form rather than whatever they typed before — Phase
-    /// 2.4 doesn't need draft persistence).
+    /// Open the form for a new profile, seeded from `Profile::defaults`.
+    /// Idempotent if already open — re-creates the field state so the
+    /// user gets a fresh form rather than whatever they typed before.
     fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let name = cx.new(|cx| InputState::new(window, cx).placeholder("My switch"));
-        let port =
-            cx.new(|cx| InputState::new(window, cx).placeholder("/dev/cu.usbserial-XXX or COM3"));
-        let baud = cx.new(|cx| InputState::new(window, cx).default_value("9600"));
-        self.editor = Some(Editor {
-            name,
-            port,
-            baud,
-            error: None,
-        });
+        self.editor = Some(build_editor(None, &Profile::defaults(), window, cx));
+        cx.notify();
+    }
+
+    /// Open the form for an existing profile. Pre-fills every field
+    /// (text inputs + selects + checkbox) with the profile's current
+    /// values. Silently no-ops if the id has vanished from the store
+    /// between row-render and click (rare; the store is the single
+    /// source of truth and the sidebar re-reads it every render).
+    fn open_editor_for(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(profile) = self.profile_store.get(&id) else {
+            return;
+        };
+        self.editor = Some(build_editor(Some(id), &profile, window, cx));
         cx.notify();
     }
 
@@ -223,31 +262,93 @@ impl AppView {
         cx.notify();
     }
 
-    /// Pull text out of the form, build a `Profile` (other fields
-    /// from `Profile::defaults()` — 8N1, no flow control, CR line
-    /// ending), persist via the store. On success the form closes;
-    /// on validation failure the inline error is set and the form
-    /// stays open so the user can fix it.
-    fn save_editor(&mut self, cx: &mut Context<Self>) {
+    /// Pull text out of the form, build a `Profile`, persist via the
+    /// store. In create mode this fills the rest of the fields from
+    /// `Profile::defaults()` (8N1 / no flow control / CR); in edit
+    /// mode it re-fetches the existing profile and only overwrites
+    /// the three editable fields, preserving `theme_id`, `highlight`,
+    /// `auto_reconnect`, etc. that the prototype's form doesn't
+    /// expose. On success the form closes; on validation failure the
+    /// inline error is set and the form stays open so the user can
+    /// fix it.
+    /// Persist the form to the store. Returns the saved profile's id
+    /// on success so callers (e.g. the Connect button) can chain a
+    /// connect off the back of a save without redundant lookups.
+    fn save_editor(&mut self, cx: &mut Context<Self>) -> Option<String> {
+        let editor = self.editor.as_ref()?;
+        let mut base = match editor.profile_id.as_ref() {
+            // Edit: start from the existing profile so untouched
+            // fields (theme, paste settings, timestamps, …) survive
+            // a partial-form save.
+            Some(id) => match self.profile_store.get(id) {
+                Some(p) => p,
+                None => {
+                    if let Some(ed) = self.editor.as_mut() {
+                        ed.error = Some("profile no longer exists".into());
+                    }
+                    cx.notify();
+                    return None;
+                }
+            },
+            // Create: defaults supply everything the form doesn't touch.
+            None => Profile::defaults(),
+        };
+        apply_editor_to_profile(editor, &mut base, cx);
+
+        let result = match editor.profile_id.as_ref() {
+            None => self.profile_store.create(base.clone()).map(|p| p.id),
+            Some(_) => self.profile_store.update(base.clone()).map(|p| p.id),
+        };
+
+        match result {
+            Ok(id) => {
+                self.editor = None;
+                cx.notify();
+                Some(id)
+            }
+            Err(e) => {
+                if let Some(ed) = self.editor.as_mut() {
+                    ed.error = Some(format!("{e}"));
+                }
+                cx.notify();
+                None
+            }
+        }
+    }
+
+    /// Save the form, then immediately connect to the resulting
+    /// profile. Mirrors the Tauri form's "Connect" button: the
+    /// primary action turns the editor flow into a single click for
+    /// the common case of "make this profile and use it now."
+    fn save_and_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.save_editor(cx) {
+            self.select_profile(id, window, cx);
+        }
+    }
+
+    /// Delete the profile currently being edited. If we're connected
+    /// to it, tear that connection down first so we don't keep an
+    /// open serial port pointing at a deleted profile id. Selection
+    /// state for the deleted id is also cleared so the sidebar
+    /// doesn't try to highlight a missing row on the next render.
+    fn delete_from_editor(&mut self, cx: &mut Context<Self>) {
         let Some(editor) = self.editor.as_ref() else {
             return;
         };
-        let name = editor.name.read(cx).value().to_string();
-        let port = editor.port.read(cx).value().to_string();
-        let baud_str = editor.baud.read(cx).value().to_string();
-        // Empty / non-numeric → 0, which `validate` rejects with
-        // `InvalidBaud`; let the store be the single source of
-        // truth on what counts as valid rather than duplicating
-        // its rules in the UI.
-        let baud: i32 = baud_str.trim().parse().unwrap_or(0);
-
-        let mut profile = Profile::defaults();
-        profile.name = name;
-        profile.port_name = port;
-        profile.baud_rate = baud;
-
-        match self.profile_store.create(profile) {
-            Ok(_) => {
+        let Some(id) = editor.profile_id.clone() else {
+            return;
+        };
+        match self.profile_store.delete(&id) {
+            Ok(()) => {
+                if self.connected_profile_id.as_deref() == Some(id.as_str()) {
+                    self.drain_task = None;
+                    self.connected_profile_id = None;
+                    self.terminal.update(cx, |t, _| t.clear_serial_tx());
+                }
+                if self.selected_profile_id.as_deref() == Some(id.as_str()) {
+                    self.selected_profile_id = None;
+                    self.connect_error = None;
+                }
                 self.editor = None;
             }
             Err(e) => {
@@ -271,14 +372,7 @@ impl Render for AppView {
         // the same div) lets each branch pick its own padding /
         // background without leaking into the other.
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
-            Some(editor) => form_pane(
-                editor.name.clone(),
-                editor.port.clone(),
-                editor.baud.clone(),
-                editor.error.clone(),
-                cx,
-            )
-            .into_any_element(),
+            Some(editor) => form_pane(EditorRender::from(editor), cx).into_any_element(),
             None => div()
                 .flex_1()
                 .h_full()
@@ -306,7 +400,13 @@ impl Render for AppView {
                     .gap_1()
                     .text_color(rgb(SIDEBAR_FG))
                     .text_size(px(13.0))
-                    .font_family("Menlo")
+                    // Inherits the theme's font_family, which the
+                    // gpui-component Root sets to `.SystemUIFont`
+                    // (SF Pro on macOS, Segoe on Windows). Don't
+                    // override with Menlo here — that's mono, and
+                    // chrome should look like chrome. Terminal pane
+                    // sets its own font internally so it stays
+                    // monospaced.
                     .child(sidebar_header(cx))
                     .children(profiles.into_iter().map(|profile| {
                         let is_selected = selected.as_deref() == Some(profile.id.as_str());
@@ -373,99 +473,625 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
         )
 }
 
-/// Background colour for the form pane. Matches the terminal's
-/// default background so the right-pane swap doesn't flash a
-/// different shade — visually it's the same canvas with different
-/// content.
-const FORM_BG: u32 = 0x0b0b0d;
-/// Save-button green. Same hue as the connected status dot so the
-/// "submit and connect" affordance reads as the positive action.
-const SAVE_BTN_BG: u32 = 0x4ade80;
-/// Save-button text colour. Dark on green for contrast.
-const SAVE_BTN_FG: u32 = 0x0b0b0d;
+// --- Baudrun (default) skin ---------------------------------------
+//
+// Colour vars are taken from `src-tauri/resources/builtin_skins.json`
+// (the `baudrun` entry's dark `vars`). gpui's `rgba(0xRRGGBBAA)` is
+// the inverse of CSS's `rgba(r, g, b, a/255)`, so each constant
+// below is the hex form of the same value the Tauri build ships.
+// Names mirror the CSS var names so it's a one-line lookup either
+// direction.
 
-fn form_pane(
+/// Form-pane background — `--bg-main` (rgba(20,20,22,0.55))
+/// composited over `--shell-bg` (#1d1d1e) and baked opaque.
+/// Sits noticeably darker than the sidebar so the split between
+/// the two reads visually without needing a heavy divider, and
+/// makes the section cards (which are translucent white over this)
+/// stand out as raised content the way they do in the Tauri
+/// build.
+const FORM_BG: u32 = 0x18181a;
+
+/// `--fg-secondary` (65% white). Used for field labels (uppercase
+/// "SERIAL PORT" etc.) and the header subtitle.
+const FG_SECONDARY: u32 = 0xFFFFFFA6;
+/// `--fg-tertiary` (40% white). Quieter still — the uppercase
+/// mode-tag under the title ("EDIT PROFILE").
+const FG_TERTIARY: u32 = 0xFFFFFF66;
+/// `--border-subtle` (8% white). Section-card outlines + the
+/// header bottom rule.
+const BORDER_SUBTLE: u32 = 0xFFFFFF14;
+/// `--bg-panel` (6% white). Section-card surface — sits a notch
+/// above the form bg so the cards read as raised content.
+const PANEL_BG: u32 = 0xFFFFFF0F;
+/// `--accent`. Solid macOS-y blue used for the primary action
+/// (Connect). Opaque (alpha 0xFF baked in).
+const ACCENT: u32 = 0x0a84ffFF;
+/// White text on the accent button — full-strength, not the muted
+/// `--fg-primary`, because the blue background needs more contrast.
+const ACCENT_FG: u32 = 0xFFFFFFFF;
+
+/// Pill-button background — `--bg-input` from the Baudrun skin
+/// (8% white over the shell). Reads as a slightly-raised neutral
+/// surface; lets *colour* be reserved for semantically loaded
+/// actions (Connect = accent, Delete = danger) instead of
+/// decoration.
+const BTN_BG: u32 = 0xFFFFFF14;
+/// Pill-button hover background — `--bg-input-focus` (12% white).
+const BTN_BG_HOVER: u32 = 0xFFFFFF1F;
+/// Pill-button text colour — `--fg-primary` (95% white).
+const BTN_FG: u32 = 0xFFFFFFF2;
+/// Destructive-action text — `--danger` (`#ff453a`, opaque).
+const BTN_FG_DANGER: u32 = 0xff453aFF;
+
+/// Cap the form's *content* width. Without this the Input/Select
+/// widgets stretch to the full right-pane width — visually wrong
+/// since their values (port path, baud, etc.) are short, and the
+/// field becomes much heftier than the sidebar rows it edits.
+/// 540px fits a typical macOS port path
+/// (`/dev/cu.usbserial-XXXXXXX`) plus a side-by-side second column
+/// without truncation, while staying clearly form-shaped rather
+/// than page-shaped.
+const FORM_CONTENT_W_PX: f32 = 540.0;
+
+/// Construct a fresh `Editor` whose every widget (text inputs +
+/// selects + checkbox bool) is seeded from `profile`. Shared by
+/// the new-profile path (`profile = Profile::defaults()`) and the
+/// edit-profile path (`profile = store.get(id).unwrap()`) so the
+/// initialisation logic for each field exists in exactly one place.
+fn build_editor(
+    profile_id: Option<String>,
+    profile: &Profile,
+    window: &mut Window,
+    cx: &mut Context<AppView>,
+) -> Editor {
+    let name = {
+        let val = profile.name.clone();
+        cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("My switch")
+                .default_value(val)
+        })
+    };
+    let port = {
+        let val = profile.port_name.clone();
+        cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("/dev/cu.usbserial-XXX or COM3")
+                .default_value(val)
+        })
+    };
+    Editor {
+        profile_id,
+        name,
+        port,
+        baud: make_select(baud_opts(), &profile.baud_rate.to_string(), window, cx),
+        data_bits: make_select(data_bits_opts(), &profile.data_bits.to_string(), window, cx),
+        parity: make_select(parity_opts(), &profile.parity, window, cx),
+        stop_bits: make_select(stop_bits_opts(), &profile.stop_bits, window, cx),
+        flow_control: make_select(flow_control_opts(), &profile.flow_control, window, cx),
+        line_ending: make_select(line_ending_opts(), &profile.line_ending, window, cx),
+        backspace_key: make_select(backspace_opts(), &profile.backspace_key, window, cx),
+        local_echo: profile.local_echo,
+        error: None,
+    }
+}
+
+/// Read every widget in `editor` and write the values onto `profile`,
+/// in place. Fields the form doesn't expose (theme, paste settings,
+/// auto-reconnect, …) are left untouched, which is what makes the
+/// edit-path safe to round-trip.
+fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<AppView>) {
+    profile.name = editor.name.read(cx).value().to_string();
+    profile.port_name = editor.port.read(cx).value().to_string();
+    // Empty / non-numeric → 0, which `validate` rejects with
+    // `InvalidBaud`; `Profile::data_bits` is i32 too. Let the store
+    // be the single source of truth for what counts as valid rather
+    // than duplicating its rules in the UI.
+    profile.baud_rate = read_select(&editor.baud, cx).trim().parse().unwrap_or(0);
+    profile.data_bits = read_select(&editor.data_bits, cx)
+        .trim()
+        .parse()
+        .unwrap_or(0);
+    profile.parity = read_select(&editor.parity, cx);
+    profile.stop_bits = read_select(&editor.stop_bits, cx);
+    profile.flow_control = read_select(&editor.flow_control, cx);
+    profile.line_ending = read_select(&editor.line_ending, cx);
+    profile.backspace_key = read_select(&editor.backspace_key, cx);
+    profile.local_echo = editor.local_echo;
+}
+
+/// One choice in a select widget. `id` is the canonical value
+/// stored on the `Profile` (e.g. `"none"`, `"9600"`, `"crlf"`);
+/// `title` is the human-readable label shown in the menu and as
+/// the closed-state value (e.g. `"None"`, `"9600 (default)"`,
+/// `"CRLF (\\r\\n) — modems"`). Cheap to clone (two `String`s) —
+/// the option lists are tiny and built once per editor open.
+#[derive(Clone)]
+struct Opt {
+    id: String,
+    title: SharedString,
+}
+
+impl Opt {
+    fn new(id: &str, title: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            title: SharedString::from(title.to_string()),
+        }
+    }
+}
+
+impl SelectItem for Opt {
+    type Value = String;
+
+    fn title(&self) -> SharedString {
+        self.title.clone()
+    }
+
+    fn value(&self) -> &Self::Value {
+        &self.id
+    }
+}
+
+/// Build a `SelectState<Vec<Opt>>` pre-selected to whichever option
+/// in `opts` has `id == selected`. If `selected` doesn't match
+/// anything, no option is pre-selected (the closed-state shows the
+/// placeholder, if any). Wraps the gpui-component constructor so
+/// caller sites don't have to deal with `IndexPath` directly.
+fn make_select(
+    opts: Vec<Opt>,
+    selected: &str,
+    window: &mut Window,
+    cx: &mut Context<AppView>,
+) -> Entity<SelectState<Vec<Opt>>> {
+    let idx = opts
+        .iter()
+        .position(|o| o.id == selected)
+        .map(IndexPath::new);
+    cx.new(|cx| SelectState::new(opts, idx, window, cx))
+}
+
+/// Read the currently-selected id from a `SelectState<Vec<Opt>>`.
+/// Falls back to an empty string if nothing is selected — the
+/// `Profile` validator rejects empty strings for these fields, so
+/// the user gets a clear error rather than a silent bad save.
+fn read_select(state: &Entity<SelectState<Vec<Opt>>>, cx: &Context<AppView>) -> String {
+    state.read(cx).selected_value().cloned().unwrap_or_default()
+}
+
+// --- Option lists --------------------------------------------------
+//
+// Mirrors the Tauri ProfileForm.svelte option arrays. Labels are
+// hand-written to match: short id + parenthetical hint where the
+// raw id alone (e.g. "cr", "del") would be opaque to a user who
+// hasn't shipped serial-console code before. Wrapping each in a
+// fn keeps the borrowed-vec ergonomics simple — gpui-component
+// takes the `Vec<Opt>` by value into the SelectState.
+
+fn baud_opts() -> Vec<Opt> {
+    [
+        ("9600", "9600 (default)"),
+        ("19200", "19200"),
+        ("38400", "38400"),
+        ("57600", "57600"),
+        ("115200", "115200"),
+        ("230400", "230400"),
+        ("460800", "460800"),
+        ("921600", "921600"),
+    ]
+    .into_iter()
+    .map(|(id, title)| Opt::new(id, title))
+    .collect()
+}
+
+fn data_bits_opts() -> Vec<Opt> {
+    ["5", "6", "7", "8"]
+        .into_iter()
+        .map(|s| Opt::new(s, s))
+        .collect()
+}
+
+fn parity_opts() -> Vec<Opt> {
+    [
+        ("none", "None"),
+        ("odd", "Odd"),
+        ("even", "Even"),
+        ("mark", "Mark"),
+        ("space", "Space"),
+    ]
+    .into_iter()
+    .map(|(id, title)| Opt::new(id, title))
+    .collect()
+}
+
+fn stop_bits_opts() -> Vec<Opt> {
+    ["1", "1.5", "2"].into_iter().map(|s| Opt::new(s, s)).collect()
+}
+
+fn flow_control_opts() -> Vec<Opt> {
+    [
+        ("none", "None"),
+        ("rtscts", "RTS/CTS"),
+        ("xonxoff", "XON/XOFF"),
+    ]
+    .into_iter()
+    .map(|(id, title)| Opt::new(id, title))
+    .collect()
+}
+
+fn line_ending_opts() -> Vec<Opt> {
+    [
+        ("cr", "CR (\\r) — switches, routers"),
+        ("lf", "LF (\\n) — Linux, embedded"),
+        ("crlf", "CRLF (\\r\\n) — modems"),
+    ]
+    .into_iter()
+    .map(|(id, title)| Opt::new(id, title))
+    .collect()
+}
+
+fn backspace_opts() -> Vec<Opt> {
+    [
+        ("del", "DEL (0x7F) — VT100, xterm, modern"),
+        ("bs", "BS (0x08) — older Cisco, Foundry"),
+    ]
+    .into_iter()
+    .map(|(id, title)| Opt::new(id, title))
+    .collect()
+}
+
+/// Pill button styled per the Baudrun skin. Neutral translucent
+/// fill by default; `danger=true` swaps the foreground to system
+/// red for destructive actions like Delete. Returns a bare `Div`
+/// so the call site can attach `.on_mouse_up` etc. — the helper
+/// just owns the visual styling.
+fn pill_button(label: &'static str, danger: bool) -> gpui::Div {
+    let fg = if danger { rgba(BTN_FG_DANGER) } else { rgba(BTN_FG) };
+    div()
+        .px_3()
+        .py_1()
+        .bg(rgba(BTN_BG))
+        .text_color(fg)
+        .rounded_md()
+        .cursor_pointer()
+        .hover(|s| s.bg(rgba(BTN_BG_HOVER)))
+        .child(label)
+}
+
+/// Primary action button — solid `--accent` blue, white text. Used
+/// for the form's Connect button (the call-to-action). Same shape
+/// as `pill_button` so they line up flush in a button row.
+fn primary_button(label: &'static str) -> gpui::Div {
+    div()
+        .px_3()
+        .py_1()
+        .bg(rgba(ACCENT))
+        .text_color(rgba(ACCENT_FG))
+        .rounded_md()
+        .cursor_pointer()
+        .child(label)
+}
+
+/// All Editor fields a render needs, cloned out so the call site
+/// can hand `cx: &mut Context<AppView>` to the form helpers without
+/// keeping `&self.editor` borrowed at the same time. Cloning is
+/// cheap — `Entity<T>` is `Arc`-shaped — and it's only done once
+/// per render.
+struct EditorRender {
+    is_edit: bool,
     name: Entity<InputState>,
     port: Entity<InputState>,
-    baud: Entity<InputState>,
+    baud: Entity<SelectState<Vec<Opt>>>,
+    data_bits: Entity<SelectState<Vec<Opt>>>,
+    parity: Entity<SelectState<Vec<Opt>>>,
+    stop_bits: Entity<SelectState<Vec<Opt>>>,
+    flow_control: Entity<SelectState<Vec<Opt>>>,
+    line_ending: Entity<SelectState<Vec<Opt>>>,
+    backspace_key: Entity<SelectState<Vec<Opt>>>,
+    local_echo: bool,
     error: Option<String>,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let labeled = |label: &'static str, input: Entity<InputState>| {
-        div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                div()
-                    .text_size(px(11.0))
-                    .text_color(rgb(SIDEBAR_MUTED))
-                    .child(label),
-            )
-            .child(Input::new(&input).appearance(true))
-    };
+}
 
+impl EditorRender {
+    fn from(e: &Editor) -> Self {
+        Self {
+            is_edit: e.profile_id.is_some(),
+            name: e.name.clone(),
+            port: e.port.clone(),
+            baud: e.baud.clone(),
+            data_bits: e.data_bits.clone(),
+            parity: e.parity.clone(),
+            stop_bits: e.stop_bits.clone(),
+            flow_control: e.flow_control.clone(),
+            line_ending: e.line_ending.clone(),
+            backspace_key: e.backspace_key.clone(),
+            local_echo: e.local_echo,
+            error: e.error.clone(),
+        }
+    }
+}
+
+fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
     div()
         .flex_1()
         .h_full()
         .bg(rgb(FORM_BG))
-        .px_8()
-        .py_6()
-        .flex()
-        .flex_col()
-        .gap_4()
         .text_color(rgb(SIDEBAR_FG))
         .text_size(px(13.0))
-        .font_family("Menlo")
-        .child(div().text_size(px(16.0)).child("New profile"))
-        .child(labeled("NAME", name))
-        .child(labeled("PORT", port))
-        .child(labeled("BAUD", baud))
+        .flex()
+        .flex_col()
+        .child(form_header(er.is_edit, er.name.clone(), cx))
+        .child(form_body(er, cx))
+}
+
+/// Header bar: editable profile name as the visible title (no
+/// input chrome — `appearance(false)` strips the border/bg so it
+/// reads as a heading rather than a form field), uppercase mode
+/// tag underneath, action buttons on the right.
+fn form_header(
+    is_edit: bool,
+    name: Entity<InputState>,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
+    let subtitle = if is_edit { "EDIT PROFILE" } else { "NEW PROFILE" };
+    let delete_btn = is_edit.then(|| {
+        pill_button("Delete", true).on_mouse_up(
+            MouseButton::Left,
+            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                this.delete_from_editor(cx);
+            }),
+        )
+    });
+    div()
+        .w_full()
+        .px_6()
+        .py_3()
+        .border_b_1()
+        .border_color(rgba(BORDER_SUBTLE))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_4()
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    Input::new(&name)
+                        .appearance(false)
+                        // Baudrun skin's `--font-size-h1` is 24px.
+                        // `Size::Size(px)` renders text at
+                        // `px * 0.875` per gpui-component's
+                        // `input_text_size`, so pass ~27.5 to land
+                        // at 24px.
+                        .with_size(gpui_component::Size::Size(px(27.5))),
+                )
+                .child(
+                    div()
+                        // The Input applies an internal 8px
+                        // horizontal padding regardless of
+                        // `appearance(false)` (see gpui-component
+                        // input.rs: `input_px` is applied before
+                        // the `.when(appearance)` chrome). Match
+                        // it here so the subtitle's first letter
+                        // sits flush under the title's first
+                        // letter rather than 8px to its left.
+                        .pl(px(8.0))
+                        .text_size(px(10.0))
+                        .text_color(rgba(FG_TERTIARY))
+                        .child(subtitle),
+                ),
+        )
         .child(
             div()
                 .flex()
                 .flex_row()
+                .items_center()
                 .gap_2()
-                .mt_4()
+                .children(delete_btn)
+                .child(pill_button("Save", false).on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                        this.save_editor(cx);
+                    }),
+                ))
+                .child(pill_button("Cancel", false).on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                        this.cancel_editor(cx);
+                    }),
+                ))
+                .child(primary_button("Connect").on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        this.save_and_connect(window, cx);
+                    }),
+                )),
+        )
+}
+
+/// Form body: section cards stacked vertically, capped to a
+/// content width so they don't sprawl across a wide window.
+fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
+    div()
+        .flex_1()
+        .h_full()
+        .px_6()
+        .py_4()
+        .child(
+            div()
+                .w(px(FORM_CONTENT_W_PX))
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(connection_card(
+                    er.port,
+                    er.baud,
+                    er.data_bits,
+                    er.parity,
+                    er.stop_bits,
+                    er.flow_control,
+                ))
+                .child(terminal_card(
+                    er.line_ending,
+                    er.backspace_key,
+                    er.local_echo,
+                    cx,
+                ))
+                .children(er.error.map(|err| {
+                    div()
+                        .px_3()
+                        .py_2()
+                        .text_size(px(12.0))
+                        .text_color(rgb(SIDEBAR_ERROR))
+                        .child(err)
+                })),
+        )
+}
+
+/// One section of the form — a translucent panel with a heading
+/// and a body. Section title size is `--font-size-section` (15px);
+/// the title itself is sentence-case (matches the Tauri form's
+/// "Connection" / "Terminal" / "Appearance"), and the panel uses
+/// `--radius-lg` (10px) and `--bg-panel` / `--border-subtle`.
+fn section_card(title: &'static str, body: impl IntoElement) -> gpui::Div {
+    div()
+        .w_full()
+        .bg(rgba(PANEL_BG))
+        .border_1()
+        .border_color(rgba(BORDER_SUBTLE))
+        .rounded(px(10.0))
+        .px_4()
+        .py_3()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .child(
+            div()
+                .text_size(px(15.0))
+                .text_color(rgb(SIDEBAR_FG))
+                .child(title),
+        )
+        .child(body)
+}
+
+/// Per-field label + widget pair. Label uses Baudrun's
+/// `--font-size-label` (11px), `--label-transform: uppercase`
+/// (passed in already shouted by the caller), and `--fg-secondary`.
+fn labeled(label: &'static str, widget: impl IntoElement) -> gpui::Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgba(FG_SECONDARY))
+                .child(label),
+        )
+        .child(widget)
+}
+
+fn connection_card(
+    port: Entity<InputState>,
+    baud: Entity<SelectState<Vec<Opt>>>,
+    data_bits: Entity<SelectState<Vec<Opt>>>,
+    parity: Entity<SelectState<Vec<Opt>>>,
+    stop_bits: Entity<SelectState<Vec<Opt>>>,
+    flow_control: Entity<SelectState<Vec<Opt>>>,
+) -> gpui::Div {
+    let body = div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        // Port spans full width — the path is long.
+        .child(labeled(
+            "SERIAL PORT",
+            Input::new(&port).small().appearance(true),
+        ))
+        // Two-column rows of selects.
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .gap_3()
                 .child(
                     div()
-                        .px_4()
-                        .py_2()
-                        .bg(rgb(SAVE_BTN_BG))
-                        .text_color(rgb(SAVE_BTN_FG))
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .child("Save")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.save_editor(cx);
-                            }),
-                        ),
+                        .flex_1()
+                        .child(labeled("BAUD RATE", Select::new(&baud).small())),
                 )
                 .child(
                     div()
-                        .px_4()
-                        .py_2()
-                        .bg(rgb(SIDEBAR_SELECTED))
-                        .text_color(rgb(SIDEBAR_FG))
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .child("Cancel")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.cancel_editor(cx);
-                            }),
-                        ),
+                        .flex_1()
+                        .child(labeled("DATA BITS", Select::new(&data_bits).small())),
                 ),
         )
-        .children(error.map(|err| {
+        .child(
             div()
-                .text_size(px(12.0))
-                .text_color(rgb(SIDEBAR_ERROR))
-                .child(err)
-        }))
+                .flex()
+                .flex_row()
+                .gap_3()
+                .child(
+                    div()
+                        .flex_1()
+                        .child(labeled("PARITY", Select::new(&parity).small())),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .child(labeled("STOP BITS", Select::new(&stop_bits).small())),
+                ),
+        )
+        .child(labeled("FLOW CONTROL", Select::new(&flow_control).small()));
+    section_card("Connection", body)
+}
+
+fn terminal_card(
+    line_ending: Entity<SelectState<Vec<Opt>>>,
+    backspace_key: Entity<SelectState<Vec<Opt>>>,
+    local_echo: bool,
+    cx: &mut Context<AppView>,
+) -> gpui::Div {
+    let body = div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .gap_3()
+                .child(
+                    div()
+                        .flex_1()
+                        .child(labeled(
+                            "SEND LINE ENDING",
+                            Select::new(&line_ending).small(),
+                        )),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .child(labeled(
+                            "BACKSPACE SENDS",
+                            Select::new(&backspace_key).small(),
+                        )),
+                ),
+        )
+        .child(
+            Checkbox::new("local-echo")
+                .checked(local_echo)
+                .label("Local echo")
+                .on_click(cx.listener(|this, checked: &bool, _window, cx| {
+                    if let Some(ed) = this.editor.as_mut() {
+                        ed.local_echo = *checked;
+                    }
+                    cx.notify();
+                })),
+        );
+    section_card("Terminal", body)
 }
 
 /// Bright reddish-pink for the inline connect-error message
@@ -526,9 +1152,12 @@ fn profile_row(
         rgb(SIDEBAR_BG)
     };
 
-    // Header row: name on the left, status dot on the right (only
-    // when there's a status to show — `None` collapses the slot so
-    // unstatussed rows don't reserve space for an absent dot).
+    // Header row: name on the left, [edit, status_dot] on the right.
+    // The edit link uses `stop_propagation` so clicking it opens
+    // the editor instead of the row's connect-on-click. Status dot
+    // is omitted when `None` so unstatussed rows don't reserve
+    // space for an absent dot.
+    let edit_id = profile.id.clone();
     let header = div()
         .w_full()
         .flex()
@@ -536,13 +1165,51 @@ fn profile_row(
         .items_center()
         .justify_between()
         .child(div().text_color(rgb(SIDEBAR_FG)).child(name))
-        .children(status.map(|s| {
+        .child(
             div()
-                .w(px(STATUS_DOT_PX))
-                .h(px(STATUS_DOT_PX))
-                .rounded_full()
-                .bg(rgb(s.color()))
-        }));
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .px_1()
+                        .text_size(px(11.0))
+                        .text_color(rgb(SIDEBAR_MUTED))
+                        .rounded_sm()
+                        .hover(|s| s.text_color(rgb(SIDEBAR_FG)))
+                        .cursor_pointer()
+                        .child("edit")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|_this, _: &MouseDownEvent, _window, cx| {
+                                // Stop on mouse_down too: the row's
+                                // select handler runs on mouse_up,
+                                // but gpui dispatches in capture
+                                // order — without stopping the down
+                                // event the row would still see
+                                // its own up event in the same
+                                // sequence and connect to the
+                                // profile we're trying to edit.
+                                cx.stop_propagation();
+                            }),
+                        )
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                                cx.stop_propagation();
+                                this.open_editor_for(edit_id.clone(), window, cx);
+                            }),
+                        ),
+                )
+                .children(status.map(|s| {
+                    div()
+                        .w(px(STATUS_DOT_PX))
+                        .h(px(STATUS_DOT_PX))
+                        .rounded_full()
+                        .bg(rgb(s.color()))
+                })),
+        );
 
     let mut row = div()
         .w_full()

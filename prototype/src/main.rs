@@ -18,8 +18,10 @@ mod terminal_view;
 use std::rc::Rc;
 
 use alacritty_terminal::vte::ansi::Rgb;
-use gpui::{px, App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
-use gpui_component::Root;
+use gpui::{
+    px, rgba, App, AppContext, Bounds, Hsla, TitlebarOptions, WindowBounds, WindowOptions,
+};
+use gpui_component::{Root, Theme, ThemeMode};
 
 use app_view::AppView;
 use terminal_view::TerminalView;
@@ -93,6 +95,27 @@ fn main() {
         // Phase 2.4 (plain divs only) didn't need this; the moment
         // an Input appears, this is mandatory.
         gpui_component::init(cx);
+        // `init` defaults the theme to Light, which makes our
+        // chrome (built on dark bg constants from the Baudrun
+        // skin) ship with black text + a black cursor. Flip to
+        // Dark so widget-rendered text (Checkbox labels, Input
+        // cursor, Select chevron) picks up the white-on-dark
+        // palette that matches our hand-styled bits.
+        Theme::change(ThemeMode::Dark, None, cx);
+
+        // Tighten the gpui-component widget colors to the Baudrun
+        // skin palette. The `input` field doubles as both the
+        // widget border colour and (via `0.7 * input` in
+        // `Theme::input_background`) the widget bg in dark mode —
+        // setting it to ~12% white lands the bg at ~8.4%, matching
+        // the Baudrun skin's `--bg-input` (rgba 8% white). The
+        // border at 12% is brighter than the spec's `transparent`
+        // `--input-border-idle`, but it's what makes the field
+        // outline read against the card; the user could not see
+        // their inputs at all without it.
+        let theme = Theme::global_mut(cx);
+        let input_border: Hsla = rgba(0xFFFFFF1F).into();
+        theme.input = input_border;
 
         // Build the profile store once at startup. Reads from the
         // user's real config dir (same path the existing main app
