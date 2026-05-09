@@ -559,7 +559,7 @@ impl Render for AppView {
         let has_profiles = !self.profile_store.list().is_empty();
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
             Some(editor) => form_pane(EditorRender::from(editor), cx).into_any_element(),
-            None => match connected_profile {
+            None => match connected_profile.clone() {
                 Some(profile) => {
                     let terminal = self.terminal.clone();
                     div()
@@ -585,10 +585,33 @@ impl Render for AppView {
             },
         };
 
+        // Editor's profile name (for the status bar) — read at
+        // render time so a fresh edit session doesn't show a
+        // stale value. `None` for the editor key means "no editor
+        // open" — the status bar uses its other arms in that case.
+        let editor_name: Option<String> = self.editor.as_ref().map(|e| {
+            e.name.read(cx).value().to_string()
+        });
+        // Connected profile lookup is reused from above (right_pane
+        // computed it for the session header). Cloned for the
+        // status bar so both renders can use it.
+        let connected_for_status = connected_profile.clone();
+
         div()
             .size_full()
             .relative()
-            .child(div().size_full().flex().flex_row().bg(rgb(SIDEBAR_BG))
+            .child(
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .flex()
+                            .flex_row()
+                            .bg(rgb(SIDEBAR_BG))
             // -- sidebar --
             .child(
                 div()
@@ -635,8 +658,15 @@ impl Render for AppView {
                         profile_row(profile, is_selected, status, row_error, cx)
                     })),
             )
-            // -- right pane: form OR terminal --
-            .child(right_pane))
+                            // -- right pane: form OR terminal --
+                            .child(right_pane),
+                    )
+                    // -- bottom status bar (sits under both panes) --
+                    .child(status_bar(
+                        connected_for_status.as_ref(),
+                        editor_name.as_deref(),
+                    )),
+            )
             // -- gpui-component overlay layers (dialogs, toasts) --
             .children(dialog_layer)
             .children(notification_layer)
@@ -758,6 +788,35 @@ fn session_header(profile: Profile, cx: &mut Context<AppView>) -> impl IntoEleme
                     }),
                 )),
         )
+}
+
+/// Bottom-of-window status bar — single-line muted text, full
+/// window width (sits under both the sidebar and the right pane).
+/// Mirrors the Tauri version's footer status: shows the live
+/// connection target when connected, the profile being edited
+/// when the editor is open, and a neutral "Not connected" when
+/// idle. Future slices will hang scan indicators, update toasts,
+/// and the undo-delete countdown off this same row.
+fn status_bar(
+    connected: Option<&Profile>,
+    editing_profile_name: Option<&str>,
+) -> impl IntoElement {
+    let text = match (connected, editing_profile_name) {
+        (Some(p), _) => format!("Connected to {} @ {}", p.port_name, p.baud_rate),
+        (None, Some(name)) if !name.is_empty() => format!("Editing {name}"),
+        (None, Some(_)) => "Editing new profile".to_string(),
+        (None, None) => "Not connected".to_string(),
+    };
+    div()
+        .w_full()
+        .px_4()
+        .py_1()
+        .bg(rgb(SIDEBAR_BG))
+        .border_t_1()
+        .border_color(rgba(BORDER_SUBTLE))
+        .text_size(px(11.0))
+        .text_color(rgba(FG_SECONDARY))
+        .child(text)
 }
 
 /// Sidebar header row: muted "PROFILES" label on the left, "+"
@@ -1273,13 +1332,17 @@ impl EditorRender {
 fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
     div()
         .flex_1()
-        // Without `min_w_0` the flex_1 can't shrink below its
-        // content's intrinsic min-width, so a long card description
-        // string downstream pushes the form pane wider than the
-        // window and clips the right edge (Connect button vanishes).
-        // Setting it here lets the pane shrink and the inner
-        // `whitespace_normal` text actually wraps.
+        // `min_w_0` lets the pane shrink below its intrinsic
+        // content min-width so long card descriptions wrap to
+        // fit instead of pushing the Connect button off-screen.
+        // `min_h_0` is the same idea for height: in the parent
+        // flex_row, cross-axis stretch tries to fit the pane to
+        // the row's height, but without min_h_0 the form's
+        // intrinsic content min-height keeps it tall, the
+        // scrollable body never sees an overflow, and the
+        // Scrollbar widget has nothing to render.
         .min_w_0()
+        .min_h_0()
         .bg(rgb(FORM_BG))
         .text_color(rgb(SIDEBAR_FG))
         .text_size(px(13.0))
@@ -1444,6 +1507,7 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
             div()
                 .relative()
                 .flex_1()
+                .h_full()
                 .min_w_0()
                 .min_h_0()
                 .child(

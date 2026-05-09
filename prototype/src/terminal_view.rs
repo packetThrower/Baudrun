@@ -28,17 +28,17 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use alacritty_terminal::{
-    grid::Scroll,
+    grid::{Dimensions, Scroll},
     index::{Column, Line, Point as GridPoint, Side},
     selection::{Selection, SelectionType},
     term::Term,
     vte::ansi::{Processor, Rgb},
 };
 use gpui::{
-    black, div, font, prelude::*, px, rgb, App, Bounds, ClipboardItem, Context, FocusHandle,
-    Focusable, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, Task,
-    TextRun, Window,
+    black, div, font, prelude::*, px, rgb, rgba, relative, App, Bounds, ClipboardItem, Context,
+    FocusHandle, Focusable, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta,
+    ScrollWheelEvent, Task, TextRun, Window,
 };
 use gpui_component::WindowExt;
 
@@ -105,6 +105,15 @@ pub struct ProfileSettings {
     pub paste_char_delay_ms: u32,
 }
 
+/// Computed geometry for the right-edge scroll indicator. Both
+/// fields are fractions of the available track height — the
+/// renderer multiplies them by the painted track size.
+#[derive(Debug, Clone, Copy)]
+struct ScrollIndicator {
+    thumb_top_pct: f32,
+    thumb_height_pct: f32,
+}
+
 impl Default for ProfileSettings {
     fn default() -> Self {
         Self {
@@ -164,6 +173,12 @@ pub struct TerminalView {
     /// on mouse_up. Without this gate, mouse_move events while the
     /// button is up would still extend selection.
     is_dragging: bool,
+    /// `Some(grab_offset_within_thumb)` while the user is dragging
+    /// the scrollback thumb. The grab offset (Y distance from the
+    /// thumb's top to the initial click) is preserved across the
+    /// drag so the thumb tracks the cursor without snapping to its
+    /// midpoint. `None` outside of a scrollbar drag.
+    scrollbar_drag: Option<Pixels>,
     /// Cursor blink phase: `true` = visible, `false` = hidden.
     /// Flipped by the blink task every `BLINK_INTERVAL`. Reset to
     /// `true` on user input so the cursor doesn't disappear in the
@@ -252,6 +267,7 @@ impl TerminalView {
             grid_bounds: Rc::new(Cell::new(None)),
             scroll_accum: 0.0,
             is_dragging: false,
+            scrollbar_drag: None,
             cursor_blink_phase: true,
             bell_flash_until: None,
             _blink_task: blink_task,
@@ -284,6 +300,146 @@ impl TerminalView {
     /// (most do) get a no-op assignment.
     pub fn set_profile_settings(&mut self, settings: ProfileSettings) {
         self.profile_settings = settings;
+    }
+
+    /// Window-coords bounds of the terminal pane (the outer div in
+    /// `render`). Computed by inflating the painted grid bounds by
+    /// `GRID_PADDING_PX` since the grid sits inside that padding.
+    /// `None` until the first paint populates `grid_bounds`.
+    fn pane_bounds(&self) -> Option<Bounds<Pixels>> {
+        let grid = self.grid_bounds.get()?;
+        Some(Bounds {
+            origin: PixelPoint {
+                x: grid.origin.x - px(GRID_PADDING_PX),
+                y: grid.origin.y - px(GRID_PADDING_PX),
+            },
+            size: gpui::Size {
+                width: grid.size.width + px(GRID_PADDING_PX * 2.0),
+                height: grid.size.height + px(GRID_PADDING_PX * 2.0),
+            },
+        })
+    }
+
+    /// Translate a window-Y mouse coord into a target alacritty
+    /// `display_offset` for the current pane height + scrollback
+    /// state. Mirrors the inverse of `scroll_indicator`'s thumb
+    /// math. Returns the delta (positive = scroll up, negative =
+    /// scroll down) to apply via `Scroll::Delta`.
+    fn scrollbar_drag_delta(&self, mouse_y_window: Pixels, grab_offset: Pixels) -> Option<i32> {
+        let pane = self.pane_bounds()?;
+        let g = self.term.grid();
+        let history = g.history_size();
+        if history == 0 {
+            return None;
+        }
+        let screen = g.screen_lines();
+        let total = (history + screen) as f32;
+        let pane_h = f32::from(pane.size.height);
+        let pane_y = f32::from(pane.origin.y);
+        let thumb_h_px = pane_h * (screen as f32 / total).max(0.08);
+        let max_top_px = (pane_h - thumb_h_px).max(0.0);
+        if max_top_px <= 0.0 {
+            return None;
+        }
+        let rel_y = f32::from(mouse_y_window) - pane_y;
+        let target_top_px = (rel_y - f32::from(grab_offset)).clamp(0.0, max_top_px);
+        let normalized = target_top_px / max_top_px;
+        // 0 = top of track ⇒ oldest history; 1 = bottom ⇒ live screen.
+        // alacritty's display_offset runs the OPPOSITE direction
+        // (0 = live, history = oldest), so flip.
+        let target_offset = ((1.0 - normalized) * history as f32).round() as i32;
+        let delta = target_offset - g.display_offset() as i32;
+        if delta == 0 {
+            None
+        } else {
+            Some(delta)
+        }
+    }
+
+    fn handle_scrollbar_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button != MouseButton::Left {
+            return;
+        }
+        // Stop propagation so the terminal beneath doesn't treat
+        // this as a selection-start click.
+        cx.stop_propagation();
+        let Some(pane) = self.pane_bounds() else {
+            return;
+        };
+        let Some(geom) = self.scroll_indicator() else {
+            return;
+        };
+        let pane_h = f32::from(pane.size.height);
+        let thumb_h_px = pane_h * geom.thumb_height_pct;
+        let thumb_top_px = pane_h * geom.thumb_top_pct;
+        let rel_y = f32::from(event.position.y) - f32::from(pane.origin.y);
+        // If the click landed on the thumb, preserve the grab
+        // offset so the thumb tracks the cursor without jumping.
+        // Otherwise (track click), centre the thumb on the click
+        // point — matches platform-default behaviour for "click
+        // empty track to jump there".
+        let grab_offset = if rel_y >= thumb_top_px && rel_y <= thumb_top_px + thumb_h_px {
+            px(rel_y - thumb_top_px)
+        } else {
+            px(thumb_h_px / 2.0)
+        };
+        self.scrollbar_drag = Some(grab_offset);
+        self.apply_scrollbar_drag(event.position.y, cx);
+    }
+
+    fn apply_scrollbar_drag(&mut self, mouse_y_window: Pixels, cx: &mut Context<Self>) {
+        let Some(grab) = self.scrollbar_drag else {
+            return;
+        };
+        let Some(delta) = self.scrollbar_drag_delta(mouse_y_window, grab) else {
+            return;
+        };
+        self.term.scroll_display(Scroll::Delta(delta));
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            self.default_fg,
+            self.default_bg,
+            self.cursor_blink_phase,
+        );
+        cx.notify();
+    }
+
+    /// Compute the on-screen scroll-indicator geometry from the
+    /// alacritty grid's current state. `None` when there's no
+    /// scrollback yet (the indicator stays hidden until the user
+    /// has actually scrolled past the live screen). Geometry is
+    /// returned as fractions (0.0 – 1.0) so the renderer can
+    /// scale to whatever track height it wants.
+    fn scroll_indicator(&self) -> Option<ScrollIndicator> {
+        let g = self.term.grid();
+        let history = g.history_size();
+        if history == 0 {
+            return None;
+        }
+        let screen = g.screen_lines();
+        let offset = g.display_offset();
+        let total = (history + screen) as f32;
+        // Thumb height = visible fraction of the total scrollable
+        // content. Floor at 8% so the thumb stays grabbable on very
+        // long sessions (a 10000-line `show tech-support` would
+        // otherwise produce a sub-pixel thumb).
+        let thumb_h = ((screen as f32) / total).max(0.08);
+        let max_top = 1.0 - thumb_h;
+        // Alacritty's `display_offset` runs 0 (live screen, viewport
+        // at the BOTTOM of history) to `history` (viewport at the
+        // TOP of history). Map onto thumb position so 0 ⇒ thumb at
+        // bottom, history ⇒ thumb at top.
+        let top = (1.0 - (offset as f32 / history as f32)) * max_top;
+        Some(ScrollIndicator {
+            thumb_top_pct: top,
+            thumb_height_pct: thumb_h,
+        })
     }
 
     /// Wipe the visible grid + scrollback. Implemented by feeding
@@ -478,6 +634,12 @@ impl TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Scrollbar drag wins over selection drag — they're
+        // mutually exclusive (mouse_down sets one or the other).
+        if self.scrollbar_drag.is_some() {
+            self.apply_scrollbar_drag(event.position.y, cx);
+            return;
+        }
         if !self.is_dragging {
             return;
         }
@@ -506,9 +668,11 @@ impl TerminalView {
         if event.button != MouseButton::Left {
             return;
         }
+        // Clear scrollbar drag first (no-op if it wasn't set).
         // Selection state survives the release so the user can
         // copy it with Cmd-C / Ctrl-Shift-C; cleared on the next
         // mouse_down (a fresh click drops the prior selection).
+        self.scrollbar_drag = None;
         self.is_dragging = false;
     }
 
@@ -683,8 +847,27 @@ impl TerminalView {
         if cell_w <= 0.0 {
             return;
         }
-        let content_w = (f32::from(viewport.width) - GRID_PADDING_PX * 2.0).max(0.0);
-        let content_h = (f32::from(viewport.height) - GRID_PADDING_PX * 2.0).max(0.0);
+        // Chrome overhead: bytes the window doesn't give to the
+        // terminal grid. Hardcoded against the current AppView
+        // layout — sidebar takes horizontal width, session header
+        // + status bar take vertical height. When the layout
+        // shifts (e.g. multi-window, removable header), this needs
+        // to come from real measured pane bounds instead. Treat
+        // these numbers as "what gpui actually paints those rows
+        // at" — counted from running the prototype, not from
+        // padding spec, so they include text-line-height fudge.
+        const SIDEBAR_PX: f32 = 220.0;
+        const SESSION_HEADER_PX: f32 = 50.0;
+        // Status bar measures ~24px, but giving the grid an extra
+        // ~16px of room above it keeps the prompt from sitting
+        // flush against the footer (Tauri version does the same).
+        const STATUS_BAR_PX: f32 = 40.0;
+        let chrome_w = SIDEBAR_PX;
+        let chrome_h = SESSION_HEADER_PX + STATUS_BAR_PX;
+        let content_w =
+            (f32::from(viewport.width) - chrome_w - GRID_PADDING_PX * 2.0).max(0.0);
+        let content_h =
+            (f32::from(viewport.height) - chrome_h - GRID_PADDING_PX * 2.0).max(0.0);
         let new_cols = ((content_w / cell_w).floor() as usize).max(MIN_COLS);
         let new_rows = ((content_h / CELL_HEIGHT_PX).floor() as usize).max(MIN_ROWS);
         if new_rows == self.grid.rows() && new_cols == self.grid.cols() {
@@ -808,8 +991,21 @@ impl Render for TerminalView {
         // unfilled region renders transparent on Windows — a known
         // gpui default — and you can see whatever's behind the
         // window.
+        let indicator = self.scroll_indicator();
         div()
             .size_full()
+            // The grid's intrinsic size (rows × cell_h) is computed
+            // from the full window viewport, but our actual render
+            // area is smaller once chrome (sidebar, session header,
+            // status bar) takes its share. Without `overflow_hidden`
+            // the bottom row(s) of the grid leak past the terminal
+            // pane and bleed into the status bar. Real fix is to
+            // teach `maybe_resize` about the actual pane bounds; for
+            // now this is the cheap visual containment.
+            .overflow_hidden()
+            // `relative` so the scroll-indicator overlay below can
+            // anchor to this div with absolute positioning.
+            .relative()
             .bg(rgb(pack(self.default_bg)))
             .p(px(GRID_PADDING_PX))
             .track_focus(&self.focus_handle)
@@ -823,8 +1019,42 @@ impl Render for TerminalView {
                 self.bell_flash_active(),
                 self.grid_bounds.clone(),
             ))
+            // Scroll-indicator overlay on the right edge. Mirrors
+            // alacritty's display_offset / history_size so the
+            // thumb position reflects the user's place in the
+            // scrollback. Hidden when there's no scrollback yet.
+            // The overlay carries a mouse_down handler so the user
+            // can drag the thumb (or click the empty track) to
+            // jump in the scrollback; mouse_move + mouse_up fall
+            // through to the terminal's existing handlers, which
+            // short-circuit on `scrollbar_drag = Some`.
+            .children(indicator.map(|ind| {
+                div()
+                    .absolute()
+                    .top(relative(ind.thumb_top_pct))
+                    .right_1()
+                    .w(px(SCROLLBAR_WIDTH_PX))
+                    .h(relative(ind.thumb_height_pct))
+                    .bg(rgba(SCROLLBAR_THUMB))
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(Self::handle_scrollbar_mouse_down),
+                    )
+            }))
     }
 }
+
+/// Pixel width of the scrollback indicator on the right edge.
+/// Matches gpui-component's `THUMB_ACTIVE_WIDTH` (8px) so the
+/// terminal's scrollbar has the same visual weight as the form
+/// pane's. Wide enough to be a comfortable drag target without
+/// obscuring more than ~1 cell-column of grid content beneath.
+const SCROLLBAR_WIDTH_PX: f32 = 8.0;
+/// Thumb colour. White at ~30% alpha — visible against the
+/// terminal's dark bg without competing with cell text.
+const SCROLLBAR_THUMB: u32 = 0xFFFFFF4D;
 
 /// Encode a keystroke as the wire bytes that should go to a serial
 /// device. The profile-configurable bytes (Enter / Backspace) come
