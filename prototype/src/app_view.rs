@@ -86,6 +86,14 @@ pub struct AppView {
     /// the channel receiver, which lets the OS read thread exit
     /// cleanly. `None` while disconnected (loopback mode).
     drain_task: Option<Task<()>>,
+    /// JoinHandles for the active session's serial read/write
+    /// threads. Held so we can `disconnect.wait()` before opening
+    /// a new port — otherwise the prior session's threads still
+    /// hold the file descriptor and `serialport`'s `TIOCEXCL` makes
+    /// the next `open` fail with "Unable to acquire exclusive lock"
+    /// (race observed on macOS when toggling profiles quickly).
+    /// `None` while disconnected.
+    serial_disconnect: Option<serial_io::Disconnect>,
     /// `Some` while the new-profile form is open in the right pane.
     /// The presence of this field also drives a render branch:
     /// when populated the form replaces the TerminalView; when
@@ -190,6 +198,7 @@ impl AppView {
             connected_profile_id: None,
             connect_error: None,
             drain_task: None,
+            serial_disconnect: None,
             editor: None,
         }
     }
@@ -223,12 +232,20 @@ impl AppView {
     /// gone, the OS read/write threads in `serial_io` exit
     /// cleanly because their channels return errors.
     fn connect_to(&mut self, profile: Profile, cx: &mut Context<Self>) {
-        // Tear down the previous connection. Order matters less
-        // than completeness; both ends must drop for the threads
-        // to wind up.
+        // Tear down the previous connection FULLY before opening a
+        // new one. Order matters: drop the channel ends FIRST so
+        // the OS threads notice and start exiting; THEN join their
+        // handles via `disconnect.wait()` to wait until they've
+        // actually released the port file descriptor. Without the
+        // join, the next `serial_io::open` races the prior session's
+        // close and fails with "Unable to acquire exclusive lock"
+        // when both sides target the same port (macOS TIOCEXCL).
         self.drain_task = None;
         self.connected_profile_id = None;
         self.terminal.update(cx, |t, _| t.clear_serial_tx());
+        if let Some(d) = self.serial_disconnect.take() {
+            d.wait();
+        }
 
         let port = profile.port_name.clone();
         if port.is_empty() {
@@ -242,7 +259,13 @@ impl AppView {
         // top out at 4M on typical adapters, well within u32.
         let baud = profile.baud_rate.max(0) as u32;
 
-        let channels = match serial_io::open(&port, baud) {
+        let policies = serial_io::LinePolicies {
+            dtr_on_connect: serial_io::LinePolicy::from_str(&profile.dtr_on_connect),
+            rts_on_connect: serial_io::LinePolicy::from_str(&profile.rts_on_connect),
+            dtr_on_disconnect: serial_io::LinePolicy::from_str(&profile.dtr_on_disconnect),
+            rts_on_disconnect: serial_io::LinePolicy::from_str(&profile.rts_on_disconnect),
+        };
+        let channels = match serial_io::open(&port, baud, policies) {
             Ok(c) => c,
             Err(e) => {
                 self.connect_error = Some(format!("open {port}: {e}"));
@@ -290,6 +313,7 @@ impl AppView {
             }
         });
         self.drain_task = Some(task);
+        self.serial_disconnect = Some(channels.disconnect);
         self.connected_profile_id = Some(profile.id);
     }
 
@@ -440,6 +464,9 @@ impl AppView {
                     self.drain_task = None;
                     self.connected_profile_id = None;
                     self.terminal.update(cx, |t, _| t.clear_serial_tx());
+                    if let Some(d) = self.serial_disconnect.take() {
+                        d.wait();
+                    }
                 }
                 if self.selected_profile_id.as_deref() == Some(id.as_str()) {
                     self.selected_profile_id = None;

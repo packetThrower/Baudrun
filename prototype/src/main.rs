@@ -174,7 +174,10 @@ fn main() {
         let view = terminal;
 
         match port_path.as_deref() {
-            Some(path) => match serial_io::open(path, DEFAULT_BAUD) {
+            // CLI fallback path predates the profile system, so it
+            // can't carry per-profile DTR/RTS policies — pass the
+            // default (leave-as-is) policies on every line.
+            Some(path) => match serial_io::open(path, DEFAULT_BAUD, Default::default()) {
                 Ok(channels) => {
                     log::info!("opened serial port {path} at {DEFAULT_BAUD} 8N1");
                     // Hand the write half to the view so its key

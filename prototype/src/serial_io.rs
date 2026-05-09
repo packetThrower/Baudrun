@@ -61,18 +61,135 @@ pub struct SerialChannels {
     /// Pushed from the keyboard handler — `send` is non-blocking
     /// (unbounded channel) so it never stalls a keystroke.
     pub write_tx: flume::Sender<Vec<u8>>,
+    /// JoinHandles for the two OS threads owning the port. Hold
+    /// these alive for the session and then call `Disconnect::wait`
+    /// on session teardown — joining ensures the port file
+    /// descriptor is closed before the next `open()` tries to grab
+    /// it. Without this, macOS `TIOCEXCL` makes a same-process
+    /// reopen race-fail with "Unable to acquire exclusive lock"
+    /// when switching profiles back-to-back.
+    pub disconnect: Disconnect,
+}
+
+/// Token for waiting on a serial session to fully release its port.
+/// Created by `open`; consumed by `Disconnect::wait` after the
+/// caller has dropped both `read_rx` and `write_tx` (which is what
+/// signals the threads to exit). Dropping the `Disconnect` without
+/// calling `wait` simply detaches the threads — they still exit
+/// cleanly, but the next `open` may race them.
+pub struct Disconnect {
+    read_thread: std::thread::JoinHandle<()>,
+    write_thread: std::thread::JoinHandle<()>,
+}
+
+impl Disconnect {
+    /// Block until both serial threads exit and release the port.
+    /// Typical wait is <10ms (read loop pollwakes once every 1ms,
+    /// write loop wakes immediately on channel close, plus a
+    /// couple of `ioctl`s for the disconnect-time DTR/RTS policies).
+    /// Caller MUST drop the matching `read_rx` and `write_tx`
+    /// before calling this — otherwise the threads never see the
+    /// channels close and `wait` hangs forever.
+    pub fn wait(self) {
+        let _ = self.read_thread.join();
+        let _ = self.write_thread.join();
+    }
+}
+
+/// What to do with one of the modem-control lines (DTR or RTS) at
+/// connect or disconnect. Mirrors the Tauri Profile field shape:
+/// the empty string and "default" both mean "leave the line in
+/// whatever state the OS / driver opened it"; "assert" / "deassert"
+/// drive it high / low respectively.
+///
+/// These knobs only matter for specific adapters or devices —
+/// RS-485 direction control, Arduino DTR-reset on connect,
+/// firmwares that key off DTR for session lifecycle. Most network
+/// gear runs fine with `Default`.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum LinePolicy {
+    #[default]
+    Default,
+    Assert,
+    Deassert,
+}
+
+impl LinePolicy {
+    /// Map the string form stored on `Profile` (one of "", "default",
+    /// "assert", "deassert") into the typed enum. Unknown values
+    /// degrade to `Default` rather than erroring — the store-level
+    /// validator already rejects bad values, and a runtime fallback
+    /// here keeps a freshly-deserialised profile usable even if the
+    /// schema drifts later.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "assert" => Self::Assert,
+            "deassert" => Self::Deassert,
+            _ => Self::Default,
+        }
+    }
+}
+
+/// Full set of modem-control-line policies for one session, both
+/// sides (open + close). Defaulting to all-`Default` makes the
+/// "no profile" / loopback path a one-line call.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LinePolicies {
+    pub dtr_on_connect: LinePolicy,
+    pub rts_on_connect: LinePolicy,
+    pub dtr_on_disconnect: LinePolicy,
+    pub rts_on_disconnect: LinePolicy,
+}
+
+/// Apply a `LinePolicy` to the DTR line. `Default` is a no-op;
+/// errors propagate so the caller can decide whether to abort the
+/// open (currently we log and continue — a control-line refusal
+/// shouldn't tank an otherwise-working session).
+fn apply_dtr(port: &mut dyn serialport::SerialPort, policy: LinePolicy) -> serialport::Result<()> {
+    match policy {
+        LinePolicy::Default => Ok(()),
+        LinePolicy::Assert => port.write_data_terminal_ready(true),
+        LinePolicy::Deassert => port.write_data_terminal_ready(false),
+    }
+}
+
+/// Apply a `LinePolicy` to the RTS line. See `apply_dtr` for the
+/// semantics; the only difference is which line gets driven.
+fn apply_rts(port: &mut dyn serialport::SerialPort, policy: LinePolicy) -> serialport::Result<()> {
+    match policy {
+        LinePolicy::Default => Ok(()),
+        LinePolicy::Assert => port.write_request_to_send(true),
+        LinePolicy::Deassert => port.write_request_to_send(false),
+    }
 }
 
 /// Open a serial port at `port_path` with `baud` 8N1 and start the
 /// read + write threads. Returns the channels the gpui side reads
-/// from / writes to. If opening or cloning fails, the caller gets
-/// the error and can fall back to loopback mode.
+/// from / writes to. `policies` carries the four DTR/RTS knobs from
+/// the active profile — connect-time policies are applied right
+/// after open, disconnect-time policies are handed to the write
+/// thread which applies them right before exit.
 ///
 /// 8N1 (8 data bits, no parity, 1 stop bit) is hardcoded because
 /// it's the universal default for serial-console network gear; a
 /// real settings panel will eventually parameterize this.
-pub fn open(port_path: &str, baud: u32) -> serialport::Result<SerialChannels> {
-    let read_port = serialport::new(port_path, baud).timeout(READ_TIMEOUT).open()?;
+///
+/// If opening or cloning fails, the caller gets the error and can
+/// fall back to loopback mode. Connect-time control-line writes
+/// only log on failure — losing a DTR pulse shouldn't fail the
+/// open if the port itself works.
+pub fn open(
+    port_path: &str,
+    baud: u32,
+    policies: LinePolicies,
+) -> serialport::Result<SerialChannels> {
+    let mut read_port = serialport::new(port_path, baud).timeout(READ_TIMEOUT).open()?;
+    if let Err(e) = apply_dtr(&mut *read_port, policies.dtr_on_connect) {
+        log::warn!("serial: dtr_on_connect failed: {e}");
+    }
+    if let Err(e) = apply_rts(&mut *read_port, policies.rts_on_connect) {
+        log::warn!("serial: rts_on_connect failed: {e}");
+    }
     // `try_clone` is the standard way to get a second handle pointing
     // at the same OS-level port — the read and write threads need
     // independent ownership so neither has to lock the other out.
@@ -82,18 +199,25 @@ pub fn open(port_path: &str, baud: u32) -> serialport::Result<SerialChannels> {
     let (write_tx, write_rx) = flume::unbounded::<Vec<u8>>();
 
     let read_label = format!("serial-read({port_path})");
-    std::thread::Builder::new()
+    let read_thread = std::thread::Builder::new()
         .name(read_label)
         .spawn(move || read_loop(read_port, read_tx))
         .expect("spawn serial read thread");
 
     let write_label = format!("serial-write({port_path})");
-    std::thread::Builder::new()
+    let write_thread = std::thread::Builder::new()
         .name(write_label)
-        .spawn(move || write_loop(write_port, write_rx))
+        .spawn(move || write_loop(write_port, write_rx, policies))
         .expect("spawn serial write thread");
 
-    Ok(SerialChannels { read_rx, write_tx })
+    Ok(SerialChannels {
+        read_rx,
+        write_tx,
+        disconnect: Disconnect {
+            read_thread,
+            write_thread,
+        },
+    })
 }
 
 fn read_loop(mut port: Box<dyn serialport::SerialPort>, tx: flume::Sender<Vec<u8>>) {
@@ -135,7 +259,11 @@ fn read_loop(mut port: Box<dyn serialport::SerialPort>, tx: flume::Sender<Vec<u8
     }
 }
 
-fn write_loop(mut port: Box<dyn serialport::SerialPort>, rx: flume::Receiver<Vec<u8>>) {
+fn write_loop(
+    mut port: Box<dyn serialport::SerialPort>,
+    rx: flume::Receiver<Vec<u8>>,
+    policies: LinePolicies,
+) {
     while let Ok(bytes) = rx.recv() {
         // `write_all` because POSIX `write` is allowed to short-write;
         // we want every byte through. No `flush()` afterwards: on
@@ -146,5 +274,17 @@ fn write_loop(mut port: Box<dyn serialport::SerialPort>, rx: flume::Receiver<Vec
             log::error!("serial write error: {e}");
             break;
         }
+    }
+    // Apply disconnect-time DTR/RTS policies before the port handle
+    // drops. The write thread is the natural place for this — it
+    // exits when the AppView clears its sender (the disconnect
+    // signal), and it owns a port handle that's still alive at that
+    // moment. The read thread will exit on its next iteration when
+    // its tx channel is closed; nothing to do there.
+    if let Err(e) = apply_dtr(&mut *port, policies.dtr_on_disconnect) {
+        log::warn!("serial: dtr_on_disconnect failed: {e}");
+    }
+    if let Err(e) = apply_rts(&mut *port, policies.rts_on_disconnect) {
+        log::warn!("serial: rts_on_disconnect failed: {e}");
     }
 }
