@@ -28,8 +28,9 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::*, pulsating_between, px, rgb, rgba, Animation, AnimationExt, Context, Entity,
-    IntoElement, MouseButton, MouseUpEvent, Render, ScrollHandle, Task, Window,
+    div, prelude::*, pulsating_between, px, rgb, rgba, Animation, AnimationExt, AppContext, Bounds,
+    Context, Entity, IntoElement, MouseButton, MouseUpEvent, Render, ScrollHandle, Task,
+    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
 };
 use gpui_component::{
     checkbox::Checkbox,
@@ -44,6 +45,8 @@ use crate::data::appdata;
 use crate::data::profiles::{self, Profile};
 use crate::data::sanitize::SanitizingLogWriter;
 use crate::data::serial::ports;
+use crate::data::settings;
+use crate::settings_view::SettingsView;
 use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
 
@@ -71,6 +74,23 @@ const SIDEBAR_SELECTED: u32 = 0x2d3548;
 pub struct AppView {
     terminal: Entity<TerminalView>,
     profile_store: Rc<profiles::Store>,
+    /// Global settings (theme/skin defaults, font size, scrollback,
+    /// log dir, shortcuts, highlight presets…). Same `Store`
+    /// pattern as `profile_store`: interior-mutable JSON-backed
+    /// store with atomic save-via-tmp+rename. Cloned into the
+    /// SettingsView when the user opens the Settings window so
+    /// edits round-trip directly to disk; AppView keeps its own
+    /// handle for future live-react paths (theme/skin swap → main
+    /// window re-renders).
+    settings_store: Rc<settings::Store>,
+    /// Handle to the standalone Settings window when it's open.
+    /// `Some(_)` doesn't strictly mean "still alive" — the user may
+    /// have closed the OS window. We probe with `handle.update(...)`
+    /// before reusing; on `Err` we treat it as gone and open a new
+    /// one. Storing the handle lets a second click on the gear
+    /// focus the existing Settings window instead of stacking
+    /// duplicates (matches the Tauri behaviour).
+    settings_window: Option<WindowHandle<Root>>,
     /// Most recently clicked profile. Drives row highlight; survives
     /// connect failures so the user can see *which* profile they
     /// just tried (and the inline error text under it).
@@ -135,6 +155,7 @@ enum EditorTab {
     Connection,
     Advanced,
 }
+
 
 struct Editor {
     /// `None` = creating a brand-new profile (Save → `Store::create`).
@@ -217,11 +238,14 @@ impl AppView {
     pub fn new(
         terminal: Entity<TerminalView>,
         profile_store: Rc<profiles::Store>,
+        settings_store: Rc<settings::Store>,
         _cx: &mut Context<Self>,
     ) -> Self {
         Self {
             terminal,
             profile_store,
+            settings_store,
+            settings_window: None,
             selected_profile_id: None,
             connected_profile_id: None,
             connect_error: None,
@@ -782,6 +806,52 @@ impl AppView {
         }
         cx.notify();
     }
+
+    /// Open (or focus) the standalone Settings window. Mirrors the
+    /// Tauri shape — a separate OS window so the user can change
+    /// theme/skin and watch the main window update live without
+    /// flipping past a modal layer. If a Settings window is already
+    /// open we just bring it to the front; otherwise we spawn a
+    /// fresh one with `SettingsView` as the root.
+    fn open_settings(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        // Reuse the existing window if it's still alive. `update`
+        // returns `Err` when the OS window has been closed; that's
+        // the signal to drop the stale handle and open a new one.
+        if let Some(handle) = &self.settings_window {
+            let activated = handle
+                .update(cx, |_, window, _| window.activate_window())
+                .is_ok();
+            if activated {
+                return;
+            }
+            self.settings_window = None;
+        }
+
+        let store = self.settings_store.clone();
+        let bounds = Bounds::centered(None, gpui::size(px(720.0), px(640.0)), cx);
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                titlebar: Some(TitlebarOptions {
+                    title: Some("Settings · Baudrun".into()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            move |window, cx| {
+                let view = cx.new(|cx| SettingsView::new(store, cx));
+                cx.new(|cx| Root::new(view, window, cx))
+            },
+        );
+        match opened {
+            Ok(handle) => {
+                self.settings_window = Some(handle);
+            }
+            Err(err) => {
+                log::error!("open settings window: {err}");
+            }
+        }
+    }
 }
 
 impl Render for AppView {
@@ -916,9 +986,9 @@ impl Render for AppView {
                         // the header is already communicating the
                         // retry — the duplicate signal is noisy and
                         // implies the session is broken when it's
-                        // actually mid-recovery. Tauri does the same:
-                        // sidebar stays green, only the session
-                        // header swaps to the amber pulse.
+                        // actually mid-recovery. Tauri does the
+                        // same: sidebar stays green, only the
+                        // session header swaps to the amber pulse.
                         let is_reconnecting = self
                             .auto_reconnect_for
                             .as_deref()
@@ -930,13 +1000,12 @@ impl Render for AppView {
                         };
                         // Connected wins over Failed when both apply
                         // (shouldn't happen — connect_to clears the
-                        // error before setting connected — but defining
-                        // the precedence keeps the indicator stable
-                        // if that invariant ever drifts). Reconnecting
-                        // takes its own slot so the sidebar dot can
-                        // pulse amber in lockstep with the session
-                        // header rather than misleadingly showing
-                        // green during a retry window.
+                        // error before setting connected — but
+                        // defining the precedence keeps the
+                        // indicator stable if that invariant ever
+                        // drifts). Reconnecting takes its own slot
+                        // so the sidebar dot can pulse amber in
+                        // lockstep with the session header.
                         let status = if is_connected {
                             Some(RowStatus::Connected)
                         } else if is_reconnecting {
@@ -1159,6 +1228,16 @@ fn status_bar(
 /// reasoning as the rest of the sidebar (less surface area than
 /// adopting `gpui_component::button` for one element).
 fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
+    // Shared chrome for the inline icon-buttons (+ and ⚙). Same
+    // padding / hover treatment so they read as a pair.
+    let icon_btn = || {
+        div()
+            .px_2()
+            .rounded_sm()
+            .text_color(rgb(SIDEBAR_FG))
+            .hover(|s| s.bg(rgb(SIDEBAR_SELECTED)))
+            .cursor_pointer()
+    };
     div()
         .w_full()
         .flex()
@@ -1174,21 +1253,41 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
         )
         .child(
             div()
-                .px_2()
-                .text_size(px(16.0))
-                .text_color(rgb(SIDEBAR_FG))
-                .rounded_sm()
-                .hover(|s| s.bg(rgb(SIDEBAR_SELECTED)))
-                .cursor_pointer()
-                .child("+")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.open_editor(window, cx);
-                    }),
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .child(
+                    icon_btn()
+                        .text_size(px(16.0))
+                        .child("+")
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.open_editor(window, cx);
+                            }),
+                        ),
+                )
+                // Unicode gear (`⚙`). Avoids pulling in an icon
+                // crate for a single chrome glyph; we can swap to
+                // gpui-component's `Icon` later if more accents
+                // arrive. Sized one px smaller than the `+` so the
+                // two glyphs visually balance — `+` is a thin stroke,
+                // the gear is a denser shape.
+                .child(
+                    icon_btn()
+                        .text_size(px(15.0))
+                        .child("\u{2699}")
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.open_settings(window, cx);
+                            }),
+                        ),
                 ),
         )
 }
+
 
 // --- Baudrun (default) skin ---------------------------------------
 //

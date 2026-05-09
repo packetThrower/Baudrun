@@ -11,6 +11,7 @@
 mod app_view;
 mod data;
 mod serial_io;
+mod settings_view;
 mod term_bridge;
 mod terminal_grid;
 mod terminal_view;
@@ -123,19 +124,30 @@ fn main() {
         // there's more content below the fold.
         theme.scrollbar_show = ScrollbarShow::Always;
 
-        // Build the profile store once at startup. Reads from the
-        // user's real config dir (same path the existing main app
-        // uses), so any profiles created in the shipping build
-        // appear in the prototype's sidebar without manual setup.
-        // If the directory doesn't exist or the JSON is missing,
-        // `Store::new` initialises an empty list — sidebar shows
-        // nothing, but we don't crash.
-        let profile_store = match data::appdata::support_dir() {
-            Ok(dir) => match data::profiles::Store::new(&dir) {
+        // Build the profile + settings stores once at startup. Both
+        // read from the user's real config dir (same paths the
+        // existing main app uses), so any profiles or settings
+        // created in the shipping build appear in the prototype
+        // without manual setup. Either store falling back to an
+        // empty/default state still lets the UI render — no crashes.
+        let support = data::appdata::support_dir();
+        let profile_store = match &support {
+            Ok(dir) => match data::profiles::Store::new(dir) {
                 Ok(store) => Rc::new(store),
-                Err(err) => fallback_store(format!("profile store init failed: {err}")),
+                Err(err) => fallback_profile_store(format!("profile store init failed: {err}")),
             },
-            Err(err) => fallback_store(format!("support dir unavailable: {err}")),
+            Err(err) => {
+                fallback_profile_store(format!("support dir unavailable: {err}"))
+            }
+        };
+        let settings_store = match &support {
+            Ok(dir) => match data::settings::Store::new(dir) {
+                Ok(store) => Rc::new(store),
+                Err(err) => fallback_settings_store(format!(
+                    "settings store init failed: {err}"
+                )),
+            },
+            Err(err) => fallback_settings_store(format!("support dir unavailable: {err}")),
         };
 
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
@@ -144,14 +156,15 @@ fn main() {
         // handle to it and render it inside the right pane.
         let terminal = cx.new(|cx| TerminalView::new(24, 80, DEFAULT_FG, DEFAULT_BG, cx));
 
-        let store_for_window = profile_store.clone();
+        let profile_store_for_window = profile_store.clone();
+        let settings_store_for_window = settings_store.clone();
         let terminal_for_window = terminal.clone();
         let window = cx
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Baudrun (prototype) · phase 2".into()),
+                        title: Some("Baudrun (prototype) · phase 3".into()),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -162,8 +175,14 @@ fn main() {
                     // of (and dispatches events through) the rest of
                     // the UI. Our actual app view lives as Root's
                     // child.
-                    let app_view =
-                        cx.new(|cx| AppView::new(terminal_for_window, store_for_window, cx));
+                    let app_view = cx.new(|cx| {
+                        AppView::new(
+                            terminal_for_window,
+                            profile_store_for_window,
+                            settings_store_for_window,
+                            cx,
+                        )
+                    });
                     cx.new(|cx| Root::new(app_view, window, cx))
                 },
             )
@@ -239,12 +258,27 @@ fn main() {
 /// fallback so the UI can still render a (blank) sidebar even when
 /// the user's real config dir is unreachable. Logs why we fell
 /// back so the user can fix the underlying problem.
-fn fallback_store(reason: String) -> Rc<data::profiles::Store> {
-    eprintln!("{reason}; using empty in-tmpdir store");
+fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
+    eprintln!("{reason}; using empty in-tmpdir profile store");
     let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
     Rc::new(
         data::profiles::Store::new(&tmp)
             .expect("temp profile store should always init"),
+    )
+}
+
+/// Settings-store equivalent of `fallback_profile_store`: lets the
+/// app open with the built-in `Settings::default()` when we can't
+/// touch the real config dir (read-only home, missing perms…).
+/// Edits made via the UI in this state still write to the tmpdir
+/// path and are lost between launches — that's the trade for not
+/// crashing.
+fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
+    eprintln!("{reason}; using default in-tmpdir settings store");
+    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    Rc::new(
+        data::settings::Store::new(&tmp)
+            .expect("temp settings store should always init"),
     )
 }
 
