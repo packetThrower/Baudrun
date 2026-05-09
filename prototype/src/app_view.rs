@@ -355,6 +355,7 @@ impl AppView {
                 .unwrap_or(10)
                 .max(0) as u32,
             hex_view: profile.hex_view,
+            timestamps: profile.timestamps,
         };
         self.terminal.update(cx, |t, _| {
             t.set_serial_tx(write_tx);

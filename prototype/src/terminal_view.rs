@@ -108,6 +108,12 @@ pub struct ProfileSettings {
     /// reverse-engineering binary protocols where the raw byte
     /// stream matters more than the rendered text.
     pub hex_view: bool,
+    /// When true, every newline-started line is prefixed with a
+    /// dim-grey wall-clock timestamp (`[HH:MM:SS.mmm] `). Helps
+    /// when grepping a session for "what happened around 14:30".
+    /// Applied AFTER `hex_view`, so each hex row gets its own
+    /// timestamp when both flags are on.
+    pub timestamps: bool,
 }
 
 /// Computed geometry for the right-edge scroll indicator. Both
@@ -129,6 +135,7 @@ impl Default for ProfileSettings {
             paste_slow: true,
             paste_char_delay_ms: 10,
             hex_view: false,
+            timestamps: false,
         }
     }
 }
@@ -212,6 +219,11 @@ pub struct TerminalView {
     /// that we feed into the VT parser instead of the raw stream;
     /// `None` means raw passthrough (the normal terminal mode).
     hex_formatter: Option<HexFormatter>,
+    /// `Some` while the active profile has line-timestamps on.
+    /// Tracks "are we at the start of a line" across `feed_bytes`
+    /// calls so a chunk that arrives mid-line doesn't get a
+    /// stamp inserted partway through.
+    timestamps_state: Option<TimestampInjector>,
     /// Idle flush for the hex formatter's partial-line buffer.
     /// Re-armed on every `feed_bytes` call so a streaming run
     /// stays buffered (proper 16-per-row layout); after
@@ -291,6 +303,7 @@ impl TerminalView {
             _blink_task: blink_task,
             paste_task: None,
             hex_formatter: None,
+            timestamps_state: None,
             hex_flush_task: None,
         }
     }
@@ -327,6 +340,12 @@ impl TerminalView {
         match (settings.hex_view, self.hex_formatter.is_some()) {
             (true, false) => self.hex_formatter = Some(HexFormatter::new()),
             (false, true) => self.hex_formatter = None,
+            _ => {}
+        }
+        // Same toggle pattern for the timestamp injector.
+        match (settings.timestamps, self.timestamps_state.is_some()) {
+            (true, false) => self.timestamps_state = Some(TimestampInjector::new()),
+            (false, true) => self.timestamps_state = None,
             _ => {}
         }
         self.profile_settings = settings;
@@ -500,19 +519,32 @@ impl TerminalView {
     /// the boot-time sample stream and for typed-input loopback.
     /// `cx.notify()` triggers a re-render.
     pub fn feed_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
-        // Hex-view branch: format the chunk as a hex dump and feed
-        // the rendered text to the VT parser instead of the raw
-        // stream. The formatter holds a small partial-line buffer
-        // across calls so contiguous bytes line up at 16 per row;
-        // an idle-flush task re-armed below ensures a stalled
-        // partial line eventually surfaces (otherwise a one-byte
-        // prompt echo would never be displayed).
-        if let Some(f) = self.hex_formatter.as_mut() {
-            let hex = f.feed(bytes);
-            self.feed_terminal_raw(hex.as_bytes(), cx);
-            self.schedule_hex_flush(cx);
+        // Two optional transforms run in series before the bytes
+        // hit the VT parser:
+        //   1. Hex view: 16-byte-per-row hex dump (own line layout).
+        //   2. Timestamps: prepend `[HH:MM:SS.mmm] ` to each line
+        //      that's about to start.
+        // Order matters — applying timestamps AFTER hex_view means
+        // each hex row gets its own stamp, which is what you want.
+        // Both off → raw passthrough.
+        let (hex_bytes, hex_str_held) = if let Some(f) = self.hex_formatter.as_mut() {
+            let s = f.feed(bytes);
+            // Borrow-checker dance: hold the String so the slice
+            // returned alongside lives long enough.
+            let owned = s;
+            (owned.as_bytes().to_vec(), Some(owned))
         } else {
-            self.feed_terminal_raw(bytes, cx);
+            (bytes.to_vec(), None)
+        };
+        let final_bytes = if let Some(ts) = self.timestamps_state.as_mut() {
+            ts.feed(&hex_bytes)
+        } else {
+            hex_bytes
+        };
+        drop(hex_str_held);
+        self.feed_terminal_raw(&final_bytes, cx);
+        if self.hex_formatter.is_some() {
+            self.schedule_hex_flush(cx);
         }
     }
 
@@ -524,13 +556,21 @@ impl TerminalView {
                 .timer(HEX_PARTIAL_FLUSH_DELAY)
                 .await;
             weak.update(cx, |this, cx| {
-                let line = this
+                let hex_line = this
                     .hex_formatter
                     .as_mut()
                     .map(|f| f.flush_partial())
                     .unwrap_or_default();
-                if !line.is_empty() {
-                    this.feed_terminal_raw(line.as_bytes(), cx);
+                if !hex_line.is_empty() {
+                    // Same chain as `feed_bytes` — keep the
+                    // timestamp pass in sync with the hex pass so
+                    // a partial-line flush gets stamped too.
+                    let stamped = if let Some(ts) = this.timestamps_state.as_mut() {
+                        ts.feed(hex_line.as_bytes())
+                    } else {
+                        hex_line.into_bytes()
+                    };
+                    this.feed_terminal_raw(&stamped, cx);
                 }
                 this.hex_flush_task = None;
             })
@@ -1325,6 +1365,60 @@ impl HexFormatter {
         self.offset += bytes.len();
         line
     }
+}
+
+/// Inserts `[HH:MM:SS.mmm] ` (dim grey ANSI) at the start of every
+/// line in the byte stream. Tracks "are we at the start of a line"
+/// across `feed` calls so a chunk that arrives mid-line doesn't get
+/// a stamp inserted partway through, and so a fresh `\n` arriving
+/// in a later chunk arms the next stamp.
+///
+/// `\r` is also treated as a line break — Cisco-style `\r\r\n`
+/// (where the second CR resets the cursor) and lone-CR overwrite
+/// streams (progress bars) both end up with the timestamp at the
+/// visible start of the next paint, which matches what the user
+/// expects from the on-screen view.
+pub(crate) struct TimestampInjector {
+    at_line_start: bool,
+}
+
+impl TimestampInjector {
+    pub(crate) fn new() -> Self {
+        Self {
+            at_line_start: true,
+        }
+    }
+
+    pub(crate) fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(bytes.len() + 32);
+        for &b in bytes {
+            if self.at_line_start && b != b'\n' && b != b'\r' {
+                out.extend_from_slice(format_timestamp().as_bytes());
+                self.at_line_start = false;
+            }
+            out.push(b);
+            if b == b'\n' || b == b'\r' {
+                self.at_line_start = true;
+            }
+        }
+        out
+    }
+}
+
+/// Format the current wall-clock time as a dim-grey bracketed
+/// prefix. Same shape the Tauri build's `formatTimestamp` uses
+/// (`src/lib/highlight.ts`), so a session log captured here looks
+/// the same as one captured there.
+fn format_timestamp() -> String {
+    use chrono::{Local, Timelike};
+    let now = Local::now();
+    format!(
+        "\x1b[90m[{:02}:{:02}:{:02}.{:03}]\x1b[0m ",
+        now.hour(),
+        now.minute(),
+        now.second(),
+        now.timestamp_subsec_millis()
+    )
 }
 
 /// Bytes sent on Enter, per profile setting. Anything unrecognised
