@@ -839,7 +839,7 @@ impl AppView {
                 ..Default::default()
             },
             move |window, cx| {
-                let view = cx.new(|cx| SettingsView::new(store, cx));
+                let view = cx.new(|cx| SettingsView::new(store, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
