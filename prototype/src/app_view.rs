@@ -25,9 +25,11 @@ use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
 
+use std::time::Duration;
+
 use gpui::{
-    div, prelude::*, px, rgb, rgba, Context, Entity, IntoElement, MouseButton, MouseUpEvent,
-    Render, ScrollHandle, Task, Window,
+    div, prelude::*, pulsating_between, px, rgb, rgba, Animation, AnimationExt, Context, Entity,
+    IntoElement, MouseButton, MouseUpEvent, Render, ScrollHandle, Task, Window,
 };
 use gpui_component::{
     checkbox::Checkbox,
@@ -98,6 +100,18 @@ pub struct AppView {
     /// (race observed on macOS when toggling profiles quickly).
     /// `None` while disconnected.
     serial_disconnect: Option<serial_io::Disconnect>,
+    /// Polling task that retries `connect_to` after an unexpected
+    /// session drop. Held so a user disconnect / profile switch
+    /// can cancel pending retries by dropping the field. `None`
+    /// when not actively trying to reconnect.
+    auto_reconnect_task: Option<Task<()>>,
+    /// `Some(profile_id)` while auto-reconnect is in flight. Kept
+    /// separate from `connected_profile_id` (which only tracks a
+    /// live, byte-flowing session) so the right pane can keep the
+    /// terminal viewport visible during the retry window — without
+    /// this, every reconnect attempt would flicker the user back
+    /// to the welcome screen between drops.
+    auto_reconnect_for: Option<String>,
     /// `Some` while the new-profile form is open in the right pane.
     /// The presence of this field also drives a render branch:
     /// when populated the form replaces the TerminalView; when
@@ -213,6 +227,8 @@ impl AppView {
             connect_error: None,
             drain_task: None,
             serial_disconnect: None,
+            auto_reconnect_task: None,
+            auto_reconnect_for: None,
             editor: None,
         }
     }
@@ -273,6 +289,15 @@ impl AppView {
         // when both sides target the same port (macOS TIOCEXCL).
         self.drain_task = None;
         self.connected_profile_id = None;
+        // Note: we deliberately do NOT clear `auto_reconnect_task`
+        // here. `connect_to` is itself called by the retry loop
+        // inside the auto-reconnect Task; clearing the field would
+        // drop the Task we're running inside, which gpui interprets
+        // as a cancel signal and the loop terminates after the
+        // current iteration. User-initiated paths (save_and_connect,
+        // disconnect_current, delete_from_editor) clear the field
+        // explicitly so retries for other profiles still get
+        // cancelled when the user picks a different one.
         self.terminal.update(cx, |t, _| t.clear_serial_tx());
         // Flag the prior session's threads to exit. Returns
         // immediately; threads release the port file descriptor
@@ -386,8 +411,14 @@ impl AppView {
         // Spawn the read drain. Held in `drain_task` so a
         // subsequent connect cancels this one by dropping the
         // task field. The log file is moved into the closure so
-        // it lives as long as the drain task.
+        // it lives as long as the drain task. On natural loop
+        // exit (read_rx closed because the OS read thread saw
+        // the device disappear, etc.) the task notifies AppView
+        // so it can decide whether to auto-reconnect — a
+        // user-initiated disconnect drops this Task entirely
+        // so the post-loop notification never runs.
         let weak_terminal = self.terminal.downgrade();
+        let weak_app = cx.entity().downgrade();
         let read_rx = channels.read_rx;
         let task = cx.spawn(async move |_, cx| {
             let mut log = log_file;
@@ -408,10 +439,21 @@ impl AppView {
                     break;
                 }
             }
+            weak_app
+                .update(cx, |app, cx| app.on_drain_ended(cx))
+                .ok();
         });
         self.drain_task = Some(task);
         self.serial_disconnect = Some(channels.disconnect);
         self.connected_profile_id = Some(profile.id);
+        // A successful (re)connect ends any auto-reconnect window —
+        // the right pane should now render off the live session, not
+        // the placeholder stand-in that kept the terminal visible
+        // while we were polling.
+        self.auto_reconnect_for = None;
+        // Clear any stale failure message from a prior attempt
+        // (e.g. earlier ticks of the auto-reconnect retry loop).
+        self.connect_error = None;
     }
 
     /// Open the form for a new profile, seeded from `Profile::defaults`.
@@ -445,6 +487,96 @@ impl AppView {
         cx.notify();
     }
 
+    /// Called by the drain task when the read channel closes
+    /// without a matching user-initiated teardown (the user
+    /// teardown drops the drain Task entirely, which cancels the
+    /// future before this notification ever fires). Treats the
+    /// drop as a session loss: clears the connected state, and if
+    /// the active profile has `auto_reconnect` set, starts the
+    /// retry-poll task. Otherwise just logs and lets the right
+    /// pane fall back to the welcome screen.
+    fn on_drain_ended(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.connected_profile_id.take() else {
+            // User teardown already cleared this — nothing to do.
+            return;
+        };
+        // The OS threads may still be wrapping up; tell them to
+        // stop and detach so the file descriptor is released
+        // promptly. New connect attempts handle the small race
+        // with their open-retry loop.
+        if let Some(d) = self.serial_disconnect.take() {
+            d.shutdown();
+        }
+        self.drain_task = None;
+        self.terminal.update(cx, |t, _| t.clear_serial_tx());
+
+        let Some(profile) = self.profile_store.get(&id) else {
+            log::warn!("session dropped (profile {id} no longer exists)");
+            cx.notify();
+            return;
+        };
+        if !profile.auto_reconnect {
+            log::warn!("session dropped (auto-reconnect off)");
+            cx.notify();
+            return;
+        }
+        log::warn!("session dropped — auto-reconnecting");
+        // Hold the profile id in `auto_reconnect_for` so the right
+        // pane keeps the terminal viewport on screen during the
+        // retry window. The retry-task's eventual `connect_to`
+        // call will clear this and set `connected_profile_id` on
+        // success; the timeout branch clears it then.
+        self.auto_reconnect_for = Some(id);
+        self.start_auto_reconnect(profile, cx);
+        // Trigger a repaint so the session header swaps the green
+        // dot for amber and the status bar shows "Reconnecting…"
+        // immediately, instead of waiting for the next retry tick.
+        cx.notify();
+    }
+
+    /// Spawn a polling task that retries `connect_to` until the
+    /// port reappears (or the retry budget runs out). Replaces
+    /// any prior reconnect task so user actions that cancel via
+    /// `auto_reconnect_task = None` win cleanly.
+    fn start_auto_reconnect(&mut self, profile: Profile, cx: &mut Context<Self>) {
+        let weak = cx.entity().downgrade();
+        let task = cx.spawn(async move |_, cx| {
+            // ~30s budget at 2s per attempt — matches the Tauri
+            // form's "poll for the port to reappear (up to 30s)"
+            // hint shown next to the auto-reconnect checkbox.
+            for _ in 0..15 {
+                cx.background_executor()
+                    .timer(AUTO_RECONNECT_INTERVAL)
+                    .await;
+                let succeeded = weak
+                    .update(cx, |app, cx| {
+                        app.connect_to(profile.clone(), cx);
+                        app.connected_profile_id.is_some()
+                    })
+                    .ok()
+                    .unwrap_or(false);
+                if succeeded {
+                    return;
+                }
+            }
+            log::warn!(
+                "auto-reconnect to {} gave up after {} attempts",
+                profile.port_name,
+                15
+            );
+            weak.update(cx, |app, cx| {
+                app.auto_reconnect_task = None;
+                // Drop the visual stand-in so the right pane falls
+                // back to the welcome screen now that we've stopped
+                // trying.
+                app.auto_reconnect_for = None;
+                cx.notify();
+            })
+            .ok();
+        });
+        self.auto_reconnect_task = Some(task);
+    }
+
     /// Tear down the active serial session and reopen the editor
     /// for the same profile, mirroring the Tauri version's flow
     /// (terminal → disconnect → back to profile settings). Same
@@ -457,6 +589,11 @@ impl AppView {
             return;
         };
         self.drain_task = None;
+        // Cancel any pending auto-reconnect — user explicitly
+        // disconnecting overrides whatever retry loop might be
+        // mid-flight.
+        self.auto_reconnect_task = None;
+        self.auto_reconnect_for = None;
         self.terminal.update(cx, |t, _| t.clear_serial_tx());
         // Flag the OS threads to exit (non-blocking). The threads
         // wind down within ~SHUTDOWN_POLL_INTERVAL and release the
@@ -596,6 +733,12 @@ impl AppView {
         self.editor = None;
         self.selected_profile_id = Some(id);
         self.connect_error = None;
+        // User-initiated connect supersedes any in-flight auto-
+        // reconnect retry from a previous session — drop the Task
+        // here (connect_to itself can't, since the retry loop calls
+        // connect_to and we'd be dropping our own running future).
+        self.auto_reconnect_task = None;
+        self.auto_reconnect_for = None;
         self.connect_to(profile, cx);
     }
 
@@ -613,9 +756,13 @@ impl AppView {
         };
         match self.profile_store.delete(&id) {
             Ok(()) => {
-                if self.connected_profile_id.as_deref() == Some(id.as_str()) {
+                if self.connected_profile_id.as_deref() == Some(id.as_str())
+                    || self.auto_reconnect_for.as_deref() == Some(id.as_str())
+                {
                     self.drain_task = None;
                     self.connected_profile_id = None;
+                    self.auto_reconnect_task = None;
+                    self.auto_reconnect_for = None;
                     self.terminal.update(cx, |t, _| t.clear_serial_tx());
                     if let Some(d) = self.serial_disconnect.take() {
                         d.shutdown();
@@ -663,10 +810,22 @@ impl Render for AppView {
         // Branching here (vs. conditionally adding children to a
         // shared div) lets each branch pick its own padding /
         // background without leaking into the other.
+        // Show the terminal pane both for live sessions (real serial
+        // bytes flowing) and for the auto-reconnect retry window
+        // (port dropped, retry-poll task running). Without the
+        // second arm the right pane flickers back to the welcome
+        // screen between every retry tick — even though the user
+        // hasn't asked to disconnect.
         let connected_profile = self
             .connected_profile_id
             .as_ref()
+            .or(self.auto_reconnect_for.as_ref())
             .and_then(|id| self.profile_store.get(id));
+        // True when we're showing the terminal off the reconnect
+        // stand-in rather than a live session — drives the amber
+        // dot and the "Reconnecting…" labels.
+        let reconnecting =
+            self.connected_profile_id.is_none() && self.auto_reconnect_for.is_some();
         let has_profiles = !self.profile_store.list().is_empty();
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
             Some(editor) => form_pane(EditorRender::from(editor, cx), cx).into_any_element(),
@@ -688,7 +847,7 @@ impl Render for AppView {
                         .h_full()
                         .flex()
                         .flex_col()
-                        .child(session_header(profile, cx))
+                        .child(session_header(profile, reconnecting, cx))
                         .child(div().flex_1().min_h_0().child(terminal))
                         .into_any_element()
                 }
@@ -749,7 +908,22 @@ impl Render for AppView {
                     .children(profiles.into_iter().map(|profile| {
                         let is_selected = selected.as_deref() == Some(profile.id.as_str());
                         let is_connected = connected.as_deref() == Some(profile.id.as_str());
-                        let row_error = if is_selected {
+                        // Treat the row as still "in-session" while
+                        // we're auto-reconnecting to it. Otherwise
+                        // the per-tick `open … No such file` error
+                        // from connect_to flashes a red dot + the
+                        // inline error under the row, even though
+                        // the header is already communicating the
+                        // retry — the duplicate signal is noisy and
+                        // implies the session is broken when it's
+                        // actually mid-recovery. Tauri does the same:
+                        // sidebar stays green, only the session
+                        // header swaps to the amber pulse.
+                        let is_reconnecting = self
+                            .auto_reconnect_for
+                            .as_deref()
+                            == Some(profile.id.as_str());
+                        let row_error = if is_selected && !is_reconnecting {
                             self.connect_error.clone()
                         } else {
                             None
@@ -758,9 +932,15 @@ impl Render for AppView {
                         // (shouldn't happen — connect_to clears the
                         // error before setting connected — but defining
                         // the precedence keeps the indicator stable
-                        // if that invariant ever drifts).
+                        // if that invariant ever drifts). Reconnecting
+                        // takes its own slot so the sidebar dot can
+                        // pulse amber in lockstep with the session
+                        // header rather than misleadingly showing
+                        // green during a retry window.
                         let status = if is_connected {
                             Some(RowStatus::Connected)
+                        } else if is_reconnecting {
+                            Some(RowStatus::Reconnecting)
                         } else if is_selected && row_error.is_some() {
                             Some(RowStatus::Failed)
                         } else {
@@ -775,6 +955,7 @@ impl Render for AppView {
                     // -- bottom status bar (sits under both panes) --
                     .child(status_bar(
                         connected_for_status.as_ref(),
+                        reconnecting,
                         editor_name.as_deref(),
                     )),
             )
@@ -824,7 +1005,11 @@ fn welcome_pane(has_profiles: bool) -> impl IntoElement {
 /// Disconnect buttons on the right. Only rendered when a profile
 /// is actually connected — loopback / no-device modes hide the
 /// header so the prototype's no-profile path stays minimal.
-fn session_header(profile: Profile, cx: &mut Context<AppView>) -> impl IntoElement {
+fn session_header(
+    profile: Profile,
+    reconnecting: bool,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
     let parity_letter = match profile.parity.as_str() {
         "odd" => "O",
         "even" => "E",
@@ -832,10 +1017,26 @@ fn session_header(profile: Profile, cx: &mut Context<AppView>) -> impl IntoEleme
         "space" => "S",
         _ => "N",
     };
-    let meta = format!(
+    // Mirror the Tauri header: full session line always, with
+    // " · reconnecting…" appended during a retry window. The
+    // appended phrase keeps the port/baud/8N1 info visible so the
+    // user knows what the retry is targeting.
+    let mut meta = format!(
         "{} · {} /{} {} {}",
-        profile.port_name, profile.baud_rate, profile.data_bits, parity_letter, profile.stop_bits
+        profile.port_name,
+        profile.baud_rate,
+        profile.data_bits,
+        parity_letter,
+        profile.stop_bits,
     );
+    if reconnecting {
+        meta.push_str(" · reconnecting…");
+    }
+    let dot_color = if reconnecting {
+        STATUS_RECONNECTING
+    } else {
+        STATUS_CONNECTED
+    };
     div()
         .w_full()
         .px_4()
@@ -856,13 +1057,31 @@ fn session_header(profile: Profile, cx: &mut Context<AppView>) -> impl IntoEleme
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .child(
-                    div()
+                .child({
+                    let dot = div()
                         .w(px(STATUS_DOT_PX))
                         .h(px(STATUS_DOT_PX))
                         .rounded_full()
-                        .bg(rgb(STATUS_CONNECTED)),
-                )
+                        .bg(rgb(dot_color));
+                    if reconnecting {
+                        // Match the Tauri `.dot.reconnecting`
+                        // pulse: 1s ease-in-out, opacity bounces
+                        // between roughly 0.35 and 1.0. gpui's
+                        // `pulsating_between` returns the easing
+                        // curve; the per-frame closure applies the
+                        // current alpha.
+                        dot.with_animation(
+                            "session-header-reconnect-pulse",
+                            Animation::new(Duration::from_secs(1))
+                                .repeat()
+                                .with_easing(pulsating_between(0.35, 1.0)),
+                            |el, delta| el.opacity(delta),
+                        )
+                        .into_any_element()
+                    } else {
+                        dot.into_any_element()
+                    }
+                })
                 .child(
                     div()
                         .flex()
@@ -910,9 +1129,13 @@ fn session_header(profile: Profile, cx: &mut Context<AppView>) -> impl IntoEleme
 /// and the undo-delete countdown off this same row.
 fn status_bar(
     connected: Option<&Profile>,
+    reconnecting: bool,
     editing_profile_name: Option<&str>,
 ) -> impl IntoElement {
     let text = match (connected, editing_profile_name) {
+        (Some(p), _) if reconnecting => {
+            format!("Reconnecting to {} @ {}…", p.port_name, p.baud_rate)
+        }
         (Some(p), _) => format!("Connected to {} @ {}", p.port_name, p.baud_rate),
         (None, Some(name)) if !name.is_empty() => format!("Editing {name}"),
         (None, Some(_)) => "Editing new profile".to_string(),
@@ -1147,6 +1370,13 @@ fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<
     let delay_str = editor.paste_char_delay_ms.read(cx).value().to_string();
     profile.paste_char_delay_ms = delay_str.trim().parse::<i32>().ok().map(|v| v.max(0));
 }
+
+/// How long the auto-reconnect poll waits between
+/// `serial_io::open` retries. 2s × 15 attempts = ~30s budget,
+/// matching the Tauri profile form's "poll for the port to
+/// reappear (up to 30s) and reopen transparently" hint shown
+/// next to the auto-reconnect checkbox.
+const AUTO_RECONNECT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Open a session log file for the given profile. Path is
 /// `<support_dir>/logs/<slug>_<YYYY-MM-DD_HHMMSS>.log` — same
@@ -2264,23 +2494,29 @@ fn paste_safety_card(
 /// under a profile row. Bright enough to read on the dark sidebar
 /// without being painful.
 const SIDEBAR_ERROR: u32 = 0xff7a8a;
-/// Live-connection status dot colour. Saturated green that reads
-/// at 8px against the dark sidebar without being neon.
-const STATUS_CONNECTED: u32 = 0x4ade80;
+/// Live-connection status dot colour. Matches the Tauri version's
+/// `--success` skin token (Baudrun palette) so the chrome agrees
+/// across the two builds.
+const STATUS_CONNECTED: u32 = 0x32d74b;
 /// Failed-connection status dot colour. Reuses the inline-error
 /// pink so the dot and the under-row error text agree visually.
 const STATUS_FAILED: u32 = SIDEBAR_ERROR;
+/// Auto-reconnect-in-progress dot colour. Matches the Tauri
+/// version's `--warn` skin token (warm yellow), paired with a
+/// pulse animation in `session_header` to draw the eye to the
+/// "trying" state.
+const STATUS_RECONNECTING: u32 = 0xf5d76e;
 /// Diameter of the round status dot in the row header. 8px reads
 /// at the sidebar's font size without crowding the name text.
 const STATUS_DOT_PX: f32 = 8.0;
 
 /// Per-row connection state used to paint the status dot. `None`
-/// (in the caller) means no dot at all; an explicit `Connected`/
-/// `Failed` keeps the dot's two cases tagged so the row colour
-/// table stays a one-line lookup.
+/// (in the caller) means no dot at all; the explicit variants keep
+/// the row colour + animation table to a one-line lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RowStatus {
     Connected,
+    Reconnecting,
     Failed,
 }
 
@@ -2288,6 +2524,7 @@ impl RowStatus {
     fn color(self) -> u32 {
         match self {
             RowStatus::Connected => STATUS_CONNECTED,
+            RowStatus::Reconnecting => STATUS_RECONNECTING,
             RowStatus::Failed => STATUS_FAILED,
         }
     }
@@ -2333,11 +2570,27 @@ fn profile_row(
         .justify_between()
         .child(div().text_color(rgb(SIDEBAR_FG)).child(name))
         .children(status.map(|s| {
-            div()
+            let dot = div()
                 .w(px(STATUS_DOT_PX))
                 .h(px(STATUS_DOT_PX))
                 .rounded_full()
-                .bg(rgb(s.color()))
+                .bg(rgb(s.color()));
+            if s == RowStatus::Reconnecting {
+                // Same 1s pulse as the session header so the two
+                // indicators feel like one signal. Animation name
+                // is per-row-instance to avoid gpui de-duping
+                // animations across distinct dots.
+                dot.with_animation(
+                    SharedString::from(format!("sidebar-reconnect-pulse-{}", id)),
+                    Animation::new(Duration::from_secs(1))
+                        .repeat()
+                        .with_easing(pulsating_between(0.35, 1.0)),
+                    |el, delta| el.opacity(delta),
+                )
+                .into_any_element()
+            } else {
+                dot.into_any_element()
+            }
         }));
 
     let mut row = div()
