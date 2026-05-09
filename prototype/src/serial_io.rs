@@ -24,6 +24,8 @@
 //! serial layer doesn't know about TerminalView at all.
 
 use std::io::{self, Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 /// Read timeout for the blocking `port.read` call.
@@ -61,38 +63,40 @@ pub struct SerialChannels {
     /// Pushed from the keyboard handler — `send` is non-blocking
     /// (unbounded channel) so it never stalls a keystroke.
     pub write_tx: flume::Sender<Vec<u8>>,
-    /// JoinHandles for the two OS threads owning the port. Hold
-    /// these alive for the session and then call `Disconnect::wait`
-    /// on session teardown — joining ensures the port file
-    /// descriptor is closed before the next `open()` tries to grab
-    /// it. Without this, macOS `TIOCEXCL` makes a same-process
-    /// reopen race-fail with "Unable to acquire exclusive lock"
-    /// when switching profiles back-to-back.
+    /// Token for shutting down the OS threads. Hold for the
+    /// session lifetime; call `Disconnect::shutdown` on teardown
+    /// to flag the threads to exit quickly. JoinHandles inside
+    /// then drop without `join` so the UI doesn't block on a
+    /// stuck `port.write_all`; the threads themselves wind down
+    /// in <100ms once the flag is set, releasing the port file
+    /// descriptor (otherwise the next `open` races and fails with
+    /// "Unable to acquire exclusive lock" on macOS).
     pub disconnect: Disconnect,
 }
 
-/// Token for waiting on a serial session to fully release its port.
-/// Created by `open`; consumed by `Disconnect::wait` after the
-/// caller has dropped both `read_rx` and `write_tx` (which is what
-/// signals the threads to exit). Dropping the `Disconnect` without
-/// calling `wait` simply detaches the threads — they still exit
-/// cleanly, but the next `open` may race them.
+/// Token for shutting down a serial session's OS threads.
+/// Created by `open`; calling `shutdown` flips the shared
+/// `Arc<AtomicBool>` the threads check each iteration, then drops
+/// the `JoinHandle`s (which detaches them — the threads still wind
+/// down on their own within ~POLL_INTERVAL of the flag being
+/// set). We deliberately don't `join` because either thread could
+/// be stuck on a blocking syscall (`port.write_all` waiting on
+/// RTS/CTS, an unresponsive disconnect ioctl), and joining them
+/// would freeze the UI.
 pub struct Disconnect {
+    shutdown: Arc<AtomicBool>,
     read_thread: std::thread::JoinHandle<()>,
     write_thread: std::thread::JoinHandle<()>,
 }
 
 impl Disconnect {
-    /// Block until both serial threads exit and release the port.
-    /// Typical wait is <10ms (read loop pollwakes once every 1ms,
-    /// write loop wakes immediately on channel close, plus a
-    /// couple of `ioctl`s for the disconnect-time DTR/RTS policies).
-    /// Caller MUST drop the matching `read_rx` and `write_tx`
-    /// before calling this — otherwise the threads never see the
-    /// channels close and `wait` hangs forever.
-    pub fn wait(self) {
-        let _ = self.read_thread.join();
-        let _ = self.write_thread.join();
+    /// Signal the OS threads to exit. Returns immediately; the
+    /// threads will check the flag on their next loop iteration
+    /// (worst case ~SHUTDOWN_POLL_INTERVAL away) and drop their
+    /// port handles, releasing the file descriptor so a subsequent
+    /// `open` can succeed.
+    pub fn shutdown(self) {
+        self.shutdown.store(true, Ordering::Relaxed);
     }
 }
 
@@ -197,32 +201,43 @@ pub fn open(
 
     let (read_tx, read_rx) = flume::unbounded::<Vec<u8>>();
     let (write_tx, write_rx) = flume::unbounded::<Vec<u8>>();
+    let shutdown = Arc::new(AtomicBool::new(false));
 
     let read_label = format!("serial-read({port_path})");
+    let read_shutdown = shutdown.clone();
     let read_thread = std::thread::Builder::new()
         .name(read_label)
-        .spawn(move || read_loop(read_port, read_tx))
+        .spawn(move || read_loop(read_port, read_tx, read_shutdown))
         .expect("spawn serial read thread");
 
     let write_label = format!("serial-write({port_path})");
+    let write_shutdown = shutdown.clone();
     let write_thread = std::thread::Builder::new()
         .name(write_label)
-        .spawn(move || write_loop(write_port, write_rx, policies))
+        .spawn(move || write_loop(write_port, write_rx, policies, write_shutdown))
         .expect("spawn serial write thread");
 
     Ok(SerialChannels {
         read_rx,
         write_tx,
         disconnect: Disconnect {
+            shutdown,
             read_thread,
             write_thread,
         },
     })
 }
 
-fn read_loop(mut port: Box<dyn serialport::SerialPort>, tx: flume::Sender<Vec<u8>>) {
+fn read_loop(
+    mut port: Box<dyn serialport::SerialPort>,
+    tx: flume::Sender<Vec<u8>>,
+    shutdown: Arc<AtomicBool>,
+) {
     let mut buf = [0u8; READ_BUF];
     loop {
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
         // `bytes_to_read()` is `ClearCommError` under the hood — a
         // non-blocking status query against the driver's cached
         // buffer state. Crucially it does NOT issue an IRP to the
@@ -263,16 +278,34 @@ fn write_loop(
     mut port: Box<dyn serialport::SerialPort>,
     rx: flume::Receiver<Vec<u8>>,
     policies: LinePolicies,
+    shutdown: Arc<AtomicBool>,
 ) {
-    while let Ok(bytes) = rx.recv() {
-        // `write_all` because POSIX `write` is allowed to short-write;
-        // we want every byte through. No `flush()` afterwards: on
-        // Unix that calls `tcdrain` which blocks until the OS tx
-        // buffer drains — adding tens of ms of latency on every
-        // keystroke, exactly what this prototype is trying to avoid.
-        if let Err(e) = port.write_all(&bytes) {
-            log::error!("serial write error: {e}");
+    // Use `recv_timeout` instead of `recv` so the loop wakes
+    // periodically and can check `shutdown` even when no bytes
+    // have been queued. Without this, a stray sender clone (e.g.
+    // a slow-paste task whose drop hasn't happened yet) would keep
+    // `recv` blocked forever and the port handle would never be
+    // released.
+    loop {
+        if shutdown.load(Ordering::Relaxed) {
             break;
+        }
+        match rx.recv_timeout(SHUTDOWN_POLL_INTERVAL) {
+            Ok(bytes) => {
+                // `write_all` because POSIX `write` is allowed to
+                // short-write; we want every byte through. No
+                // `flush()` afterwards: on Unix that calls
+                // `tcdrain` which blocks until the OS tx buffer
+                // drains — adding tens of ms of latency on every
+                // keystroke, exactly what this prototype is trying
+                // to avoid.
+                if let Err(e) = port.write_all(&bytes) {
+                    log::error!("serial write error: {e}");
+                    break;
+                }
+            }
+            Err(flume::RecvTimeoutError::Timeout) => continue,
+            Err(flume::RecvTimeoutError::Disconnected) => break,
         }
     }
     // Apply disconnect-time DTR/RTS policies before the port handle
@@ -288,3 +321,10 @@ fn write_loop(
         log::warn!("serial: rts_on_disconnect failed: {e}");
     }
 }
+
+/// How often `write_loop` wakes from `recv_timeout` to re-check
+/// the shutdown flag. 50ms is well below the typical reconnect
+/// gap (a button click + form re-render is hundreds of ms) and
+/// short enough that even a snappy disconnect→connect releases
+/// the port within one loop iteration.
+const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(50);

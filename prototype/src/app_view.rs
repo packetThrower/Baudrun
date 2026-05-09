@@ -213,12 +213,18 @@ impl AppView {
     /// between editor and terminal.
     fn select_profile(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         // Clicking the row for the currently-connected profile
-        // keeps the user in the terminal view — the editor is
-        // only reachable via Disconnect from a live session, so
-        // clicking the connected row shouldn't yank focus into a
-        // form. Clicking ANY OTHER row opens its editor (the
-        // active session keeps running in the background).
+        // snaps the view back to its terminal — closes any
+        // editor that might be open for a *different* profile.
+        // The editor is only reachable via Disconnect from a
+        // live session, so clicking the connected row shouldn't
+        // yank focus into a form. Clicking ANY OTHER row opens
+        // its editor (the active session keeps running in the
+        // background).
         if self.connected_profile_id.as_deref() == Some(id.as_str()) {
+            if self.editor.is_some() {
+                self.editor = None;
+                cx.notify();
+            }
             return;
         }
         self.selected_profile_id = Some(id.clone());
@@ -254,8 +260,13 @@ impl AppView {
         self.drain_task = None;
         self.connected_profile_id = None;
         self.terminal.update(cx, |t, _| t.clear_serial_tx());
+        // Flag the prior session's threads to exit. Returns
+        // immediately; threads release the port file descriptor
+        // within ~SHUTDOWN_POLL_INTERVAL. The retry loop below
+        // covers that gap — we don't synchronously join because a
+        // stuck `port.write_all` would freeze the UI.
         if let Some(d) = self.serial_disconnect.take() {
-            d.wait();
+            d.shutdown();
         }
 
         let port = profile.port_name.clone();
@@ -276,11 +287,38 @@ impl AppView {
             dtr_on_disconnect: serial_io::LinePolicy::from_str(&profile.dtr_on_disconnect),
             rts_on_disconnect: serial_io::LinePolicy::from_str(&profile.rts_on_disconnect),
         };
-        let channels = match serial_io::open(&port, baud, policies) {
-            Ok(c) => c,
-            Err(e) => {
-                self.connect_error = Some(format!("open {port}: {e}"));
-                return;
+        // Retry briefly: a fresh disconnect may have left the
+        // prior session's threads still holding the port file
+        // descriptor. Each attempt waits 30ms before retrying;
+        // 5 attempts × 30ms = max ~150ms blocking on the UI
+        // thread, which beats the unbounded freeze of synchronous
+        // join. `LinePolicies` is `Copy` so re-passing it is free.
+        let channels = {
+            let mut last_err = None;
+            let mut got = None;
+            for attempt in 0..5 {
+                match serial_io::open(&port, baud, policies) {
+                    Ok(c) => {
+                        got = Some(c);
+                        break;
+                    }
+                    Err(e) => {
+                        if attempt < 4 {
+                            std::thread::sleep(std::time::Duration::from_millis(30));
+                        }
+                        last_err = Some(e);
+                    }
+                }
+            }
+            match got {
+                Some(c) => c,
+                None => {
+                    let msg = last_err
+                        .map(|e| e.to_string())
+                        .unwrap_or_else(|| "unknown".into());
+                    self.connect_error = Some(format!("open {port}: {msg}"));
+                    return;
+                }
             }
         };
 
@@ -372,8 +410,14 @@ impl AppView {
         };
         self.drain_task = None;
         self.terminal.update(cx, |t, _| t.clear_serial_tx());
+        // Flag the OS threads to exit (non-blocking). The threads
+        // wind down within ~SHUTDOWN_POLL_INTERVAL and release the
+        // port file descriptor so the next `connect_to` won't fail
+        // with "Unable to acquire exclusive lock". Synchronous
+        // `join` would freeze the UI when a thread is stuck on
+        // `port.write_all` or a disconnect ioctl.
         if let Some(d) = self.serial_disconnect.take() {
-            d.wait();
+            d.shutdown();
         }
         self.open_editor_for(id, window, cx);
     }
@@ -507,7 +551,7 @@ impl AppView {
                     self.connected_profile_id = None;
                     self.terminal.update(cx, |t, _| t.clear_serial_tx());
                     if let Some(d) = self.serial_disconnect.take() {
-                        d.wait();
+                        d.shutdown();
                     }
                 }
                 if self.selected_profile_id.as_deref() == Some(id.as_str()) {
