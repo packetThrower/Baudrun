@@ -37,6 +37,7 @@ use gpui_component::{
 use gpui::SharedString;
 
 use crate::data::profiles::{self, Profile};
+use crate::data::serial::ports;
 use crate::serial_io;
 use crate::terminal_view::TerminalView;
 
@@ -118,11 +119,15 @@ struct Editor {
     /// Active sub-tab. Default `Connection` on open.
     tab: EditorTab,
 
-    // -- text inputs --
+    // -- text input --
     name: Entity<InputState>,
-    port: Entity<InputState>,
 
     // -- Connection section selects --
+    /// Serial Port select. Options come from
+    /// `data::serial::ports::list_ports`; if the saved profile's
+    /// port isn't currently detected, it's added as a "(not
+    /// connected)" option so the form still shows it.
+    port: Entity<SelectState<Vec<Opt>>>,
     baud: Entity<SelectState<Vec<Opt>>>,
     data_bits: Entity<SelectState<Vec<Opt>>>,
     parity: Entity<SelectState<Vec<Opt>>>,
@@ -313,6 +318,26 @@ impl AppView {
             return;
         }
         ed.tab = tab;
+        cx.notify();
+    }
+
+    /// Rebuild the Serial Port select's option list from the current
+    /// OS port enumeration. Preserves the current selection across
+    /// the rescan (so plugging a new device in doesn't deselect the
+    /// one the user already picked) and falls back to a "(not
+    /// connected)" entry if the previously-selected port is no
+    /// longer detected.
+    fn rescan_ports(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(ed) = self.editor.as_ref() else {
+            return;
+        };
+        let current = read_select(&ed.port, cx);
+        let opts = port_opts(&current);
+        let port_state = ed.port.clone();
+        port_state.update(cx, |state, cx| {
+            state.set_items(opts, window, cx);
+            state.set_selected_value(&current, window, cx);
+        });
         cx.notify();
     }
 
@@ -601,14 +626,7 @@ fn build_editor(
                 .default_value(val)
         })
     };
-    let port = {
-        let val = profile.port_name.clone();
-        cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("/dev/cu.usbserial-XXX or COM3")
-                .default_value(val)
-        })
-    };
+    let port = make_select(port_opts(&profile.port_name), &profile.port_name, window, cx);
     let paste_delay_val = profile.paste_char_delay_ms.unwrap_or(10).to_string();
     let paste_char_delay_ms = cx.new(|cx| {
         InputState::new(window, cx)
@@ -681,7 +699,7 @@ fn build_editor(
 /// edit-path safe to round-trip.
 fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<AppView>) {
     profile.name = editor.name.read(cx).value().to_string();
-    profile.port_name = editor.port.read(cx).value().to_string();
+    profile.port_name = read_select(&editor.port, cx);
     // Empty / non-numeric → 0, which `validate` rejects with
     // `InvalidBaud`; `Profile::data_bits` is i32 too. Let the store
     // be the single source of truth for what counts as valid rather
@@ -869,6 +887,45 @@ fn backspace_opts() -> Vec<Opt> {
     .collect()
 }
 
+/// Build the Serial Port select options from the current OS port
+/// list. Each detected port becomes one option; the title bundles
+/// the device path with whatever the enumerator found
+/// (`/dev/cu.usbserial-XYZ — FT232R USB UART · FTDI`) — same shape
+/// the Tauri form uses, so the user gets enough info to identify
+/// the right adapter without opening System Settings.
+///
+/// If `keep_selected` is non-empty and isn't in the detected list,
+/// it's prepended as an "(not connected)" option so the saved
+/// profile still shows its port even when the device is unplugged.
+/// On port enumeration failure we still want a usable form, so we
+/// fall back to the keep_selected (if any) and otherwise an empty
+/// list — the user can rescan later.
+fn port_opts(keep_selected: &str) -> Vec<Opt> {
+    let detected = ports::list_ports().unwrap_or_default();
+    let mut opts: Vec<Opt> = detected
+        .iter()
+        .map(|p| {
+            let mut title = p.name.clone();
+            if !p.product.is_empty() {
+                title.push_str(" — ");
+                title.push_str(&p.product);
+            }
+            if !p.chipset.is_empty() {
+                title.push_str(" · ");
+                title.push_str(&p.chipset);
+            }
+            Opt::new(&p.name, &title)
+        })
+        .collect();
+    if !keep_selected.is_empty() && !detected.iter().any(|p| p.name == keep_selected) {
+        // Prepend so the user's saved port shows up first when
+        // it isn't currently detected (cable unplugged, etc.).
+        let title = format!("{keep_selected} (not connected)");
+        opts.insert(0, Opt::new(keep_selected, &title));
+    }
+    opts
+}
+
 /// Pill button styled per the Baudrun skin. Neutral translucent
 /// fill by default; `danger=true` swaps the foreground to system
 /// red for destructive actions like Delete. Returns a bare `Div`
@@ -910,7 +967,7 @@ struct EditorRender {
     is_edit: bool,
     tab: EditorTab,
     name: Entity<InputState>,
-    port: Entity<InputState>,
+    port: Entity<SelectState<Vec<Opt>>>,
     baud: Entity<SelectState<Vec<Opt>>>,
     data_bits: Entity<SelectState<Vec<Opt>>>,
     parity: Entity<SelectState<Vec<Opt>>>,
@@ -1091,6 +1148,7 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
                 er.parity,
                 er.stop_bits,
                 er.flow_control,
+                cx,
             ))
             .child(terminal_card(
                 er.line_ending,
@@ -1297,22 +1355,50 @@ fn labeled(label: &'static str, widget: impl IntoElement) -> gpui::Div {
 }
 
 fn connection_card(
-    port: Entity<InputState>,
+    port: Entity<SelectState<Vec<Opt>>>,
     baud: Entity<SelectState<Vec<Opt>>>,
     data_bits: Entity<SelectState<Vec<Opt>>>,
     parity: Entity<SelectState<Vec<Opt>>>,
     stop_bits: Entity<SelectState<Vec<Opt>>>,
     flow_control: Entity<SelectState<Vec<Opt>>>,
+    cx: &mut Context<AppView>,
 ) -> gpui::Div {
+    // Serial port row: select on the left (flex_1), rescan icon
+    // on the right. Click rescans the OS port list and reapplies
+    // the current selection.
+    let port_row = div()
+        .flex()
+        .flex_row()
+        .items_end()
+        .gap_2()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .child(labeled("SERIAL PORT", Select::new(&port).small())),
+        )
+        .child(
+            div()
+                .px_2()
+                .py_1()
+                .bg(rgba(BTN_BG))
+                .text_color(rgba(BTN_FG))
+                .rounded_md()
+                .cursor_pointer()
+                .hover(|s| s.bg(rgba(BTN_BG_HOVER)))
+                .child("↻")
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        this.rescan_ports(window, cx);
+                    }),
+                ),
+        );
     let body = div()
         .flex()
         .flex_col()
         .gap_3()
-        // Port spans full width — the path is long.
-        .child(labeled(
-            "SERIAL PORT",
-            Input::new(&port).small().appearance(true),
-        ))
+        .child(port_row)
         // Two-column rows of selects.
         .child(
             div()
