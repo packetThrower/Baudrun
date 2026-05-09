@@ -25,7 +25,9 @@
 //!     batching same-style runs into single text spans before
 //!     `show tech-support`-scale output.
 
+use std::cell::Cell as StdCell;
 use std::panic;
+use std::rc::Rc;
 
 use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{
@@ -223,8 +225,13 @@ impl TerminalGrid {
     /// forcing `.w()` per div had its own clipping issues. With
     /// per-cell paint this is no longer a problem to design
     /// around.
-    pub fn element(&self, cell_w_px: f32, bell_flash: bool) -> GridElement {
-        GridElement::new(self, cell_w_px, bell_flash)
+    pub fn element(
+        &self,
+        cell_w_px: f32,
+        bell_flash: bool,
+        bounds_sink: Rc<StdCell<Option<Bounds<Pixels>>>>,
+    ) -> GridElement {
+        GridElement::new(self, cell_w_px, bell_flash, bounds_sink)
     }
 }
 
@@ -248,6 +255,14 @@ pub struct GridElement {
     /// computes this against a wall-clock deadline and passes the
     /// boolean state per render.
     bell_flash: bool,
+    /// Sink for the actual element bounds during paint. Shared
+    /// with `TerminalView` so `pixel_to_point` can subtract the
+    /// grid's *true* window-x/y origin from a mouse-event position
+    /// — essential once the terminal stops being at (0,0) (e.g.
+    /// once a sidebar is added). Stored as `Option` so initial
+    /// reads (before the first paint) can be skipped rather than
+    /// produce nonsense coordinates.
+    bounds_sink: Rc<StdCell<Option<Bounds<Pixels>>>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -267,7 +282,12 @@ struct RowTextRun {
 }
 
 impl GridElement {
-    fn new(grid: &TerminalGrid, cell_w_px: f32, bell_flash: bool) -> Self {
+    fn new(
+        grid: &TerminalGrid,
+        cell_w_px: f32,
+        bell_flash: bool,
+        bounds_sink: Rc<StdCell<Option<Bounds<Pixels>>>>,
+    ) -> Self {
         let mut bg_rects = Vec::with_capacity(grid.rows * 2);
         let mut text_runs: Vec<RowTextRun> = Vec::with_capacity(grid.rows * 4);
 
@@ -363,6 +383,7 @@ impl GridElement {
             default_fg: grid.default_fg,
             default_bg: grid.grid_bg,
             bell_flash,
+            bounds_sink,
         }
     }
 }
@@ -423,6 +444,13 @@ impl Element for GridElement {
         window: &mut Window,
         cx: &mut App,
     ) {
+        // Hand the actual painted bounds back to TerminalView so
+        // its mouse-event coordinate translation knows where the
+        // grid sits inside the window. Without this the click math
+        // assumes (GRID_PADDING_PX, GRID_PADDING_PX) and is wrong
+        // by the width of any preceding chrome (sidebar, etc.).
+        self.bounds_sink.set(Some(bounds));
+
         let origin = bounds.origin;
         let cell_w = px(self.cell_w_px);
         let cell_h = px(self.cell_h_px);

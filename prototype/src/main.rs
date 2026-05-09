@@ -8,15 +8,19 @@
 //! prototype runs in checkpoint-#4 loopback mode so it stays usable
 //! without hardware on the dev machine.
 
+mod app_view;
 mod data;
 mod serial_io;
 mod term_bridge;
 mod terminal_grid;
 mod terminal_view;
 
+use std::rc::Rc;
+
 use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{px, App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
 
+use app_view::AppView;
 use terminal_view::TerminalView;
 
 /// Default foreground / background for the prototype. Matches the
@@ -80,26 +84,48 @@ fn main() {
     let port_path = std::env::args().nth(1);
 
     gpui_platform::application().run(move |cx: &mut App| {
+        // Build the profile store once at startup. Reads from the
+        // user's real config dir (same path the existing main app
+        // uses), so any profiles created in the shipping build
+        // appear in the prototype's sidebar without manual setup.
+        // If the directory doesn't exist or the JSON is missing,
+        // `Store::new` initialises an empty list — sidebar shows
+        // nothing, but we don't crash.
+        let profile_store = match data::appdata::support_dir() {
+            Ok(dir) => match data::profiles::Store::new(&dir) {
+                Ok(store) => Rc::new(store),
+                Err(err) => fallback_store(format!("profile store init failed: {err}")),
+            },
+            Err(err) => fallback_store(format!("support dir unavailable: {err}")),
+        };
+
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
+
+        // Build the TerminalView entity first; AppView will own a
+        // handle to it and render it inside the right pane.
+        let terminal = cx.new(|cx| TerminalView::new(24, 80, DEFAULT_FG, DEFAULT_BG, cx));
+
+        let store_for_window = profile_store.clone();
+        let terminal_for_window = terminal.clone();
         let window = cx
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     titlebar: Some(TitlebarOptions {
-                        title: Some("Baudrun (prototype) · checkpoint #5".into()),
+                        title: Some("Baudrun (prototype) · phase 2".into()),
                         ..Default::default()
                     }),
                     ..Default::default()
                 },
-                |_window, cx| {
-                    let rows = 24;
-                    let cols = 80;
-                    cx.new(|cx| TerminalView::new(rows, cols, DEFAULT_FG, DEFAULT_BG, cx))
+                move |_window, cx| {
+                    cx.new(|cx| AppView::new(terminal_for_window, store_for_window, cx))
                 },
             )
             .expect("open window");
 
-        let view = window.entity(cx).expect("read terminal view entity");
+        // Re-bind for the rest of the function (serial / focus
+        // wiring still operates on the TerminalView directly).
+        let view = terminal;
 
         match port_path.as_deref() {
             Some(path) => match serial_io::open(path, DEFAULT_BAUD) {
@@ -145,16 +171,32 @@ fn main() {
             }
         }
 
-        // Focus the terminal view at startup so keystrokes land
-        // without the user having to click first.
+        // Focus the TerminalView at startup so keystrokes land in
+        // the grid without the user having to click first. The
+        // window root is now AppView, but we still want focus on
+        // the inner viewport — pull its focus_handle directly from
+        // the Entity<TerminalView> we stashed before opening the
+        // window.
+        let viewport_focus = view.read(cx).focus_handle().clone();
         window
-            .update(cx, |view, window, cx| {
-                view.focus_handle().clone().focus(window, cx);
-            })
+            .update(cx, |_, window, cx| viewport_focus.focus(window, cx))
             .expect("focus terminal view");
 
         cx.activate(true);
     });
+}
+
+/// Stand up an empty profile store under a tmpdir as a last-resort
+/// fallback so the UI can still render a (blank) sidebar even when
+/// the user's real config dir is unreachable. Logs why we fell
+/// back so the user can fix the underlying problem.
+fn fallback_store(reason: String) -> Rc<data::profiles::Store> {
+    eprintln!("{reason}; using empty in-tmpdir store");
+    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    Rc::new(
+        data::profiles::Store::new(&tmp)
+            .expect("temp profile store should always init"),
+    )
 }
 
 /// In loopback mode (no device), feed the boot-time sample so the

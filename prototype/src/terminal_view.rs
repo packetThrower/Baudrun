@@ -23,6 +23,7 @@
 //! (multiple grids per window, settings panes that don't need a
 //! parser, etc.).
 
+use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -34,8 +35,8 @@ use alacritty_terminal::{
     vte::ansi::{Processor, Rgb},
 };
 use gpui::{
-    black, div, font, prelude::*, px, rgb, App, ClipboardItem, Context, FocusHandle, Focusable,
-    IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
+    black, div, font, prelude::*, px, rgb, App, Bounds, ClipboardItem, Context, FocusHandle,
+    Focusable, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, Task,
     TextRun, Window,
 };
@@ -88,6 +89,15 @@ pub struct TerminalView {
     /// then reuse, since neither the font nor the size changes
     /// during a session yet.
     cell_width_px: Option<f32>,
+    /// Window-coords bounds of the painted grid, written by
+    /// `GridElement::paint` after each frame and read by
+    /// `pixel_to_point` to translate mouse-event positions into
+    /// cell coords. Without this the click math hard-codes the
+    /// grid as starting at `(GRID_PADDING_PX, GRID_PADDING_PX)`,
+    /// which is only true when the TerminalView fills the whole
+    /// window — drag-selection breaks the moment a sidebar (or
+    /// any other layout) shifts the grid right.
+    grid_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Sub-line accumulator for trackpad scrolling. macOS trackpads
     /// emit Pixels deltas one frame at a time; without buffering
     /// the fractional remainder, slow scrolls under one line per
@@ -176,6 +186,7 @@ impl TerminalView {
             listener_state,
             serial_tx: None,
             cell_width_px: None,
+            grid_bounds: Rc::new(Cell::new(None)),
             scroll_accum: 0.0,
             is_dragging: false,
             cursor_blink_phase: true,
@@ -189,6 +200,14 @@ impl TerminalView {
     /// echo is what updates the grid via `feed_bytes`.
     pub fn set_serial_tx(&mut self, tx: flume::Sender<Vec<u8>>) {
         self.serial_tx = Some(tx);
+    }
+
+    /// Drop the active serial sender, putting the view back into
+    /// loopback mode. Called by `AppView` before opening a
+    /// different profile's port — releases the OS write thread
+    /// in `serial_io` because its receiver returns an error.
+    pub fn clear_serial_tx(&mut self) {
+        self.serial_tx = None;
     }
 
     /// Feed a chunk of bytes through the VT parser, then re-mirror
@@ -413,8 +432,21 @@ impl TerminalView {
         if cell_w <= 0.0 {
             return None;
         }
-        let local_x = (f32::from(pos.x) - GRID_PADDING_PX).max(0.0);
-        let local_y = (f32::from(pos.y) - GRID_PADDING_PX).max(0.0);
+        // The grid's actual window-coords origin, written by
+        // `GridElement::paint`. Falls back to the padding-only
+        // assumption for the first frame (before the first paint
+        // populates the cell), so a very-early click degrades
+        // gracefully instead of returning None.
+        let grid_origin = self
+            .grid_bounds
+            .get()
+            .map(|b| b.origin)
+            .unwrap_or_else(|| PixelPoint {
+                x: px(GRID_PADDING_PX),
+                y: px(GRID_PADDING_PX),
+            });
+        let local_x = (f32::from(pos.x) - f32::from(grid_origin.x)).max(0.0);
+        let local_y = (f32::from(pos.y) - f32::from(grid_origin.y)).max(0.0);
         let col = (local_x / cell_w).floor() as usize;
         let display_row = (local_y / CELL_HEIGHT_PX).floor() as i32;
         let cols = self.grid.cols();
@@ -598,7 +630,11 @@ impl Render for TerminalView {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
-            .child(self.grid.element(cell_w, self.bell_flash_active()))
+            .child(self.grid.element(
+                cell_w,
+                self.bell_flash_active(),
+                self.grid_bounds.clone(),
+            ))
     }
 }
 
