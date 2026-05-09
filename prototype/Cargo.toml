@@ -59,6 +59,25 @@ flume = "0.11"
 # was all custom rendering). Re-add against gpui-component's git
 # tip when we start Phase 2 (sidebar, profile form, etc.).
 
+# --- Phase 1: data-layer dependencies ---
+# These power the modules ported from src-tauri/src/ into
+# prototype/src/data/. Versions match the main app's Cargo.toml
+# 1:1 so anything that ports cleanly there ports cleanly here.
+# Pure data / IO; none touch UI.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+dirs = "6"
+plist = "1"             # for `.itermcolors` parsing in `data::themes::parse`
+thiserror = "2"
+anyhow = "1"
+regex = "1"             # used by USB enumeration (parsing system_profiler /
+                        # PowerShell output) and the highlight rule engine
+base64 = "0.22"
+rusb = "0.9"            # libusb backend for the CP210x direct driver in
+                        # `data::usbserial`
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

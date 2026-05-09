@@ -8,6 +8,7 @@
 //! prototype runs in checkpoint-#4 loopback mode so it stays usable
 //! without hardware on the dev machine.
 
+mod data;
 mod serial_io;
 mod term_bridge;
 mod terminal_grid;

@@ -1,0 +1,76 @@
+{
+  "id": "baudrun-default",
+  "name": "Baudrun default",
+  "description": "Vendor-neutral highlights — IPs, MACs, interface names, status keywords, timestamps. Enabled by default; turn it off if you only want device-specific presets.",
+  "rules": [
+    {
+      "pattern": "\\b\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?\\b",
+      "color": "dim",
+      "group": "timestamps"
+    },
+    {
+      "pattern": "\\b\\d{4}-\\d{2}-\\d{2}\\b",
+      "color": "dim",
+      "group": "dates"
+    },
+    {
+      "pattern": "\\b(?:\\d{1,3}\\.){3}\\d{1,3}(?:\\/\\d{1,2})?\\b",
+      "color": "cyan",
+      "group": "ipv4"
+    },
+    {
+      "pattern": "\\b(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}\\b",
+      "color": "magenta",
+      "group": "mac"
+    },
+    {
+      "pattern": "\\b[0-9a-fA-F]{4}\\.[0-9a-fA-F]{4}\\.[0-9a-fA-F]{4}\\b",
+      "color": "magenta",
+      "group": "mac-cisco"
+    },
+    {
+      "pattern": "\\b(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\\b",
+      "color": "cyan",
+      "group": "ipv6"
+    },
+    {
+      "pattern": "\\b(?:GigabitEthernet|FastEthernet|TenGigabitEthernet|TwentyFiveGigE|HundredGigE|FortyGigE|Ethernet|Serial|Loopback|Vlan|Port-channel|Tunnel|Management|Bundle-Ether|Null)\\s?\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b",
+      "color": "blue",
+      "group": "interface-cisco-full"
+    },
+    {
+      "pattern": "\\b(?:Gi|Fa|Te|Twe|Hun|Fo|Eth|Se|Lo|Vl|Po|Tu|Mg|Bu|Nu)\\d+\\/\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b",
+      "color": "blue",
+      "group": "interface-cisco-short"
+    },
+    {
+      "pattern": "\\b(?:ge|xe|et|fe|me|xl|em|lo|fxp|irb|lt|st|mt|ae|pp|bme|vcp|vme|vt|sp|reth)-\\d+\\/\\d+\\/\\d+(?:\\.\\d+)?\\b",
+      "color": "blue",
+      "group": "interface-juniper"
+    },
+    {
+      "pattern": "\\b(?:up|online|active|established|connected|enabled|forwarding|FULL|passed|OK|success)\\b",
+      "color": "green",
+      "ignoreCase": true,
+      "group": "state-good"
+    },
+    {
+      "pattern": "\\b(?:down|offline|inactive|failed|err-?disabled|error|denied|disabled|rejected|timeout|lost|critical|fatal|alert|unreachable)\\b",
+      "color": "red",
+      "ignoreCase": true,
+      "group": "state-bad"
+    },
+    {
+      "pattern": "\\b(?:warning|warn|degraded|partial|init|learning|listening|blocking|pending)\\b",
+      "color": "yellow",
+      "ignoreCase": true,
+      "group": "state-warn"
+    },
+    {
+      "pattern": "\\bVLAN\\s?\\d+\\b",
+      "color": "yellow",
+      "ignoreCase": true,
+      "group": "vlan"
+    }
+  ]
+}
