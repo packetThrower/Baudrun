@@ -31,22 +31,27 @@ use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{
     fill, font, point, px, rgb, rgba, size, App, Bounds, Element, ElementId, FontWeight,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Size, StrikethroughStyle,
-    Style, TextRun, UnderlineStyle, Window,
+    Style, TextAlign, TextRun, UnderlineStyle, Window,
 };
 
-/// Font family stack. macOS has Menlo / SF Mono natively; Windows
-/// ships Cascadia Mono (Windows Terminal's default since 2019) and
-/// Consolas; Linux distros usually have DejaVu Sans Mono. Without
-/// Windows entries the gpui DirectWrite backend falls back to Segoe
-/// UI, which is proportional — every character renders at a
-/// different advance and the grid alignment collapses.
+/// Single-family monospace per platform. The new gpui's
+/// `force_width` snap math (which gives us correct cell-aligned
+/// glyph positioning) misclassifies glyphs as combining marks
+/// when shape_line emits multi-font runs from a comma-separated
+/// family list — letters end up missing or duplicated. So we
+/// pick one known-installed family per OS and let the platform
+/// text system shape against just that. Cross-platform fallback
+/// gets re-added via `Font::with_fallbacks` once we figure out
+/// which API path doesn't trip the snap.
 ///
-/// `pub` so `terminal_view` can hand the same family string to
-/// gpui's text-system metric APIs when sizing the grid to the
-/// window. Mismatched font here vs. there would mean we'd render
-/// at one cell width and pack cells using another.
-pub const FONT_FAMILY: &str =
-    "Cascadia Mono, Menlo, SF Mono, Consolas, DejaVu Sans Mono, Courier New, monospace";
+/// `pub` so `terminal_view::cell_width` can use the same family
+/// string for layout-line measurement.
+#[cfg(target_os = "macos")]
+pub const FONT_FAMILY: &str = "Menlo";
+#[cfg(target_os = "windows")]
+pub const FONT_FAMILY: &str = "Cascadia Mono";
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+pub const FONT_FAMILY: &str = "DejaVu Sans Mono";
 
 /// Glyph point size — must match `FONT_SIZE_PX` for the same
 /// reason `FONT_FAMILY` is shared.
@@ -440,26 +445,26 @@ impl Element for GridElement {
             window.paint_quad(fill(Bounds::new(rect_origin, rect_size), rgb(pack(r.color))));
         }
 
-        // 3. Text. `shape_line` per run with `force_width = None`
-        //    (glyphs at their shaped natural advance from the run's
-        //    pixel origin). The expected approach was
-        //    `force_width = Some(cell_w)` — what Zed's terminal
-        //    pane uses — but on `gpui = "0.2.2"` from crates.io,
-        //    that path squeezes glyph positions below their natural
-        //    width and adjacent glyphs overlap visibly ("messed up
-        //    text"). Zed runs against a newer gpui via git pin
-        //    (see `gpui-component`'s README) and presumably the
-        //    snap math has changed. Until we move our gpui pin
-        //    forward (Phase 0.5-style work), the choice is between
-        //    cursor-block-slightly-overlaps-last-char (here) or
-        //    glyph-overlap (with `Some(cell_w)`); the former is
-        //    less visually disruptive.
+        // 3. Text. `shape_line` per run with `force_width =
+        //    Some(cell_w)` — the per-glyph cell-snap path. On the
+        //    Zed-git gpui pin this snaps each base glyph to a
+        //    cell-aligned position while keeping combining marks
+        //    at their natural relative offset (see
+        //    `apply_force_width_to_layout` in gpui's
+        //    `text_system::line_layout`). Result: every cell ends
+        //    up exactly `cell_w` wide on screen regardless of
+        //    bold/italic cut metrics, so the cursor cell at
+        //    `col × cell_w` lines up flush with the visual end of
+        //    the previous run. The crates.io `gpui = "0.2.2"`
+        //    line had an older snap that compressed multi-glyph
+        //    runs visibly — that's the reason for the git pin.
         for run in &self.text_runs {
             let text_len_bytes = run.text.len();
             let pos = point(
                 origin.x + cell_w * run.start_col as f32,
                 origin.y + cell_h * run.row as f32,
             );
+            let force_width = cell_w;
 
             let mut run_font = font(FONT_FAMILY);
             if run.flags.bold {
@@ -491,9 +496,9 @@ impl Element for GridElement {
                 run.text.clone().into(),
                 px(FONT_SIZE_PX),
                 &[text_run],
-                None,
+                Some(force_width),
             );
-            let _ = shaped.paint(pos, cell_h, window, cx);
+            let _ = shaped.paint(pos, cell_h, TextAlign::Left, None, window, cx);
         }
 
         // 4. Bell flash. Painted last so it sits over everything

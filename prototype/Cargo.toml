@@ -7,11 +7,26 @@ edition = "2021"
 publish = false
 
 [dependencies]
-# Zed's GPU-accelerated UI framework. Externally published to
-# crates.io as of late 2025; pinned here to avoid drift while the
-# spike is in progress. If this version 404s, fall back to a `git`
-# dep against a pinned commit of zed-industries/zed.
-gpui = "0.2"
+# Zed's GPU-accelerated UI framework. Pinned to a specific
+# zed-industries/zed commit (the gpui crate is a workspace member
+# of that monorepo). Crates.io has a 0.2.2 of gpui from Feb 2026
+# but Zed's source has months of changes since under the same
+# version number, including a fixed `force_width` snap in
+# `text_system::line_layout::apply_force_width_to_layout` that
+# correctly distinguishes base vs combining glyphs (see Phase 0
+# slice 5 commit message — the cell-width snap on 0.2.2 squeezed
+# multi-glyph runs visibly). The pinned commit picks up that fix.
+# Bump deliberately, not via `cargo update`, so we know what
+# changed.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "48db5261e658c972a8856ad739f81ac01ad43a2c" }
+
+# Per-OS platform initialization for gpui. Was bundled inside the
+# `gpui` crate up through the crates.io 0.2.x line; the Zed
+# monorepo split it out as a separate workspace crate. Provides
+# the convenience `application()` constructor (uses
+# `MacPlatform`/`WindowsPlatform`/etc. under cfg gates) that
+# replaces the old `Application::new()`.
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "48db5261e658c972a8856ad739f81ac01ad43a2c", features = ["font-kit"] }
 
 # alacritty's VT escape parser + grid state. Not the renderer — the
 # renderer is alacritty's own OpenGL code, which we deliberately do
@@ -35,15 +50,14 @@ serialport = "4"
 # explicitly here keeps the dep graph honest.
 flume = "0.11"
 
-# 60+-component widget library for gpui (Apache-2.0 / MIT). The
-# crates.io publish (0.5.x) targets `gpui = "0.2"` — same line we're
-# already on — so this drops in without forcing the Zed-git swap the
-# gpui-component README example uses. We'll use `sidebar`, `dialog`,
-# `sheet`, `form`, `input`, `select`, `table`, `list`, `tab`, `menu`,
-# `kbd`, `resizable`, etc. from Phase 2 onward; pulling it in here
-# (Phase 0.5) so any version-pin issues surface before we have a lot
-# of UI code on top of it.
-gpui-component = "0.5"
+# gpui-component (Apache-2.0 / MIT, 60+ widgets) was pulled in
+# during Phase 0.5 against `gpui = "0.2"` from crates.io. After
+# moving gpui to a Zed-git pin (the `force_width` snap fix needed
+# for terminal-grid alignment), the published `gpui-component =
+# "0.5.x"` would conflict — it targets the crates.io gpui line.
+# Dropped for now; we don't use any of its widgets yet (Phase 0
+# was all custom rendering). Re-add against gpui-component's git
+# tip when we start Phase 2 (sidebar, profile form, etc.).
 
 [profile.release]
 panic = "abort"

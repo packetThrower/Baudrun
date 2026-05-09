@@ -14,9 +14,7 @@ mod terminal_grid;
 mod terminal_view;
 
 use alacritty_terminal::vte::ansi::Rgb;
-use gpui::{
-    px, App, AppContext, Application, Bounds, TitlebarOptions, WindowBounds, WindowOptions,
-};
+use gpui::{px, App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
 
 use terminal_view::TerminalView;
 
@@ -80,7 +78,7 @@ fn main() {
     // configure besides the path.
     let port_path = std::env::args().nth(1);
 
-    Application::new().run(move |cx: &mut App| {
+    gpui_platform::application().run(move |cx: &mut App| {
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
         let window = cx
             .open_window(
@@ -149,8 +147,8 @@ fn main() {
         // Focus the terminal view at startup so keystrokes land
         // without the user having to click first.
         window
-            .update(cx, |view, window, _cx| {
-                view.focus_handle().clone().focus(window);
+            .update(cx, |view, window, cx| {
+                view.focus_handle().clone().focus(window, cx);
             })
             .expect("focus terminal view");
 
