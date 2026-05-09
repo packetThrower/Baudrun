@@ -39,7 +39,7 @@ use gpui::SharedString;
 use crate::data::profiles::{self, Profile};
 use crate::data::serial::ports;
 use crate::serial_io;
-use crate::terminal_view::TerminalView;
+use crate::terminal_view::{ProfileSettings, TerminalView};
 
 /// Width of the left sidebar in logical pixels. Matches the main
 /// app's sidebar width — wide enough for two-line profile rows
@@ -253,9 +253,20 @@ impl AppView {
         log::info!("connected to {port} at {baud} 8N1 (profile {})", profile.id);
 
         // Wire the write channel into the TerminalView so typing
-        // routes to the device.
+        // routes to the device, and push the profile-driven
+        // keystroke settings (line_ending, backspace_key,
+        // local_echo) so the encoder honours them on the next
+        // keypress.
         let write_tx = channels.write_tx;
-        self.terminal.update(cx, |t, _| t.set_serial_tx(write_tx));
+        let settings = ProfileSettings {
+            line_ending: profile.line_ending.clone(),
+            backspace_key: profile.backspace_key.clone(),
+            local_echo: profile.local_echo,
+        };
+        self.terminal.update(cx, |t, _| {
+            t.set_serial_tx(write_tx);
+            t.set_profile_settings(settings);
+        });
 
         // Spawn the read drain. Held in `drain_task` so a
         // subsequent connect cancels this one by dropping the

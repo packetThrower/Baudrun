@@ -67,6 +67,40 @@ const GRID_PADDING_PX: f32 = 8.0;
 const MIN_ROWS: usize = 4;
 const MIN_COLS: usize = 10;
 
+/// Profile-driven keystroke + echo behaviour. Stays separate from
+/// the larger `Profile` struct because TerminalView only needs the
+/// bytes-on-the-wire knobs — paste settings, theme, hex view,
+/// logging etc. live elsewhere or are wired via separate paths.
+/// Defaults match `Profile::defaults`: CR line ending, DEL on
+/// backspace, no local echo (a real device echoes typed characters
+/// back).
+#[derive(Debug, Clone)]
+pub struct ProfileSettings {
+    /// Bytes sent on Enter. `"cr"` → `\r` (default; what serial
+    /// consoles for Cisco/Juniper/Aruba expect), `"lf"` → `\n`
+    /// (Linux consoles, embedded), `"crlf"` → `\r\n`
+    /// (legacy / Windows).
+    pub line_ending: String,
+    /// Bytes sent on Backspace. `"del"` → `\x7F` (default; VT100,
+    /// xterm, modern devices), `"bs"` → `\x08` (some older
+    /// Cisco / Foundry gear).
+    pub backspace_key: String,
+    /// When true, typed bytes are also fed into the local Term as
+    /// if the device had echoed them — useful when talking to a
+    /// device that doesn't echo (some bootloaders, custom firmware).
+    pub local_echo: bool,
+}
+
+impl Default for ProfileSettings {
+    fn default() -> Self {
+        Self {
+            line_ending: "cr".into(),
+            backspace_key: "del".into(),
+            local_echo: false,
+        }
+    }
+}
+
 pub struct TerminalView {
     term: Term<TerminalListener>,
     processor: Processor,
@@ -83,6 +117,11 @@ pub struct TerminalView {
     /// drives the grid via the read channel. `None` means loopback —
     /// keystrokes feed the local Term directly.
     serial_tx: Option<flume::Sender<Vec<u8>>>,
+    /// Profile-driven keystroke encoding settings (line_ending,
+    /// backspace_key, local_echo). Updated by `AppView` when a new
+    /// profile connects; defaults to `Profile::defaults` equivalents
+    /// otherwise so the no-profile loopback path stays sensible.
+    profile_settings: ProfileSettings,
     /// Cached cell-width measurement from gpui's text-system. Lazy
     /// because the text-system isn't queryable until after the
     /// platform window is up — we resolve on the first render and
@@ -185,6 +224,7 @@ impl TerminalView {
             default_bg,
             listener_state,
             serial_tx: None,
+            profile_settings: ProfileSettings::default(),
             cell_width_px: None,
             grid_bounds: Rc::new(Cell::new(None)),
             scroll_accum: 0.0,
@@ -208,6 +248,15 @@ impl TerminalView {
     /// in `serial_io` because its receiver returns an error.
     pub fn clear_serial_tx(&mut self) {
         self.serial_tx = None;
+    }
+
+    /// Replace the active profile-keystroke settings. Called by
+    /// `AppView::connect_to` after opening a profile's port so the
+    /// keystroke encoder picks up the right line ending / backspace
+    /// byte / echo behaviour. Profiles that share these defaults
+    /// (most do) get a no-op assignment.
+    pub fn set_profile_settings(&mut self, settings: ProfileSettings) {
+        self.profile_settings = settings;
     }
 
     /// Feed a chunk of bytes through the VT parser, then re-mirror
@@ -559,7 +608,8 @@ impl TerminalView {
             return;
         }
 
-        let Some(serial_bytes) = encode_for_serial(&event.keystroke) else {
+        let Some(serial_bytes) = encode_for_serial(&event.keystroke, &self.profile_settings)
+        else {
             return;
         };
         // Reset the blink phase so the cursor is visible during
@@ -589,7 +639,18 @@ impl TerminalView {
             // (or lack thereof — a passwd prompt won't echo) is what
             // updates the grid. `send` on an unbounded channel
             // doesn't block.
-            let _ = tx.send(serial_bytes);
+            let local_echo = self.profile_settings.local_echo;
+            let _ = tx.send(serial_bytes.clone());
+            // With local echo on, also synthesize the echo locally
+            // — useful when the device doesn't echo (some
+            // bootloaders / custom firmware). Goes through the same
+            // loopback translator so Enter renders as a CRLF and
+            // Backspace as `BS SP BS`, matching what a real echo
+            // would look like.
+            if local_echo {
+                let echoed = loopback_translate(&serial_bytes);
+                self.feed_bytes(&echoed, cx);
+            }
         } else {
             // Loopback: synthesize what a device's echo would look
             // like and feed it directly into our own Term.
@@ -639,11 +700,12 @@ impl Render for TerminalView {
 }
 
 /// Encode a keystroke as the wire bytes that should go to a serial
-/// device. No echo affordances baked in: Enter is `\r`, Backspace is
-/// `\x08`, etc. When a real device is attached the device's own echo
-/// is what makes typed characters appear on screen. For the no-
-/// device path, see `loopback_translate`.
-fn encode_for_serial(k: &Keystroke) -> Option<Vec<u8>> {
+/// device. The profile-configurable bytes (Enter / Backspace) come
+/// from `settings`; everything else is fixed by the VT100 / xterm
+/// keyboard convention. When a real device is attached the device's
+/// own echo is what makes typed characters appear on screen — for
+/// the no-device path see `loopback_translate`.
+fn encode_for_serial(k: &Keystroke, settings: &ProfileSettings) -> Option<Vec<u8>> {
     let m = &k.modifiers;
 
     // Cmd / Win / Super: leave for the OS / future keybindings.
@@ -659,9 +721,9 @@ fn encode_for_serial(k: &Keystroke) -> Option<Vec<u8>> {
     }
 
     match k.key.as_str() {
-        "enter" => return Some(b"\r".to_vec()),
+        "enter" => return Some(line_ending_bytes(&settings.line_ending)),
         "tab" => return Some(b"\t".to_vec()),
-        "backspace" => return Some(b"\x08".to_vec()),
+        "backspace" => return Some(vec![backspace_byte(&settings.backspace_key)]),
         "escape" => return Some(b"\x1b".to_vec()),
         "left" => return Some(b"\x1b[D".to_vec()),
         "right" => return Some(b"\x1b[C".to_vec()),
@@ -720,6 +782,28 @@ fn loopback_translate(bytes: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Bytes sent on Enter, per profile setting. Anything unrecognised
+/// (an empty string from a freshly-loaded profile, etc.) falls back
+/// to CR — that's the safest default for serial network gear,
+/// matches `Profile::defaults`.
+fn line_ending_bytes(line_ending: &str) -> Vec<u8> {
+    match line_ending {
+        "lf" => b"\n".to_vec(),
+        "crlf" => b"\r\n".to_vec(),
+        _ => b"\r".to_vec(),
+    }
+}
+
+/// Byte sent on Backspace, per profile setting. Defaults to DEL
+/// (0x7F) — VT100 / xterm / modern. `"bs"` selects BS (0x08) for
+/// older Cisco / Foundry gear that misinterprets DEL.
+fn backspace_byte(backspace_key: &str) -> u8 {
+    match backspace_key {
+        "bs" => 0x08,
+        _ => 0x7F,
+    }
 }
 
 /// Translate a single-character key under Ctrl into its control
