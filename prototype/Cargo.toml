@@ -18,7 +18,16 @@ publish = false
 # multi-glyph runs visibly). The pinned commit picks up that fix.
 # Bump deliberately, not via `cargo update`, so we know what
 # changed.
-gpui = { git = "https://github.com/zed-industries/zed", rev = "48db5261e658c972a8856ad739f81ac01ad43a2c" }
+#
+# No `rev` here: gpui-component's git tip pins gpui as
+# `git = "..."` with no rev, and Cargo treats `git = "..."` and
+# `git = "..." rev = "..."` as different sources even when they
+# resolve to the same commit — duplicating the entire Zed crate
+# graph. Matching the spec (no rev) lets Cargo unify them. Build
+# reproducibility comes from `Cargo.lock` instead of the manifest:
+# fresh checkouts use the locked commit, and bumping is an
+# explicit `cargo update -p gpui` rather than passive drift.
+gpui = { git = "https://github.com/zed-industries/zed" }
 
 # Per-OS platform initialization for gpui. Was bundled inside the
 # `gpui` crate up through the crates.io 0.2.x line; the Zed
@@ -26,7 +35,7 @@ gpui = { git = "https://github.com/zed-industries/zed", rev = "48db5261e658c972a
 # the convenience `application()` constructor (uses
 # `MacPlatform`/`WindowsPlatform`/etc. under cfg gates) that
 # replaces the old `Application::new()`.
-gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "48db5261e658c972a8856ad739f81ac01ad43a2c", features = ["font-kit"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
 
 # alacritty's VT escape parser + grid state. Not the renderer — the
 # renderer is alacritty's own OpenGL code, which we deliberately do
@@ -50,14 +59,17 @@ serialport = "4"
 # explicitly here keeps the dep graph honest.
 flume = "0.11"
 
-# gpui-component (Apache-2.0 / MIT, 60+ widgets) was pulled in
-# during Phase 0.5 against `gpui = "0.2"` from crates.io. After
-# moving gpui to a Zed-git pin (the `force_width` snap fix needed
-# for terminal-grid alignment), the published `gpui-component =
-# "0.5.x"` would conflict — it targets the crates.io gpui line.
-# Dropped for now; we don't use any of its widgets yet (Phase 0
-# was all custom rendering). Re-add against gpui-component's git
-# tip when we start Phase 2 (sidebar, profile form, etc.).
+# gpui-component (Apache-2.0 / MIT, 60+ widgets) — Phase 2 needs
+# `resizable`, `sidebar`, `list`, `form`, `input`, `select`,
+# `dialog` etc., and re-implementing those from div primitives is
+# weeks of work that already exists. Pinned to a specific git
+# commit (currently 2d2524d8) — the published `gpui-component =
+# "0.5.1"` on crates.io targets the gpui 0.2 crates.io line and
+# would conflict with our Zed-git gpui pin. Their git tip pins
+# gpui to `git = "https://github.com/zed-industries/zed"` with
+# no rev; Cargo unifies both URL-matching gpui deps to our pinned
+# rev so the resolution stays consistent.
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "2d2524d89efc47270e9a0ee18f10fa72cd573eff" }
 
 # --- Phase 1: data-layer dependencies ---
 # These power the modules ported from src-tauri/src/ into
