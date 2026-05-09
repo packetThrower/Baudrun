@@ -103,6 +103,11 @@ pub struct ProfileSettings {
     /// Clamped to a non-negative value; 0 effectively disables the
     /// delay even when `paste_slow` is on.
     pub paste_char_delay_ms: u32,
+    /// When true, incoming bytes are formatted as a `xxd`-style
+    /// hex dump before being fed to the VT parser — useful for
+    /// reverse-engineering binary protocols where the raw byte
+    /// stream matters more than the rendered text.
+    pub hex_view: bool,
 }
 
 /// Computed geometry for the right-edge scroll indicator. Both
@@ -123,6 +128,7 @@ impl Default for ProfileSettings {
             paste_warn_multiline: true,
             paste_slow: true,
             paste_char_delay_ms: 10,
+            hex_view: false,
         }
     }
 }
@@ -201,6 +207,18 @@ pub struct TerminalView {
     /// (dropped) sender after the user switches profiles. `None`
     /// when no slow paste is in progress.
     paste_task: Option<Task<()>>,
+    /// `Some` while the active profile has hex view enabled. The
+    /// formatter accumulates bytes and emits `xxd`-style lines
+    /// that we feed into the VT parser instead of the raw stream;
+    /// `None` means raw passthrough (the normal terminal mode).
+    hex_formatter: Option<HexFormatter>,
+    /// Idle flush for the hex formatter's partial-line buffer.
+    /// Re-armed on every `feed_bytes` call so a streaming run
+    /// stays buffered (proper 16-per-row layout); after
+    /// `HEX_PARTIAL_FLUSH_DELAY` of quiet, the partial line is
+    /// emitted so single-byte echoes (Enter, prompt) eventually
+    /// appear on screen. Dropping the field cancels the timer.
+    hex_flush_task: Option<Task<()>>,
 }
 
 impl TerminalView {
@@ -272,6 +290,8 @@ impl TerminalView {
             bell_flash_until: None,
             _blink_task: blink_task,
             paste_task: None,
+            hex_formatter: None,
+            hex_flush_task: None,
         }
     }
 
@@ -299,6 +319,16 @@ impl TerminalView {
     /// byte / echo behaviour. Profiles that share these defaults
     /// (most do) get a no-op assignment.
     pub fn set_profile_settings(&mut self, settings: ProfileSettings) {
+        // Sync the hex-view formatter with the new setting. Toggling
+        // ON resets to a fresh formatter (offset 0, empty buffer);
+        // toggling OFF drops the formatter so subsequent bytes feed
+        // raw. Mid-session toggles via Save would land here too if
+        // we ever reconnect from inside the editor.
+        match (settings.hex_view, self.hex_formatter.is_some()) {
+            (true, false) => self.hex_formatter = Some(HexFormatter::new()),
+            (false, true) => self.hex_formatter = None,
+            _ => {}
+        }
         self.profile_settings = settings;
     }
 
@@ -449,12 +479,20 @@ impl TerminalView {
     /// blank afterwards but the device is still feeding bytes,
     /// so a long `show running-config` mid-clear keeps streaming.
     pub fn clear_screen(&mut self, cx: &mut Context<Self>) {
+        // Reset the hex formatter's offset / partial buffer so the
+        // next chunk starts from `00000000` again — clearing the
+        // visible grid without resetting offset would leave a
+        // confusing gap.
+        if let Some(f) = self.hex_formatter.as_mut() {
+            f.reset();
+        }
         // `\x1b[3J` — clear scrollback (xterm extension; alacritty
         // honours it). `\x1b[2J` — clear visible grid. `\x1b[H` —
         // cursor home. Order matters: clear scrollback first so
         // the live grid lines aren't pushed into a freshly-emptied
-        // history.
-        self.feed_bytes(b"\x1b[3J\x1b[2J\x1b[H", cx);
+        // history. Bypass `feed_bytes` so the sequence isn't itself
+        // rendered as a hex dump when hex view is on.
+        self.feed_terminal_raw(b"\x1b[3J\x1b[2J\x1b[H", cx);
     }
 
     /// Feed a chunk of bytes through the VT parser, then re-mirror
@@ -462,6 +500,51 @@ impl TerminalView {
     /// the boot-time sample stream and for typed-input loopback.
     /// `cx.notify()` triggers a re-render.
     pub fn feed_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        // Hex-view branch: format the chunk as a hex dump and feed
+        // the rendered text to the VT parser instead of the raw
+        // stream. The formatter holds a small partial-line buffer
+        // across calls so contiguous bytes line up at 16 per row;
+        // an idle-flush task re-armed below ensures a stalled
+        // partial line eventually surfaces (otherwise a one-byte
+        // prompt echo would never be displayed).
+        if let Some(f) = self.hex_formatter.as_mut() {
+            let hex = f.feed(bytes);
+            self.feed_terminal_raw(hex.as_bytes(), cx);
+            self.schedule_hex_flush(cx);
+        } else {
+            self.feed_terminal_raw(bytes, cx);
+        }
+    }
+
+    /// Re-arm the hex formatter's partial-line idle flush. Cancels
+    /// any prior pending flush by replacing the task field.
+    fn schedule_hex_flush(&mut self, cx: &mut Context<Self>) {
+        let task = cx.spawn(async move |weak, cx| {
+            cx.background_executor()
+                .timer(HEX_PARTIAL_FLUSH_DELAY)
+                .await;
+            weak.update(cx, |this, cx| {
+                let line = this
+                    .hex_formatter
+                    .as_mut()
+                    .map(|f| f.flush_partial())
+                    .unwrap_or_default();
+                if !line.is_empty() {
+                    this.feed_terminal_raw(line.as_bytes(), cx);
+                }
+                this.hex_flush_task = None;
+            })
+            .ok();
+        });
+        self.hex_flush_task = Some(task);
+    }
+
+    /// Feed bytes directly to the alacritty VT parser, bypassing
+    /// the hex formatter. Used by `clear_screen` (so the
+    /// `\x1b[3J\x1b[2J\x1b[H` sequence isn't itself rendered as
+    /// hex) and as the final stage of `feed_bytes` after the
+    /// hex transform.
+    fn feed_terminal_raw(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
         self.processor.advance(&mut self.term, bytes);
         // Drain any bell that fired during the parser advance.
         // Latches the flash window and schedules a one-shot notify
@@ -1139,6 +1222,109 @@ fn loopback_translate(bytes: &[u8]) -> Vec<u8> {
         }
     }
     out
+}
+
+/// How long the hex-view partial-line buffer waits for more
+/// bytes before flushing what's there. 100ms matches the Tauri
+/// `hexdump.ts` setting; long enough that a chunky `show
+/// running-config` stays aligned at 16 per row, short enough that
+/// a single-byte prompt echo (Enter, then idle) becomes visible
+/// before the user gets impatient.
+const HEX_PARTIAL_FLUSH_DELAY: Duration = Duration::from_millis(100);
+
+/// Streaming `xxd`-style hex dump formatter. Mirrors the Tauri
+/// version's `src/lib/hexdump.ts`: 16 bytes per line with a gap
+/// after byte 8, 8-digit hex offset, ASCII gutter on the right
+/// (printable bytes 0x20..=0x7e, others as `.`).
+///
+/// Partial lines (anything less than 16 bytes at the tail of the
+/// buffer) stay in the buffer across `feed` calls. The owner is
+/// expected to schedule a `flush_partial` call after a quiet
+/// period (typically ~100ms) so single-byte chunks like keyboard
+/// echo eventually surface, but contiguous streaming output still
+/// gets the proper 16-byte-per-row layout.
+pub(crate) struct HexFormatter {
+    offset: usize,
+    /// Bytes accumulated for the current line (carried across
+    /// `feed` calls so a chunk that doesn't end on a 16-byte
+    /// boundary can be continued by the next chunk).
+    buffer: Vec<u8>,
+}
+
+impl HexFormatter {
+    const BYTES_PER_LINE: usize = 16;
+
+    pub(crate) fn new() -> Self {
+        Self {
+            offset: 0,
+            buffer: Vec::with_capacity(Self::BYTES_PER_LINE),
+        }
+    }
+
+    /// Reset offset + drop partial buffer. Called by `clear_screen`
+    /// so the next chunk starts from `00000000`.
+    pub(crate) fn reset(&mut self) {
+        self.offset = 0;
+        self.buffer.clear();
+    }
+
+    /// Append `bytes` and return the formatted lines to feed to the
+    /// VT parser. Emits ONLY complete 16-byte rows; whatever's left
+    /// stays in the buffer for the next call (or for
+    /// `flush_partial`).
+    pub(crate) fn feed(&mut self, bytes: &[u8]) -> String {
+        let mut out = String::new();
+        for &b in bytes {
+            self.buffer.push(b);
+            if self.buffer.len() >= Self::BYTES_PER_LINE {
+                let line: Vec<u8> = self.buffer.drain(..Self::BYTES_PER_LINE).collect();
+                out.push_str(&self.emit_line(&line));
+            }
+        }
+        out
+    }
+
+    /// Emit whatever's in the partial buffer as a (short) line, or
+    /// an empty string if the buffer is empty. Used by the
+    /// idle-flush timer in `TerminalView` so a short chunk that
+    /// doesn't fill a row eventually shows up.
+    pub(crate) fn flush_partial(&mut self) -> String {
+        if self.buffer.is_empty() {
+            return String::new();
+        }
+        let line = std::mem::take(&mut self.buffer);
+        self.emit_line(&line)
+    }
+
+    fn emit_line(&mut self, bytes: &[u8]) -> String {
+        let mut hex = String::new();
+        for i in 0..Self::BYTES_PER_LINE {
+            // Extra space at the half-line boundary, matching xxd
+            // and the Tauri formatter — gives the eye a chunking
+            // anchor inside a 16-byte row.
+            if i == 8 {
+                hex.push(' ');
+            }
+            if i < bytes.len() {
+                hex.push_str(&format!(" {:02x}", bytes[i]));
+            } else {
+                hex.push_str("   ");
+            }
+        }
+        let ascii: String = bytes
+            .iter()
+            .map(|&b| {
+                if (0x20..0x7f).contains(&b) {
+                    b as char
+                } else {
+                    '.'
+                }
+            })
+            .collect();
+        let line = format!("{:08x} {}  |{}|\r\n", self.offset, hex, ascii);
+        self.offset += bytes.len();
+        line
+    }
 }
 
 /// Bytes sent on Enter, per profile setting. Anything unrecognised
