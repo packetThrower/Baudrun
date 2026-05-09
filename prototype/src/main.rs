@@ -19,6 +19,7 @@ use std::rc::Rc;
 
 use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{px, App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
+use gpui_component::Root;
 
 use app_view::AppView;
 use terminal_view::TerminalView;
@@ -84,6 +85,15 @@ fn main() {
     let port_path = std::env::args().nth(1);
 
     gpui_platform::application().run(move |cx: &mut App| {
+        // gpui-component widgets (Input, Form, Dialog, …) need a
+        // global theme + tooltip/notification manager installed
+        // before any of them render. `init` is the canonical setup
+        // call — without it the first `Input::new` panics looking
+        // for the Theme global. The widgets we mounted before
+        // Phase 2.4 (plain divs only) didn't need this; the moment
+        // an Input appears, this is mandatory.
+        gpui_component::init(cx);
+
         // Build the profile store once at startup. Reads from the
         // user's real config dir (same path the existing main app
         // uses), so any profiles created in the shipping build
@@ -117,8 +127,15 @@ fn main() {
                     }),
                     ..Default::default()
                 },
-                move |_window, cx| {
-                    cx.new(|cx| AppView::new(terminal_for_window, store_for_window, cx))
+                move |window, cx| {
+                    // The window root must be a `Root` so the
+                    // tooltip/notification/modal layer paints on top
+                    // of (and dispatches events through) the rest of
+                    // the UI. Our actual app view lives as Root's
+                    // child.
+                    let app_view =
+                        cx.new(|cx| AppView::new(terminal_for_window, store_for_window, cx));
+                    cx.new(|cx| Root::new(app_view, window, cx))
                 },
             )
             .expect("open window");

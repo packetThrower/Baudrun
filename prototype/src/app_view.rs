@@ -24,9 +24,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgb, App, Context, Entity, IntoElement, MouseButton, MouseUpEvent, Render,
+    div, prelude::*, px, rgb, Context, Entity, IntoElement, MouseButton, MouseUpEvent, Render,
     Task, Window,
 };
+use gpui_component::input::{Input, InputState};
 
 use crate::data::profiles::{self, Profile};
 use crate::serial_io;
@@ -75,6 +76,29 @@ pub struct AppView {
     /// the channel receiver, which lets the OS read thread exit
     /// cleanly. `None` while disconnected (loopback mode).
     drain_task: Option<Task<()>>,
+    /// `Some` while the new-profile form is open in the right pane.
+    /// The presence of this field also drives a render branch:
+    /// when populated the form replaces the TerminalView; when
+    /// `None` the terminal is back. Holds `Entity<InputState>`s
+    /// per field so the Input widgets persist their text + cursor
+    /// across re-renders without us mirroring it into AppView.
+    editor: Option<Editor>,
+}
+
+/// In-flight new-profile form state. Created by `open_editor` (which
+/// needs `&mut Window` because gpui-component's `InputState::new`
+/// hooks the window's text-system at construction). Read by
+/// `save_editor` to materialize a `Profile`. Dropped on cancel /
+/// successful save by setting `AppView::editor = None`.
+struct Editor {
+    name: Entity<InputState>,
+    port: Entity<InputState>,
+    baud: Entity<InputState>,
+    /// Most recent validation/persistence error. Cleared when the
+    /// editor is reopened; populated when `Store::create` rejects
+    /// the form values (e.g. blank name, blank port, non-numeric
+    /// baud).
+    error: Option<String>,
 }
 
 impl AppView {
@@ -90,6 +114,7 @@ impl AppView {
             connected_profile_id: None,
             connect_error: None,
             drain_task: None,
+            editor: None,
         }
     }
 
@@ -174,6 +199,65 @@ impl AppView {
         self.drain_task = Some(task);
         self.connected_profile_id = Some(profile.id);
     }
+
+    /// Open the new-profile form. Idempotent if already open
+    /// (re-creates the InputStates, so the user gets a fresh
+    /// blank form rather than whatever they typed before — Phase
+    /// 2.4 doesn't need draft persistence).
+    fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let name = cx.new(|cx| InputState::new(window, cx).placeholder("My switch"));
+        let port =
+            cx.new(|cx| InputState::new(window, cx).placeholder("/dev/cu.usbserial-XXX or COM3"));
+        let baud = cx.new(|cx| InputState::new(window, cx).default_value("9600"));
+        self.editor = Some(Editor {
+            name,
+            port,
+            baud,
+            error: None,
+        });
+        cx.notify();
+    }
+
+    fn cancel_editor(&mut self, cx: &mut Context<Self>) {
+        self.editor = None;
+        cx.notify();
+    }
+
+    /// Pull text out of the form, build a `Profile` (other fields
+    /// from `Profile::defaults()` — 8N1, no flow control, CR line
+    /// ending), persist via the store. On success the form closes;
+    /// on validation failure the inline error is set and the form
+    /// stays open so the user can fix it.
+    fn save_editor(&mut self, cx: &mut Context<Self>) {
+        let Some(editor) = self.editor.as_ref() else {
+            return;
+        };
+        let name = editor.name.read(cx).value().to_string();
+        let port = editor.port.read(cx).value().to_string();
+        let baud_str = editor.baud.read(cx).value().to_string();
+        // Empty / non-numeric → 0, which `validate` rejects with
+        // `InvalidBaud`; let the store be the single source of
+        // truth on what counts as valid rather than duplicating
+        // its rules in the UI.
+        let baud: i32 = baud_str.trim().parse().unwrap_or(0);
+
+        let mut profile = Profile::defaults();
+        profile.name = name;
+        profile.port_name = port;
+        profile.baud_rate = baud;
+
+        match self.profile_store.create(profile) {
+            Ok(_) => {
+                self.editor = None;
+            }
+            Err(e) => {
+                if let Some(ed) = self.editor.as_mut() {
+                    ed.error = Some(format!("{e}"));
+                }
+            }
+        }
+        cx.notify();
+    }
 }
 
 impl Render for AppView {
@@ -181,6 +265,26 @@ impl Render for AppView {
         let profiles = self.profile_store.list();
         let selected = self.selected_profile_id.clone();
         let connected = self.connected_profile_id.clone();
+
+        // Right pane: form when an editor is open, terminal otherwise.
+        // Branching here (instead of conditionally adding children to
+        // the same div) lets each branch pick its own padding /
+        // background without leaking into the other.
+        let right_pane: gpui::AnyElement = match self.editor.as_ref() {
+            Some(editor) => form_pane(
+                editor.name.clone(),
+                editor.port.clone(),
+                editor.baud.clone(),
+                editor.error.clone(),
+                cx,
+            )
+            .into_any_element(),
+            None => div()
+                .flex_1()
+                .h_full()
+                .child(self.terminal.clone())
+                .into_any_element(),
+        };
 
         div()
             .size_full()
@@ -203,7 +307,7 @@ impl Render for AppView {
                     .text_color(rgb(SIDEBAR_FG))
                     .text_size(px(13.0))
                     .font_family("Menlo")
-                    .child(section_label("PROFILES"))
+                    .child(sidebar_header(cx))
                     .children(profiles.into_iter().map(|profile| {
                         let is_selected = selected.as_deref() == Some(profile.id.as_str());
                         let is_connected = connected.as_deref() == Some(profile.id.as_str());
@@ -227,22 +331,141 @@ impl Render for AppView {
                         profile_row(profile, is_selected, status, row_error, cx)
                     })),
             )
-            // -- terminal viewport (existing entity) --
-            .child(
-                div()
-                    .flex_1()
-                    .h_full()
-                    .child(self.terminal.clone()),
-            )
+            // -- right pane: form OR terminal --
+            .child(right_pane)
     }
 }
 
-fn section_label(text: &'static str) -> impl IntoElement {
+/// Sidebar header row: muted "PROFILES" label on the left, "+"
+/// affordance on the right that opens the new-profile form. The
+/// "+" is a div-with-click rather than a real button widget — same
+/// reasoning as the rest of the sidebar (less surface area than
+/// adopting `gpui_component::button` for one element).
+fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
     div()
-        .text_size(px(11.0))
-        .text_color(rgb(SIDEBAR_MUTED))
+        .w_full()
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_between()
         .py_1()
-        .child(text)
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgb(SIDEBAR_MUTED))
+                .child("PROFILES"),
+        )
+        .child(
+            div()
+                .px_2()
+                .text_size(px(16.0))
+                .text_color(rgb(SIDEBAR_FG))
+                .rounded_sm()
+                .hover(|s| s.bg(rgb(SIDEBAR_SELECTED)))
+                .cursor_pointer()
+                .child("+")
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        this.open_editor(window, cx);
+                    }),
+                ),
+        )
+}
+
+/// Background colour for the form pane. Matches the terminal's
+/// default background so the right-pane swap doesn't flash a
+/// different shade — visually it's the same canvas with different
+/// content.
+const FORM_BG: u32 = 0x0b0b0d;
+/// Save-button green. Same hue as the connected status dot so the
+/// "submit and connect" affordance reads as the positive action.
+const SAVE_BTN_BG: u32 = 0x4ade80;
+/// Save-button text colour. Dark on green for contrast.
+const SAVE_BTN_FG: u32 = 0x0b0b0d;
+
+fn form_pane(
+    name: Entity<InputState>,
+    port: Entity<InputState>,
+    baud: Entity<InputState>,
+    error: Option<String>,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
+    let labeled = |label: &'static str, input: Entity<InputState>| {
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_color(rgb(SIDEBAR_MUTED))
+                    .child(label),
+            )
+            .child(Input::new(&input).appearance(true))
+    };
+
+    div()
+        .flex_1()
+        .h_full()
+        .bg(rgb(FORM_BG))
+        .px_8()
+        .py_6()
+        .flex()
+        .flex_col()
+        .gap_4()
+        .text_color(rgb(SIDEBAR_FG))
+        .text_size(px(13.0))
+        .font_family("Menlo")
+        .child(div().text_size(px(16.0)).child("New profile"))
+        .child(labeled("NAME", name))
+        .child(labeled("PORT", port))
+        .child(labeled("BAUD", baud))
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .mt_4()
+                .child(
+                    div()
+                        .px_4()
+                        .py_2()
+                        .bg(rgb(SAVE_BTN_BG))
+                        .text_color(rgb(SAVE_BTN_FG))
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .child("Save")
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                                this.save_editor(cx);
+                            }),
+                        ),
+                )
+                .child(
+                    div()
+                        .px_4()
+                        .py_2()
+                        .bg(rgb(SIDEBAR_SELECTED))
+                        .text_color(rgb(SIDEBAR_FG))
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .child("Cancel")
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                                this.cancel_editor(cx);
+                            }),
+                        ),
+                ),
+        )
+        .children(error.map(|err| {
+            div()
+                .text_size(px(12.0))
+                .text_color(rgb(SIDEBAR_ERROR))
+                .child(err)
+        }))
 }
 
 /// Bright reddish-pink for the inline connect-error message
