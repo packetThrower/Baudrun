@@ -15,15 +15,14 @@ often since gpui's Linux backend is the least-mature of the three.
 
 Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
 
-- [ ] **Phase 0 — Terminal viewport feature-completeness.** Make the
-      viewport widget itself stand alone before any chrome wraps it.
-      Window resize → grid resize, scrollback (mouse wheel +
-      `display_offset`), cell flags (bold/italic/underline/dim/
-      strikethrough — extend the row-coalescer key in
-      [terminal_grid.rs](prototype/src/terminal_grid.rs)),
-      mouse-drag selection + clipboard copy, sanitized clipboard
-      paste, cursor blink, bell handling (visual flash; sound
-      deferred), basic keyboard layout / IME plumbing.
+- [x] **Phase 0 — Terminal viewport feature-completeness.** Done.
+      Resize, scrollback (mouse-wheel + `display_offset`), cell
+      flags (bold/italic/underline/dim/strikethrough), mouse-drag
+      selection + Cmd-C copy, clipboard paste with CR/LF
+      normalisation, blinking cursor, visual bell flash. IME
+      plumbing is the gpui default — sufficient for ASCII / named
+      keys, untested for CJK and revisited if a real user needs
+      it.
 - [x] **Phase 0.5 — Adopt gpui-component.** Done. The Zed-git swap
       sketched here originally turned out unnecessary:
       [gpui-component](https://github.com/longbridge/gpui-component)
@@ -34,20 +33,29 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       [prototype/Cargo.toml](prototype/Cargo.toml) — `gpui-component
       = "0.5"` — with no API drift to fix. 60+ widgets now available
       for Phase 2 onward.
-- [ ] **Phase 1 — Port the data layer.** Move existing pure-Rust
-      modules from `src-tauri/src/` into the prototype workspace
-      as-is — they're data/IO, not UI: `profiles`, `appdata`,
-      `settings`, `serial/`, `usbserial/`, `themes/` (incl.
-      `.itermcolors` parsing), `transfer.rs`, `highlight.rs`,
-      `skins.rs`, `sanitize.rs`. All callable from gpui code, none
-      used yet.
-- [ ] **Phase 2 — Profile sidebar + connection management.** Split-
-      pane (sidebar | terminal) layout via gpui-component's
-      `resizable` + `sidebar`, profile list (`list`), profile
-      add/edit form (`form` + `input` + `select`), connect-by-
-      profile (replaces `cargo run -- <port>`), connection state
-      indicator (`notification` + `badge`), quick-connect dialog
-      (`dialog`).
+- [x] **Phase 1 — Port the data layer.** Done. Modules under
+      `prototype/src/data/`: profiles, appdata, settings, serial/
+      (incl. ports enumeration + chipsets + libusb stub),
+      usbserial/, themes/, highlight.rs, skins.rs, sanitize.rs,
+      transfer.rs. Resources directory carries the bundled JSONs
+      verbatim. Path rewrite was mechanical (`crate::X` →
+      `crate::data::X`) with `#![allow(dead_code, unused_imports)]`
+      until later phases consume them.
+- [ ] **Phase 2 — Profile sidebar + connection management.**
+      Structure done — sidebar with profile list (hand-rolled, not
+      gpui-component `sidebar` yet), profile add/edit/delete form
+      with header + Connection card + Advanced card and a left-rail
+      sub-tab, connect-by-profile + Connect button (replaces
+      `cargo run -- <port>`), green/red status dots in the sidebar,
+      Serial Port enumeration with rescan. Quick-connect dialog
+      dropped — Tauri version doesn't have one.
+      *Remaining:* wire the per-profile-feature checkboxes the form
+      already saves but which don't actually do anything yet —
+      `paste_warn_multiline` + `paste_slow` + `paste_char_delay_ms`
+      (in progress; multi-line confirm dialog isn't appearing yet),
+      `dtr_on_*` / `rts_on_*` (needs `serial_io` extension),
+      `log_enabled`, `hex_view`, `timestamps`, `auto_reconnect`.
+      `local_echo` / `line_ending` / `backspace_key` already wired.
 - [ ] **Phase 3 — Settings panel.** `sheet` or `dialog` for the
       panel structure, theme picker with live preview (reuse the
       viewport widget at small size), skin picker, keybinding
