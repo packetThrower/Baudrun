@@ -24,8 +24,8 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgb, rgba, Context, Entity, IntoElement, MouseButton, MouseDownEvent,
-    MouseUpEvent, Render, ScrollHandle, Task, Window,
+    div, prelude::*, px, rgb, rgba, Context, Entity, IntoElement, MouseButton, MouseUpEvent,
+    Render, ScrollHandle, Task, Window,
 };
 use gpui_component::{
     checkbox::Checkbox,
@@ -203,26 +203,37 @@ impl AppView {
         }
     }
 
-    /// Click handler for a profile row. Selects + attempts to
-    /// connect in one step. Selecting a profile that's already
-    /// active is a no-op (we don't want to drop and re-open the
-    /// same port on every click). On open failure the profile
-    /// stays selected and the error string surfaces in the
-    /// sidebar — Phase 2.3 will turn this into a proper
-    /// status indicator.
-    fn select_profile(&mut self, id: String, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.selected_profile_id.as_deref() == Some(id.as_str()) {
+    /// Click handler for a profile row. Opens the profile editor
+    /// — does NOT auto-connect. The user reaches a live session
+    /// only by hitting the Connect button inside the editor;
+    /// disconnecting reopens this same editor view (see
+    /// `disconnect_current`). This three-state flow (idle ↔
+    /// editor ↔ terminal) is the same shape as the Tauri version
+    /// and gives the eventual Suspend feature a place to slot in
+    /// between editor and terminal.
+    fn select_profile(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        // Clicking the row for the currently-connected profile
+        // keeps the user in the terminal view — the editor is
+        // only reachable via Disconnect from a live session, so
+        // clicking the connected row shouldn't yank focus into a
+        // form. Clicking ANY OTHER row opens its editor (the
+        // active session keeps running in the background).
+        if self.connected_profile_id.as_deref() == Some(id.as_str()) {
             return;
         }
         self.selected_profile_id = Some(id.clone());
         self.connect_error = None;
-        let Some(profile) = self.profile_store.get(&id) else {
-            self.connect_error = Some("profile not found".into());
-            cx.notify();
-            return;
-        };
-        self.connect_to(profile, cx);
-        cx.notify();
+        // Suppress the open-editor reload if THIS is the profile
+        // already in the form — clicking the same row twice
+        // shouldn't blow away in-flight edits the user hasn't
+        // saved yet.
+        if let Some(ed) = self.editor.as_ref() {
+            if ed.profile_id.as_deref() == Some(id.as_str()) {
+                cx.notify();
+                return;
+            }
+        }
+        self.open_editor_for(id, window, cx);
     }
 
     /// Disconnect the current session (if any) and open the new
@@ -348,6 +359,25 @@ impl AppView {
         cx.notify();
     }
 
+    /// Tear down the active serial session and reopen the editor
+    /// for the same profile, mirroring the Tauri version's flow
+    /// (terminal → disconnect → back to profile settings). Same
+    /// shutdown order as the start of `connect_to`: drop the
+    /// channel ends first, then `wait` on the thread join so the
+    /// port file descriptor is fully released before any future
+    /// reopen.
+    fn disconnect_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.connected_profile_id.take() else {
+            return;
+        };
+        self.drain_task = None;
+        self.terminal.update(cx, |t, _| t.clear_serial_tx());
+        if let Some(d) = self.serial_disconnect.take() {
+            d.wait();
+        }
+        self.open_editor_for(id, window, cx);
+    }
+
     /// Switch the active sub-tab on the open editor. No-op if the
     /// editor isn't open or the requested tab is already active —
     /// avoids an unnecessary re-render.
@@ -439,11 +469,23 @@ impl AppView {
     /// Save the form, then immediately connect to the resulting
     /// profile. Mirrors the Tauri form's "Connect" button: the
     /// primary action turns the editor flow into a single click for
-    /// the common case of "make this profile and use it now."
-    fn save_and_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(id) = self.save_editor(cx) {
-            self.select_profile(id, window, cx);
-        }
+    /// the common case of "make this profile and use it now." Note
+    /// it bypasses `select_profile` (which under the new flow opens
+    /// the editor) and calls `connect_to` directly — saving has
+    /// already closed the editor, and we want the next step to be
+    /// the terminal, not back into the editor we just left.
+    fn save_and_connect(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.save_editor(cx) else {
+            return;
+        };
+        let Some(profile) = self.profile_store.get(&id) else {
+            self.connect_error = Some("profile not found".into());
+            cx.notify();
+            return;
+        };
+        self.selected_profile_id = Some(id);
+        self.connect_error = None;
+        self.connect_to(profile, cx);
     }
 
     /// Delete the profile currently being edited. If we're connected
@@ -501,17 +543,46 @@ impl Render for AppView {
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
 
-        // Right pane: form when an editor is open, terminal otherwise.
-        // Branching here (instead of conditionally adding children to
-        // the same div) lets each branch pick its own padding /
+        // Right pane: three branches.
+        //   * editor is open  → form
+        //   * connected to a profile → terminal viewport + session header
+        //   * otherwise → welcome screen (matches the Tauri version's
+        //     idle state: a centered "pick a profile" splash, no
+        //     terminal viewport visible)
+        // Branching here (vs. conditionally adding children to a
+        // shared div) lets each branch pick its own padding /
         // background without leaking into the other.
+        let connected_profile = self
+            .connected_profile_id
+            .as_ref()
+            .and_then(|id| self.profile_store.get(id));
+        let has_profiles = !self.profile_store.list().is_empty();
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
             Some(editor) => form_pane(EditorRender::from(editor), cx).into_any_element(),
-            None => div()
-                .flex_1()
-                .h_full()
-                .child(self.terminal.clone())
-                .into_any_element(),
+            None => match connected_profile {
+                Some(profile) => {
+                    let terminal = self.terminal.clone();
+                    div()
+                        .flex_1()
+                        // Without `min_w_0`, the terminal viewport's
+                        // intrinsic min-width (cols × cell_w) is
+                        // taken as the pane's min-width and the
+                        // pane grows past the window edge — pushing
+                        // anything to the right of the header
+                        // (Clear / Disconnect) off-screen. Setting
+                        // `min_w_0` lets the pane shrink to the
+                        // window width and the grid clips any
+                        // overflow instead.
+                        .min_w_0()
+                        .h_full()
+                        .flex()
+                        .flex_col()
+                        .child(session_header(profile, cx))
+                        .child(div().flex_1().min_h_0().child(terminal))
+                        .into_any_element()
+                }
+                None => welcome_pane(has_profiles).into_any_element(),
+            },
         };
 
         div()
@@ -570,6 +641,123 @@ impl Render for AppView {
             .children(dialog_layer)
             .children(notification_layer)
     }
+}
+
+/// Idle splash screen — shown when the app is launched with no
+/// connected profile and the user hasn't opened the editor yet.
+/// Mirrors the Tauri version's "no terminal until you pick a
+/// profile" default. Wording adapts to whether any profiles
+/// exist: with profiles, prompt to pick one; without, prompt to
+/// click the `+` to create one.
+fn welcome_pane(has_profiles: bool) -> impl IntoElement {
+    let prompt = if has_profiles {
+        "Pick a profile from the sidebar to start a session."
+    } else {
+        "Click the + above the profile list to create one."
+    };
+    div()
+        .flex_1()
+        .h_full()
+        .bg(rgb(FORM_BG))
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap_3()
+        .child(
+            div()
+                .text_size(px(28.0))
+                .text_color(rgb(SIDEBAR_FG))
+                .child("Baudrun"),
+        )
+        .child(
+            div()
+                .text_size(px(13.0))
+                .text_color(rgba(FG_SECONDARY))
+                .child(prompt),
+        )
+}
+
+/// Session header above the terminal viewport. Shows status dot +
+/// profile name + connection meta on the left, and Clear /
+/// Disconnect buttons on the right. Only rendered when a profile
+/// is actually connected — loopback / no-device modes hide the
+/// header so the prototype's no-profile path stays minimal.
+fn session_header(profile: Profile, cx: &mut Context<AppView>) -> impl IntoElement {
+    let parity_letter = match profile.parity.as_str() {
+        "odd" => "O",
+        "even" => "E",
+        "mark" => "M",
+        "space" => "S",
+        _ => "N",
+    };
+    let meta = format!(
+        "{} · {} /{} {} {}",
+        profile.port_name, profile.baud_rate, profile.data_bits, parity_letter, profile.stop_bits
+    );
+    div()
+        .w_full()
+        .px_4()
+        .py_2()
+        .bg(rgb(FORM_BG))
+        .border_b_1()
+        .border_color(rgba(BORDER_SUBTLE))
+        .text_size(px(13.0))
+        .text_color(rgb(SIDEBAR_FG))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_3()
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .w(px(STATUS_DOT_PX))
+                        .h(px(STATUS_DOT_PX))
+                        .rounded_full()
+                        .bg(rgb(STATUS_CONNECTED)),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .text_size(px(13.0))
+                                .text_color(rgb(SIDEBAR_FG))
+                                .child(profile.name),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(11.0))
+                                .text_color(rgba(FG_SECONDARY))
+                                .child(meta),
+                        ),
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .child(pill_button("Clear", false).on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                        this.terminal.update(cx, |t, cx| t.clear_screen(cx));
+                    }),
+                ))
+                .child(primary_button("Disconnect").on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        this.disconnect_current(window, cx);
+                    }),
+                )),
+        )
 }
 
 /// Sidebar header row: muted "PROFILES" label on the left, "+"
@@ -995,6 +1183,7 @@ fn pill_button(label: &'static str, danger: bool) -> gpui::Div {
         .py_1()
         .bg(rgba(BTN_BG))
         .text_color(fg)
+        .text_size(px(13.0))
         .rounded_md()
         .cursor_pointer()
         .hover(|s| s.bg(rgba(BTN_BG_HOVER)))
@@ -1010,6 +1199,7 @@ fn primary_button(label: &'static str) -> gpui::Div {
         .py_1()
         .bg(rgba(ACCENT))
         .text_color(rgba(ACCENT_FG))
+        .text_size(px(13.0))
         .rounded_md()
         .cursor_pointer()
         .child(label)
@@ -1854,12 +2044,13 @@ fn profile_row(
         rgb(SIDEBAR_BG)
     };
 
-    // Header row: name on the left, [edit, status_dot] on the right.
-    // The edit link uses `stop_propagation` so clicking it opens
-    // the editor instead of the row's connect-on-click. Status dot
-    // is omitted when `None` so unstatussed rows don't reserve
-    // space for an absent dot.
-    let edit_id = profile.id.clone();
+    // Header row: name on the left, status dot on the right (omitted
+    // when there's no status). Click anywhere on the row opens the
+    // editor for that profile (or stays in the terminal view if
+    // the row IS the connected profile) — see
+    // `AppView::select_profile`. The standalone "edit" link the
+    // sidebar used to carry is gone since the row click already
+    // goes to the editor under the new flow.
     let header = div()
         .w_full()
         .flex()
@@ -1867,51 +2058,13 @@ fn profile_row(
         .items_center()
         .justify_between()
         .child(div().text_color(rgb(SIDEBAR_FG)).child(name))
-        .child(
+        .children(status.map(|s| {
             div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .child(
-                    div()
-                        .px_1()
-                        .text_size(px(11.0))
-                        .text_color(rgb(SIDEBAR_MUTED))
-                        .rounded_sm()
-                        .hover(|s| s.text_color(rgb(SIDEBAR_FG)))
-                        .cursor_pointer()
-                        .child("edit")
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|_this, _: &MouseDownEvent, _window, cx| {
-                                // Stop on mouse_down too: the row's
-                                // select handler runs on mouse_up,
-                                // but gpui dispatches in capture
-                                // order — without stopping the down
-                                // event the row would still see
-                                // its own up event in the same
-                                // sequence and connect to the
-                                // profile we're trying to edit.
-                                cx.stop_propagation();
-                            }),
-                        )
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
-                                cx.stop_propagation();
-                                this.open_editor_for(edit_id.clone(), window, cx);
-                            }),
-                        ),
-                )
-                .children(status.map(|s| {
-                    div()
-                        .w(px(STATUS_DOT_PX))
-                        .h(px(STATUS_DOT_PX))
-                        .rounded_full()
-                        .bg(rgb(s.color()))
-                })),
-        );
+                .w(px(STATUS_DOT_PX))
+                .h(px(STATUS_DOT_PX))
+                .rounded_full()
+                .bg(rgb(s.color()))
+        }));
 
     let mut row = div()
         .w_full()

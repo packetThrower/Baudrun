@@ -286,6 +286,21 @@ impl TerminalView {
         self.profile_settings = settings;
     }
 
+    /// Wipe the visible grid + scrollback. Implemented by feeding
+    /// the standard "clear + cursor home" VT sequence through the
+    /// parser — purely local, doesn't touch the wire (so a
+    /// connected device's shell isn't affected). The screen is
+    /// blank afterwards but the device is still feeding bytes,
+    /// so a long `show running-config` mid-clear keeps streaming.
+    pub fn clear_screen(&mut self, cx: &mut Context<Self>) {
+        // `\x1b[3J` — clear scrollback (xterm extension; alacritty
+        // honours it). `\x1b[2J` — clear visible grid. `\x1b[H` —
+        // cursor home. Order matters: clear scrollback first so
+        // the live grid lines aren't pushed into a freshly-emptied
+        // history.
+        self.feed_bytes(b"\x1b[3J\x1b[2J\x1b[H", cx);
+    }
+
     /// Feed a chunk of bytes through the VT parser, then re-mirror
     /// the resulting grid into the render-side cells. Used both for
     /// the boot-time sample stream and for typed-input loopback.
