@@ -165,6 +165,13 @@ fn main() {
             },
             Err(err) => fallback_highlight_store(format!("support dir unavailable: {err}")),
         };
+        let themes_store = match &support {
+            Ok(dir) => match data::themes::Store::new(dir) {
+                Ok(store) => Rc::new(store),
+                Err(err) => fallback_themes_store(format!("themes store init failed: {err}")),
+            },
+            Err(err) => fallback_themes_store(format!("support dir unavailable: {err}")),
+        };
 
         let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
 
@@ -176,6 +183,7 @@ fn main() {
         let settings_store_for_window = settings_store.clone();
         let skins_store_for_window = skins_store.clone();
         let highlight_store_for_window = highlight_store.clone();
+        let themes_store_for_window = themes_store.clone();
         let terminal_for_window = terminal.clone();
         let window = cx
             .open_window(
@@ -200,6 +208,7 @@ fn main() {
                             settings_store_for_window,
                             skins_store_for_window,
                             highlight_store_for_window,
+                            themes_store_for_window,
                             cx,
                         )
                     });
@@ -325,6 +334,18 @@ fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
     Rc::new(
         data::highlight::Store::new(&tmp)
             .expect("temp highlight store should always init"),
+    )
+}
+
+/// Themes-store fallback. Built-in themes embed at compile time so
+/// the picker is still populated; only user-imported `.itermcolors`
+/// / JSON themes are lost.
+fn fallback_themes_store(reason: String) -> Rc<data::themes::Store> {
+    eprintln!("{reason}; using empty in-tmpdir themes store");
+    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    Rc::new(
+        data::themes::Store::new(&tmp)
+            .expect("temp themes store should always init"),
     )
 }
 

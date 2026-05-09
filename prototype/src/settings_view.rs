@@ -23,6 +23,7 @@ use gpui_component::{
 use crate::data::highlight;
 use crate::data::settings::{self, Settings};
 use crate::data::skins;
+use crate::data::themes;
 
 /// Top-level Settings tabs. Order + labels mirror the Tauri
 /// `Settings.svelte` left rail (Appearance, Themes, Shortcuts,
@@ -105,6 +106,10 @@ pub struct SettingsView {
     /// imported in the current session (post-launch import refreshes
     /// without restarting Settings).
     highlight_store: Rc<highlight::Store>,
+    #[allow(dead_code)] // enumerated through `theme_select` today;
+                        // kept around for future "import theme"
+                        // affordance + live-preview hooks.
+    themes_store: Rc<themes::Store>,
     settings: Settings,
     tab: SettingsTab,
 
@@ -115,6 +120,10 @@ pub struct SettingsView {
     _appearance_sub: Subscription,
     font_size: Entity<InputState>,
     _font_size_sub: Subscription,
+
+    // -- Themes tab state --
+    theme_select: Entity<SelectState<Vec<Opt>>>,
+    _theme_sub: Subscription,
 
     // -- Advanced tab field state --
     log_dir: Entity<InputState>,
@@ -130,6 +139,7 @@ impl SettingsView {
         settings_store: Rc<settings::Store>,
         skins_store: Rc<skins::Store>,
         highlight_store: Rc<highlight::Store>,
+        themes_store: Rc<themes::Store>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -232,6 +242,39 @@ impl SettingsView {
                 }
             });
 
+        // -- Themes tab widgets --
+
+        let theme_opts: Vec<Opt> = themes_store
+            .list()
+            .into_iter()
+            .map(|t| {
+                let title = if t.source == "user" {
+                    format!("{} (custom)", t.name)
+                } else {
+                    t.name
+                };
+                Opt::new(&t.id, &title)
+            })
+            .collect();
+        let active_theme_id = if current.default_theme_id.is_empty() {
+            themes::DEFAULT_THEME_ID
+        } else {
+            current.default_theme_id.as_str()
+        };
+        let theme_select = make_select(theme_opts, active_theme_id, window, cx);
+        let theme_sub = cx.subscribe(
+            &theme_select,
+            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+                if let SelectEvent::Confirm(Some(id)) = event {
+                    if &this.settings.default_theme_id != id {
+                        let mut next = this.settings.clone();
+                        next.default_theme_id = id.clone();
+                        this.commit(next, cx);
+                    }
+                }
+            },
+        );
+
         // -- Advanced tab widgets --
 
         let log_dir = cx.new(|cx| {
@@ -259,6 +302,7 @@ impl SettingsView {
             settings_store,
             skins_store,
             highlight_store,
+            themes_store,
             settings: current,
             tab: SettingsTab::default(),
             skin_select,
@@ -267,6 +311,8 @@ impl SettingsView {
             _appearance_sub: appearance_sub,
             font_size,
             _font_size_sub: font_size_sub,
+            theme_select,
+            _theme_sub: theme_sub,
             log_dir,
             _log_dir_sub: log_dir_sub,
         }
@@ -410,10 +456,29 @@ impl SettingsView {
     fn pane_content(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         match self.tab {
             SettingsTab::Appearance => self.appearance_pane().into_any_element(),
+            SettingsTab::Themes => self.themes_pane().into_any_element(),
             SettingsTab::Highlighting => self.highlighting_pane(cx).into_any_element(),
             SettingsTab::Advanced => self.advanced_pane(cx).into_any_element(),
             other => placeholder_pane(other.label()).into_any_element(),
         }
+    }
+
+    fn themes_pane(&self) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(section_card_with_desc(
+                "Default Theme",
+                Some(
+                    "Terminal palette new sessions start with — affects \
+                     the 16 ANSI colours, default foreground/background, \
+                     selection, and cursor. Per-profile overrides go on \
+                     the profile form. Built-in themes ship with the \
+                     app; user themes load from $SUPPORT_DIR/themes/.",
+                ),
+                Select::new(&self.theme_select).small(),
+            ))
     }
 
     fn highlighting_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {

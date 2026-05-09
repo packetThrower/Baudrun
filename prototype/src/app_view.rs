@@ -48,6 +48,7 @@ use crate::data::sanitize::SanitizingLogWriter;
 use crate::data::serial::ports;
 use crate::data::settings;
 use crate::data::skins;
+use crate::data::themes;
 use crate::settings_view::SettingsView;
 use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
@@ -98,6 +99,12 @@ pub struct AppView {
     /// terminal pane to apply highlighting to live output.
     #[allow(dead_code)]
     highlight_store: Rc<highlight::Store>,
+    /// Terminal theme store (built-in palettes + user imports).
+    /// Cloned into SettingsView for the Themes tab picker. Future
+    /// slices feed this into `term_bridge::resolve` so a session
+    /// picks up the picked palette instead of the hardcoded one.
+    #[allow(dead_code)]
+    themes_store: Rc<themes::Store>,
     /// Handle to the standalone Settings window when it's open.
     /// `Some(_)` doesn't strictly mean "still alive" — the user may
     /// have closed the OS window. We probe with `handle.update(...)`
@@ -256,6 +263,7 @@ impl AppView {
         settings_store: Rc<settings::Store>,
         skins_store: Rc<skins::Store>,
         highlight_store: Rc<highlight::Store>,
+        themes_store: Rc<themes::Store>,
         _cx: &mut Context<Self>,
     ) -> Self {
         Self {
@@ -264,6 +272,7 @@ impl AppView {
             settings_store,
             skins_store,
             highlight_store,
+            themes_store,
             settings_window: None,
             selected_profile_id: None,
             connected_profile_id: None,
@@ -849,6 +858,7 @@ impl AppView {
         let settings = self.settings_store.clone();
         let skins = self.skins_store.clone();
         let highlight = self.highlight_store.clone();
+        let themes = self.themes_store.clone();
         let bounds = Bounds::centered(None, gpui::size(px(720.0), px(640.0)), cx);
         let opened = cx.open_window(
             WindowOptions {
@@ -861,7 +871,7 @@ impl AppView {
             },
             move |window, cx| {
                 let view = cx.new(|cx| {
-                    SettingsView::new(settings, skins, highlight, window, cx)
+                    SettingsView::new(settings, skins, highlight, themes, window, cx)
                 });
                 cx.new(|cx| Root::new(view, window, cx))
             },
