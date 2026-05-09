@@ -183,6 +183,16 @@ struct Editor {
     /// the gpui-component `Scrollbar` widget can be wired to the
     /// same handle the scroll content tracks.
     scroll_handle: ScrollHandle,
+
+    /// Snapshot of the profile state the form was loaded from
+    /// (and the state any successful Save resets it back to).
+    /// Used to compute `is_dirty` in render: derive the current
+    /// Profile from widget values, compare against this baseline,
+    /// any field difference flags the form as dirty. Cheaper than
+    /// wiring a per-widget change subscription, and self-correcting
+    /// — Cancel and Connect both restore to baseline implicitly
+    /// (editor closes; new open seeds a fresh baseline).
+    baseline: Profile,
 }
 
 impl AppView {
@@ -496,7 +506,21 @@ impl AppView {
 
         match result {
             Ok(id) => {
-                self.editor = None;
+                // Keep the editor open after Save so the user can
+                // tweak more settings (or click Connect) without
+                // losing the form. Refresh:
+                //   * `profile_id` for the create-then-edit case so
+                //     a follow-up Save updates instead of duping;
+                //   * `baseline` so the dirty-detection in render
+                //     resets to "clean" (Save button dims).
+                let fresh_baseline = self.profile_store.get(&id);
+                if let Some(ed) = self.editor.as_mut() {
+                    ed.profile_id = Some(id.clone());
+                    ed.error = None;
+                    if let Some(b) = fresh_baseline {
+                        ed.baseline = b;
+                    }
+                }
                 cx.notify();
                 Some(id)
             }
@@ -527,6 +551,11 @@ impl AppView {
             cx.notify();
             return;
         };
+        // Save keeps the editor open (so the user can keep tuning),
+        // but Connect explicitly transitions to the terminal — close
+        // the editor here so the right pane renders the live session
+        // instead of the form.
+        self.editor = None;
         self.selected_profile_id = Some(id);
         self.connect_error = None;
         self.connect_to(profile, cx);
@@ -602,7 +631,7 @@ impl Render for AppView {
             .and_then(|id| self.profile_store.get(id));
         let has_profiles = !self.profile_store.list().is_empty();
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
-            Some(editor) => form_pane(EditorRender::from(editor), cx).into_any_element(),
+            Some(editor) => form_pane(EditorRender::from(editor, cx), cx).into_any_element(),
             None => match connected_profile.clone() {
                 Some(profile) => {
                     let terminal = self.terminal.clone();
@@ -1038,6 +1067,7 @@ fn build_editor(
         paste_char_delay_ms,
         error: None,
         scroll_handle: ScrollHandle::new(),
+        baseline: profile.clone(),
     }
 }
 
@@ -1078,6 +1108,36 @@ fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<
     // collapse to 0, which the store accepts.
     let delay_str = editor.paste_char_delay_ms.read(cx).value().to_string();
     profile.paste_char_delay_ms = delay_str.trim().parse::<i32>().ok().map(|v| v.max(0));
+}
+
+/// Compare two profiles on the fields the editor actually exposes
+/// — drives the Save button's "dirty" state. Skipping `id` /
+/// `created_at` / `updated_at` because those aren't user-editable
+/// (id is set by the store on create, timestamps update on save)
+/// and would otherwise spuriously flag every edited profile as
+/// "dirty" right after save.
+fn editor_fields_match(a: &Profile, b: &Profile) -> bool {
+    a.name == b.name
+        && a.port_name == b.port_name
+        && a.baud_rate == b.baud_rate
+        && a.data_bits == b.data_bits
+        && a.parity == b.parity
+        && a.stop_bits == b.stop_bits
+        && a.flow_control == b.flow_control
+        && a.line_ending == b.line_ending
+        && a.backspace_key == b.backspace_key
+        && a.local_echo == b.local_echo
+        && a.dtr_on_connect == b.dtr_on_connect
+        && a.rts_on_connect == b.rts_on_connect
+        && a.dtr_on_disconnect == b.dtr_on_disconnect
+        && a.rts_on_disconnect == b.rts_on_disconnect
+        && a.hex_view == b.hex_view
+        && a.timestamps == b.timestamps
+        && a.log_enabled == b.log_enabled
+        && a.auto_reconnect == b.auto_reconnect
+        && a.paste_warn_multiline == b.paste_warn_multiline
+        && a.paste_slow == b.paste_slow
+        && a.paste_char_delay_ms == b.paste_char_delay_ms
 }
 
 /// One choice in a select widget. `id` is the canonical value
@@ -1315,6 +1375,7 @@ fn primary_button(label: &'static str) -> gpui::Div {
 /// per render.
 struct EditorRender {
     is_edit: bool,
+    is_dirty: bool,
     tab: EditorTab,
     name: Entity<InputState>,
     port: Entity<SelectState<Vec<Opt>>>,
@@ -1342,9 +1403,17 @@ struct EditorRender {
 }
 
 impl EditorRender {
-    fn from(e: &Editor) -> Self {
+    fn from(e: &Editor, cx: &Context<AppView>) -> Self {
+        // Derive a hypothetical "what would Save persist right now"
+        // Profile by applying the live widget values onto a clone of
+        // the saved baseline; any field difference flags the form
+        // as dirty (drives the Save button's brightness).
+        let mut current = e.baseline.clone();
+        apply_editor_to_profile(e, &mut current, cx);
+        let is_dirty = !editor_fields_match(&current, &e.baseline);
         Self {
             is_edit: e.profile_id.is_some(),
+            is_dirty,
             tab: e.tab,
             name: e.name.clone(),
             port: e.port.clone(),
@@ -1392,7 +1461,7 @@ fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
         .text_size(px(13.0))
         .flex()
         .flex_col()
-        .child(form_header(er.is_edit, er.name.clone(), cx))
+        .child(form_header(er.is_edit, er.is_dirty, er.name.clone(), cx))
         .child(form_body(er, cx))
 }
 
@@ -1402,10 +1471,21 @@ fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
 /// tag underneath, action buttons on the right.
 fn form_header(
     is_edit: bool,
+    is_dirty: bool,
     name: Entity<InputState>,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let subtitle = if is_edit { "EDIT PROFILE" } else { "NEW PROFILE" };
+    // Save button text-color is the only thing that changes for the
+    // dirty state — pill bg stays the same so the button doesn't
+    // visually "appear" mid-edit. Tertiary fg (40% white) when
+    // clean reads as "no-op available," primary fg (95% white)
+    // when dirty reads as "click me to persist your changes."
+    let save_fg = if is_dirty {
+        rgba(BTN_FG)
+    } else {
+        rgba(FG_TERTIARY)
+    };
     let delete_btn = is_edit.then(|| {
         pill_button("Delete", true).on_mouse_up(
             MouseButton::Left,
@@ -1463,12 +1543,16 @@ fn form_header(
                 .items_center()
                 .gap_2()
                 .children(delete_btn)
-                .child(pill_button("Save", false).on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                        this.save_editor(cx);
-                    }),
-                ))
+                .child(
+                    pill_button("Save", false)
+                        .text_color(save_fg)
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                                this.save_editor(cx);
+                            }),
+                        ),
+                )
                 .child(pill_button("Cancel", false).on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, _window, cx| {
