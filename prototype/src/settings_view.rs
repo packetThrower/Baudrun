@@ -7,15 +7,18 @@
 //! kept in sync with the profile editor (`app_view.rs::form_pane`)
 //! so the two windows feel like one app rather than two surfaces.
 
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgb, rgba, AppContext, Context, Entity, IntoElement, MouseButton,
-    MouseUpEvent, Render, SharedString, Subscription, Window,
+    div, prelude::*, px, rgb, rgba, AppContext, Context, Entity, FocusHandle, IntoElement,
+    KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent, Render, SharedString,
+    Subscription, Window,
 };
 use gpui_component::{
     checkbox::Checkbox,
     input::{Input, InputEvent, InputState},
+    kbd::Kbd,
     select::{Select, SelectEvent, SelectItem, SelectState},
     IndexPath, Root, Sizable,
 };
@@ -124,6 +127,18 @@ pub struct SettingsView {
     // -- Themes tab state --
     theme_select: Entity<SelectState<Vec<Opt>>>,
     _theme_sub: Subscription,
+
+    // -- Shortcuts tab state --
+    /// Action id (`"connect"`, `"clear"`, …) of the row currently
+    /// in capture mode, or `None` when no row is recording. Only
+    /// one row can capture at a time so the typed key combo
+    /// unambiguously belongs to one binding.
+    capturing_shortcut: Option<&'static str>,
+    /// Focus handle for the per-row capture div. Lives at the view
+    /// level (one handle, swapped between rows via render-time
+    /// conditional `.track_focus`) so we don't have to mint one
+    /// per binding row.
+    capture_focus: FocusHandle,
 
     // -- Advanced tab field state --
     log_dir: Entity<InputState>,
@@ -313,6 +328,8 @@ impl SettingsView {
             _font_size_sub: font_size_sub,
             theme_select,
             _theme_sub: theme_sub,
+            capturing_shortcut: None,
+            capture_focus: cx.focus_handle(),
             log_dir,
             _log_dir_sub: log_dir_sub,
         }
@@ -403,6 +420,77 @@ impl SettingsView {
         next.enabled_highlight_presets = Some(packs);
         self.commit(next, cx);
     }
+
+    // -- Shortcuts tab handlers --
+
+    fn start_capture(
+        &mut self,
+        action: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.capturing_shortcut = Some(action);
+        // Pull focus into the capture div so the very next key
+        // press is handled by `handle_capture_key`. Without this
+        // the user would have to also click the div to focus it.
+        self.capture_focus.focus(window, cx);
+        cx.notify();
+    }
+
+    fn cancel_capture(&mut self, cx: &mut Context<Self>) {
+        if self.capturing_shortcut.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    fn handle_capture_key(
+        &mut self,
+        event: &KeyDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(action) = self.capturing_shortcut else {
+            return;
+        };
+        let key = event.keystroke.key.as_str();
+        // Bare modifier presses (Shift/Ctrl/Cmd/Alt with no other
+        // key) report key as the modifier name itself in gpui —
+        // ignore so the user can hold modifiers down before
+        // pressing the actual key.
+        if matches!(key, "shift" | "ctrl" | "control" | "cmd" | "alt" | "platform") {
+            return;
+        }
+        // Bare Escape (no modifiers) cancels the capture; Esc
+        // combined with modifiers IS a valid binding to set.
+        if key == "escape" && !any_modifier(&event.keystroke.modifiers) {
+            self.cancel_capture(cx);
+            return;
+        }
+        let spec = format_spec(&event.keystroke);
+        let mut overrides = self.settings.shortcuts.clone().unwrap_or_default();
+        overrides.insert(action.to_string(), spec);
+        let mut next = self.settings.clone();
+        next.shortcuts = Some(overrides);
+        self.commit(next, cx);
+        self.capturing_shortcut = None;
+        cx.notify();
+    }
+
+    fn reset_shortcut(&mut self, action: &'static str, cx: &mut Context<Self>) {
+        let Some(mut overrides) = self.settings.shortcuts.clone() else {
+            return;
+        };
+        if overrides.remove(action).is_none() {
+            return;
+        }
+        let mut next = self.settings.clone();
+        next.shortcuts = if overrides.is_empty() {
+            None
+        } else {
+            Some(overrides)
+        };
+        self.commit(next, cx);
+    }
 }
 
 // Palette mirrors `app_view.rs`'s Baudrun-skin constants verbatim
@@ -419,6 +507,10 @@ const FG_TERTIARY: u32 = 0xFFFFFF66;
 const BTN_BG: u32 = 0xFFFFFF14;
 const BTN_FG: u32 = 0xFFFFFFF2;
 const TAB_ACTIVE_BG: u32 = 0x007AFF40;
+/// Solid Baudrun-skin accent (`--accent #0a84ff`). Used for the
+/// border on the capture-mode binding cell so the active row jumps
+/// out from the muted resting state.
+const ACCENT: u32 = 0x0a84ffFF;
 
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -457,10 +549,122 @@ impl SettingsView {
         match self.tab {
             SettingsTab::Appearance => self.appearance_pane().into_any_element(),
             SettingsTab::Themes => self.themes_pane().into_any_element(),
+            SettingsTab::Shortcuts => self.shortcuts_pane(cx).into_any_element(),
             SettingsTab::Highlighting => self.highlighting_pane(cx).into_any_element(),
             SettingsTab::Advanced => self.advanced_pane(cx).into_any_element(),
-            other => placeholder_pane(other.label()).into_any_element(),
         }
+    }
+
+    fn shortcuts_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let overrides = self.settings.shortcuts.clone().unwrap_or_default();
+        let capturing = self.capturing_shortcut;
+        let rows = SHORTCUT_ACTIONS.iter().map(|&action| {
+            let label = shortcut_label(action);
+            let is_capturing = capturing == Some(action);
+            let is_overridden = overrides.contains_key(action);
+            let effective = effective_shortcut(action, &overrides);
+
+            // The binding cell flips appearance when capturing —
+            // accent border + "Press a key…" text — so the user
+            // has unambiguous feedback that input is being eaten.
+            let cell: gpui::AnyElement = if is_capturing {
+                div()
+                    .min_w(px(150.0))
+                    .px_3()
+                    .py(px(6.0))
+                    .rounded_md()
+                    .border_1()
+                    .border_color(rgba(ACCENT))
+                    .bg(rgba(TAB_ACTIVE_BG))
+                    .text_color(rgba(BTN_FG))
+                    .text_size(px(12.0))
+                    .track_focus(&self.capture_focus)
+                    .on_key_down(cx.listener(Self::handle_capture_key))
+                    .child("Press a key… (Esc to cancel)")
+                    .into_any_element()
+            } else {
+                let display: gpui::AnyElement = match parse_spec(&effective) {
+                    Some(stroke) => Kbd::new(stroke).appearance(true).into_any_element(),
+                    None => div()
+                        .text_size(px(12.0))
+                        .text_color(rgba(FG_TERTIARY))
+                        .child("\u{2014}")
+                        .into_any_element(),
+                };
+                div()
+                    .min_w(px(150.0))
+                    .px_3()
+                    .py(px(6.0))
+                    .rounded_md()
+                    .border_1()
+                    .border_color(rgba(BORDER_SUBTLE))
+                    .bg(rgba(BTN_BG))
+                    .text_color(rgba(BTN_FG))
+                    .text_size(px(12.0))
+                    .cursor_pointer()
+                    .hover(|s| s.border_color(rgba(ACCENT)))
+                    .child(display)
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                            this.start_capture(action, window, cx);
+                        }),
+                    )
+                    .into_any_element()
+            };
+
+            // Reset button only renders when there's an actual
+            // override to clear — otherwise the row is already at
+            // its default and the button would be a no-op.
+            let reset: gpui::AnyElement = if is_overridden {
+                div()
+                    .px_2()
+                    .py(px(4.0))
+                    .rounded_sm()
+                    .text_size(px(13.0))
+                    .text_color(rgba(FG_SECONDARY))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(rgba(BTN_BG)).text_color(rgba(BTN_FG)))
+                    // U+21BA — "anticlockwise open circle arrow",
+                    // the reset glyph Tauri uses next to each row.
+                    .child("\u{21BA}")
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &MouseUpEvent, _, cx| {
+                            this.reset_shortcut(action, cx);
+                        }),
+                    )
+                    .into_any_element()
+            } else {
+                div().w(px(20.0)).into_any_element()
+            };
+
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .child(div().flex_1().text_color(rgb(SIDEBAR_FG)).child(label))
+                .child(cell)
+                .child(reset)
+        });
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(section_card_with_desc(
+                "Keyboard Shortcuts",
+                Some(
+                    "Click a binding to record a new key combo; Escape \
+                     cancels. Use \u{21BA} to reset that row to the \
+                     platform default. macOS uses Cmd-based combos \
+                     (Cmd is never a terminal control character so plain \
+                     \u{2318}K is safe); Linux/Windows use Ctrl+Shift so \
+                     plain Ctrl+letter still passes through to the device.",
+                ),
+                div().flex().flex_col().gap_2().children(rows),
+            ))
     }
 
     fn themes_pane(&self) -> impl IntoElement {
@@ -809,13 +1013,6 @@ where
     )
 }
 
-fn placeholder_pane(label: &'static str) -> impl IntoElement {
-    div()
-        .text_size(px(13.0))
-        .text_color(rgba(FG_SECONDARY))
-        .child(format!("{label} (coming soon)"))
-}
-
 /// Build a `SelectState<Vec<Opt>>` pre-selected to whichever option
 /// in `opts` has `id == selected`. Same shape as `app_view::make_select`
 /// but bound to `Context<SettingsView>` (gpui's `Context<T>` is
@@ -831,4 +1028,221 @@ fn make_select(
         .position(|o| o.id == selected)
         .map(IndexPath::new);
     cx.new(|cx| SelectState::new(opts, idx, window, cx))
+}
+
+// -- Shortcut tables (mirror Tauri's `src/lib/shortcuts.ts`) ----------
+
+/// Display order in Settings → Shortcuts. Same grouping as Tauri:
+/// session control first, then transfer / window management, then
+/// view actions.
+const SHORTCUT_ACTIONS: &[&str] = &[
+    "connect",
+    "disconnect",
+    "suspend",
+    "resume",
+    "clear",
+    "break",
+    "send-file",
+    "new-profile",
+    "open-window",
+    "font-increase",
+    "font-decrease",
+    "font-reset",
+];
+
+fn shortcut_label(action: &'static str) -> &'static str {
+    match action {
+        "connect" => "Connect",
+        "disconnect" => "Disconnect",
+        "suspend" => "Suspend session",
+        "resume" => "Resume session",
+        "clear" => "Clear terminal",
+        "break" => "Send Break",
+        "send-file" => "Send file (X/YMODEM)",
+        "new-profile" => "New profile",
+        "open-window" => "Open profile in new window",
+        "font-increase" => "Increase font size",
+        "font-decrease" => "Decrease font size",
+        "font-reset" => "Reset font size",
+        _ => action,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn default_for_action(action: &str) -> &'static str {
+    match action {
+        "connect" => "Meta+Enter",
+        "disconnect" => "Meta+Shift+D",
+        "suspend" => "Meta+Shift+S",
+        "resume" => "Meta+Shift+R",
+        "clear" => "Meta+K",
+        "break" => "Meta+Shift+B",
+        "send-file" => "Meta+Shift+T",
+        "new-profile" => "Meta+N",
+        "open-window" => "Meta+Shift+Enter",
+        "font-increase" => "Meta+=",
+        "font-decrease" => "Meta+-",
+        "font-reset" => "Meta+0",
+        _ => "",
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn default_for_action(action: &str) -> &'static str {
+    match action {
+        "connect" => "Control+Enter",
+        "disconnect" => "Control+Shift+D",
+        "suspend" => "Control+Shift+S",
+        "resume" => "Control+Shift+R",
+        "clear" => "Control+Shift+K",
+        "break" => "Control+Shift+B",
+        "send-file" => "Control+Shift+T",
+        "new-profile" => "Control+N",
+        "open-window" => "Control+Shift+Enter",
+        "font-increase" => "Control+=",
+        "font-decrease" => "Control+-",
+        "font-reset" => "Control+0",
+        _ => "",
+    }
+}
+
+/// Effective spec — user override if present + non-empty, else
+/// platform default. Matches Tauri's `effectiveShortcut`: empty
+/// string in the override map is treated as "unset" so the reset
+/// affordance can clear without having to delete the key.
+fn effective_shortcut(action: &str, overrides: &HashMap<String, String>) -> String {
+    if let Some(s) = overrides.get(action) {
+        if !s.trim().is_empty() {
+            return s.clone();
+        }
+    }
+    default_for_action(action).to_string()
+}
+
+// -- Spec ↔ Keystroke conversion --------------------------------------
+
+fn any_modifier(m: &Modifiers) -> bool {
+    m.control || m.alt || m.shift || m.platform || m.function
+}
+
+/// Format a captured `Keystroke` into the W3C aria-keyshortcuts
+/// shape Tauri persists (`Meta+Shift+K`). Only the modifiers we
+/// surface in the UI are emitted — `function` is captured but
+/// dropped from the spec since the persisted format has no slot
+/// for it (Fn-key bindings on macOS aren't useful as terminal
+/// shortcuts anyway).
+fn format_spec(keystroke: &Keystroke) -> String {
+    let mut parts: Vec<&str> = Vec::with_capacity(5);
+    let m = &keystroke.modifiers;
+    // Order matches Tauri's parser tolerance: any order parses,
+    // but we standardise on Control → Meta → Shift → Alt for
+    // round-trip stability.
+    if m.control {
+        parts.push("Control");
+    }
+    if m.platform {
+        parts.push("Meta");
+    }
+    if m.shift {
+        parts.push("Shift");
+    }
+    if m.alt {
+        parts.push("Alt");
+    }
+    let key_str = canonical_key_for_storage(keystroke.key.as_str());
+    let mut out = parts.join("+");
+    if !out.is_empty() {
+        out.push('+');
+    }
+    out.push_str(&key_str);
+    out
+}
+
+/// Map gpui's lowercase key names to the W3C key value names Tauri
+/// stores. Letter / digit / punctuation keys round-trip as their
+/// raw form (uppercase letters); arrow / page / function names
+/// are normalized to the W3C names so the shipping app can read
+/// them back.
+fn canonical_key_for_storage(key: &str) -> String {
+    match key {
+        "up" => "ArrowUp".into(),
+        "down" => "ArrowDown".into(),
+        "left" => "ArrowLeft".into(),
+        "right" => "ArrowRight".into(),
+        "pageup" => "PageUp".into(),
+        "pagedown" => "PageDown".into(),
+        "enter" => "Enter".into(),
+        "escape" => "Escape".into(),
+        "tab" => "Tab".into(),
+        "space" => " ".into(),
+        "backspace" => "Backspace".into(),
+        "delete" => "Delete".into(),
+        "home" => "Home".into(),
+        "end" => "End".into(),
+        // Single ASCII letter → uppercase. Digits / punctuation
+        // / multi-char already-named keys (F1, etc.) pass through
+        // unchanged.
+        other if other.len() == 1 && other.chars().next().unwrap().is_ascii_alphabetic() => {
+            other.to_ascii_uppercase()
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Reverse of `format_spec` — parse a stored Tauri spec back into
+/// a gpui `Keystroke` so the `Kbd` widget can render it. Returns
+/// `None` for malformed specs (no key, only modifiers, …) so the
+/// caller can fall back to a placeholder.
+fn parse_spec(spec: &str) -> Option<Keystroke> {
+    if spec.is_empty() {
+        return None;
+    }
+    let mut modifiers = Modifiers::default();
+    let mut key: Option<String> = None;
+    for raw in spec.split('+') {
+        let tok = raw.trim();
+        if tok.is_empty() {
+            continue;
+        }
+        match tok.to_ascii_lowercase().as_str() {
+            "control" | "ctrl" => modifiers.control = true,
+            "meta" | "cmd" | "command" | "super" | "win" => modifiers.platform = true,
+            "shift" => modifiers.shift = true,
+            "alt" | "option" => modifiers.alt = true,
+            // Last non-modifier token wins, like Tauri's parser.
+            _ => key = Some(canonical_key_for_display(tok)),
+        }
+    }
+    let key = key?;
+    Some(Keystroke {
+        modifiers,
+        key,
+        key_char: None,
+    })
+}
+
+/// W3C → gpui key name. Inverse of `canonical_key_for_storage`.
+/// Unknown keys lowercase by default (matches gpui's convention
+/// for letters / punctuation).
+fn canonical_key_for_display(key: &str) -> String {
+    match key {
+        "ArrowUp" => "up".into(),
+        "ArrowDown" => "down".into(),
+        "ArrowLeft" => "left".into(),
+        "ArrowRight" => "right".into(),
+        "PageUp" => "pageup".into(),
+        "PageDown" => "pagedown".into(),
+        "Enter" => "enter".into(),
+        "Escape" => "escape".into(),
+        "Tab" => "tab".into(),
+        " " | "Space" => "space".into(),
+        "Backspace" => "backspace".into(),
+        "Delete" => "delete".into(),
+        "Home" => "home".into(),
+        "End" => "end".into(),
+        other if other.len() == 1 && other.chars().next().unwrap().is_ascii_alphabetic() => {
+            other.to_ascii_lowercase()
+        }
+        other => other.to_string(),
+    }
 }
