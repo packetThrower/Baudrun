@@ -64,14 +64,25 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       `backspace_key` already wired from the structure pass.
       Quick-connect dialog dropped — Tauri version doesn't have
       one.
-- [ ] **Phase 3 — Settings panel.** `sheet` or `dialog` for the
-      panel structure, theme picker with live preview (reuse the
-      viewport widget at small size), skin picker, keybinding
-      editor (`kbd` for display + custom capture), connection
-      defaults. All settings round-trip via Phase-1 code.
-      gpui-component has its own theme system — decide whether to
-      adopt it for app chrome or override; the *terminal viewport*
-      keeps its own palette either way.
+- [x] **Phase 3 — Settings panel.** Done. Standalone OS window
+      (mirrors the Tauri shape — separate window so theme/skin
+      swaps can render live in the main window without flipping
+      past a modal). Five-tab left rail with the same Tauri labels:
+      Appearance (skin picker, appearance mode, terminal font size),
+      Themes (default-theme picker), Shortcuts (12 actions with
+      click-to-capture key recording, ↺ reset, W3C aria-keyshortcuts
+      storage round-trippable with the Tauri build), Highlighting
+      (per-pack toggles), Advanced (log dir + USB driver detection
+      + copy-on-select + update-check toggles). All edits live-save
+      through the Phase-1 stores; chrome matches the profile editor
+      (PANEL_BG cards, translucent-blue active rail, small Input /
+      Checkbox / Select sizing). Live-apply (skin/theme/font-size
+      changes re-render the main window) is deferred to Phase 4.
+      Skipped from the Tauri panel: Screen Reader and Terminal
+      Renderer (xterm.js-specific; no equivalent in alacritty +
+      gpui), Config Directory (needs a filesystem dialog, deferred
+      to its own slice), Installed Skins / Themes management lists
+      (delete/import beyond what the picker shows; deferred).
 - [ ] **Phase 4 — Themes & skins.** Plug the theme parser into the
       viewport's color resolution (drop the hardcoded palette in
       [term_bridge.rs](prototype/src/term_bridge.rs)'s `resolve`).
