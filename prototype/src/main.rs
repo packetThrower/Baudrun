@@ -21,7 +21,7 @@ use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{
     px, rgba, App, AppContext, Bounds, Hsla, TitlebarOptions, WindowBounds, WindowOptions,
 };
-use gpui_component::{Root, Theme, ThemeMode};
+use gpui_component::{scroll::ScrollbarShow, Root, Theme, ThemeMode};
 
 use app_view::AppView;
 use terminal_view::TerminalView;
@@ -103,19 +103,25 @@ fn main() {
         // palette that matches our hand-styled bits.
         Theme::change(ThemeMode::Dark, None, cx);
 
-        // Tighten the gpui-component widget colors to the Baudrun
-        // skin palette. The `input` field doubles as both the
-        // widget border colour and (via `0.7 * input` in
-        // `Theme::input_background`) the widget bg in dark mode —
-        // setting it to ~12% white lands the bg at ~8.4%, matching
-        // the Baudrun skin's `--bg-input` (rgba 8% white). The
-        // border at 12% is brighter than the spec's `transparent`
-        // `--input-border-idle`, but it's what makes the field
-        // outline read against the card; the user could not see
-        // their inputs at all without it.
+        // Tighten the gpui-component widget colors. The `input`
+        // field doubles as both the widget border colour and (via
+        // `0.7 * input` in `Theme::input_background`) the widget
+        // bg in dark mode. The Baudrun skin's `--bg-input` is 8%
+        // white, but at that opacity the widget bg blends almost
+        // perfectly into the section card bg — visually the field
+        // disappears. We push to ~25% which gives a ~17% bg and a
+        // clearly visible field, trading spec-purity for usability
+        // (per direct user feedback: "the inputs lost their colour
+        // and are dark again, can't tell where they are").
         let theme = Theme::global_mut(cx);
-        let input_border: Hsla = rgba(0xFFFFFF1F).into();
+        let input_border: Hsla = rgba(0xFFFFFF40).into();
         theme.input = input_border;
+        // Force scrollbars to always paint. The default
+        // (`Hover` on macOS unless system "always show scrollbars"
+        // is set) makes the form look like there's no overflow at
+        // rest, which loses the affordance — users don't realise
+        // there's more content below the fold.
+        theme.scrollbar_show = ScrollbarShow::Always;
 
         // Build the profile store once at startup. Reads from the
         // user's real config dir (same path the existing main app
