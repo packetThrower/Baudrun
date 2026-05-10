@@ -28,7 +28,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::*, pulsating_between, px, rgb, rgba, Animation, AnimationExt, AppContext, Bounds,
+    div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt, AppContext, Bounds,
     Context, Entity, IntoElement, MouseButton, MouseUpEvent, Render, ScrollHandle, Task,
     TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
 };
@@ -37,7 +37,7 @@ use gpui_component::{
     input::{Input, InputState},
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
-    IndexPath, Root, Sizable,
+    IndexPath, Root, Sizable, Theme, ThemeMode,
 };
 use gpui::SharedString;
 
@@ -51,6 +51,7 @@ use crate::data::skins;
 use crate::data::themes;
 use crate::settings_bus::{SettingsBus, SettingsEvent};
 use crate::settings_view::SettingsView;
+use crate::skin_tokens::{SkinFonts, SkinTokens};
 use crate::term_bridge::Palette;
 use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
@@ -61,20 +62,6 @@ use crate::terminal_view::{ProfileSettings, TerminalView};
 /// enough that the terminal still gets the lion's share of the
 /// window.
 const SIDEBAR_WIDTH_PX: f32 = 220.0;
-
-/// Sidebar background — `--bg-sidebar` (4% white) composited over
-/// the Baudrun `--shell-bg` (#1d1d1e) and baked opaque. Slightly
-/// lighter than the form pane on the right, matching the Tauri
-/// version's layering.
-const SIDEBAR_BG: u32 = 0x262627;
-/// Sidebar separator (thin vertical line between sidebar and viewport).
-const SIDEBAR_BORDER: u32 = 0x2a2a30;
-/// Sidebar default text colour.
-const SIDEBAR_FG: u32 = 0xd4d4d8;
-/// Sidebar muted text colour (port name, section labels).
-const SIDEBAR_MUTED: u32 = 0x8a8a92;
-/// Highlighted-row background when a profile is selected.
-const SIDEBAR_SELECTED: u32 = 0x2d3548;
 
 pub struct AppView {
     terminal: Entity<TerminalView>,
@@ -319,14 +306,120 @@ impl AppView {
 
     /// Apply the relevant slots of a `Settings` snapshot to the
     /// live UI. Called both at construction time and on every
-    /// `SettingsEvent::Updated` from the bus. Today: re-resolves
-    /// the active palette and pushes it to the terminal. Future
-    /// Phase-4 slices add font-size + skin-token application here.
-    /// The settings argument is unused right now — we re-read from
-    /// the bus inside `compute_palette` — but kept in the signature
-    /// for symmetry with the subscription handler shape.
-    fn apply_settings(&mut self, _settings: &settings::Settings, cx: &mut Context<Self>) {
+    /// `SettingsEvent::Updated` from the bus. Refreshes:
+    ///  * the chrome `SkinTokens` global (drives both windows'
+    ///    sidebar / panel / button colours), and
+    ///  * the terminal palette (drives terminal-pane colour
+    ///    resolution; honours per-profile theme overrides).
+    fn apply_settings(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
+        self.apply_skin(settings, cx);
         self.apply_palette(cx);
+    }
+
+    /// Resolve the active skin and write the chrome tokens into
+    /// the gpui `Global`. Both AppView and SettingsView read from
+    /// that global during render, so a single update propagates
+    /// to every chrome surface — no need to push tokens through
+    /// every helper signature. Also re-tunes the gpui-component
+    /// `Theme` (mode + input/popover colours + fonts) so widgets
+    /// (Select, Input, Checkbox) match the active skin instead of
+    /// staying frozen at boot-time defaults.
+    fn apply_skin(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
+        let skin_id = if settings.skin_id.is_empty() {
+            skins::DEFAULT_SKIN_ID
+        } else {
+            settings.skin_id.as_str()
+        };
+        let (skin_opt, fallback_dark) = match self.skins_store.get(skin_id) {
+            Some(skin) => (Some(skin), false),
+            None => {
+                log::warn!("skin {skin_id:?} not found, using built-in baudrun");
+                (None, true)
+            }
+        };
+        // `appearance` of `"light"` requests light overlays;
+        // `"dark"` and `"auto"` (current default in our
+        // prototype since we haven't wired system-appearance
+        // detection) both mean "use dark vars." Skins flagged
+        // dark-only ignore the request and pin dark, matching
+        // the Tauri applier.
+        let dark = match &skin_opt {
+            Some(skin) => {
+                settings.appearance.as_str() != "light" || !skin.supports_light
+            }
+            None => fallback_dark || settings.appearance.as_str() != "light",
+        };
+        let (tokens, fonts) = match &skin_opt {
+            Some(skin) => (
+                SkinTokens::from_skin(skin, dark),
+                SkinFonts::from_skin(skin, dark),
+            ),
+            None => (SkinTokens::baudrun_default(), SkinFonts::defaults()),
+        };
+        cx.set_global(tokens);
+
+        // Drive gpui-component's Theme off the same appearance
+        // signal so Select dropdowns / Inputs / Checkboxes pick the
+        // matching light/dark variant of their own theme. Without
+        // this the widgets stay in whatever mode `Theme::change`
+        // was last called with, so picking Light leaves them
+        // showing white-on-white text.
+        let mode = if dark { ThemeMode::Dark } else { ThemeMode::Light };
+        Theme::change(mode, None, cx);
+
+        // Now overlay the skin's colour + size tokens onto the
+        // Theme so the widget chrome (input border, popover bg,
+        // accent, radii, fonts) tracks the picked skin rather than
+        // the gpui-component defaults. Done after `Theme::change`
+        // so the mode swap doesn't clobber our overrides on the
+        // next change.
+        let theme = Theme::global_mut(cx);
+        theme.input = rgba(tokens.border_strong).into();
+        // gpui-component renders BOTH the closed Select box (the
+        // input chrome) AND the open Select popover with
+        // `theme.background`. The popover floats free over the
+        // window so a translucent value (Baudrun + macOS-26's
+        // `--bg-main` is alpha 0.55-0.7) lets the cards underneath
+        // bleed through. Use the same opaque `--option-bg` slot
+        // the popover items themselves use — the closed Select box
+        // ends up slightly more "raised" than before but agrees
+        // visually with the open popover.
+        theme.background = rgba(tokens.option_bg).into();
+        theme.foreground = rgba(tokens.fg_primary).into();
+        // Popover (Select dropdown menu) uses the dedicated
+        // `--option-bg` / `--option-fg` slots — these are opaque in
+        // every shipped skin, since the popover floats free over the
+        // window and would otherwise let whatever's behind the
+        // window bleed through. Using `bg_panel` (translucent in
+        // Baudrun + macOS-26) made the dropdown look glassy.
+        theme.popover = rgba(tokens.option_bg).into();
+        theme.popover_foreground = rgba(tokens.option_fg).into();
+        // gpui-component's Select hardcodes selected-option text
+        // to `theme.foreground` and the selected-option bg to
+        // `theme.accent` — meaning a saturated accent shows the
+        // foreground colour right on top of itself (green-on-green
+        // for CRT, magenta-on-magenta for Synthwave). Skins ship
+        // `--bg-active` as a translucent version of the accent
+        // tuned for exactly this "selected row" use case;
+        // composited over the popover bg it always lands at a
+        // muted shade where the foreground reads. Keep the
+        // saturated `accent` token for the primary Connect button
+        // (which has its own accent_fg contrast pair) and use
+        // `bg_active` for the Theme accent slot that drives Select
+        // highlighting.
+        theme.accent = rgba(tokens.bg_active).into();
+        theme.accent_foreground = rgba(tokens.option_fg).into();
+        theme.danger = rgba(tokens.danger).into();
+        theme.border = rgba(tokens.border_subtle).into();
+        theme.radius = px(tokens.radius_md);
+        theme.radius_lg = px(tokens.radius_lg);
+        if !fonts.font_ui.is_empty() {
+            theme.font_family = fonts.font_ui.clone();
+        }
+        if !fonts.font_mono.is_empty() {
+            theme.mono_font_family = fonts.font_mono.clone();
+        }
+        theme.font_size = px(fonts.font_size_base);
     }
 
     /// Resolve the effective palette right now and push it to the
@@ -1014,6 +1107,7 @@ impl AppView {
 
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let s = *cx.global::<SkinTokens>();
         let profiles = self.profile_store.list();
         let selected = self.selected_profile_id.clone();
         let connected = self.connected_profile_id.clone();
@@ -1079,7 +1173,7 @@ impl Render for AppView {
                         .child(div().flex_1().min_h_0().child(terminal))
                         .into_any_element()
                 }
-                None => welcome_pane(has_profiles).into_any_element(),
+                None => welcome_pane(s, has_profiles).into_any_element(),
             },
         };
 
@@ -1098,6 +1192,12 @@ impl Render for AppView {
         div()
             .size_full()
             .relative()
+            // Opaque shell base. Skins layer their translucent
+            // panels (`bg_main`, `bg_panel`, `bg_sidebar`) on top
+            // of this — without it the macOS-26 / Baudrun skins
+            // look uniformly dark because their `--bg-main` is
+            // translucent white with nothing solid beneath.
+            .bg(rgba(s.bg_window))
             .child(
                 div()
                     .size_full()
@@ -1109,21 +1209,29 @@ impl Render for AppView {
                             .min_h_0()
                             .flex()
                             .flex_row()
-                            .bg(rgb(SIDEBAR_BG))
+                            // No bg here — `bg_window` (painted on
+                            // the outermost div) is the opaque
+                            // base, and the sidebar / right pane
+                            // each paint their own translucent
+                            // layer (`bg_sidebar`, `bg_main`,
+                            // `bg_panel`) directly on top. Painting
+                            // an extra `bg_main` here would stack
+                            // alpha and brighten everything inside
+                            // beyond what the skin specifies.
             // -- sidebar --
             .child(
                 div()
                     .w(px(SIDEBAR_WIDTH_PX))
                     .h_full()
-                    .bg(rgb(SIDEBAR_BG))
+                    .bg(rgba(s.bg_sidebar))
                     .border_r_1()
-                    .border_color(rgb(SIDEBAR_BORDER))
+                    .border_color(rgba(s.border_subtle))
                     .px_2()
                     .py_3()
                     .flex()
                     .flex_col()
                     .gap_1()
-                    .text_color(rgb(SIDEBAR_FG))
+                    .text_color(rgba(s.fg_primary))
                     .text_size(px(13.0))
                     // Inherits the theme's font_family, which the
                     // gpui-component Root sets to `.SystemUIFont`
@@ -1181,6 +1289,7 @@ impl Render for AppView {
                     )
                     // -- bottom status bar (sits under both panes) --
                     .child(status_bar(
+                        s,
                         connected_for_status.as_ref(),
                         reconnecting,
                         editor_name.as_deref(),
@@ -1198,7 +1307,7 @@ impl Render for AppView {
 /// profile" default. Wording adapts to whether any profiles
 /// exist: with profiles, prompt to pick one; without, prompt to
 /// click the `+` to create one.
-fn welcome_pane(has_profiles: bool) -> impl IntoElement {
+fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
     let prompt = if has_profiles {
         "Pick a profile from the sidebar to start a session."
     } else {
@@ -1207,7 +1316,7 @@ fn welcome_pane(has_profiles: bool) -> impl IntoElement {
     div()
         .flex_1()
         .h_full()
-        .bg(rgb(FORM_BG))
+        .bg(rgba(s.bg_main))
         .flex()
         .flex_col()
         .items_center()
@@ -1216,13 +1325,13 @@ fn welcome_pane(has_profiles: bool) -> impl IntoElement {
         .child(
             div()
                 .text_size(px(28.0))
-                .text_color(rgb(SIDEBAR_FG))
+                .text_color(rgba(s.fg_primary))
                 .child("Baudrun"),
         )
         .child(
             div()
                 .text_size(px(13.0))
-                .text_color(rgba(FG_SECONDARY))
+                .text_color(rgba(s.fg_secondary))
                 .child(prompt),
         )
 }
@@ -1259,20 +1368,17 @@ fn session_header(
     if reconnecting {
         meta.push_str(" · reconnecting…");
     }
-    let dot_color = if reconnecting {
-        STATUS_RECONNECTING
-    } else {
-        STATUS_CONNECTED
-    };
+    let s = *cx.global::<SkinTokens>();
+    let dot_color = if reconnecting { s.warn } else { s.success };
     div()
         .w_full()
         .px_4()
         .py_2()
-        .bg(rgb(FORM_BG))
+        .bg(rgba(s.bg_main))
         .border_b_1()
-        .border_color(rgba(BORDER_SUBTLE))
+        .border_color(rgba(s.border_subtle))
         .text_size(px(13.0))
-        .text_color(rgb(SIDEBAR_FG))
+        .text_color(rgba(s.fg_primary))
         .flex()
         .flex_row()
         .items_center()
@@ -1289,7 +1395,7 @@ fn session_header(
                         .w(px(STATUS_DOT_PX))
                         .h(px(STATUS_DOT_PX))
                         .rounded_full()
-                        .bg(rgb(dot_color));
+                        .bg(rgba(dot_color));
                     if reconnecting {
                         // Match the Tauri `.dot.reconnecting`
                         // pulse: 1s ease-in-out, opacity bounces
@@ -1316,13 +1422,13 @@ fn session_header(
                         .child(
                             div()
                                 .text_size(px(13.0))
-                                .text_color(rgb(SIDEBAR_FG))
+                                .text_color(rgba(s.fg_primary))
                                 .child(profile.name),
                         )
                         .child(
                             div()
                                 .text_size(px(11.0))
-                                .text_color(rgba(FG_SECONDARY))
+                                .text_color(rgba(s.fg_secondary))
                                 .child(meta),
                         ),
                 ),
@@ -1332,13 +1438,13 @@ fn session_header(
                 .flex()
                 .flex_row()
                 .gap_2()
-                .child(pill_button("Clear", false).on_mouse_up(
+                .child(pill_button(s, "Clear", false).on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, _window, cx| {
                         this.terminal.update(cx, |t, cx| t.clear_screen(cx));
                     }),
                 ))
-                .child(primary_button("Disconnect").on_mouse_up(
+                .child(primary_button(s, "Disconnect").on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, window, cx| {
                         this.disconnect_current(window, cx);
@@ -1355,6 +1461,7 @@ fn session_header(
 /// idle. Future slices will hang scan indicators, update toasts,
 /// and the undo-delete countdown off this same row.
 fn status_bar(
+    s: SkinTokens,
     connected: Option<&Profile>,
     reconnecting: bool,
     editing_profile_name: Option<&str>,
@@ -1372,11 +1479,11 @@ fn status_bar(
         .w_full()
         .px_4()
         .py_1()
-        .bg(rgb(SIDEBAR_BG))
+        .bg(rgba(s.bg_sidebar))
         .border_t_1()
-        .border_color(rgba(BORDER_SUBTLE))
+        .border_color(rgba(s.border_subtle))
         .text_size(px(11.0))
-        .text_color(rgba(FG_SECONDARY))
+        .text_color(rgba(s.fg_secondary))
         .child(text)
 }
 
@@ -1386,14 +1493,16 @@ fn status_bar(
 /// reasoning as the rest of the sidebar (less surface area than
 /// adopting `gpui_component::button` for one element).
 fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
+    let s = *cx.global::<SkinTokens>();
+    let hover_bg = s.bg_hover;
     // Shared chrome for the inline icon-buttons (+ and ⚙). Same
     // padding / hover treatment so they read as a pair.
-    let icon_btn = || {
+    let icon_btn = move || {
         div()
             .px_2()
             .rounded_sm()
-            .text_color(rgb(SIDEBAR_FG))
-            .hover(|s| s.bg(rgb(SIDEBAR_SELECTED)))
+            .text_color(rgba(s.fg_primary))
+            .hover(move |st| st.bg(rgba(hover_bg)))
             .cursor_pointer()
     };
     div()
@@ -1406,7 +1515,7 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
         .child(
             div()
                 .text_size(px(11.0))
-                .text_color(rgb(SIDEBAR_MUTED))
+                .text_color(rgba(s.fg_tertiary))
                 .child("PROFILES"),
         )
         .child(
@@ -1447,60 +1556,11 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
 }
 
 
-// --- Baudrun (default) skin ---------------------------------------
-//
-// Colour vars are taken from `src-tauri/resources/builtin_skins.json`
-// (the `baudrun` entry's dark `vars`). gpui's `rgba(0xRRGGBBAA)` is
-// the inverse of CSS's `rgba(r, g, b, a/255)`, so each constant
-// below is the hex form of the same value the Tauri build ships.
-// Names mirror the CSS var names so it's a one-line lookup either
-// direction.
-
-/// Form-pane background — `--bg-main` (rgba(20,20,22,0.55))
-/// composited over `--shell-bg` (#1d1d1e) and baked opaque.
-/// Sits noticeably darker than the sidebar so the split between
-/// the two reads visually without needing a heavy divider, and
-/// makes the section cards (which are translucent white over this)
-/// stand out as raised content the way they do in the Tauri
-/// build.
-const FORM_BG: u32 = 0x18181a;
-
-/// `--fg-secondary` (65% white). Used for field labels (uppercase
-/// "SERIAL PORT" etc.) and the header subtitle.
-const FG_SECONDARY: u32 = 0xFFFFFFA6;
-/// `--fg-tertiary` (40% white). Quieter still — the uppercase
-/// mode-tag under the title ("EDIT PROFILE").
-const FG_TERTIARY: u32 = 0xFFFFFF66;
-/// `--border-subtle` (8% white). Section-card outlines + the
-/// header bottom rule.
-const BORDER_SUBTLE: u32 = 0xFFFFFF14;
-/// `--bg-panel` (6% white). Section-card surface — sits a notch
-/// above the form bg so the cards read as raised content.
-const PANEL_BG: u32 = 0xFFFFFF0F;
-/// `--accent`. Solid macOS-y blue used for the primary action
-/// (Connect). Opaque (alpha 0xFF baked in).
-const ACCENT: u32 = 0x0a84ffFF;
-/// White text on the accent button — full-strength, not the muted
-/// `--fg-primary`, because the blue background needs more contrast.
-const ACCENT_FG: u32 = 0xFFFFFFFF;
-/// Active-tab background — `--bg-active` from the Baudrun skin
-/// (rgba(0,122,255,0.25)). Tints the left-rail entry for the
-/// selected sub-tab without going so loud the entry looks like a
-/// primary button.
-const TAB_ACTIVE_BG: u32 = 0x007AFF40;
-
-/// Pill-button background — `--bg-input` from the Baudrun skin
-/// (8% white over the shell). Reads as a slightly-raised neutral
-/// surface; lets *colour* be reserved for semantically loaded
-/// actions (Connect = accent, Delete = danger) instead of
-/// decoration.
-const BTN_BG: u32 = 0xFFFFFF14;
-/// Pill-button hover background — `--bg-input-focus` (12% white).
-const BTN_BG_HOVER: u32 = 0xFFFFFF1F;
-/// Pill-button text colour — `--fg-primary` (95% white).
-const BTN_FG: u32 = 0xFFFFFFF2;
-/// Destructive-action text — `--danger` (`#ff453a`, opaque).
-const BTN_FG_DANGER: u32 = 0xff453aFF;
+// Chrome colours used to live as `const`s here, but Phase 4 slice 3
+// moved them into the `SkinTokens` global so skin picks live-apply.
+// Render code reads `cx.global::<SkinTokens>()`; helpers without a
+// Context take the `SkinTokens` value as a parameter (Copy, 64
+// bytes, cheap to pass).
 
 /// Construct a fresh `Editor` whose every widget (text inputs +
 /// selects + checkbox bool) is seeded from `profile`. Shared by
@@ -1931,29 +1991,30 @@ fn port_opts(keep_selected: &str) -> Vec<Opt> {
 /// red for destructive actions like Delete. Returns a bare `Div`
 /// so the call site can attach `.on_mouse_up` etc. — the helper
 /// just owns the visual styling.
-fn pill_button(label: &'static str, danger: bool) -> gpui::Div {
-    let fg = if danger { rgba(BTN_FG_DANGER) } else { rgba(BTN_FG) };
+fn pill_button(s: SkinTokens, label: &'static str, danger: bool) -> gpui::Div {
+    let fg = if danger { rgba(s.danger) } else { rgba(s.fg_primary) };
+    let hover_bg = s.bg_input_hover;
     div()
         .px_3()
         .py_1()
-        .bg(rgba(BTN_BG))
+        .bg(rgba(s.bg_input))
         .text_color(fg)
         .text_size(px(13.0))
         .rounded_md()
         .cursor_pointer()
-        .hover(|s| s.bg(rgba(BTN_BG_HOVER)))
+        .hover(move |st| st.bg(rgba(hover_bg)))
         .child(label)
 }
 
 /// Primary action button — solid `--accent` blue, white text. Used
 /// for the form's Connect button (the call-to-action). Same shape
 /// as `pill_button` so they line up flush in a button row.
-fn primary_button(label: &'static str) -> gpui::Div {
+fn primary_button(s: SkinTokens, label: &'static str) -> gpui::Div {
     div()
         .px_3()
         .py_1()
-        .bg(rgba(ACCENT))
-        .text_color(rgba(ACCENT_FG))
+        .bg(rgba(s.accent))
+        .text_color(rgba(s.accent_fg))
         .text_size(px(13.0))
         .rounded_md()
         .cursor_pointer()
@@ -2037,6 +2098,7 @@ impl EditorRender {
 }
 
 fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
+    let s = *cx.global::<SkinTokens>();
     div()
         .flex_1()
         // `min_w_0` lets the pane shrink below its intrinsic
@@ -2050,8 +2112,13 @@ fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
         // Scrollbar widget has nothing to render.
         .min_w_0()
         .min_h_0()
-        .bg(rgb(FORM_BG))
-        .text_color(rgb(SIDEBAR_FG))
+        // No bg_main here — the cards inside paint `bg_panel`
+        // directly over `bg_window` (the opaque shell), matching
+        // Settings window's two-layer composition. With bg_main
+        // here the panels would stack alpha and the form pane
+        // ended up brighter / less grey than the rest of the
+        // chrome.
+        .text_color(rgba(s.fg_primary))
         .text_size(px(13.0))
         .flex()
         .flex_col()
@@ -2069,6 +2136,7 @@ fn form_header(
     name: Entity<InputState>,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
+    let s = *cx.global::<SkinTokens>();
     let subtitle = if is_edit { "EDIT PROFILE" } else { "NEW PROFILE" };
     // Save button text-color is the only thing that changes for the
     // dirty state — pill bg stays the same so the button doesn't
@@ -2076,24 +2144,36 @@ fn form_header(
     // clean reads as "no-op available," primary fg (95% white)
     // when dirty reads as "click me to persist your changes."
     let save_fg = if is_dirty {
-        rgba(BTN_FG)
+        rgba(s.fg_primary)
     } else {
-        rgba(FG_TERTIARY)
+        rgba(s.fg_tertiary)
     };
     let delete_btn = is_edit.then(|| {
-        pill_button("Delete", true).on_mouse_up(
+        pill_button(s, "Delete", true).on_mouse_up(
             MouseButton::Left,
             cx.listener(|this, _: &MouseUpEvent, _window, cx| {
                 this.delete_from_editor(cx);
             }),
         )
     });
+    // Render the heading as a plain div instead of an Input —
+    // gpui-component's Input fixes its own height to a small
+    // `h_6` regardless of `Size::Size(_)`, which clipped 24px
+    // text. Settings window's window_header uses the same plain-
+    // div approach. Editing happens through a labeled "NAME"
+    // field at the top of the Connection card now.
+    let title_text = name.read(cx).value().to_string();
+    let title_text = if title_text.is_empty() {
+        "(unnamed)".to_string()
+    } else {
+        title_text
+    };
     div()
         .w_full()
         .px_6()
         .py_3()
         .border_b_1()
-        .border_color(rgba(BORDER_SUBTLE))
+        .border_color(rgba(s.border_subtle))
         .flex()
         .flex_row()
         .items_center()
@@ -2105,28 +2185,15 @@ fn form_header(
                 .flex_col()
                 .gap_1()
                 .child(
-                    Input::new(&name)
-                        .appearance(false)
-                        // Baudrun skin's `--font-size-h1` is 24px.
-                        // `Size::Size(px)` renders text at
-                        // `px * 0.875` per gpui-component's
-                        // `input_text_size`, so pass ~27.5 to land
-                        // at 24px.
-                        .with_size(gpui_component::Size::Size(px(27.5))),
+                    div()
+                        .text_size(px(24.0))
+                        .text_color(rgba(s.fg_primary))
+                        .child(title_text),
                 )
                 .child(
                     div()
-                        // The Input applies an internal 8px
-                        // horizontal padding regardless of
-                        // `appearance(false)` (see gpui-component
-                        // input.rs: `input_px` is applied before
-                        // the `.when(appearance)` chrome). Match
-                        // it here so the subtitle's first letter
-                        // sits flush under the title's first
-                        // letter rather than 8px to its left.
-                        .pl(px(8.0))
                         .text_size(px(10.0))
-                        .text_color(rgba(FG_TERTIARY))
+                        .text_color(rgba(s.fg_tertiary))
                         .child(subtitle),
                 ),
         )
@@ -2138,7 +2205,7 @@ fn form_header(
                 .gap_2()
                 .children(delete_btn)
                 .child(
-                    pill_button("Save", false)
+                    pill_button(s, "Save", false)
                         .text_color(save_fg)
                         .on_mouse_up(
                             MouseButton::Left,
@@ -2147,13 +2214,13 @@ fn form_header(
                             }),
                         ),
                 )
-                .child(pill_button("Cancel", false).on_mouse_up(
+                .child(pill_button(s, "Cancel", false).on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, _window, cx| {
                         this.cancel_editor(cx);
                     }),
                 ))
-                .child(primary_button("Connect").on_mouse_up(
+                .child(primary_button(s, "Connect").on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, window, cx| {
                         this.save_and_connect(window, cx);
@@ -2167,6 +2234,7 @@ fn form_header(
 /// width so the cards keep form-shaped proportions on a wide
 /// window. Mirrors the Tauri form's layout one-for-one.
 fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
+    let s = *cx.global::<SkinTokens>();
     let active = er.tab;
     let content: gpui::AnyElement = match er.tab {
         EditorTab::Connection => div()
@@ -2174,6 +2242,7 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
             .flex_col()
             .gap_3()
             .child(connection_card(
+                er.name.clone(),
                 er.port,
                 er.baud,
                 er.data_bits,
@@ -2188,7 +2257,7 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
                 er.local_echo,
                 cx,
             ))
-            .child(theme_card(er.theme))
+            .child(theme_card(s, er.theme))
             .into_any_element(),
         EditorTab::Advanced => advanced_pane(
             er.dtr_on_connect,
@@ -2256,7 +2325,7 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
                                         .px_3()
                                         .py_2()
                                         .text_size(px(12.0))
-                                        .text_color(rgb(SIDEBAR_ERROR))
+                                        .text_color(rgba(s.sidebar_error))
                                         .child(err)
                                 })),
                         ),
@@ -2270,18 +2339,20 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
 /// selected state reads instantly. Highlighting is omitted per
 /// product direction — a separate phase later.
 fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElement {
-    let item = |label: &'static str, tab: EditorTab| {
+    let s = *cx.global::<SkinTokens>();
+    let item = move |label: &'static str, tab: EditorTab| {
         let is_active = tab == active;
         let bg = if is_active {
-            rgba(TAB_ACTIVE_BG)
+            rgba(s.bg_active)
         } else {
             rgba(0x00000000)
         };
         let fg = if is_active {
-            rgba(BTN_FG)
+            rgba(s.fg_primary)
         } else {
-            rgba(FG_SECONDARY)
+            rgba(s.fg_secondary)
         };
+        let hover_bg = s.bg_input;
         div()
             .w_full()
             .px_3()
@@ -2290,7 +2361,7 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
             .bg(bg)
             .text_color(fg)
             .cursor_pointer()
-            .hover(|s| s.bg(rgba(BTN_BG)))
+            .hover(move |st| st.bg(rgba(hover_bg)))
             .child(label)
             .on_mouse_up(
                 MouseButton::Left,
@@ -2306,7 +2377,7 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
         .px_3()
         .py_4()
         .border_r_1()
-        .border_color(rgba(BORDER_SUBTLE))
+        .border_color(rgba(s.border_subtle))
         .flex()
         .flex_col()
         .gap_1()
@@ -2320,11 +2391,12 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
 /// `--font-size-section` (15px); description is the muted
 /// `--fg-secondary`. Panel uses `--radius-lg` (10px) and
 /// `--bg-panel` / `--border-subtle`.
-fn section_card(title: &'static str, body: impl IntoElement) -> gpui::Div {
-    section_card_with_desc(title, None, body)
+fn section_card(s: SkinTokens, title: &'static str, body: impl IntoElement) -> gpui::Div {
+    section_card_with_desc(s, title, None, body)
 }
 
 fn section_card_with_desc(
+    s: SkinTokens,
     title: &'static str,
     description: Option<&'static str>,
     body: impl IntoElement,
@@ -2336,14 +2408,14 @@ fn section_card_with_desc(
         .child(
             div()
                 .text_size(px(15.0))
-                .text_color(rgb(SIDEBAR_FG))
+                .text_color(rgba(s.fg_primary))
                 .child(title),
         );
     if let Some(desc) = description {
         header = header.child(
             div()
                 .text_size(px(12.0))
-                .text_color(rgba(FG_SECONDARY))
+                .text_color(rgba(s.fg_secondary))
                 // gpui's text default is `whitespace: nowrap` — a
                 // long description like the Control Lines blurb
                 // would otherwise render as a single line and run
@@ -2354,10 +2426,10 @@ fn section_card_with_desc(
     }
     div()
         .w_full()
-        .bg(rgba(PANEL_BG))
+        .bg(rgba(s.bg_panel))
         .border_1()
-        .border_color(rgba(BORDER_SUBTLE))
-        .rounded(px(10.0))
+        .border_color(rgba(s.border_subtle))
+        .rounded(px(s.radius_lg))
         .px_4()
         .py_3()
         .flex()
@@ -2373,7 +2445,7 @@ fn section_card_with_desc(
 /// Label is `whitespace_nowrap` because gpui defaults to wrap, and
 /// short fixed strings like "SLOW-PASTE DELAY (MS)" wrapping mid-
 /// label inside a narrow container looks broken.
-fn labeled(label: &'static str, widget: impl IntoElement) -> gpui::Div {
+fn labeled(s: SkinTokens, label: &'static str, widget: impl IntoElement) -> gpui::Div {
     div()
         .flex()
         .flex_col()
@@ -2381,14 +2453,16 @@ fn labeled(label: &'static str, widget: impl IntoElement) -> gpui::Div {
         .child(
             div()
                 .text_size(px(11.0))
-                .text_color(rgba(FG_SECONDARY))
+                .text_color(rgba(s.fg_secondary))
                 .whitespace_nowrap()
                 .child(label),
         )
         .child(widget)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn connection_card(
+    name: Entity<InputState>,
     port: Entity<SelectState<Vec<Opt>>>,
     baud: Entity<SelectState<Vec<Opt>>>,
     data_bits: Entity<SelectState<Vec<Opt>>>,
@@ -2397,6 +2471,8 @@ fn connection_card(
     flow_control: Entity<SelectState<Vec<Opt>>>,
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
+    let s = *cx.global::<SkinTokens>();
+    let hover_bg = s.bg_input_hover;
     // Serial port row: select on the left (flex_1), rescan icon
     // on the right. Click rescans the OS port list and reapplies
     // the current selection.
@@ -2409,17 +2485,17 @@ fn connection_card(
             div()
                 .flex_1()
                 .min_w_0()
-                .child(labeled("SERIAL PORT", Select::new(&port).small())),
+                .child(labeled(s, "SERIAL PORT", Select::new(&port))),
         )
         .child(
             div()
                 .px_2()
                 .py_1()
-                .bg(rgba(BTN_BG))
-                .text_color(rgba(BTN_FG))
+                .bg(rgba(s.bg_input))
+                .text_color(rgba(s.fg_primary))
                 .rounded_md()
                 .cursor_pointer()
-                .hover(|s| s.bg(rgba(BTN_BG_HOVER)))
+                .hover(move |st| st.bg(rgba(hover_bg)))
                 .child("↻")
                 .on_mouse_up(
                     MouseButton::Left,
@@ -2432,6 +2508,7 @@ fn connection_card(
         .flex()
         .flex_col()
         .gap_3()
+        .child(labeled(s, "NAME", Input::new(&name).appearance(true)))
         .child(port_row)
         // Two-column rows of selects.
         .child(
@@ -2442,12 +2519,12 @@ fn connection_card(
                 .child(
                     div()
                         .flex_1()
-                        .child(labeled("BAUD RATE", Select::new(&baud).small())),
+                        .child(labeled(s, "BAUD RATE", Select::new(&baud))),
                 )
                 .child(
                     div()
                         .flex_1()
-                        .child(labeled("DATA BITS", Select::new(&data_bits).small())),
+                        .child(labeled(s, "DATA BITS", Select::new(&data_bits))),
                 ),
         )
         .child(
@@ -2458,16 +2535,16 @@ fn connection_card(
                 .child(
                     div()
                         .flex_1()
-                        .child(labeled("PARITY", Select::new(&parity).small())),
+                        .child(labeled(s, "PARITY", Select::new(&parity))),
                 )
                 .child(
                     div()
                         .flex_1()
-                        .child(labeled("STOP BITS", Select::new(&stop_bits).small())),
+                        .child(labeled(s, "STOP BITS", Select::new(&stop_bits))),
                 ),
         )
-        .child(labeled("FLOW CONTROL", Select::new(&flow_control).small()));
-    section_card("Connection", body)
+        .child(labeled(s, "FLOW CONTROL", Select::new(&flow_control)));
+    section_card(s, "Connection", body)
 }
 
 fn terminal_card(
@@ -2476,6 +2553,7 @@ fn terminal_card(
     local_echo: bool,
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
+    let s = *cx.global::<SkinTokens>();
     let body = div()
         .flex()
         .flex_col()
@@ -2489,16 +2567,18 @@ fn terminal_card(
                     div()
                         .flex_1()
                         .child(labeled(
+                            s,
                             "SEND LINE ENDING",
-                            Select::new(&line_ending).small(),
+                            Select::new(&line_ending),
                         )),
                 )
                 .child(
                     div()
                         .flex_1()
                         .child(labeled(
+                            s,
                             "BACKSPACE SENDS",
-                            Select::new(&backspace_key).small(),
+                            Select::new(&backspace_key),
                         )),
                 ),
         )
@@ -2509,7 +2589,7 @@ fn terminal_card(
             cx,
             |ed, v| ed.local_echo = v,
         ));
-    section_card("Terminal", body)
+    section_card(s, "Terminal", body)
 }
 
 /// Generic checkbox row that writes back to the open editor when
@@ -2543,6 +2623,7 @@ fn bool_field_hinted<F>(
 where
     F: Fn(&mut Editor, bool) + 'static,
 {
+    let s = *cx.global::<SkinTokens>();
     let cb = Checkbox::new(id)
         .checked(checked)
         .label(label)
@@ -2562,7 +2643,7 @@ where
         row = row.child(
             div()
                 .text_size(px(12.0))
-                .text_color(rgba(FG_SECONDARY))
+                .text_color(rgba(s.fg_secondary))
                 .child(h),
         );
     }
@@ -2585,6 +2666,7 @@ fn advanced_pane(
     paste_char_delay_ms: Entity<InputState>,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
+    let s = *cx.global::<SkinTokens>();
     div()
         .flex()
         .flex_col()
@@ -2600,18 +2682,19 @@ fn advanced_pane(
                 .child(
                     div()
                         .text_size(px(18.0))
-                        .text_color(rgb(SIDEBAR_FG))
+                        .text_color(rgba(s.fg_primary))
                         .child("Advanced"),
                 )
                 .child(
                     div()
                         .text_size(px(12.0))
-                        .text_color(rgba(FG_SECONDARY))
+                        .text_color(rgba(s.fg_secondary))
                         .whitespace_normal()
                         .child("Control lines, hex view, timestamps, session logging."),
                 ),
         )
         .child(control_lines_card(
+            s,
             dtr_on_connect,
             rts_on_connect,
             dtr_on_disconnect,
@@ -2638,8 +2721,9 @@ fn advanced_pane(
 /// `compute_palette` treats as fall-through to
 /// `Settings::default_theme_id`. The same Select otherwise lists
 /// every theme `themes_store` knows about.
-fn theme_card(theme: Entity<SelectState<Vec<Opt>>>) -> gpui::Div {
+fn theme_card(s: SkinTokens, theme: Entity<SelectState<Vec<Opt>>>) -> gpui::Div {
     section_card_with_desc(
+        s,
         "Terminal Theme",
         Some(
             "Override the global default theme just for this profile. \
@@ -2648,11 +2732,12 @@ fn theme_card(theme: Entity<SelectState<Vec<Opt>>>) -> gpui::Div {
              green for the lab switch). Leave on \"Use global \
              default\" to inherit from Settings \u{2192} Themes.",
         ),
-        Select::new(&theme).small(),
+        Select::new(&theme),
     )
 }
 
 fn control_lines_card(
+    s: SkinTokens,
     dtr_on_connect: Entity<SelectState<Vec<Opt>>>,
     rts_on_connect: Entity<SelectState<Vec<Opt>>>,
     dtr_on_disconnect: Entity<SelectState<Vec<Opt>>>,
@@ -2663,8 +2748,8 @@ fn control_lines_card(
             .flex()
             .flex_row()
             .gap_3()
-            .child(div().flex_1().child(labeled(left_label, left)))
-            .child(div().flex_1().child(labeled(right_label, right)))
+            .child(div().flex_1().child(labeled(s, left_label, left)))
+            .child(div().flex_1().child(labeled(s, right_label, right)))
     };
     let body = div()
         .flex()
@@ -2672,17 +2757,18 @@ fn control_lines_card(
         .gap_3()
         .child(row(
             "DTR ON CONNECT",
-            Select::new(&dtr_on_connect).small(),
+            Select::new(&dtr_on_connect),
             "RTS ON CONNECT",
-            Select::new(&rts_on_connect).small(),
+            Select::new(&rts_on_connect),
         ))
         .child(row(
             "DTR ON DISCONNECT",
-            Select::new(&dtr_on_disconnect).small(),
+            Select::new(&dtr_on_disconnect),
             "RTS ON DISCONNECT",
-            Select::new(&rts_on_disconnect).small(),
+            Select::new(&rts_on_disconnect),
         ));
     section_card_with_desc(
+        s,
         "Control Lines",
         Some(
             "Only needed for specific adapters or devices (RS-485 direction, \
@@ -2699,6 +2785,7 @@ fn output_card(
     auto_reconnect: bool,
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
+    let s = *cx.global::<SkinTokens>();
     // Single column. The 2-col grid for Hex view + Line timestamps
     // produced an awkward orphan-feel where the right-hand "Line
     // timestamps" hint wrapped while the others were full-width;
@@ -2740,7 +2827,7 @@ fn output_card(
             cx,
             |ed, v| ed.auto_reconnect = v,
         ));
-    section_card("Output", body)
+    section_card(s, "Output", body)
 }
 
 fn paste_safety_card(
@@ -2749,6 +2836,7 @@ fn paste_safety_card(
     paste_char_delay_ms: Entity<InputState>,
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
+    let s = *cx.global::<SkinTokens>();
     // Slow-paste delay input gets its own row, indented under the
     // checkbox. Sharing a flex_row with the "Slow paste" hint made
     // the input visibly shrink as the window grew because the hint
@@ -2780,11 +2868,13 @@ fn paste_safety_card(
                 .pl_6()
                 .w(px(160.0))
                 .child(labeled(
+                    s,
                     "SLOW-PASTE DELAY (MS)",
                     Input::new(&paste_char_delay_ms).small().appearance(true),
                 )),
         );
     section_card_with_desc(
+        s,
         "Paste safety",
         Some(
             "Catch the \"I pasted into the wrong window\" mistake, and pace pastes so \
@@ -2794,22 +2884,6 @@ fn paste_safety_card(
     )
 }
 
-/// Bright reddish-pink for the inline connect-error message
-/// under a profile row. Bright enough to read on the dark sidebar
-/// without being painful.
-const SIDEBAR_ERROR: u32 = 0xff7a8a;
-/// Live-connection status dot colour. Matches the Tauri version's
-/// `--success` skin token (Baudrun palette) so the chrome agrees
-/// across the two builds.
-const STATUS_CONNECTED: u32 = 0x32d74b;
-/// Failed-connection status dot colour. Reuses the inline-error
-/// pink so the dot and the under-row error text agree visually.
-const STATUS_FAILED: u32 = SIDEBAR_ERROR;
-/// Auto-reconnect-in-progress dot colour. Matches the Tauri
-/// version's `--warn` skin token (warm yellow), paired with a
-/// pulse animation in `session_header` to draw the eye to the
-/// "trying" state.
-const STATUS_RECONNECTING: u32 = 0xf5d76e;
 /// Diameter of the round status dot in the row header. 8px reads
 /// at the sidebar's font size without crowding the name text.
 const STATUS_DOT_PX: f32 = 8.0;
@@ -2825,11 +2899,11 @@ enum RowStatus {
 }
 
 impl RowStatus {
-    fn color(self) -> u32 {
+    fn color(self, tokens: SkinTokens) -> u32 {
         match self {
-            RowStatus::Connected => STATUS_CONNECTED,
-            RowStatus::Reconnecting => STATUS_RECONNECTING,
-            RowStatus::Failed => STATUS_FAILED,
+            RowStatus::Connected => tokens.success,
+            RowStatus::Reconnecting => tokens.warn,
+            RowStatus::Failed => tokens.sidebar_error,
         }
     }
 }
@@ -2841,6 +2915,7 @@ fn profile_row(
     error: Option<String>,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
+    let tokens = *cx.global::<SkinTokens>();
     let id = profile.id.clone();
     let name = if profile.name.is_empty() {
         "(unnamed)".to_string()
@@ -2854,10 +2929,11 @@ fn profile_row(
     };
 
     let bg = if is_selected {
-        rgb(SIDEBAR_SELECTED)
+        rgba(tokens.bg_hover)
     } else {
-        rgb(SIDEBAR_BG)
+        rgba(tokens.bg_sidebar)
     };
+    let hover_bg = tokens.bg_hover;
 
     // Header row: name on the left, status dot on the right (omitted
     // when there's no status). Click anywhere on the row opens the
@@ -2872,14 +2948,14 @@ fn profile_row(
         .flex_row()
         .items_center()
         .justify_between()
-        .child(div().text_color(rgb(SIDEBAR_FG)).child(name))
-        .children(status.map(|s| {
+        .child(div().text_color(rgba(tokens.fg_primary)).child(name))
+        .children(status.map(|st| {
             let dot = div()
                 .w(px(STATUS_DOT_PX))
                 .h(px(STATUS_DOT_PX))
                 .rounded_full()
-                .bg(rgb(s.color()));
-            if s == RowStatus::Reconnecting {
+                .bg(rgba(st.color(tokens)));
+            if st == RowStatus::Reconnecting {
                 // Same 1s pulse as the session header so the two
                 // indicators feel like one signal. Animation name
                 // is per-row-instance to avoid gpui de-duping
@@ -2903,7 +2979,7 @@ fn profile_row(
         .py_1()
         .rounded_sm()
         .bg(bg)
-        .hover(|s| s.bg(rgb(SIDEBAR_SELECTED)))
+        .hover(move |st| st.bg(rgba(hover_bg)))
         .cursor_pointer()
         .flex()
         .flex_col()
@@ -2912,14 +2988,14 @@ fn profile_row(
         .child(
             div()
                 .text_size(px(11.0))
-                .text_color(rgb(SIDEBAR_MUTED))
+                .text_color(rgba(tokens.fg_tertiary))
                 .child(port),
         );
     if let Some(err) = error {
         row = row.child(
             div()
                 .text_size(px(11.0))
-                .text_color(rgb(SIDEBAR_ERROR))
+                .text_color(rgba(tokens.sidebar_error))
                 .child(err),
         );
     }

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgb, rgba, AppContext, Context, Entity, FocusHandle, IntoElement,
+    div, prelude::*, px, rgba, AppContext, Context, Entity, FocusHandle, IntoElement,
     KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent, Render, SharedString,
     Subscription, Window,
 };
@@ -27,7 +27,8 @@ use crate::data::highlight;
 use crate::data::settings::Settings;
 use crate::data::skins;
 use crate::data::themes;
-use crate::settings_bus::SettingsBus;
+use crate::settings_bus::{SettingsBus, SettingsEvent};
+use crate::skin_tokens::SkinTokens;
 
 /// Top-level Settings tabs. Order + labels mirror the Tauri
 /// `Settings.svelte` left rail (Appearance, Themes, Shortcuts,
@@ -115,6 +116,11 @@ pub struct SettingsView {
     /// imported in the current session (post-launch import refreshes
     /// without restarting Settings).
     highlight_store: Rc<highlight::Store>,
+    /// SettingsBus subscription that triggers a re-render whenever
+    /// AppView refreshes the `SkinTokens` global. Without this, a
+    /// skin pick wouldn't repaint the Settings window itself —
+    /// only the main window would update.
+    _bus_sub: Subscription,
     #[allow(dead_code)] // enumerated through `theme_select` today;
                         // kept around for future "import theme"
                         // affordance + live-preview hooks.
@@ -165,6 +171,13 @@ impl SettingsView {
         cx: &mut Context<Self>,
     ) -> Self {
         let current = settings_bus.read(cx).current().clone();
+        // Re-render when a skin / theme / anything changes — the
+        // chrome reads from `SkinTokens` (refreshed by AppView's
+        // own subscription handler), so a notify here is enough to
+        // pick up the new global on the next paint.
+        let bus_sub = cx.subscribe(&settings_bus, |_, _, _: &SettingsEvent, cx| {
+            cx.notify();
+        });
 
         // -- Appearance tab widgets --
 
@@ -324,6 +337,7 @@ impl SettingsView {
             skins_store,
             highlight_store,
             themes_store,
+            _bus_sub: bus_sub,
             settings: current,
             tab: SettingsTab::default(),
             skin_select,
@@ -504,50 +518,40 @@ impl SettingsView {
     }
 }
 
-// Palette mirrors `app_view.rs`'s Baudrun-skin constants verbatim
-// so the Settings window's chrome reads as a continuation of the
-// main window. Kept local rather than re-exported to avoid forcing
-// app_view.rs to expose them publicly; the pair will be unified
-// when the skin system lands in a later slice.
-const SIDEBAR_FG: u32 = 0xd4d4d8;
-const FORM_BG: u32 = 0x18181a;
-const PANEL_BG: u32 = 0xFFFFFF0F;
-const BORDER_SUBTLE: u32 = 0xFFFFFF14;
-const FG_SECONDARY: u32 = 0xFFFFFFA6;
-const FG_TERTIARY: u32 = 0xFFFFFF66;
-const BTN_BG: u32 = 0xFFFFFF14;
-const BTN_FG: u32 = 0xFFFFFFF2;
-const TAB_ACTIVE_BG: u32 = 0x007AFF40;
-/// Solid Baudrun-skin accent (`--accent #0a84ff`). Used for the
-/// border on the capture-mode binding cell so the active row jumps
-/// out from the muted resting state.
-const ACCENT: u32 = 0x0a84ffFF;
+// Chrome colours used to live as `const`s here, but Phase 4 slice 3
+// moved them into the `SkinTokens` global so skin picks live-apply.
+// SettingsView's render reads `cx.global::<SkinTokens>()` once and
+// hands the value to the per-section helpers.
 
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let s = *cx.global::<SkinTokens>();
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
 
         div()
             .size_full()
             .relative()
-            .bg(rgb(FORM_BG))
-            .text_color(rgb(SIDEBAR_FG))
+            // Opaque shell base, then translucent main pane on
+            // top — same layering AppView uses, so the Settings
+            // window's frosted look matches the main one.
+            .bg(rgba(s.bg_window))
+            .text_color(rgba(s.fg_primary))
             .text_size(px(13.0))
             .child(
                 div()
                     .size_full()
                     .flex()
                     .flex_col()
-                    .child(window_header())
+                    .child(window_header(s))
                     .child(
                         div()
                             .flex_1()
                             .min_h_0()
                             .flex()
                             .flex_row()
-                            .child(rail(self.tab, cx))
-                            .child(scrollable_pane(self.pane_content(cx))),
+                            .child(rail(s, self.tab, cx))
+                            .child(scrollable_pane(self.pane_content(s, cx))),
                     ),
             )
             .children(dialog_layer)
@@ -556,17 +560,17 @@ impl Render for SettingsView {
 }
 
 impl SettingsView {
-    fn pane_content(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn pane_content(&self, s: SkinTokens, cx: &mut Context<Self>) -> gpui::AnyElement {
         match self.tab {
-            SettingsTab::Appearance => self.appearance_pane().into_any_element(),
-            SettingsTab::Themes => self.themes_pane().into_any_element(),
-            SettingsTab::Shortcuts => self.shortcuts_pane(cx).into_any_element(),
-            SettingsTab::Highlighting => self.highlighting_pane(cx).into_any_element(),
-            SettingsTab::Advanced => self.advanced_pane(cx).into_any_element(),
+            SettingsTab::Appearance => self.appearance_pane(s).into_any_element(),
+            SettingsTab::Themes => self.themes_pane(s).into_any_element(),
+            SettingsTab::Shortcuts => self.shortcuts_pane(s, cx).into_any_element(),
+            SettingsTab::Highlighting => self.highlighting_pane(s, cx).into_any_element(),
+            SettingsTab::Advanced => self.advanced_pane(s, cx).into_any_element(),
         }
     }
 
-    fn shortcuts_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn shortcuts_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
         let overrides = self.settings.shortcuts.clone().unwrap_or_default();
         let capturing = self.capturing_shortcut;
         let rows = SHORTCUT_ACTIONS.iter().map(|&action| {
@@ -585,9 +589,9 @@ impl SettingsView {
                     .py(px(6.0))
                     .rounded_md()
                     .border_1()
-                    .border_color(rgba(ACCENT))
-                    .bg(rgba(TAB_ACTIVE_BG))
-                    .text_color(rgba(BTN_FG))
+                    .border_color(rgba(s.accent))
+                    .bg(rgba(s.bg_active))
+                    .text_color(rgba(s.fg_primary))
                     .text_size(px(12.0))
                     .track_focus(&self.capture_focus)
                     .on_key_down(cx.listener(Self::handle_capture_key))
@@ -598,22 +602,23 @@ impl SettingsView {
                     Some(stroke) => Kbd::new(stroke).appearance(true).into_any_element(),
                     None => div()
                         .text_size(px(12.0))
-                        .text_color(rgba(FG_TERTIARY))
+                        .text_color(rgba(s.fg_tertiary))
                         .child("\u{2014}")
                         .into_any_element(),
                 };
+                let accent = s.accent;
                 div()
                     .min_w(px(150.0))
                     .px_3()
                     .py(px(6.0))
                     .rounded_md()
                     .border_1()
-                    .border_color(rgba(BORDER_SUBTLE))
-                    .bg(rgba(BTN_BG))
-                    .text_color(rgba(BTN_FG))
+                    .border_color(rgba(s.border_subtle))
+                    .bg(rgba(s.bg_input))
+                    .text_color(rgba(s.fg_primary))
                     .text_size(px(12.0))
                     .cursor_pointer()
-                    .hover(|s| s.border_color(rgba(ACCENT)))
+                    .hover(move |st| st.border_color(rgba(accent)))
                     .child(display)
                     .on_mouse_up(
                         MouseButton::Left,
@@ -628,14 +633,16 @@ impl SettingsView {
             // override to clear — otherwise the row is already at
             // its default and the button would be a no-op.
             let reset: gpui::AnyElement = if is_overridden {
+                let hover_bg = s.bg_input;
+                let hover_fg = s.fg_primary;
                 div()
                     .px_2()
                     .py(px(4.0))
                     .rounded_sm()
                     .text_size(px(13.0))
-                    .text_color(rgba(FG_SECONDARY))
+                    .text_color(rgba(s.fg_secondary))
                     .cursor_pointer()
-                    .hover(|s| s.bg(rgba(BTN_BG)).text_color(rgba(BTN_FG)))
+                    .hover(move |st| st.bg(rgba(hover_bg)).text_color(rgba(hover_fg)))
                     // U+21BA — "anticlockwise open circle arrow",
                     // the reset glyph Tauri uses next to each row.
                     .child("\u{21BA}")
@@ -655,7 +662,7 @@ impl SettingsView {
                 .flex_row()
                 .items_center()
                 .gap_3()
-                .child(div().flex_1().text_color(rgb(SIDEBAR_FG)).child(label))
+                .child(div().flex_1().text_color(rgba(s.fg_primary)).child(label))
                 .child(cell)
                 .child(reset)
         });
@@ -665,6 +672,7 @@ impl SettingsView {
             .flex_col()
             .gap_3()
             .child(section_card_with_desc(
+                s,
                 "Keyboard Shortcuts",
                 Some(
                     "Click a binding to record a new key combo; Escape \
@@ -678,12 +686,13 @@ impl SettingsView {
             ))
     }
 
-    fn themes_pane(&self) -> impl IntoElement {
+    fn themes_pane(&self, s: SkinTokens) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .gap_3()
             .child(section_card_with_desc(
+                s,
                 "Default Theme",
                 Some(
                     "Terminal palette new sessions start with — affects \
@@ -692,14 +701,14 @@ impl SettingsView {
                      the profile form. Built-in themes ship with the \
                      app; user themes load from $SUPPORT_DIR/themes/.",
                 ),
-                Select::new(&self.theme_select).small(),
+                Select::new(&self.theme_select),
             ))
     }
 
-    fn highlighting_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn highlighting_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
         let enabled = self.enabled_packs();
         let packs = self.highlight_store.list();
-        let rows = packs.into_iter().map(|p| {
+        let rows = packs.into_iter().map(move |p| {
             let id_for_label = p.id.clone();
             let id_for_setter = p.id.clone();
             let is_on = enabled.iter().any(|e| e == &p.id);
@@ -742,7 +751,7 @@ impl SettingsView {
                     div()
                         .pl(px(24.0))
                         .text_size(px(12.0))
-                        .text_color(rgba(FG_SECONDARY))
+                        .text_color(rgba(s.fg_secondary))
                         .whitespace_normal()
                         .child(desc),
                 )
@@ -753,6 +762,7 @@ impl SettingsView {
             .flex_col()
             .gap_3()
             .child(section_card_with_desc(
+                s,
                 "Highlight Packs",
                 Some(
                     "Choose which built-in or imported rule packs colorize \
@@ -765,12 +775,13 @@ impl SettingsView {
             ))
     }
 
-    fn appearance_pane(&self) -> impl IntoElement {
+    fn appearance_pane(&self, s: SkinTokens) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
             .gap_3()
             .child(section_card_with_desc(
+                s,
                 "App Skin",
                 Some(
                     "How the app chrome (sidebar, panes, buttons) looks. \
@@ -778,18 +789,20 @@ impl SettingsView {
                      Themes tab. Imported user skins live next to the \
                      built-ins after a launch.",
                 ),
-                Select::new(&self.skin_select).small(),
+                Select::new(&self.skin_select),
             ))
             .child(section_card_with_desc(
+                s,
                 "Appearance",
                 Some(
                     "Light or dark variant of the active skin. \"Auto\" \
                      follows the system setting. Skins flagged dark-only \
                      ignore this and pin dark.",
                 ),
-                Select::new(&self.appearance_select).small(),
+                Select::new(&self.appearance_select),
             ))
             .child(section_card_with_desc(
+                s,
                 "Terminal Font Size",
                 Some(
                     "Pixel size of the terminal pane's monospace font. \
@@ -800,13 +813,14 @@ impl SettingsView {
             ))
     }
 
-    fn advanced_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let s = &self.settings;
+    fn advanced_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let cur = &self.settings;
         div()
             .flex()
             .flex_col()
             .gap_3()
             .child(section_card_with_desc(
+                s,
                 "Session Log Directory",
                 Some(
                     "Where profiles with \"Record session to file\" enabled \
@@ -815,6 +829,7 @@ impl SettingsView {
                 Input::new(&self.log_dir).small().appearance(true),
             ))
             .child(section_card_with_desc(
+                s,
                 "USB Driver Detection",
                 Some(
                     "Show a banner in the profile form when a USB-serial \
@@ -824,12 +839,13 @@ impl SettingsView {
                 bool_field(
                     "settings-detect-drivers",
                     "Detect un-drivered USB adapters",
-                    !s.disable_driver_detection,
+                    !cur.disable_driver_detection,
                     cx,
                     SettingsView::set_detect_drivers,
                 ),
             ))
             .child(section_card_with_desc(
+                s,
                 "Copy on Select",
                 Some(
                     "PuTTY-style — copy the terminal selection to the \
@@ -839,12 +855,13 @@ impl SettingsView {
                 bool_field(
                     "settings-copy-on-select",
                     "Copy terminal selection to clipboard automatically",
-                    s.copy_on_select,
+                    cur.copy_on_select,
                     cx,
                     SettingsView::set_copy_on_select,
                 ),
             ))
             .child(section_card_with_desc(
+                s,
                 "Updates",
                 Some("Check GitHub on app launch for a newer Baudrun release."),
                 div()
@@ -854,14 +871,14 @@ impl SettingsView {
                     .child(bool_field(
                         "settings-check-updates",
                         "Check for updates on launch",
-                        !s.disable_update_check,
+                        !cur.disable_update_check,
                         cx,
                         SettingsView::set_check_updates,
                     ))
                     .child(bool_field(
                         "settings-prerelease-updates",
                         "Include pre-releases (alpha / beta / rc)",
-                        s.include_prerelease_updates,
+                        cur.include_prerelease_updates,
                         cx,
                         SettingsView::set_include_prerelease,
                     )),
@@ -872,26 +889,26 @@ impl SettingsView {
 /// Window-top header bar. Mirrors `form_header` — title at the
 /// Baudrun `--font-size-h1` (24px), uppercase tag underneath, full
 /// width with a subtle bottom border.
-fn window_header() -> impl IntoElement {
+fn window_header(s: SkinTokens) -> impl IntoElement {
     div()
         .w_full()
         .px_6()
         .py_3()
         .border_b_1()
-        .border_color(rgba(BORDER_SUBTLE))
+        .border_color(rgba(s.border_subtle))
         .flex()
         .flex_col()
         .gap_1()
         .child(
             div()
                 .text_size(px(24.0))
-                .text_color(rgb(SIDEBAR_FG))
+                .text_color(rgba(s.fg_primary))
                 .child("Settings"),
         )
         .child(
             div()
                 .text_size(px(10.0))
-                .text_color(rgba(FG_TERTIARY))
+                .text_color(rgba(s.fg_tertiary))
                 .child("GLOBAL DEFAULTS"),
         )
 }
@@ -899,19 +916,20 @@ fn window_header() -> impl IntoElement {
 /// Left-rail tab nav. Same shape as `form_tab_nav` — translucent
 /// blue active background, muted text for inactive entries, hover
 /// fades to the button-bg token.
-fn rail(active: SettingsTab, cx: &mut Context<SettingsView>) -> impl IntoElement {
-    let item = |label: &'static str, tab: SettingsTab| {
+fn rail(s: SkinTokens, active: SettingsTab, cx: &mut Context<SettingsView>) -> impl IntoElement {
+    let item = move |label: &'static str, tab: SettingsTab| {
         let is_active = tab == active;
         let bg = if is_active {
-            rgba(TAB_ACTIVE_BG)
+            rgba(s.bg_active)
         } else {
             rgba(0x00000000)
         };
         let fg = if is_active {
-            rgba(BTN_FG)
+            rgba(s.fg_primary)
         } else {
-            rgba(FG_SECONDARY)
+            rgba(s.fg_secondary)
         };
+        let hover_bg = s.bg_input;
         div()
             .w_full()
             .px_3()
@@ -920,7 +938,7 @@ fn rail(active: SettingsTab, cx: &mut Context<SettingsView>) -> impl IntoElement
             .bg(bg)
             .text_color(fg)
             .cursor_pointer()
-            .hover(|s| s.bg(rgba(BTN_BG)))
+            .hover(move |st| st.bg(rgba(hover_bg)))
             .child(label)
             .on_mouse_up(
                 MouseButton::Left,
@@ -936,7 +954,7 @@ fn rail(active: SettingsTab, cx: &mut Context<SettingsView>) -> impl IntoElement
         .px_3()
         .py_4()
         .border_r_1()
-        .border_color(rgba(BORDER_SUBTLE))
+        .border_color(rgba(s.border_subtle))
         .flex()
         .flex_col()
         .gap_1()
@@ -961,6 +979,7 @@ fn scrollable_pane(content: impl IntoElement) -> impl IntoElement {
 /// beneath, body below. Same `--bg-panel` / `--border-subtle` /
 /// `--radius-lg` tokens as the profile editor's `section_card`.
 fn section_card_with_desc(
+    s: SkinTokens,
     title: &'static str,
     description: Option<&'static str>,
     body: impl IntoElement,
@@ -972,14 +991,14 @@ fn section_card_with_desc(
         .child(
             div()
                 .text_size(px(15.0))
-                .text_color(rgb(SIDEBAR_FG))
+                .text_color(rgba(s.fg_primary))
                 .child(title),
         );
     if let Some(desc) = description {
         header = header.child(
             div()
                 .text_size(px(12.0))
-                .text_color(rgba(FG_SECONDARY))
+                .text_color(rgba(s.fg_secondary))
                 // gpui defaults text to nowrap; long descriptions
                 // would otherwise run off the right edge.
                 .whitespace_normal()
@@ -988,10 +1007,10 @@ fn section_card_with_desc(
     }
     div()
         .w_full()
-        .bg(rgba(PANEL_BG))
+        .bg(rgba(s.bg_panel))
         .border_1()
-        .border_color(rgba(BORDER_SUBTLE))
-        .rounded(px(10.0))
+        .border_color(rgba(s.border_subtle))
+        .rounded(px(s.radius_lg))
         .px_4()
         .py_3()
         .flex()

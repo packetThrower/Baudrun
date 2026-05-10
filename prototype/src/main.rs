@@ -13,16 +13,15 @@ mod data;
 mod serial_io;
 mod settings_bus;
 mod settings_view;
+mod skin_tokens;
 mod term_bridge;
 mod terminal_grid;
 mod terminal_view;
 
 use std::rc::Rc;
 
-use gpui::{
-    px, rgba, App, AppContext, Bounds, Hsla, TitlebarOptions, WindowBounds, WindowOptions,
-};
-use gpui_component::{scroll::ScrollbarShow, Root, Theme, ThemeMode};
+use gpui::{px, App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
+use gpui_component::{scroll::ScrollbarShow, Root, Theme};
 
 use app_view::AppView;
 use settings_bus::SettingsBus;
@@ -89,33 +88,24 @@ fn main() {
         // Phase 2.4 (plain divs only) didn't need this; the moment
         // an Input appears, this is mandatory.
         gpui_component::init(cx);
-        // `init` defaults the theme to Light, which makes our
-        // chrome (built on dark bg constants from the Baudrun
-        // skin) ship with black text + a black cursor. Flip to
-        // Dark so widget-rendered text (Checkbox labels, Input
-        // cursor, Select chevron) picks up the white-on-dark
-        // palette that matches our hand-styled bits.
-        Theme::change(ThemeMode::Dark, None, cx);
+        // Install the chrome-token global with the boot-time
+        // baudrun defaults. AppView refreshes it from the active
+        // skin in `apply_settings` once the stores are wired, so
+        // this is just here to satisfy reads that fire before the
+        // first settings event (mostly during the very first
+        // paint). AppView::apply_skin also owns the gpui-component
+        // `Theme` mode + per-skin chrome overrides (font, radius,
+        // input/popover colours), so no static setup needed here.
+        cx.set_global(skin_tokens::SkinTokens::baudrun_default());
 
-        // Tighten the gpui-component widget colors. The `input`
-        // field doubles as both the widget border colour and (via
-        // `0.7 * input` in `Theme::input_background`) the widget
-        // bg in dark mode. The Baudrun skin's `--bg-input` is 8%
-        // white, but at that opacity the widget bg blends almost
-        // perfectly into the section card bg — visually the field
-        // disappears. We push to ~25% which gives a ~17% bg and a
-        // clearly visible field, trading spec-purity for usability
-        // (per direct user feedback: "the inputs lost their colour
-        // and are dark again, can't tell where they are").
-        let theme = Theme::global_mut(cx);
-        let input_border: Hsla = rgba(0xFFFFFF40).into();
-        theme.input = input_border;
         // Force scrollbars to always paint. The default
         // (`Hover` on macOS unless system "always show scrollbars"
         // is set) makes the form look like there's no overflow at
         // rest, which loses the affordance — users don't realise
-        // there's more content below the fold.
-        theme.scrollbar_show = ScrollbarShow::Always;
+        // there's more content below the fold. AppView::apply_skin
+        // re-establishes the rest of the Theme on every settings
+        // change but doesn't touch this preference.
+        Theme::global_mut(cx).scrollbar_show = ScrollbarShow::Always;
 
         // Build the profile + settings stores once at startup. Both
         // read from the user's real config dir (same paths the
