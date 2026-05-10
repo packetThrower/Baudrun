@@ -2614,6 +2614,11 @@ fn section_card_with_desc(
         .border_1()
         .border_color(rgba(s.border_subtle))
         .rounded(px(s.radius_lg))
+        // macOS 26 / Tahoe-style raised card. Matches the same
+        // shadow_sm used by `settings_view::section_card_with_desc`
+        // so the profile editor and the Settings window read at the
+        // same elevation.
+        .shadow_sm()
         .px_4()
         .py_3()
         .flex()

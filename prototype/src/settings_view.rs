@@ -1107,6 +1107,9 @@ impl SettingsView {
             .border_1()
             .border_color(rgba(s.border_subtle))
             .rounded(px(s.radius_lg))
+            // Match the section_card_with_desc shadow so this
+            // hand-rolled card sits at the same depth as the rest.
+            .shadow_sm()
             .px_4()
             .py_3()
             .flex()
@@ -1595,6 +1598,11 @@ fn section_card_with_desc(
         .border_1()
         .border_color(rgba(s.border_subtle))
         .rounded(px(s.radius_lg))
+        // macOS 26 / Tahoe-style raised card. The Tailwind-grade
+        // shadow_sm pair (1px+3px blur over 1px+2px) gives the same
+        // soft depth Apple uses for sheet content without painting a
+        // visible halo on dark backgrounds.
+        .shadow_sm()
         .px_4()
         .py_3()
         .flex()
