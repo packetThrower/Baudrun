@@ -70,17 +70,35 @@ fn extract_word_alternation(pattern: &str) -> Option<Vec<String>> {
     Some(words)
 }
 
-/// Map a rule's named colour to its SGR open sequence. Unknown
-/// values fall back to `dim` (90), matching the Tauri reader.
+/// Map a rule's named colour to its SGR open sequence. Standard
+/// 8-colour ANSI plus the bright variants (SGR 90–97) for a
+/// 14-colour palette. `dim` is an alias for bright-black (the
+/// Tauri build calls it that). Unknown / future names fall
+/// back to dim so a pack with a colour we don't recognise
+/// still renders something rather than nothing.
 fn ansi_open(color: &str) -> &'static str {
     match color {
+        // Standard 8 (foreground 30–37 — black is omitted; nobody
+        // wants invisible-on-default-bg highlights).
         "red" => "\x1b[31m",
         "green" => "\x1b[32m",
         "yellow" => "\x1b[33m",
         "blue" => "\x1b[34m",
         "magenta" => "\x1b[35m",
         "cyan" => "\x1b[36m",
-        "dim" | _ => "\x1b[90m",
+        "white" => "\x1b[37m",
+        // Bright variants (foreground 90–97). `dim` is the
+        // Tauri-shipped name for bright-black; both spellings map
+        // to the same code.
+        "dim" | "bright_black" => "\x1b[90m",
+        "bright_red" => "\x1b[91m",
+        "bright_green" => "\x1b[92m",
+        "bright_yellow" => "\x1b[93m",
+        "bright_blue" => "\x1b[94m",
+        "bright_magenta" => "\x1b[95m",
+        "bright_cyan" => "\x1b[96m",
+        "bright_white" => "\x1b[97m",
+        _ => "\x1b[90m",
     }
 }
 
