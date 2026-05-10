@@ -197,6 +197,17 @@ fn main() {
                     // opens it.
                     let settings_bus =
                         cx.new(|_| SettingsBus::new(settings_store_for_window));
+                    // Snapshot the OS appearance at boot. Drives
+                    // `Settings → Appearance → Auto` — without
+                    // this we'd default Auto to dark on a light-
+                    // mode machine. Live OS-mode toggling without
+                    // restart is a follow-up (needs a
+                    // `WindowAppearance` observer).
+                    let system_dark = matches!(
+                        window.appearance(),
+                        gpui::WindowAppearance::Dark
+                            | gpui::WindowAppearance::VibrantDark
+                    );
                     let app_view = cx.new(|cx| {
                         AppView::new(
                             terminal_for_window,
@@ -205,8 +216,18 @@ fn main() {
                             skins_store_for_window,
                             highlight_store_for_window,
                             themes_store_for_window,
+                            system_dark,
                             cx,
                         )
+                    });
+                    // Hook the OS-appearance observer now while
+                    // `&mut Window` is in scope. AppView holds the
+                    // returned Subscription so the callback stays
+                    // alive for the view's lifetime; on each fire
+                    // it updates `system_dark` and re-applies the
+                    // skin if the user is on `Auto`.
+                    app_view.update(cx, |this, view_cx| {
+                        this.attach_appearance_observer(window, view_cx);
                     });
                     cx.new(|cx| Root::new(app_view, window, cx))
                 },

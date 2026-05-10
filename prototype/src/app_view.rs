@@ -96,6 +96,19 @@ pub struct AppView {
     /// picks up the picked palette instead of the hardcoded one.
     #[allow(dead_code)]
     themes_store: Rc<themes::Store>,
+    /// Live system-appearance flag (`true` = dark mode). Seeded
+    /// from `window.appearance()` at boot and updated by the
+    /// `observe_window_appearance` subscription whenever the OS
+    /// flips Light/Dark. Used by `apply_skin` when
+    /// `Settings → Appearance → Auto` is picked so the chrome
+    /// tracks the OS without a restart.
+    system_dark: bool,
+    /// Subscription handle for the OS appearance observer.
+    /// Held to keep the callback alive for the AppView's
+    /// lifetime; dropped on view teardown. Installed by
+    /// `attach_appearance_observer` from the window builder
+    /// (which has the &mut Window access the observer needs).
+    _appearance_sub: Option<gpui::Subscription>,
     /// Handle to the standalone Settings window when it's open.
     /// `Some(_)` doesn't strictly mean "still alive" — the user may
     /// have closed the OS window. We probe with `handle.update(...)`
@@ -272,6 +285,7 @@ impl AppView {
         skins_store: Rc<skins::Store>,
         highlight_store: Rc<highlight::Store>,
         themes_store: Rc<themes::Store>,
+        system_dark: bool,
         cx: &mut Context<Self>,
     ) -> Self {
         // Re-render the main window when the standalone Settings
@@ -298,6 +312,8 @@ impl AppView {
             skins_store,
             highlight_store,
             themes_store,
+            system_dark,
+            _appearance_sub: None,
             settings_window: None,
             selected_profile_id: None,
             connected_profile_id: None,
@@ -349,6 +365,50 @@ impl AppView {
         };
         self.terminal
             .update(cx, |t, cx| t.set_font_size(size, cx));
+    }
+
+    /// Hook the OS appearance observer onto the main window. Called
+    /// by the open-window builder right after AppView is constructed
+    /// — that's the only place where `&mut Window` is in scope long
+    /// enough to register the callback. Each callback fire updates
+    /// `system_dark` and, if the user is on `Auto`, re-applies the
+    /// skin so the chrome flips Light/Dark live.
+    pub fn attach_appearance_observer(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let weak = cx.entity().downgrade();
+        let sub = window.observe_window_appearance(move |window, app_cx| {
+            let dark = matches!(
+                window.appearance(),
+                gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
+            );
+            if let Some(strong) = weak.upgrade() {
+                strong
+                    .update(app_cx, |this, view_cx| {
+                        this.set_system_dark(dark, view_cx);
+                    });
+            }
+        });
+        self._appearance_sub = Some(sub);
+    }
+
+    /// Update the cached OS-appearance flag and re-apply chrome
+    /// only if the user's pick is `Auto` (so an explicit Light /
+    /// Dark choice doesn't get clobbered by an OS swap).
+    fn set_system_dark(&mut self, dark: bool, cx: &mut Context<Self>) {
+        if self.system_dark == dark {
+            return;
+        }
+        self.system_dark = dark;
+        let settings = self.settings_bus.read(cx).current().clone();
+        let on_auto = settings.appearance.is_empty()
+            || settings.appearance.as_str() == "auto";
+        if on_auto {
+            self.apply_settings(&settings, cx);
+            cx.notify();
+        }
     }
 
     /// Push the effective highlight rule set to the terminal for
@@ -408,17 +468,21 @@ impl AppView {
                 (None, true)
             }
         };
-        // `appearance` of `"light"` requests light overlays;
-        // `"dark"` and `"auto"` (current default in our
-        // prototype since we haven't wired system-appearance
-        // detection) both mean "use dark vars." Skins flagged
-        // dark-only ignore the request and pin dark, matching
-        // the Tauri applier.
+        // Resolve the user's appearance pick into a concrete
+        // dark/light boolean:
+        //   `"light"` → light
+        //   `"dark"`  → dark
+        //   anything else (`"auto"`, empty, …) → follow the OS
+        // Skins flagged dark-only ignore the request and pin dark,
+        // matching the Tauri applier.
+        let user_dark = match settings.appearance.as_str() {
+            "light" => false,
+            "dark" => true,
+            _ => self.system_dark,
+        };
         let dark = match &skin_opt {
-            Some(skin) => {
-                settings.appearance.as_str() != "light" || !skin.supports_light
-            }
-            None => fallback_dark || settings.appearance.as_str() != "light",
+            Some(skin) => user_dark || !skin.supports_light,
+            None => fallback_dark || user_dark,
         };
         let (tokens, fonts) = match &skin_opt {
             Some(skin) => (
