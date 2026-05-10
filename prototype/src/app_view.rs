@@ -327,6 +327,28 @@ impl AppView {
         self.apply_skin(settings, cx);
         self.apply_palette(cx);
         self.apply_highlight(cx);
+        self.apply_font_size(settings, cx);
+    }
+
+    /// Push the user's terminal font size to the view. Empty / 0
+    /// means "use the boot default" — the live UI sometimes saves
+    /// 0 when the field is cleared (the JSON's
+    /// `skip_serializing_if = "is_zero"` represents the same
+    /// state). Outside a sane range gets clamped so a stray edit
+    /// doesn't render unreadable text.
+    fn apply_font_size(
+        &mut self,
+        settings: &settings::Settings,
+        cx: &mut Context<Self>,
+    ) {
+        let raw = settings.font_size;
+        let size = if raw <= 0 {
+            crate::terminal_grid::FONT_SIZE_PX
+        } else {
+            (raw as f32).clamp(8.0, 48.0)
+        };
+        self.terminal
+            .update(cx, |t, cx| t.set_font_size(size, cx));
     }
 
     /// Push the effective highlight rule set to the terminal for

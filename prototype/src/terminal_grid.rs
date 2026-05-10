@@ -55,13 +55,23 @@ pub const FONT_FAMILY: &str = "Cascadia Mono";
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 pub const FONT_FAMILY: &str = "DejaVu Sans Mono";
 
-/// Glyph point size — must match `FONT_SIZE_PX` for the same
-/// reason `FONT_FAMILY` is shared.
+/// Default glyph point size at boot. The active value lives on
+/// `TerminalGrid::font_size_px` and gets swapped via
+/// `TerminalView::set_font_size` when the user edits Settings →
+/// Appearance → Terminal Font Size.
 pub const FONT_SIZE_PX: f32 = 13.0;
 
-/// Per-cell line height in pixels. Hand-tuned bigger than the
-/// font's natural bounding box to give breathing room.
+/// Default per-cell line height. Held on the grid so a font-size
+/// swap can update both at once. The 18:13 ratio is the
+/// hand-tuned value Menlo / Cascadia look right at; the live
+/// updater scales cell height proportionally to keep the line
+/// spacing the user sees consistent across font sizes.
 pub const CELL_HEIGHT_PX: f32 = 18.0;
+
+/// Cell-height to font-size ratio. `cell_h_px = font_size_px *
+/// CELL_HEIGHT_RATIO` keeps line spacing visually consistent
+/// when the user resizes the terminal font.
+pub const CELL_HEIGHT_RATIO: f32 = CELL_HEIGHT_PX / FONT_SIZE_PX;
 
 /// Background colour for selected cells. Hardcoded for now;
 /// becomes a theme field when the theme system lands.
@@ -132,6 +142,7 @@ pub struct TerminalGrid {
     rows: usize,
     cols: usize,
     cell_h_px: f32,
+    font_size_px: f32,
     grid_bg: Rgb,
     default_fg: Rgb,
 }
@@ -144,9 +155,27 @@ impl TerminalGrid {
             rows,
             cols,
             cell_h_px: CELL_HEIGHT_PX,
+            font_size_px: FONT_SIZE_PX,
             grid_bg,
             default_fg,
         }
+    }
+
+    /// Swap the active font size + matching cell height. The
+    /// caller (`TerminalView::set_font_size`) follows up with a
+    /// re-resize so the visible row/col count tracks the new
+    /// cell metrics.
+    pub fn set_font_size(&mut self, font_size_px: f32) {
+        self.font_size_px = font_size_px;
+        self.cell_h_px = font_size_px * CELL_HEIGHT_RATIO;
+    }
+
+    pub fn cell_h_px(&self) -> f32 {
+        self.cell_h_px
+    }
+
+    pub fn font_size_px(&self) -> f32 {
+        self.font_size_px
     }
 
     /// Update a single cell. Out-of-range coords are silently
@@ -258,6 +287,10 @@ pub struct GridElement {
     cols: usize,
     cell_w_px: f32,
     cell_h_px: f32,
+    /// Glyph point size for `shape_line`. Snapshotted from the
+    /// grid at element-build time so paint walks owned values
+    /// (the `Element` impl needs `'static`).
+    font_size_px: f32,
     default_fg: Rgb,
     default_bg: Rgb,
     /// When `true`, paint a brief translucent overlay across the
@@ -390,6 +423,7 @@ impl GridElement {
             cols: grid.cols,
             cell_w_px,
             cell_h_px: grid.cell_h_px,
+            font_size_px: grid.font_size_px,
             default_fg: grid.default_fg,
             default_bg: grid.grid_bg,
             bell_flash,
@@ -532,7 +566,7 @@ impl Element for GridElement {
 
             let shaped = window.text_system().shape_line(
                 run.text.clone().into(),
-                px(FONT_SIZE_PX),
+                px(self.font_size_px),
                 &[text_run],
                 Some(force_width),
             );

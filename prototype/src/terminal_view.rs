@@ -43,7 +43,7 @@ use gpui::{
 use gpui_component::WindowExt;
 
 use crate::term_bridge::{make_term, mirror_to_grid, Dims, ListenerState, Palette, TerminalListener};
-use crate::terminal_grid::{pack, TerminalGrid, CELL_HEIGHT_PX, FONT_SIZE_PX};
+use crate::terminal_grid::{pack, TerminalGrid};
 
 /// Cursor blink half-period. The cursor toggles visible/invisible
 /// every `BLINK_INTERVAL`. ~530ms matches xterm's historical
@@ -467,6 +467,28 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Swap the active terminal-pane font size. Updates the grid's
+    /// glyph-size + cell-height fields, drops the cached cell-width
+    /// (needs re-measuring at the new font), and re-mirrors so the
+    /// existing screen content reflows. The next `maybe_resize`
+    /// pass (driven by the per-frame paint) will recompute the
+    /// row/col count from the pane bounds against the new cell
+    /// metrics — no need to do it eagerly here.
+    pub fn set_font_size(&mut self, font_size_px: f32, cx: &mut Context<Self>) {
+        if (self.grid.font_size_px() - font_size_px).abs() < f32::EPSILON {
+            return;
+        }
+        self.grid.set_font_size(font_size_px);
+        self.cell_width_px = None;
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            &self.palette,
+            self.cursor_blink_phase,
+        );
+        cx.notify();
+    }
+
     pub fn set_profile_settings(&mut self, settings: ProfileSettings) {
         // Sync the hex-view formatter with the new setting. Toggling
         // ON resets to a fresh formatter (offset 0, empty buffer);
@@ -854,7 +876,7 @@ impl TerminalView {
         }];
         let layout = window.text_system().layout_line(
             &sample,
-            px(FONT_SIZE_PX),
+            px(self.grid.font_size_px()),
             &runs,
             None,
         );
@@ -882,7 +904,7 @@ impl TerminalView {
         // emit coarse Lines.
         let lines = match event.delta {
             ScrollDelta::Lines(p) => p.y,
-            ScrollDelta::Pixels(p) => f32::from(p.y) / CELL_HEIGHT_PX,
+            ScrollDelta::Pixels(p) => f32::from(p.y) / self.grid.cell_h_px(),
         };
         // Accumulate sub-line motion so slow trackpad scrolling
         // doesn't drop every event below 1.0. Round-to-zero rather
@@ -1016,7 +1038,7 @@ impl TerminalView {
         let local_x = (f32::from(pos.x) - f32::from(grid_origin.x)).max(0.0);
         let local_y = (f32::from(pos.y) - f32::from(grid_origin.y)).max(0.0);
         let col = (local_x / cell_w).floor() as usize;
-        let display_row = (local_y / CELL_HEIGHT_PX).floor() as i32;
+        let display_row = (local_y / self.grid.cell_h_px()).floor() as i32;
         let cols = self.grid.cols();
         let rows = self.grid.rows();
         if cols == 0 || rows == 0 {
@@ -1182,7 +1204,7 @@ impl TerminalView {
         let content_h =
             (f32::from(viewport.height) - chrome_h - GRID_PADDING_PX * 2.0).max(0.0);
         let new_cols = ((content_w / cell_w).floor() as usize).max(MIN_COLS);
-        let new_rows = ((content_h / CELL_HEIGHT_PX).floor() as usize).max(MIN_ROWS);
+        let new_rows = ((content_h / self.grid.cell_h_px()).floor() as usize).max(MIN_ROWS);
         if new_rows == self.grid.rows() && new_cols == self.grid.cols() {
             return;
         }
