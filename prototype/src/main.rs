@@ -10,6 +10,7 @@
 
 mod app_view;
 mod data;
+mod highlight_runtime;
 mod serial_io;
 mod settings_bus;
 mod settings_view;

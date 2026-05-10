@@ -236,6 +236,17 @@ pub struct TerminalView {
     /// emitted so single-byte echoes (Enter, prompt) eventually
     /// appear on screen. Dropping the field cancels the timer.
     hex_flush_task: Option<Task<()>>,
+    /// `Some` while the active profile has highlighting on AND
+    /// at least one rule pack is enabled. Buffers bytes between
+    /// newlines, then runs each compiled regex against the line
+    /// and wraps matches in ANSI colour escapes before passing
+    /// the result down to the VT parser. `None` means raw
+    /// passthrough (no regex work happens at all).
+    highlight: Option<crate::highlight_runtime::HighlightBuffer>,
+    /// Idle-flush timer for the highlight buffer's partial tail
+    /// (a prompt with no trailing newline). Same shape +
+    /// rationale as `hex_flush_task`.
+    highlight_flush_task: Option<Task<()>>,
 }
 
 impl TerminalView {
@@ -307,6 +318,8 @@ impl TerminalView {
             hex_formatter: None,
             timestamps_state: None,
             hex_flush_task: None,
+            highlight: None,
+            highlight_flush_task: None,
         }
     }
 
@@ -326,6 +339,36 @@ impl TerminalView {
     pub fn clear_serial_tx(&mut self) {
         self.serial_tx = None;
         self.paste_task = None;
+    }
+
+    /// Replace the active highlight rule set. Called by
+    /// `AppView::connect_to` after resolving the effective list
+    /// (per-profile override → global setting → built-in default).
+    /// `None` disables highlighting entirely; `Some(rules)` with
+    /// an empty list also disables it (matches Tauri's "highlight
+    /// off" semantics — no rules to compile).
+    pub fn set_highlight_rules(
+        &mut self,
+        rules: Option<Vec<crate::data::highlight::HighlightRule>>,
+    ) {
+        match rules {
+            Some(rules) if !rules.is_empty() => {
+                let engine = crate::highlight_runtime::HighlightEngine::from_rules(&rules);
+                if engine.is_empty() {
+                    // Every rule failed to compile — drop the
+                    // buffer entirely; running through it would
+                    // be a pure overhead.
+                    self.highlight = None;
+                } else {
+                    self.highlight =
+                        Some(crate::highlight_runtime::HighlightBuffer::new(engine));
+                }
+            }
+            _ => {
+                self.highlight = None;
+                self.highlight_flush_task = None;
+            }
+        }
     }
 
     /// Replace the active profile-keystroke settings. Called by
@@ -542,14 +585,19 @@ impl TerminalView {
     /// the boot-time sample stream and for typed-input loopback.
     /// `cx.notify()` triggers a re-render.
     pub fn feed_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
-        // Two optional transforms run in series before the bytes
+        // Three optional transforms run in series before the bytes
         // hit the VT parser:
         //   1. Hex view: 16-byte-per-row hex dump (own line layout).
-        //   2. Timestamps: prepend `[HH:MM:SS.mmm] ` to each line
+        //   2. Highlight: regex-driven ANSI colour wrappers per
+        //      device line. Skipped when hex_view is on (regexing
+        //      hex output is meaningless).
+        //   3. Timestamps: prepend `[HH:MM:SS.mmm] ` to each line
         //      that's about to start.
-        // Order matters — applying timestamps AFTER hex_view means
-        // each hex row gets its own stamp, which is what you want.
-        // Both off → raw passthrough.
+        // Order matters — timestamps AFTER hex+highlight means each
+        // emitted line gets one stamp, and highlight runs on the
+        // device's own line content (without our timestamp prefix
+        // confusing the regex set).
+        // All three off → raw passthrough.
         let (hex_bytes, hex_str_held) = if let Some(f) = self.hex_formatter.as_mut() {
             let s = f.feed(bytes);
             // Borrow-checker dance: hold the String so the slice
@@ -559,15 +607,26 @@ impl TerminalView {
         } else {
             (bytes.to_vec(), None)
         };
-        let final_bytes = if let Some(ts) = self.timestamps_state.as_mut() {
-            ts.feed(&hex_bytes)
+        let highlighted_bytes = if self.hex_formatter.is_some() {
+            // Hex view: skip highlight to keep the dump clean.
+            hex_bytes
+        } else if let Some(h) = self.highlight.as_mut() {
+            h.feed(&hex_bytes)
         } else {
             hex_bytes
+        };
+        let final_bytes = if let Some(ts) = self.timestamps_state.as_mut() {
+            ts.feed(&highlighted_bytes)
+        } else {
+            highlighted_bytes
         };
         drop(hex_str_held);
         self.feed_terminal_raw(&final_bytes, cx);
         if self.hex_formatter.is_some() {
             self.schedule_hex_flush(cx);
+        }
+        if self.highlight.is_some() && self.hex_formatter.is_none() {
+            self.schedule_highlight_flush(cx);
         }
     }
 
@@ -600,6 +659,40 @@ impl TerminalView {
             .ok();
         });
         self.hex_flush_task = Some(task);
+    }
+
+    /// Re-arm the highlight buffer's partial-line idle flush. Same
+    /// shape as `schedule_hex_flush` — without this the prompt
+    /// line at the end of a chunk (Cisco `Router# `, no newline)
+    /// stays buffered and never appears.
+    fn schedule_highlight_flush(&mut self, cx: &mut Context<Self>) {
+        let task = cx.spawn(async move |weak, cx| {
+            cx.background_executor()
+                .timer(HIGHLIGHT_PARTIAL_FLUSH_DELAY)
+                .await;
+            weak.update(cx, |this, cx| {
+                let partial = this
+                    .highlight
+                    .as_mut()
+                    .map(|h| h.flush_partial())
+                    .unwrap_or_default();
+                if !partial.is_empty() {
+                    // Same downstream chain as `feed_bytes`:
+                    // timestamps wrap whatever the highlight
+                    // emitted (already includes any colour
+                    // escapes the buffer added).
+                    let stamped = if let Some(ts) = this.timestamps_state.as_mut() {
+                        ts.feed(&partial)
+                    } else {
+                        partial
+                    };
+                    this.feed_terminal_raw(&stamped, cx);
+                }
+                this.highlight_flush_task = None;
+            })
+            .ok();
+        });
+        self.highlight_flush_task = Some(task);
     }
 
     /// Feed bytes directly to the alacritty VT parser, bypassing
@@ -1288,6 +1381,13 @@ fn loopback_translate(bytes: &[u8]) -> Vec<u8> {
 /// a single-byte prompt echo (Enter, then idle) becomes visible
 /// before the user gets impatient.
 const HEX_PARTIAL_FLUSH_DELAY: Duration = Duration::from_millis(100);
+
+/// Idle window before an unterminated highlight tail (a prompt
+/// with no trailing newline — Cisco `Router# `, Linux `$ `) gets
+/// flushed raw so it actually appears on screen. 100ms balances
+/// "device's still typing the line" against "user is staring at
+/// a blank cursor wondering why nothing happened."
+const HIGHLIGHT_PARTIAL_FLUSH_DELAY: Duration = Duration::from_millis(100);
 
 /// Streaming `xxd`-style hex dump formatter. Mirrors the Tauri
 /// version's `src/lib/hexdump.ts`: 16 bytes per line with a gap

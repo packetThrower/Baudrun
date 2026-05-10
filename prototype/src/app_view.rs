@@ -437,6 +437,37 @@ impl AppView {
             .update(cx, |term, cx| term.set_palette(palette, cx));
     }
 
+    /// Resolve the effective highlight rule set for a profile —
+    /// per-profile `enabled_highlight_presets` override wins, else
+    /// the global Settings list, else `Settings::default()`'s pick
+    /// of `["baudrun-default", "user"]`. The flat `Vec<HighlightRule>`
+    /// concatenates each enabled pack's rules in store order;
+    /// first-match-wins precedence is enforced inside
+    /// `HighlightEngine::apply` per line, not here.
+    fn compute_highlight_rules(
+        &self,
+        profile: &Profile,
+        cx: &mut Context<Self>,
+    ) -> Vec<crate::data::highlight::HighlightRule> {
+        let global = self.settings_bus.read(cx).current().clone();
+        let enabled_ids = profile
+            .enabled_highlight_presets
+            .clone()
+            .or(global.enabled_highlight_presets)
+            .unwrap_or_else(|| {
+                settings::Settings::default()
+                    .enabled_highlight_presets
+                    .unwrap_or_default()
+            });
+        let mut out = Vec::new();
+        for pack in self.highlight_store.list() {
+            if enabled_ids.iter().any(|id| id == &pack.id) {
+                out.extend(pack.rules.iter().cloned());
+            }
+        }
+        out
+    }
+
     /// Pure resolver — reads from the bus + stores, no mutation.
     /// Treats `auto_reconnect_for` the same as `connected_profile_id`
     /// for the override check: a transient drop shouldn't yank the
@@ -629,9 +660,19 @@ impl AppView {
             hex_view: profile.hex_view,
             timestamps: profile.timestamps,
         };
+        // Resolve the effective highlight rule set for this
+        // profile + push it to the terminal. Master toggle is
+        // `profile.highlight`; the enabled-pack list is per-
+        // profile if the profile overrode, else global.
+        let highlight_rules = if profile.highlight {
+            Some(self.compute_highlight_rules(&profile, cx))
+        } else {
+            None
+        };
         self.terminal.update(cx, |t, _| {
             t.set_serial_tx(write_tx);
             t.set_profile_settings(settings);
+            t.set_highlight_rules(highlight_rules);
         });
 
         // Optional session log. Opened lazily — failure to open
