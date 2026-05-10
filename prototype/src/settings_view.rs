@@ -19,8 +19,9 @@ use gpui_component::{
     checkbox::Checkbox,
     input::{Input, InputEvent, InputState},
     kbd::Kbd,
+    notification::Notification,
     select::{Select, SelectEvent, SelectItem, SelectState},
-    IndexPath, Root, Sizable,
+    IndexPath, Root, Sizable, WindowExt,
 };
 
 use crate::data::highlight;
@@ -549,11 +550,27 @@ impl SettingsView {
             match store.import(&path) {
                 Ok(skin) => {
                     log::info!("imported skin: {}", skin.name);
+                    let name = skin.name.clone();
                     let _ = this.update_in(cx, |this, window, view_cx| {
                         this.rebuild_skin_select(window, view_cx);
+                        window.push_notification(
+                            Notification::success(SharedString::from(format!(
+                                "Imported skin \u{201C}{name}\u{201D}"
+                            ))),
+                            view_cx,
+                        );
                     });
                 }
-                Err(err) => log::error!("import skin: {err}"),
+                Err(err) => {
+                    log::error!("import skin: {err}");
+                    let msg = format!("Couldn't import skin: {err}");
+                    let _ = this.update_in(cx, |_, window, view_cx| {
+                        window.push_notification(
+                            Notification::error(SharedString::from(msg)),
+                            view_cx,
+                        );
+                    });
+                }
             }
         })
         .detach();
@@ -577,14 +594,141 @@ impl SettingsView {
             match store.import(&path) {
                 Ok(theme) => {
                     log::info!("imported theme: {}", theme.name);
+                    let name = theme.name.clone();
                     let _ = this.update_in(cx, |this, window, view_cx| {
                         this.rebuild_theme_select(window, view_cx);
+                        window.push_notification(
+                            Notification::success(SharedString::from(format!(
+                                "Imported theme \u{201C}{name}\u{201D}"
+                            ))),
+                            view_cx,
+                        );
                     });
                 }
-                Err(err) => log::error!("import theme: {err}"),
+                Err(err) => {
+                    log::error!("import theme: {err}");
+                    let msg = format!("Couldn't import theme: {err}");
+                    let _ = this.update_in(cx, |_, window, view_cx| {
+                        window.push_notification(
+                            Notification::error(SharedString::from(msg)),
+                            view_cx,
+                        );
+                    });
+                }
             }
         })
         .detach();
+    }
+
+    /// Delete the currently-selected skin if it's a user import. Falls
+    /// back to the built-in default skin so the chrome stays sane after
+    /// the row vanishes from the dropdown.
+    fn delete_active_skin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.settings.skin_id.clone();
+        let Some(skin) = self.skins_store.get(&id) else { return };
+        if skin.source != "user" {
+            return;
+        }
+        let name = skin.name.clone();
+        if let Err(err) = self.skins_store.delete(&id) {
+            log::error!("delete skin {id}: {err}");
+            window.push_notification(
+                Notification::error(SharedString::from(format!(
+                    "Couldn't delete skin: {err}"
+                ))),
+                cx,
+            );
+            return;
+        }
+        let mut next = self.settings.clone();
+        next.skin_id = skins::DEFAULT_SKIN_ID.to_string();
+        self.commit(next, cx);
+        self.rebuild_skin_select(window, cx);
+        window.push_notification(
+            Notification::success(SharedString::from(format!(
+                "Deleted skin \u{201C}{name}\u{201D}"
+            ))),
+            cx,
+        );
+    }
+
+    /// Same as `delete_active_skin` for the Themes tab — checks the
+    /// active `default_theme_id` is a user import, deletes it, and
+    /// resets the default to the built-in baudrun palette.
+    fn delete_active_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.settings.default_theme_id.clone();
+        let Some(theme) = self.themes_store.get(&id) else { return };
+        if theme.source != "user" {
+            return;
+        }
+        let name = theme.name.clone();
+        if let Err(err) = self.themes_store.delete(&id) {
+            log::error!("delete theme {id}: {err}");
+            window.push_notification(
+                Notification::error(SharedString::from(format!(
+                    "Couldn't delete theme: {err}"
+                ))),
+                cx,
+            );
+            return;
+        }
+        let mut next = self.settings.clone();
+        next.default_theme_id = themes::DEFAULT_THEME_ID.to_string();
+        self.commit(next, cx);
+        self.rebuild_theme_select(window, cx);
+        window.push_notification(
+            Notification::success(SharedString::from(format!(
+                "Deleted theme \u{201C}{name}\u{201D}"
+            ))),
+            cx,
+        );
+    }
+
+    /// Per-row delete on the Highlighting tab. Only invoked from rows
+    /// rendered for `source == "user"` packs (the trash icon is hidden
+    /// on bundled rows). Also strips the id from the enabled list so
+    /// the live engine doesn't keep a phantom reference around.
+    fn delete_highlight_pack(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pack) = self.highlight_store.list().into_iter().find(|p| p.id == id)
+        else {
+            return;
+        };
+        if pack.source != "user" && pack.source != "import" {
+            return;
+        }
+        let name = pack.name.clone();
+        if let Err(err) = self.highlight_store.delete_user_pack(&id) {
+            log::error!("delete highlight pack {id}: {err}");
+            window.push_notification(
+                Notification::error(SharedString::from(format!(
+                    "Couldn't delete pack: {err}"
+                ))),
+                cx,
+            );
+            return;
+        }
+        let mut packs = self.enabled_packs();
+        if packs.iter().any(|p| p == &id) {
+            packs.retain(|p| p != &id);
+            let mut next = self.settings.clone();
+            next.enabled_highlight_presets = Some(packs);
+            self.commit(next, cx);
+        } else {
+            // Pack wasn't enabled — no settings change, just refresh
+            // the rows so the deleted entry disappears.
+            cx.notify();
+        }
+        window.push_notification(
+            Notification::success(SharedString::from(format!(
+                "Deleted pack \u{201C}{name}\u{201D}"
+            ))),
+            cx,
+        );
     }
 
     fn start_highlight_import(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
@@ -608,9 +752,27 @@ impl SettingsView {
                     // Highlighting pane reads the store directly on
                     // each render, so a notify is enough to refresh
                     // the toggle list — no SelectState to rebuild.
-                    let _ = this.update(cx, |_, view_cx| view_cx.notify());
+                    let name = pack.name.clone();
+                    let _ = this.update_in(cx, |_, window, view_cx| {
+                        view_cx.notify();
+                        window.push_notification(
+                            Notification::success(SharedString::from(format!(
+                                "Imported pack \u{201C}{name}\u{201D}"
+                            ))),
+                            view_cx,
+                        );
+                    });
                 }
-                Err(err) => log::error!("import highlight: {err}"),
+                Err(err) => {
+                    log::error!("import highlight: {err}");
+                    let msg = format!("Couldn't import pack: {err}");
+                    let _ = this.update_in(cx, |_, window, view_cx| {
+                        window.push_notification(
+                            Notification::error(SharedString::from(msg)),
+                            view_cx,
+                        );
+                    });
+                }
             }
         })
         .detach();
@@ -876,17 +1038,31 @@ impl SettingsView {
     }
 
     fn themes_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let active_is_custom = self
+            .themes_store
+            .get(&self.settings.default_theme_id)
+            .map(|t| t.source == "user")
+            .unwrap_or(false);
+        let mut button_row = div().flex().flex_row().gap_2().child(import_button(
+            s,
+            "Import theme\u{2026}",
+            cx,
+            |this, window, cx| this.start_theme_import(window, cx),
+        ));
+        if active_is_custom {
+            button_row = button_row.child(trash_button(
+                s,
+                "Delete current theme",
+                cx,
+                |this, window, cx| this.delete_active_theme(window, cx),
+            ));
+        }
         let body = div()
             .flex()
             .flex_col()
             .gap_2()
             .child(Select::new(&self.theme_select))
-            .child(import_button(
-                s,
-                "Import theme\u{2026}",
-                cx,
-                |this, window, cx| this.start_theme_import(window, cx),
-            ));
+            .child(button_row);
         div()
             .flex()
             .flex_col()
@@ -916,10 +1092,12 @@ impl SettingsView {
         let rows: Vec<gpui::Div> = packs.into_iter().map(|p| {
             let id_for_label = p.id.clone();
             let id_for_setter = p.id.clone();
+            let id_for_delete = p.id.clone();
             let is_on = enabled.iter().any(|e| e == &p.id);
+            let is_custom = p.source == "user" || p.source == "import";
             // Append "(custom)" to user/imported packs so they're
             // distinguishable from the built-in vendor presets.
-            let label = if p.source == "user" || p.source == "import" {
+            let label = if is_custom {
                 format!("{} (custom)", p.name)
             } else {
                 p.name.clone()
@@ -934,24 +1112,43 @@ impl SettingsView {
                 .unwrap_or_else(|| "\u{2014}".to_string());
 
             let cb_id = SharedString::from(format!("settings-highlight-{}", id_for_label));
+            let mut top = div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .child(
+                    div().flex_1().child(
+                        Checkbox::new(cb_id)
+                            .checked(is_on)
+                            .label(label)
+                            .on_click(cx.listener(
+                                move |this, checked: &bool, _, cx| {
+                                    this.toggle_highlight_pack(
+                                        id_for_setter.clone(),
+                                        *checked,
+                                        cx,
+                                    );
+                                },
+                            )),
+                    ),
+                );
+            if is_custom {
+                top = top.child(trash_button(
+                    s,
+                    "Delete imported pack",
+                    cx,
+                    move |this, window, cx| {
+                        this.delete_highlight_pack(id_for_delete.clone(), window, cx);
+                    },
+                ));
+            }
+
             div()
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(
-                    Checkbox::new(cb_id)
-                        .checked(is_on)
-                        .label(label)
-                        .on_click(cx.listener(
-                            move |this, checked: &bool, _, cx| {
-                                this.toggle_highlight_pack(
-                                    id_for_setter.clone(),
-                                    *checked,
-                                    cx,
-                                );
-                            },
-                        )),
-                )
+                .child(top)
                 .child(
                     div()
                         .pl(px(24.0))
@@ -992,14 +1189,31 @@ impl SettingsView {
     }
 
     fn appearance_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let active_is_custom = self
+            .skins_store
+            .get(&self.settings.skin_id)
+            .map(|sk| sk.source == "user")
+            .unwrap_or(false);
+        let mut button_row = div().flex().flex_row().gap_2().child(import_button(
+            s,
+            "Import skin\u{2026}",
+            cx,
+            |this, window, cx| this.start_skin_import(window, cx),
+        ));
+        if active_is_custom {
+            button_row = button_row.child(trash_button(
+                s,
+                "Delete current skin",
+                cx,
+                |this, window, cx| this.delete_active_skin(window, cx),
+            ));
+        }
         let skin_body = div()
             .flex()
             .flex_col()
             .gap_2()
             .child(Select::new(&self.skin_select))
-            .child(import_button(s, "Import skin\u{2026}", cx, |this, window, cx| {
-                this.start_skin_import(window, cx);
-            }));
+            .child(button_row);
         div()
             .flex()
             .flex_col()
@@ -1296,6 +1510,42 @@ where
             .cursor_pointer()
             .hover(move |st| st.border_color(rgba(accent)))
             .child(label)
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                    on_click(this, window, cx);
+                }),
+            ),
+    )
+}
+
+/// Square icon-button rendering a trash glyph. Used next to import
+/// buttons (skin / theme tabs) and per-row in the highlight tab to
+/// remove a user-imported entry. Hover swaps to the danger token so
+/// the destructive intent is obvious before the click.
+fn trash_button<F>(
+    s: SkinTokens,
+    _tooltip: &'static str,
+    cx: &mut Context<SettingsView>,
+    on_click: F,
+) -> gpui::Div
+where
+    F: Fn(&mut SettingsView, &mut Window, &mut Context<SettingsView>) + 'static,
+{
+    let danger = s.danger;
+    div().child(
+        div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .border_1()
+            .border_color(rgba(s.border_subtle))
+            .bg(rgba(s.bg_input))
+            .text_color(rgba(s.fg_secondary))
+            .text_size(px(12.0))
+            .cursor_pointer()
+            .hover(move |st| st.border_color(rgba(danger)).text_color(rgba(danger)))
+            .child("\u{1F5D1}")
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseUpEvent, window, cx| {
