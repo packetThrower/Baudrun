@@ -200,6 +200,13 @@ pub struct AppView {
     /// per field so the Input widgets persist their text + cursor
     /// across re-renders without us mirroring it into AppView.
     editor: Option<Editor>,
+    /// `true` while the connected session is suspended — the port +
+    /// OS threads stay alive (bytes still flow into TerminalView's
+    /// scrollback), but the terminal viewport is hidden so the
+    /// user can browse other profiles or settings without
+    /// disconnecting. Cleared on disconnect / migration / explicit
+    /// resume. Mirrors `App.svelte::suspended` in the Tauri build.
+    suspended: bool,
 }
 
 /// In-flight profile form state. Created by `open_editor` (new) or
@@ -425,6 +432,7 @@ impl AppView {
             auto_reconnect_for: None,
             last_highlight_sig: None,
             editor: None,
+            suspended: false,
         };
         this.apply_settings(&initial, cx);
         this
@@ -763,6 +771,12 @@ impl AppView {
                 self.editor = None;
                 cx.notify();
             }
+            // Clicking the connected row while suspended is the
+            // natural "I want to see the terminal again" gesture —
+            // resume implicitly so the next paint shows the
+            // viewport instead of falling through to a stale
+            // editor / welcome pane.
+            self.suspended = false;
             // Even when the editor was already closed, clicking
             // the connected row should re-grab focus for the
             // viewport — otherwise typing a Cmd-Tab away and back
@@ -1146,6 +1160,9 @@ impl AppView {
         let Some(id) = self.connected_profile_id.take() else {
             return;
         };
+        // Disconnecting always exits the suspended state — the port
+        // is gone, there's nothing to resume back to.
+        self.suspended = false;
         // Cancel any in-flight transfer first — flipping the cancel
         // atomic lets `send_xmodem` exit on the next block boundary
         // instead of stalling on `next_byte` after the read thread
@@ -2004,10 +2021,64 @@ impl AppView {
         self.auto_reconnect_for = bundle.auto_reconnect_for;
         self.auto_reconnect_task = bundle.auto_reconnect_task;
         self.last_highlight_sig = bundle.last_highlight_sig;
+        // A migrated session always lands "live" — the destination
+        // user expects to see the terminal viewport in the new
+        // window, not a suspended placeholder. Source's `suspended`
+        // flag doesn't follow because `extract_session` doesn't
+        // bundle it.
+        self.suspended = false;
         // Re-resolve the palette now that `connected_profile_id` is
         // set on this AppView — covers the case where the moved
         // session's profile carried a per-profile theme override.
         self.apply_palette(cx);
+        cx.notify();
+    }
+
+    /// Suspend the live session. The port stays open and bytes keep
+    /// flowing into the TerminalView's scrollback in the background;
+    /// the right pane swaps from the terminal viewport to the
+    /// editor for the connected profile, so the user can browse
+    /// other UI without losing their session.
+    fn suspend_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Only meaningful when actually connected. Reconnecting
+        // counts: the user might want to suspend during a flap.
+        if self.connected_profile_id.is_none()
+            && self.auto_reconnect_for.is_none()
+        {
+            return;
+        }
+        if self.suspended {
+            return;
+        }
+        self.suspended = true;
+        // Auto-open the connected profile's editor so the right
+        // pane has something visible. Without this the suspended
+        // window would fall back to the welcome screen, which the
+        // user could mistake for "disconnected".
+        if self.editor.is_none() {
+            if let Some(id) = self
+                .connected_profile_id
+                .clone()
+                .or_else(|| self.auto_reconnect_for.clone())
+            {
+                self.open_editor_for(id, window, cx);
+            }
+        }
+        cx.notify();
+    }
+
+    /// Resume a suspended session. Closes any open editor (matching
+    /// Tauri's "Resume snaps you back to terminal" UX) and re-grabs
+    /// focus for the viewport so typing lands in the grid without
+    /// an extra click.
+    fn resume_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.suspended {
+            return;
+        }
+        self.suspended = false;
+        self.editor = None;
+        let viewport_focus = self.terminal.read(cx).focus_handle().clone();
+        viewport_focus.focus(window, cx);
         cx.notify();
     }
 
@@ -2338,7 +2409,45 @@ impl Render for AppView {
                             .enabled_highlight_presets
                             .unwrap_or_default()
                     });
-                form_pane(render, packs, global_enabled, cx).into_any_element()
+                // Resume banner only renders when the editor on
+                // screen IS for the connected profile and we're
+                // suspended — clicking Resume goes back to ITS
+                // terminal viewport.
+                let show_resume = self.suspended
+                    && editor.profile_id.is_some()
+                    && editor.profile_id.as_deref()
+                        == self.connected_profile_id.as_deref();
+                let form = form_pane(render, packs, global_enabled, cx);
+                if show_resume {
+                    // Wrap so the banner stacks above the form.
+                    // `min_w_0` mirrors form_pane's own shrink
+                    // setting — without it the wrapper holds the
+                    // form to its intrinsic width and long card
+                    // descriptions push the right-edge columns off
+                    // the visible window.
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .min_h_0()
+                        .child(suspended_banner(s, cx))
+                        .child(form)
+                        .into_any_element()
+                } else {
+                    form.into_any_element()
+                }
+            }
+            None if self.suspended && connected_profile.is_some() => {
+                // Suspended with no editor open — render the
+                // placeholder so the terminal viewport stays
+                // hidden until the user explicitly resumes.
+                suspended_pane(
+                    s,
+                    connected_profile.clone().expect("checked is_some"),
+                    cx,
+                )
+                .into_any_element()
             }
             None => match connected_profile.clone() {
                 Some(profile) => {
@@ -2586,6 +2695,106 @@ where
 /// profile" default. Wording adapts to whether any profiles
 /// exist: with profiles, prompt to pick one; without, prompt to
 /// click the `+` to create one.
+/// Thin banner at the top of the editor when the connected profile
+/// is being viewed while suspended. Click Resume to switch back to
+/// the live terminal viewport.
+fn suspended_banner(
+    s: SkinTokens,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
+    div()
+        .w_full()
+        .px_4()
+        .py_2()
+        .bg(rgba(s.bg_active))
+        .border_b_1()
+        .border_color(rgba(s.border_subtle))
+        .flex()
+        .flex_row()
+        .items_center()
+        .justify_between()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .text_size(px(12.0))
+                        .text_color(rgba(s.fg_primary))
+                        .child("Session suspended"),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(rgba(s.fg_secondary))
+                        .child(
+                            "Port still open. Bytes keep flowing into scrollback.",
+                        ),
+                ),
+        )
+        .child(primary_button(s, "Resume").on_mouse_up(
+            MouseButton::Left,
+            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                this.resume_session(window, cx);
+            }),
+        ))
+}
+
+/// Right-pane placeholder shown when the session is suspended and
+/// no editor is open. Shows the connected profile's name + port and
+/// a Resume button so the user has a one-click way back to the
+/// live terminal.
+fn suspended_pane(
+    s: SkinTokens,
+    profile: Profile,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
+    let port_line = if profile.port_name.is_empty() {
+        "(no port)".to_string()
+    } else {
+        format!("{} @ {}", profile.port_name, profile.baud_rate)
+    };
+    div()
+        .flex_1()
+        .h_full()
+        .bg(rgba(s.bg_main))
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap_3()
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgba(s.fg_tertiary))
+                .child("SESSION SUSPENDED"),
+        )
+        .child(
+            div()
+                .text_size(px(20.0))
+                .text_color(rgba(s.fg_primary))
+                .child(profile.name.clone()),
+        )
+        .child(
+            div()
+                .text_size(px(12.0))
+                .text_color(rgba(s.fg_secondary))
+                .child(port_line),
+        )
+        .child(
+            div()
+                .text_size(px(12.0))
+                .text_color(rgba(s.fg_tertiary))
+                .child("Port stays open; bytes keep flowing into scrollback."),
+        )
+        .child(primary_button(s, "Resume").on_mouse_up(
+            MouseButton::Left,
+            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                this.resume_session(window, cx);
+            }),
+        ))
+}
+
 fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
     let prompt = if has_profiles {
         "Pick a profile from the sidebar to start a session."
@@ -2746,6 +2955,23 @@ fn session_header(
                         this.terminal.update(cx, |t, cx| t.clear_screen(cx));
                     }),
                 ))
+                .child(
+                    div()
+                        .id("session-suspend")
+                        .child(pill_button(s, "Suspend", false))
+                        .tooltip(|window, cx| {
+                            Tooltip::new(SharedString::from(
+                                "Keep session alive; return to profile",
+                            ))
+                            .build(window, cx)
+                        })
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.suspend_session(window, cx);
+                            }),
+                        ),
+                )
                 .child(primary_button(s, "Disconnect").on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, window, cx| {
