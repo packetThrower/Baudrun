@@ -37,7 +37,7 @@ use gpui_component::{
     input::{Input, InputState},
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
-    IndexPath, Root, Sizable, Theme, ThemeMode,
+    Disableable, IndexPath, Root, Sizable, Theme, ThemeMode,
 };
 use gpui::SharedString;
 
@@ -182,11 +182,11 @@ pub struct AppView {
 /// a `Profile`. Dropped on cancel / successful save / successful
 /// delete by setting `AppView::editor = None`.
 /// Which sub-tab inside the form is currently active. Mirrors the
-/// Tauri ProfileForm.svelte's left-rail. `Highlighting` is omitted
-/// for now — that's a separate phase per user direction.
+/// Tauri ProfileForm.svelte's left-rail.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EditorTab {
     Connection,
+    Highlighting,
     Advanced,
 }
 
@@ -234,6 +234,18 @@ struct Editor {
     timestamps: bool,
     log_enabled: bool,
     auto_reconnect: bool,
+
+    // -- Highlighting tab --
+    /// Master switch — when off, `apply_highlight` ignores the pack
+    /// list entirely. Mirrors `Profile::highlight`.
+    highlight: bool,
+    /// `true` => use the per-pack list below; `false` => inherit the
+    /// global Settings selection. Maps to `Some(_)` vs `None` on
+    /// `Profile::enabled_highlight_presets` at save time.
+    override_highlight_packs: bool,
+    /// Profile-scoped pack id list. Only consulted when
+    /// `override_highlight_packs` is true.
+    enabled_highlight_packs: Vec<String>,
 
     // -- Advanced / Appearance --
     /// Per-profile theme override. The first option in the picker
@@ -1068,6 +1080,52 @@ impl AppView {
         cx.notify();
     }
 
+    /// Flip the override flag on the editor's highlight section.
+    /// Turning override ON seeds the per-profile pack list with
+    /// whatever the global currently has, so the user sees the same
+    /// active set they were inheriting and can edit from there
+    /// rather than starting empty. Turning it OFF clears the list
+    /// (`apply_editor_to_profile` collapses to `None` anyway).
+    fn set_editor_override_highlight(&mut self, on: bool, cx: &mut Context<Self>) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        if ed.override_highlight_packs == on {
+            return;
+        }
+        ed.override_highlight_packs = on;
+        if on && ed.enabled_highlight_packs.is_empty() {
+            // Seed with the current global pick so the override
+            // doesn't silently drop highlighting on first toggle.
+            let global = self.settings_bus.read(cx).current().clone();
+            ed.enabled_highlight_packs = global
+                .enabled_highlight_presets
+                .unwrap_or_else(|| {
+                    settings::Settings::default()
+                        .enabled_highlight_presets
+                        .unwrap_or_default()
+                });
+        }
+        cx.notify();
+    }
+
+    /// Toggle a single pack id on the editor's per-profile list.
+    fn toggle_editor_highlight_pack(
+        &mut self,
+        id: String,
+        on: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(ed) = self.editor.as_mut() else { return };
+        let already = ed.enabled_highlight_packs.iter().any(|p| p == &id);
+        if on && !already {
+            ed.enabled_highlight_packs.push(id);
+        } else if !on && already {
+            ed.enabled_highlight_packs.retain(|p| p != &id);
+        } else {
+            return;
+        }
+        cx.notify();
+    }
+
     /// Rebuild the Serial Port select's option list from the current
     /// OS port enumeration. Preserves the current selection across
     /// the rescan (so plugging a new device in doesn't deselect the
@@ -1334,7 +1392,22 @@ impl Render for AppView {
             self.connected_profile_id.is_none() && self.auto_reconnect_for.is_some();
         let has_profiles = !self.profile_store.list().is_empty();
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
-            Some(editor) => form_pane(EditorRender::from(editor, cx), cx).into_any_element(),
+            Some(editor) => {
+                let render = EditorRender::from(editor, cx);
+                let packs = self.highlight_store.list();
+                let global_enabled = self
+                    .settings_bus
+                    .read(cx)
+                    .current()
+                    .enabled_highlight_presets
+                    .clone()
+                    .unwrap_or_else(|| {
+                        settings::Settings::default()
+                            .enabled_highlight_presets
+                            .unwrap_or_default()
+                    });
+                form_pane(render, packs, global_enabled, cx).into_any_element()
+            }
             None => match connected_profile.clone() {
                 Some(profile) => {
                     let terminal = self.terminal.clone();
@@ -1843,6 +1916,15 @@ fn build_editor(
         log_enabled: profile.log_enabled,
         auto_reconnect: profile.auto_reconnect,
         theme,
+        // `None` on the saved profile becomes "inherit global"; the
+        // override flag stays false until the user explicitly opts
+        // into a per-profile pack list.
+        highlight: profile.highlight,
+        override_highlight_packs: profile.enabled_highlight_presets.is_some(),
+        enabled_highlight_packs: profile
+            .enabled_highlight_presets
+            .clone()
+            .unwrap_or_default(),
         paste_warn_multiline: profile.paste_warn_multiline,
         paste_slow: profile.paste_slow,
         paste_char_delay_ms,
@@ -1892,6 +1974,15 @@ fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<
     // collapse to 0, which the store accepts.
     let delay_str = editor.paste_char_delay_ms.read(cx).value().to_string();
     profile.paste_char_delay_ms = delay_str.trim().parse::<i32>().ok().map(|v| v.max(0));
+    profile.highlight = editor.highlight;
+    // The override flag → `Option` shape: false collapses to None
+    // (inherit global); true persists the current vec, even if it's
+    // empty (an explicit "no packs at all for this profile" state).
+    profile.enabled_highlight_presets = if editor.override_highlight_packs {
+        Some(editor.enabled_highlight_packs.clone())
+    } else {
+        None
+    };
 }
 
 /// How long the auto-reconnect poll waits between
@@ -1974,6 +2065,8 @@ fn editor_fields_match(a: &Profile, b: &Profile) -> bool {
         && a.paste_slow == b.paste_slow
         && a.paste_char_delay_ms == b.paste_char_delay_ms
         && a.theme_id == b.theme_id
+        && a.highlight == b.highlight
+        && a.enabled_highlight_presets == b.enabled_highlight_presets
 }
 
 /// One choice in a select widget. `id` is the canonical value
@@ -2236,6 +2329,9 @@ struct EditorRender {
     paste_slow: bool,
     paste_char_delay_ms: Entity<InputState>,
     theme: Entity<SelectState<Vec<Opt>>>,
+    highlight: bool,
+    override_highlight_packs: bool,
+    enabled_highlight_packs: Vec<String>,
     error: Option<String>,
     scroll_handle: ScrollHandle,
 }
@@ -2275,13 +2371,21 @@ impl EditorRender {
             paste_slow: e.paste_slow,
             paste_char_delay_ms: e.paste_char_delay_ms.clone(),
             theme: e.theme.clone(),
+            highlight: e.highlight,
+            override_highlight_packs: e.override_highlight_packs,
+            enabled_highlight_packs: e.enabled_highlight_packs.clone(),
             error: e.error.clone(),
             scroll_handle: e.scroll_handle.clone(),
         }
     }
 }
 
-fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
+fn form_pane(
+    er: EditorRender,
+    packs: Vec<crate::data::highlight::HighlightPack>,
+    global_enabled: Vec<String>,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
     div()
         .flex_1()
@@ -2307,7 +2411,7 @@ fn form_pane(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
         .flex()
         .flex_col()
         .child(form_header(er.is_edit, er.is_dirty, er.name.clone(), cx))
-        .child(form_body(er, cx))
+        .child(form_body(er, packs, global_enabled, cx))
 }
 
 /// Header bar: editable profile name as the visible title (no
@@ -2417,7 +2521,12 @@ fn form_header(
 /// the active tab's content. Tab content is capped to a fixed
 /// width so the cards keep form-shaped proportions on a wide
 /// window. Mirrors the Tauri form's layout one-for-one.
-fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
+fn form_body(
+    er: EditorRender,
+    packs: Vec<crate::data::highlight::HighlightPack>,
+    global_enabled: Vec<String>,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
     let active = er.tab;
     let content: gpui::AnyElement = match er.tab {
@@ -2443,6 +2552,15 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
             ))
             .child(theme_card(s, er.theme))
             .into_any_element(),
+        EditorTab::Highlighting => highlighting_pane(
+            er.highlight,
+            er.override_highlight_packs,
+            er.enabled_highlight_packs.clone(),
+            packs,
+            global_enabled,
+            cx,
+        )
+        .into_any_element(),
         EditorTab::Advanced => advanced_pane(
             er.dtr_on_connect,
             er.rts_on_connect,
@@ -2520,8 +2638,7 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
 
 /// Left-rail sub-tab navigation. Each entry is a clickable row;
 /// the active one paints `--bg-active` (translucent blue) so the
-/// selected state reads instantly. Highlighting is omitted per
-/// product direction — a separate phase later.
+/// selected state reads instantly.
 fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
     let item = move |label: &'static str, tab: EditorTab| {
@@ -2567,6 +2684,7 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
         .gap_1()
         .text_size(px(13.0))
         .child(item("Connection", EditorTab::Connection))
+        .child(item("Highlighting", EditorTab::Highlighting))
         .child(item("Advanced", EditorTab::Advanced))
 }
 
@@ -2837,6 +2955,129 @@ where
         );
     }
     row
+}
+
+/// Profile-level Highlighting tab. Two cards: the master toggle that
+/// enables/disables highlighting for this profile (mirrors
+/// `Profile::highlight`), and the per-pack list with an "Override
+/// global" switch on top. When the override is off, the per-pack
+/// rows are still shown but read-only, so the user can see what
+/// they're inheriting from Settings without flipping the switch.
+fn highlighting_pane(
+    highlight: bool,
+    override_packs: bool,
+    enabled_packs: Vec<String>,
+    packs: Vec<crate::data::highlight::HighlightPack>,
+    global_enabled: Vec<String>,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
+    let s = *cx.global::<SkinTokens>();
+
+    // When override is off, the rows mirror the global pick; when
+    // on, they reflect the per-profile working list. Disabled state
+    // is the same in either case — toggling needs override + master.
+    let effective: &Vec<String> = if override_packs {
+        &enabled_packs
+    } else {
+        &global_enabled
+    };
+
+    let rows: Vec<gpui::Div> = packs
+        .into_iter()
+        .map(|p| {
+            let id_for_setter = p.id.clone();
+            let cb_id = SharedString::from(format!("profile-highlight-{}", p.id));
+            let is_on = effective.iter().any(|e| e == &p.id);
+            let label = if p.source == "user" || p.source == "import" {
+                format!("{} (custom)", p.name)
+            } else {
+                p.name.clone()
+            };
+            let desc = p
+                .description
+                .clone()
+                .filter(|d| !d.is_empty())
+                .unwrap_or_else(|| "\u{2014}".to_string());
+            let cb = Checkbox::new(cb_id)
+                .checked(is_on)
+                .disabled(!override_packs || !highlight)
+                .label(label)
+                .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                    this.toggle_editor_highlight_pack(
+                        id_for_setter.clone(),
+                        *checked,
+                        cx,
+                    );
+                }));
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(cb)
+                .child(
+                    div()
+                        .pl(px(24.0))
+                        .text_size(px(12.0))
+                        .text_color(rgba(s.fg_secondary))
+                        .whitespace_normal()
+                        .child(desc),
+                )
+        })
+        .collect();
+
+    let master_card = section_card_with_desc(
+        s,
+        "Highlighting",
+        Some(
+            "Master switch for this profile. When off, incoming \
+             output is rendered without any rule-based colouring \
+             regardless of which packs are enabled below.",
+        ),
+        bool_field(
+            "profile-highlight-master",
+            "Highlight terminal output for this profile",
+            highlight,
+            cx,
+            |ed, on| ed.highlight = on,
+        ),
+    );
+
+    // Override toggle goes directly to AppView so it can seed the
+    // per-profile list from the global on first-on (otherwise the
+    // user flips the switch and silently loses their inherited
+    // selection).
+    let override_row = div().flex().flex_row().items_center().gap_3().child(
+        Checkbox::new("profile-highlight-override")
+            .checked(override_packs)
+            .disabled(!highlight)
+            .label("Override global pack selection")
+            .on_click(cx.listener(|this, checked: &bool, _, cx| {
+                this.set_editor_override_highlight(*checked, cx);
+            })),
+    );
+
+    let packs_card = section_card_with_desc(
+        s,
+        "Highlight Packs",
+        Some(
+            "Inherit the global selection from Settings, or override \
+             it for this profile. With override off, the rows show \
+             what the global is currently broadcasting (read-only).",
+        ),
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(override_row)
+            .child(div().flex().flex_col().gap_2().children(rows)),
+    );
+
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .child(master_card)
+        .child(packs_card)
 }
 
 #[allow(clippy::too_many_arguments)]
