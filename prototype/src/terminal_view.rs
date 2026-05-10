@@ -32,7 +32,7 @@ use alacritty_terminal::{
     index::{Column, Line, Point as GridPoint, Side},
     selection::{Selection, SelectionType},
     term::Term,
-    vte::ansi::{Processor, Rgb},
+    vte::ansi::Processor,
 };
 use gpui::{
     black, div, font, prelude::*, px, rgb, rgba, relative, App, Bounds, ClipboardItem, Context,
@@ -42,7 +42,7 @@ use gpui::{
 };
 use gpui_component::WindowExt;
 
-use crate::term_bridge::{make_term, mirror_to_grid, Dims, ListenerState, TerminalListener};
+use crate::term_bridge::{make_term, mirror_to_grid, Dims, ListenerState, Palette, TerminalListener};
 use crate::terminal_grid::{pack, TerminalGrid, CELL_HEIGHT_PX, FONT_SIZE_PX};
 
 /// Cursor blink half-period. The cursor toggles visible/invisible
@@ -145,8 +145,13 @@ pub struct TerminalView {
     processor: Processor,
     grid: TerminalGrid,
     focus_handle: FocusHandle,
-    default_fg: Rgb,
-    default_bg: Rgb,
+    /// Active 16-ANSI palette + foreground / background / cursor.
+    /// Replaces the previous `default_fg` / `default_bg` pair —
+    /// `palette.fg` and `palette.bg` are the same values, with the
+    /// rest of the slots driving cell-color resolution. Swapped
+    /// via `set_palette` when the user picks a different theme in
+    /// the Settings window.
+    palette: Palette,
     /// Shared with the `TerminalListener` inside `term`. Polled
     /// after each `feed_bytes` to pick up bell events that fired
     /// during the parser advance.
@@ -237,18 +242,17 @@ impl TerminalView {
     pub fn new(
         rows: usize,
         cols: usize,
-        default_fg: Rgb,
-        default_bg: Rgb,
+        palette: Palette,
         cx: &mut Context<Self>,
     ) -> Self {
         let (term, processor, listener_state) = make_term(rows, cols);
-        let mut grid = TerminalGrid::new(rows, cols, default_fg, default_bg);
+        let mut grid = TerminalGrid::new(rows, cols, palette.fg, palette.bg);
         // Paint the initial Term state into the grid so the cursor
         // is visible at startup. Without this the grid stays blank
         // (and cursor-less) until the first `feed_bytes` call —
         // i.e. you don't see where you're about to type until you
         // type something, which defeats the cursor's purpose.
-        mirror_to_grid(&term, &mut grid, default_fg, default_bg, true);
+        mirror_to_grid(&term, &mut grid, &palette, true);
 
         // Periodic blink task: every `BLINK_INTERVAL`, flip the
         // cursor's visible phase and notify so the renderer
@@ -270,8 +274,7 @@ impl TerminalView {
                         mirror_to_grid(
                             &this.term,
                             &mut this.grid,
-                            this.default_fg,
-                            this.default_bg,
+                            &this.palette,
                             this.cursor_blink_phase,
                         );
                         cx.notify();
@@ -288,8 +291,7 @@ impl TerminalView {
             processor,
             grid,
             focus_handle: cx.focus_handle(),
-            default_fg,
-            default_bg,
+            palette,
             listener_state,
             serial_tx: None,
             profile_settings: ProfileSettings::default(),
@@ -331,6 +333,28 @@ impl TerminalView {
     /// keystroke encoder picks up the right line ending / backspace
     /// byte / echo behaviour. Profiles that share these defaults
     /// (most do) get a no-op assignment.
+    /// Swap the active palette and re-mirror so the new colours
+    /// take effect on the next paint without waiting for a fresh
+    /// `feed_bytes`. Called from `AppView` when the user picks a
+    /// different theme in the Settings window. Cells whose colours
+    /// resolved to palette slots (the common case) re-resolve
+    /// against the new palette; cells with literal `Color::Spec`
+    /// values keep their hardcoded colour, same as in xterm.
+    pub fn set_palette(&mut self, palette: Palette, cx: &mut Context<Self>) {
+        self.palette = palette;
+        // Update the grid's blank-cell + background colours so any
+        // newly-allocated rows (resize, scroll-back-into-history)
+        // pick up the new theme too.
+        self.grid.set_default_colors(palette.fg, palette.bg);
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            &self.palette,
+            self.cursor_blink_phase,
+        );
+        cx.notify();
+    }
+
     pub fn set_profile_settings(&mut self, settings: ProfileSettings) {
         // Sync the hex-view formatter with the new setting. Toggling
         // ON resets to a fresh formatter (offset 0, empty buffer);
@@ -452,8 +476,7 @@ impl TerminalView {
         mirror_to_grid(
             &self.term,
             &mut self.grid,
-            self.default_fg,
-            self.default_bg,
+            &self.palette,
             self.cursor_blink_phase,
         );
         cx.notify();
@@ -601,8 +624,7 @@ impl TerminalView {
         mirror_to_grid(
             &self.term,
             &mut self.grid,
-            self.default_fg,
-            self.default_bg,
+            &self.palette,
             self.cursor_blink_phase,
         );
         cx.notify();
@@ -711,8 +733,7 @@ impl TerminalView {
         mirror_to_grid(
             &self.term,
             &mut self.grid,
-            self.default_fg,
-            self.default_bg,
+            &self.palette,
             self.cursor_blink_phase,
         );
         cx.notify();
@@ -744,8 +765,7 @@ impl TerminalView {
         mirror_to_grid(
             &self.term,
             &mut self.grid,
-            self.default_fg,
-            self.default_bg,
+            &self.palette,
             self.cursor_blink_phase,
         );
         cx.notify();
@@ -775,8 +795,7 @@ impl TerminalView {
         mirror_to_grid(
             &self.term,
             &mut self.grid,
-            self.default_fg,
-            self.default_bg,
+            &self.palette,
             self.cursor_blink_phase,
         );
         cx.notify();
@@ -1006,8 +1025,7 @@ impl TerminalView {
         mirror_to_grid(
             &self.term,
             &mut self.grid,
-            self.default_fg,
-            self.default_bg,
+            &self.palette,
             self.cursor_blink_phase,
         );
     }
@@ -1061,8 +1079,7 @@ impl TerminalView {
             mirror_to_grid(
             &self.term,
             &mut self.grid,
-            self.default_fg,
-            self.default_bg,
+            &self.palette,
             self.cursor_blink_phase,
         );
             cx.notify();
@@ -1129,7 +1146,7 @@ impl Render for TerminalView {
             // `relative` so the scroll-indicator overlay below can
             // anchor to this div with absolute positioning.
             .relative()
-            .bg(rgb(pack(self.default_bg)))
+            .bg(rgb(pack(self.palette.bg)))
             .p(px(GRID_PADDING_PX))
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))

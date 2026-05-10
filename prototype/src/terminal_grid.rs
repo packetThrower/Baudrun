@@ -158,6 +158,16 @@ impl TerminalGrid {
         }
     }
 
+    /// Swap the grid's default fg/bg used for newly-allocated
+    /// blank cells (resize-grow, history-scroll) and the
+    /// background-fill colour. Existing cell content is left
+    /// alone — caller should follow with a `mirror_to_grid` if
+    /// they want already-painted cells to pick up the new colours.
+    pub fn set_default_colors(&mut self, default_fg: Rgb, grid_bg: Rgb) {
+        self.default_fg = default_fg;
+        self.grid_bg = grid_bg;
+    }
+
     /// Write `s` starting at `(row, col)`, with a single fg/bg
     /// applied to every cell. Truncates at the right edge of the
     /// row — does NOT wrap, since wrap is the VT parser's job.

@@ -43,6 +43,7 @@ use alacritty_terminal::{
     vte::ansi::{Color, CursorShape, NamedColor, Processor, Rgb},
 };
 
+use crate::data::themes::Theme;
 use crate::terminal_grid::{Cell as GridCell, CellFlags, TerminalGrid, SELECTION_BG};
 
 /// Shared state mutated by `TerminalListener` and read from
@@ -105,57 +106,159 @@ impl Dimensions for Dims {
     }
 }
 
-/// Resolve an abstract `Color` to a concrete `Rgb`. `Color::Spec`
-/// passes through; `Named` and `Indexed` go through the helpers
-/// below, which encode Baudrun's default ANSI palette inline.
-pub fn resolve(color: Color, default_fg: Rgb, default_bg: Rgb) -> Rgb {
-    match color {
-        Color::Spec(rgb) => rgb,
-        Color::Named(named) => named_to_rgb(named, default_fg, default_bg),
-        Color::Indexed(idx) => indexed_to_rgb(idx, default_fg),
+/// 16 ANSI colors + foreground/background/cursor slots. Plays
+/// the role the old hardcoded `named_to_rgb` match used to play —
+/// but parameterised, so swapping themes is "build a new Palette
+/// and hand it to the next mirror call."
+#[derive(Debug, Clone, Copy)]
+pub struct Palette {
+    pub fg: Rgb,
+    pub bg: Rgb,
+    pub cursor: Rgb,
+    pub black: Rgb,
+    pub red: Rgb,
+    pub green: Rgb,
+    pub yellow: Rgb,
+    pub blue: Rgb,
+    pub magenta: Rgb,
+    pub cyan: Rgb,
+    pub white: Rgb,
+    pub bright_black: Rgb,
+    pub bright_red: Rgb,
+    pub bright_green: Rgb,
+    pub bright_yellow: Rgb,
+    pub bright_blue: Rgb,
+    pub bright_magenta: Rgb,
+    pub bright_cyan: Rgb,
+    pub bright_white: Rgb,
+}
+
+impl Palette {
+    /// Hardcoded Baudrun palette — the same values the old
+    /// `named_to_rgb` returned. Used as the boot-time default
+    /// before any theme has been applied, and as the fallback
+    /// when a theme JSON contains a malformed hex that we can't
+    /// parse (better to ship the wrong-but-readable colour than
+    /// black-on-black).
+    pub const fn baudrun() -> Self {
+        const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
+            Rgb { r, g, b }
+        }
+        Palette {
+            fg: rgb(0xe4, 0xe4, 0xe7),
+            bg: rgb(0x0b, 0x0b, 0x0d),
+            cursor: rgb(0xe4, 0xe4, 0xe7),
+            black: rgb(0x1e, 0x1e, 0x22),
+            red: rgb(0xff, 0x69, 0x61),
+            green: rgb(0x7c, 0xd9, 0x92),
+            yellow: rgb(0xf5, 0xd7, 0x6e),
+            blue: rgb(0x6c, 0xb6, 0xff),
+            magenta: rgb(0xd7, 0x94, 0xff),
+            cyan: rgb(0x7c, 0xe0, 0xe0),
+            white: rgb(0xd4, 0xd4, 0xd8),
+            bright_black: rgb(0x4a, 0x4a, 0x52),
+            bright_red: rgb(0xff, 0x8a, 0x80),
+            bright_green: rgb(0xa2, 0xe5, 0xb3),
+            bright_yellow: rgb(0xfc, 0xe4, 0x88),
+            bright_blue: rgb(0x94, 0xcc, 0xff),
+            bright_magenta: rgb(0xe5, 0xb6, 0xff),
+            bright_cyan: rgb(0xa6, 0xec, 0xec),
+            bright_white: rgb(0xff, 0xff, 0xff),
+        }
+    }
+
+    /// Build from a `data::themes::Theme`. Per-slot hex strings are
+    /// parsed via `parse_hex_rgb`; any slot that fails to parse
+    /// (malformed `#xx` value, missing field, …) falls back to
+    /// the corresponding `baudrun()` slot so a partially-bad theme
+    /// still renders most of the screen instead of nothing.
+    pub fn from_theme(theme: &Theme) -> Self {
+        let fb = Self::baudrun();
+        let pick = |s: &str, default: Rgb| parse_hex_rgb(s).unwrap_or(default);
+        Palette {
+            fg: pick(&theme.foreground, fb.fg),
+            bg: pick(&theme.background, fb.bg),
+            cursor: pick(&theme.cursor, fb.cursor),
+            black: pick(&theme.black, fb.black),
+            red: pick(&theme.red, fb.red),
+            green: pick(&theme.green, fb.green),
+            yellow: pick(&theme.yellow, fb.yellow),
+            blue: pick(&theme.blue, fb.blue),
+            magenta: pick(&theme.magenta, fb.magenta),
+            cyan: pick(&theme.cyan, fb.cyan),
+            white: pick(&theme.white, fb.white),
+            bright_black: pick(&theme.bright_black, fb.bright_black),
+            bright_red: pick(&theme.bright_red, fb.bright_red),
+            bright_green: pick(&theme.bright_green, fb.bright_green),
+            bright_yellow: pick(&theme.bright_yellow, fb.bright_yellow),
+            bright_blue: pick(&theme.bright_blue, fb.bright_blue),
+            bright_magenta: pick(&theme.bright_magenta, fb.bright_magenta),
+            bright_cyan: pick(&theme.bright_cyan, fb.bright_cyan),
+            bright_white: pick(&theme.bright_white, fb.bright_white),
+        }
     }
 }
 
-/// Baudrun's default 16-color ANSI palette + foreground / background
-/// special slots. Values copied from `builtin_themes.json`'s
-/// "baudrun" theme. The match is exhaustive on the variants we
-/// care about and falls through to `default_fg` for the dim*
-/// slots — alacritty exposes `DimRed`, `DimGreen`, etc. that we
-/// don't have distinct values for, and using the regular fg is
-/// strictly better than fabricating darker shades inline.
-fn named_to_rgb(named: NamedColor, default_fg: Rgb, default_bg: Rgb) -> Rgb {
-    use NamedColor::*;
-    const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
-        Rgb { r, g, b }
+/// Parse `#rrggbb` / `#rrggbbaa` (alpha discarded) → `Rgb`. Returns
+/// `None` for anything that doesn't start with `#` or whose hex
+/// digits don't parse — caller picks the fallback colour.
+fn parse_hex_rgb(s: &str) -> Option<Rgb> {
+    let s = s.strip_prefix('#')?;
+    if s.len() != 6 && s.len() != 8 {
+        return None;
     }
+    let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+    Some(Rgb { r, g, b })
+}
+
+/// Resolve an abstract `Color` to a concrete `Rgb` via the
+/// supplied palette. `Color::Spec` passes through; `Named` and
+/// `Indexed` go through the helpers below.
+pub fn resolve(color: Color, palette: &Palette) -> Rgb {
+    match color {
+        Color::Spec(rgb) => rgb,
+        Color::Named(named) => named_to_rgb(named, palette),
+        Color::Indexed(idx) => indexed_to_rgb(idx, palette),
+    }
+}
+
+/// Map a `NamedColor` slot to its palette entry. Falls back to
+/// `palette.fg` for slots we don't carry distinct values for
+/// (Dim*, Bright Foreground), since "use the foreground" is
+/// strictly better than fabricating darker shades inline.
+fn named_to_rgb(named: NamedColor, palette: &Palette) -> Rgb {
+    use NamedColor::*;
     match named {
-        Black => rgb(0x1e, 0x1e, 0x22),
-        Red => rgb(0xff, 0x69, 0x61),
-        Green => rgb(0x7c, 0xd9, 0x92),
-        Yellow => rgb(0xf5, 0xd7, 0x6e),
-        Blue => rgb(0x6c, 0xb6, 0xff),
-        Magenta => rgb(0xd7, 0x94, 0xff),
-        Cyan => rgb(0x7c, 0xe0, 0xe0),
-        White => rgb(0xd4, 0xd4, 0xd8),
-        BrightBlack => rgb(0x4a, 0x4a, 0x52),
-        BrightRed => rgb(0xff, 0x8a, 0x80),
-        BrightGreen => rgb(0xa2, 0xe5, 0xb3),
-        BrightYellow => rgb(0xfc, 0xe4, 0x88),
-        BrightBlue => rgb(0x94, 0xcc, 0xff),
-        BrightMagenta => rgb(0xe5, 0xb6, 0xff),
-        BrightCyan => rgb(0xa6, 0xec, 0xec),
-        BrightWhite => rgb(0xff, 0xff, 0xff),
-        Foreground => default_fg,
-        Background => default_bg,
-        // Dim*, Bright Foreground, Cursor — fall back to default
-        // fg until the real theme system carries explicit values.
-        _ => default_fg,
+        Black => palette.black,
+        Red => palette.red,
+        Green => palette.green,
+        Yellow => palette.yellow,
+        Blue => palette.blue,
+        Magenta => palette.magenta,
+        Cyan => palette.cyan,
+        White => palette.white,
+        BrightBlack => palette.bright_black,
+        BrightRed => palette.bright_red,
+        BrightGreen => palette.bright_green,
+        BrightYellow => palette.bright_yellow,
+        BrightBlue => palette.bright_blue,
+        BrightMagenta => palette.bright_magenta,
+        BrightCyan => palette.bright_cyan,
+        BrightWhite => palette.bright_white,
+        Foreground => palette.fg,
+        Background => palette.bg,
+        Cursor => palette.cursor,
+        // Dim*, Bright Foreground, Bright Cursor — fall back to
+        // foreground until we carry explicit values for them.
+        _ => palette.fg,
     }
 }
 
 /// 256-color resolution: 0..16 = the named ANSI colors above,
 /// 16..232 = the 6×6×6 cube, 232..256 = the 24-step grayscale ramp.
-fn indexed_to_rgb(idx: u8, default_fg: Rgb) -> Rgb {
+fn indexed_to_rgb(idx: u8, palette: &Palette) -> Rgb {
     if idx < 16 {
         // Indices 0..16 align 1:1 with NamedColor's first 16 variants.
         // `NamedColor` isn't `#[repr(u8)]` (its enum has `Foreground =
@@ -181,7 +284,7 @@ fn indexed_to_rgb(idx: u8, default_fg: Rgb) -> Rgb {
             14 => BrightCyan,
             _ => BrightWhite,
         };
-        named_to_rgb(named, default_fg, default_fg)
+        named_to_rgb(named, palette)
     } else if idx < 232 {
         // 6×6×6 RGB cube. Channel ramp: [0, 95, 135, 175, 215, 255].
         let i = (idx - 16) as u32;
@@ -236,8 +339,7 @@ pub fn make_term(
 pub fn mirror_to_grid(
     term: &Term<TerminalListener>,
     out: &mut TerminalGrid,
-    default_fg: Rgb,
-    default_bg: Rgb,
+    palette: &Palette,
     show_cursor: bool,
 ) {
     let content = term.renderable_content();
@@ -270,8 +372,8 @@ pub fn mirror_to_grid(
         let term_cell: &TermCell = indexed.cell;
         let term_flags = term_cell.flags;
 
-        let mut fg = resolve(term_cell.fg, default_fg, default_bg);
-        let mut bg = resolve(term_cell.bg, default_fg, default_bg);
+        let mut fg = resolve(term_cell.fg, palette);
+        let mut bg = resolve(term_cell.bg, palette);
         // INVERSE / HIDDEN are handled here rather than passed
         // through as flags because they're really fg/bg mutations,
         // not paint-style attributes — a renderer that treated

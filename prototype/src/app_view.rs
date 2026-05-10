@@ -49,7 +49,9 @@ use crate::data::serial::ports;
 use crate::data::settings;
 use crate::data::skins;
 use crate::data::themes;
+use crate::settings_bus::{SettingsBus, SettingsEvent};
 use crate::settings_view::SettingsView;
+use crate::term_bridge::Palette;
 use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
 
@@ -77,15 +79,17 @@ const SIDEBAR_SELECTED: u32 = 0x2d3548;
 pub struct AppView {
     terminal: Entity<TerminalView>,
     profile_store: Rc<profiles::Store>,
-    /// Global settings (theme/skin defaults, font size, scrollback,
-    /// log dir, shortcuts, highlight presets…). Same `Store`
-    /// pattern as `profile_store`: interior-mutable JSON-backed
-    /// store with atomic save-via-tmp+rename. Cloned into the
-    /// SettingsView when the user opens the Settings window so
-    /// edits round-trip directly to disk; AppView keeps its own
-    /// handle for future live-react paths (theme/skin swap → main
-    /// window re-renders).
-    settings_store: Rc<settings::Store>,
+    /// Observable settings entity. Wraps the on-disk Store and
+    /// emits `SettingsEvent::Updated` after a successful save —
+    /// AppView subscribes in `new()` so edits made from the
+    /// standalone Settings window trigger an immediate re-render
+    /// here. Cloned into SettingsView's open-window builder so the
+    /// two windows share the same Entity (gpui entities live at
+    /// App scope, not per-window).
+    settings_bus: Entity<SettingsBus>,
+    /// Held to keep the settings subscription alive for AppView's
+    /// lifetime. Drop = unsubscribe.
+    _settings_sub: gpui::Subscription,
     /// Skin store (built-in + user). Cloned into the SettingsView
     /// so the Appearance tab can enumerate all skins for its
     /// picker. AppView holds its own handle for the future live-
@@ -260,16 +264,33 @@ impl AppView {
     pub fn new(
         terminal: Entity<TerminalView>,
         profile_store: Rc<profiles::Store>,
-        settings_store: Rc<settings::Store>,
+        settings_bus: Entity<SettingsBus>,
         skins_store: Rc<skins::Store>,
         highlight_store: Rc<highlight::Store>,
         themes_store: Rc<themes::Store>,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> Self {
-        Self {
+        // Re-render the main window when the standalone Settings
+        // window persists a change, AND apply theme/font-size/etc.
+        // edits to the live terminal pane. Future Phase-4 slices
+        // hang skin chrome refresh off the same hook.
+        let settings_sub = cx.subscribe(
+            &settings_bus,
+            |this, _, event: &SettingsEvent, cx| {
+                let SettingsEvent::Updated(next) = event;
+                this.apply_settings(next, cx);
+                cx.notify();
+            },
+        );
+        // Apply the persisted theme right away so a fresh launch
+        // honours the user's `default_theme_id` instead of paying
+        // a one-frame flash of the boot Baudrun palette.
+        let initial = settings_bus.read(cx).current().clone();
+        let mut this = Self {
             terminal,
             profile_store,
-            settings_store,
+            settings_bus,
+            _settings_sub: settings_sub,
             skins_store,
             highlight_store,
             themes_store,
@@ -282,7 +303,34 @@ impl AppView {
             auto_reconnect_task: None,
             auto_reconnect_for: None,
             editor: None,
-        }
+        };
+        this.apply_settings(&initial, cx);
+        this
+    }
+
+    /// Apply the relevant slots of a `Settings` snapshot to the
+    /// live UI. Called both at construction time and on every
+    /// `SettingsEvent::Updated` from the bus. Today: looks up the
+    /// active theme via `themes_store` and pushes the resulting
+    /// palette to the terminal pane. Future Phase-4 slices add
+    /// font-size + skin-token application here.
+    fn apply_settings(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
+        // `default_theme_id` empty falls back to the built-in
+        // Baudrun theme — same precedence the Tauri reader uses.
+        let theme_id = if settings.default_theme_id.is_empty() {
+            themes::DEFAULT_THEME_ID
+        } else {
+            settings.default_theme_id.as_str()
+        };
+        let palette = match self.themes_store.get(theme_id) {
+            Some(theme) => Palette::from_theme(&theme),
+            None => {
+                log::warn!("theme {theme_id:?} not found, using built-in baudrun");
+                Palette::baudrun()
+            }
+        };
+        self.terminal
+            .update(cx, |term, cx| term.set_palette(palette, cx));
     }
 
     /// Click handler for a profile row. Opens the profile editor
@@ -307,6 +355,12 @@ impl AppView {
                 self.editor = None;
                 cx.notify();
             }
+            // Even when the editor was already closed, clicking
+            // the connected row should re-grab focus for the
+            // viewport — otherwise typing a Cmd-Tab away and back
+            // requires an extra click on the terminal first.
+            let viewport_focus = self.terminal.read(cx).focus_handle().clone();
+            viewport_focus.focus(window, cx);
             return;
         }
         self.selected_profile_id = Some(id.clone());
@@ -769,7 +823,7 @@ impl AppView {
     /// the editor) and calls `connect_to` directly — saving has
     /// already closed the editor, and we want the next step to be
     /// the terminal, not back into the editor we just left.
-    fn save_and_connect(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn save_and_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.save_editor(cx) else {
             return;
         };
@@ -792,6 +846,13 @@ impl AppView {
         self.auto_reconnect_task = None;
         self.auto_reconnect_for = None;
         self.connect_to(profile, cx);
+        // Pull focus into the terminal so the very next keystroke
+        // (Enter, anything) reaches the on_key_down handler that
+        // forwards bytes to the serial port. Without this the
+        // editor's last-focused input keeps focus, the terminal
+        // appears, but typing goes nowhere.
+        let viewport_focus = self.terminal.read(cx).focus_handle().clone();
+        viewport_focus.focus(window, cx);
     }
 
     /// Delete the profile currently being edited. If we're connected
@@ -855,7 +916,7 @@ impl AppView {
             self.settings_window = None;
         }
 
-        let settings = self.settings_store.clone();
+        let bus = self.settings_bus.clone();
         let skins = self.skins_store.clone();
         let highlight = self.highlight_store.clone();
         let themes = self.themes_store.clone();
@@ -871,7 +932,7 @@ impl AppView {
             },
             move |window, cx| {
                 let view = cx.new(|cx| {
-                    SettingsView::new(settings, skins, highlight, themes, window, cx)
+                    SettingsView::new(bus, skins, highlight, themes, window, cx)
                 });
                 cx.new(|cx| Root::new(view, window, cx))
             },

@@ -11,6 +11,7 @@
 mod app_view;
 mod data;
 mod serial_io;
+mod settings_bus;
 mod settings_view;
 mod term_bridge;
 mod terminal_grid;
@@ -18,22 +19,14 @@ mod terminal_view;
 
 use std::rc::Rc;
 
-use alacritty_terminal::vte::ansi::Rgb;
 use gpui::{
     px, rgba, App, AppContext, Bounds, Hsla, TitlebarOptions, WindowBounds, WindowOptions,
 };
 use gpui_component::{scroll::ScrollbarShow, Root, Theme, ThemeMode};
 
 use app_view::AppView;
+use settings_bus::SettingsBus;
 use terminal_view::TerminalView;
-
-/// Default foreground / background for the prototype. Matches the
-/// `baudrun` built-in theme. Used both to seed the Term's palette
-/// (`NamedColor::Foreground` / `Background` slots) and as a
-/// fallback inside the resolver for any palette slot that's still
-/// `None`.
-const DEFAULT_FG: Rgb = Rgb { r: 0xe4, g: 0xe4, b: 0xe7 };
-const DEFAULT_BG: Rgb = Rgb { r: 0x0b, g: 0x0b, b: 0x0d };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
 /// for the network gear Baudrun targets — Cisco, Juniper, Aruba,
@@ -177,7 +170,13 @@ fn main() {
 
         // Build the TerminalView entity first; AppView will own a
         // handle to it and render it inside the right pane.
-        let terminal = cx.new(|cx| TerminalView::new(24, 80, DEFAULT_FG, DEFAULT_BG, cx));
+        // Boot palette = the hardcoded Baudrun default. AppView
+        // re-applies the user's `default_theme_id` from settings
+        // immediately after construction so a fresh launch lands
+        // on the right palette before the first frame paints.
+        let terminal = cx.new(|cx| {
+            TerminalView::new(24, 80, term_bridge::Palette::baudrun(), cx)
+        });
 
         let profile_store_for_window = profile_store.clone();
         let settings_store_for_window = settings_store.clone();
@@ -200,12 +199,18 @@ fn main() {
                     // tooltip/notification/modal layer paints on top
                     // of (and dispatches events through) the rest of
                     // the UI. Our actual app view lives as Root's
-                    // child.
+                    // child. SettingsBus is built INSIDE the window
+                    // builder so it lives in the same App scope as
+                    // the views that subscribe to it; the same Entity
+                    // gets shared with the Settings window when AppView
+                    // opens it.
+                    let settings_bus =
+                        cx.new(|_| SettingsBus::new(settings_store_for_window));
                     let app_view = cx.new(|cx| {
                         AppView::new(
                             terminal_for_window,
                             profile_store_for_window,
-                            settings_store_for_window,
+                            settings_bus,
                             skins_store_for_window,
                             highlight_store_for_window,
                             themes_store_for_window,

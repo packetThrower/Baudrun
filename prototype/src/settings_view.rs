@@ -24,9 +24,10 @@ use gpui_component::{
 };
 
 use crate::data::highlight;
-use crate::data::settings::{self, Settings};
+use crate::data::settings::Settings;
 use crate::data::skins;
 use crate::data::themes;
+use crate::settings_bus::SettingsBus;
 
 /// Top-level Settings tabs. Order + labels mirror the Tauri
 /// `Settings.svelte` left rail (Appearance, Themes, Shortcuts,
@@ -100,7 +101,12 @@ impl SelectItem for Opt {
 /// next render read the new state without going back through
 /// `store.get()` for every widget.
 pub struct SettingsView {
-    settings_store: Rc<settings::Store>,
+    /// Shared settings entity. Replaces the direct Store handle:
+    /// commit() now goes `bus.replace(next)` so the persistence
+    /// + cross-window emit happen in one place. Read via
+    /// `bus.read(cx).current()` or — more often — through the
+    /// local `self.settings` cache which mirrors the bus.
+    settings_bus: Entity<SettingsBus>,
     #[allow(dead_code)] // re-read on render via the entity cache; kept
                         // around for live-apply (skin import etc.)
     skins_store: Rc<skins::Store>,
@@ -151,14 +157,14 @@ pub struct SettingsView {
 
 impl SettingsView {
     pub fn new(
-        settings_store: Rc<settings::Store>,
+        settings_bus: Entity<SettingsBus>,
         skins_store: Rc<skins::Store>,
         highlight_store: Rc<highlight::Store>,
         themes_store: Rc<themes::Store>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let current = settings_store.get();
+        let current = settings_bus.read(cx).current().clone();
 
         // -- Appearance tab widgets --
 
@@ -314,7 +320,7 @@ impl SettingsView {
             });
 
         Self {
-            settings_store,
+            settings_bus,
             skins_store,
             highlight_store,
             themes_store,
@@ -343,15 +349,20 @@ impl SettingsView {
         cx.notify();
     }
 
-    /// Push a new Settings value through the store. On success the
-    /// cache + UI state advance; on failure (disk full, perm
-    /// denied) the previous cache stays put and the error logs.
+    /// Push a new Settings value through the SettingsBus. The bus
+    /// persists to disk and broadcasts an `Updated` event so the
+    /// main window re-renders with the new values; on success we
+    /// advance our local cache to mirror it. On failure (disk
+    /// full, perm denied) the cache stays put and the error logs.
     /// Failure is silent in the UI today — a future slice can hang
     /// a toast off this same path.
     fn commit(&mut self, next: Settings, cx: &mut Context<Self>) {
-        match self.settings_store.update(next) {
-            Ok(saved) => {
-                self.settings = saved;
+        let result = self
+            .settings_bus
+            .update(cx, |bus, cx| bus.replace(next.clone(), cx));
+        match result {
+            Ok(()) => {
+                self.settings = next;
                 cx.notify();
             }
             Err(err) => {
