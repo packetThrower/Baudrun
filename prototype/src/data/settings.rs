@@ -102,11 +102,27 @@ pub struct Settings {
     /// Last known size + position of the Settings window. Saved when
     /// the user closes the Settings window so it reopens in the
     /// same place next launch. Missing or zeroed fields fall back to
-    /// a centered 720x720 window. Keyed under one nested object so
-    /// the schema can grow other window-state slots later (e.g. main
-    /// window remember-on-quit) without polluting the top level.
+    /// a centered 720x720 window.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_window: Option<WindowGeometry>,
+
+    /// Last known size + position of a main Baudrun window. Saved
+    /// when a window closes (only when `restore_window_state` is
+    /// on) so the next launch lands in the same spot. There's one
+    /// slot here even when multiple windows are open — the last
+    /// close wins, which matches the user's most recent layout
+    /// intent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_window: Option<WindowGeometry>,
+
+    /// Inverted toggle for the remember-window-state feature.
+    /// `false` (the default) means windows reopen at their saved
+    /// bounds; `true` opts out and pins every launch to the
+    /// centered default. Inverted so the default behavior
+    /// serializes cleanly via `skip_serializing_if = "is_false"`,
+    /// matching `disable_driver_detection` / `disable_update_check`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub disable_window_state_restore: bool,
 }
 
 /// Saved size + position of an app window. All fields optional so
@@ -147,6 +163,8 @@ impl Default for Settings {
                 "user".into(),
             ]),
             settings_window: None,
+            main_window: None,
+            disable_window_state_restore: false,
         }
     }
 }

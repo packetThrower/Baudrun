@@ -417,6 +417,15 @@ impl SettingsView {
         self.commit(next, cx);
     }
 
+    fn set_restore_window_state(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        // Stored inverted — same shape as drivers / update check —
+        // so the default "on" state serialises as the absence of
+        // the field.
+        next.disable_window_state_restore = !enabled;
+        self.commit(next, cx);
+    }
+
     /// Effective enabled-pack list — falls back to `Settings::default`'s
     /// value when the user hasn't made an explicit pick yet (the
     /// `Option::None` state). Mirrors the Tauri reader, which treats
@@ -1445,6 +1454,22 @@ impl SettingsView {
                     cur.copy_on_select,
                     cx,
                     SettingsView::set_copy_on_select,
+                ),
+            ))
+            .child(section_card_with_desc(
+                s,
+                "Window State",
+                Some(
+                    "Reopen Baudrun and Settings windows where you left \
+                     them. Turn off to land at the centered default \
+                     size each launch instead.",
+                ),
+                bool_field(
+                    "settings-restore-window-state",
+                    "Restore window size and position on launch",
+                    !cur.disable_window_state_restore,
+                    cx,
+                    SettingsView::set_restore_window_state,
                 ),
             ))
             .child(section_card_with_desc(

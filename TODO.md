@@ -61,9 +61,32 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       (XMODEM-CRC / 1K / Classic, YMODEM) → progress dialog with
       live bar and Cancel; success/error surface as toasts. ZMODEM
       stays out of scope (much larger state machine).
-- [ ] **Phase 7 — Multi-window + session migration.** Open new
-      window, drag-tab-between-windows protocol (or simpler: "move
-      session to new window" command), window state persistence.
+- [x] **Phase 7 — Multi-window + session migration.** Done (except
+      window-state persistence). Sidebar `⧉` icon opens a new
+      top-level window sharing the same stores + `SettingsBus` so
+      settings stay in lockstep. Session-header `⋯` overflow menu
+      and sidebar right-click both offer "Move Session to New
+      Window" — `extract_session` / `install_session` hand the
+      live TerminalView entity, OS threads, drain task, and
+      transfer state over without dropping the port. Right-click
+      on a non-connected profile offers "Connect in New Window"
+      which spawns + auto-connects in one step. `Disconnect` got a
+      `Drop` impl so window close also tears the port down within
+      ~50 ms.
+- [x] **Suspend / resume.** Done. Pill in the session header keeps
+      the port open + bytes flowing into scrollback while hiding
+      the terminal viewport so the user can browse other profiles
+      / Settings without disconnecting. Resume banner appears at
+      the top of the connected profile's editor, or a centered
+      placeholder pane shows when the user navigates away with no
+      editor open. Clicking the connected sidebar row implicitly
+      resumes.
+- [x] **Send Break + Send Hex.** Done. Session-header `⋯`
+      overflow menu hosts Send Break (300 ms `set_break` /
+      `clear_break` via a dedicated `break_tx` channel polled by
+      the write thread), Send Hex (modal with the same parser the
+      Tauri version uses — `0x` / spaces / commas all strip),
+      and Send File alongside Move-to-New-Window.
 - [ ] **Phase 8 — System integration.** Application menu (macOS),
       icon, metadata, file associations, single-instance behavior
       cross-platform, prefers-reduced-motion equivalent.

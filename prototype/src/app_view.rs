@@ -30,7 +30,7 @@ use std::time::Duration;
 use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
     AppContext, Bounds, Context, Entity, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent,
-    PathPromptOptions, Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds,
+    PathPromptOptions, Pixels, Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds,
     WindowHandle, WindowOptions,
 };
 use gpui_component::{
@@ -1470,7 +1470,15 @@ impl AppView {
         let skins = self.skins_store.clone();
         let highlight = self.highlight_store.clone();
         let themes = self.themes_store.clone();
-        let bounds = Bounds::centered(None, gpui::size(px(720.0), px(640.0)), cx);
+        let current_settings = self.settings_bus.read(cx).current().clone();
+        let restore_state = !current_settings.disable_window_state_restore;
+        let bounds = restore_state
+            .then(|| current_settings.settings_window.as_ref().and_then(geometry_to_bounds))
+            .flatten()
+            .unwrap_or_else(|| {
+                Bounds::centered(None, gpui::size(px(720.0), px(640.0)), cx)
+            });
+        let bus_for_close = self.settings_bus.clone();
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -1481,6 +1489,19 @@ impl AppView {
                 ..Default::default()
             },
             move |window, cx| {
+                window.on_window_should_close(cx, move |window, cx| {
+                    let geom = bounds_to_geometry(window.bounds());
+                    bus_for_close.update(cx, |bus, cx| {
+                        let mut next = bus.current().clone();
+                        if !next.disable_window_state_restore {
+                            next.settings_window = Some(geom);
+                            if let Err(err) = bus.replace(next, cx) {
+                                log::error!("save settings-window state: {err}");
+                            }
+                        }
+                    });
+                    true
+                });
                 let view = cx.new(|cx| {
                     SettingsView::new(bus, skins, highlight, themes, window, cx)
                 });
@@ -2619,6 +2640,31 @@ pub enum WindowInit {
 /// are per-window — connecting in one window doesn't touch the
 /// terminal in another. Used both at startup (one window) and from
 /// `AppView::open_new_window` / `move_session_to_new_window`.
+/// Convert a saved geometry record into the bounds shape
+/// `WindowOptions` wants. Returns `None` when the saved record is
+/// missing dimensions — caller falls back to the centered default.
+fn geometry_to_bounds(g: &settings::WindowGeometry) -> Option<Bounds<Pixels>> {
+    if g.width <= 0 || g.height <= 0 {
+        return None;
+    }
+    Some(Bounds {
+        origin: gpui::point(px(g.x as f32), px(g.y as f32)),
+        size: gpui::size(px(g.width as f32), px(g.height as f32)),
+    })
+}
+
+/// Snapshot the live window bounds into the serializable form used
+/// for on-disk persistence. Float pixels round-trip to `i32` since
+/// the underlying OS APIs all return integer-pixel rects anyway.
+fn bounds_to_geometry(b: Bounds<Pixels>) -> settings::WindowGeometry {
+    settings::WindowGeometry {
+        x: f32::from(b.origin.x) as i32,
+        y: f32::from(b.origin.y) as i32,
+        width: f32::from(b.size.width) as i32,
+        height: f32::from(b.size.height) as i32,
+    }
+}
+
 pub fn open_app_window(
     cx: &mut gpui::App,
     init: WindowInit,
@@ -2628,7 +2674,15 @@ pub fn open_app_window(
     highlight_store: Rc<highlight::Store>,
     themes_store: Rc<themes::Store>,
 ) -> gpui::Result<WindowHandle<Root>> {
-    let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
+    let current_settings = settings_bus.read(cx).current().clone();
+    let restore_state = !current_settings.disable_window_state_restore;
+    let bounds = restore_state
+        .then(|| current_settings.main_window.as_ref().and_then(geometry_to_bounds))
+        .flatten()
+        .unwrap_or_else(|| {
+            Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx)
+        });
+    let settings_bus_for_close = settings_bus.clone();
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -2639,6 +2693,23 @@ pub fn open_app_window(
             ..Default::default()
         },
         move |window, cx| {
+            // Snapshot bounds when the OS asks the window to close.
+            // Reads the live `disable_window_state_restore` flag so a
+            // user who turned the feature off after open doesn't get
+            // their pin overwritten on quit.
+            window.on_window_should_close(cx, move |window, cx| {
+                let geom = bounds_to_geometry(window.bounds());
+                settings_bus_for_close.update(cx, |bus, cx| {
+                    let mut next = bus.current().clone();
+                    if !next.disable_window_state_restore {
+                        next.main_window = Some(geom);
+                        if let Err(err) = bus.replace(next, cx) {
+                            log::error!("save window state: {err}");
+                        }
+                    }
+                });
+                true
+            });
             // Snapshot the OS appearance for the picker's "Auto" pick;
             // the appearance observer below picks up live changes.
             let system_dark = matches!(
