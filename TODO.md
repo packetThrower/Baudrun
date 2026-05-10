@@ -15,15 +15,13 @@ often since gpui's Linux backend is the least-mature of the three.
 
 Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
 
-- [ ] **Phase 0 — Terminal viewport feature-completeness.** Make the
-      viewport widget itself stand alone before any chrome wraps it.
-      Window resize → grid resize, scrollback (mouse wheel +
-      `display_offset`), cell flags (bold/italic/underline/dim/
-      strikethrough — extend the row-coalescer key in
-      [terminal_grid.rs](prototype/src/terminal_grid.rs)),
-      mouse-drag selection + clipboard copy, sanitized clipboard
-      paste, cursor blink, bell handling (visual flash; sound
-      deferred), basic keyboard layout / IME plumbing.
+- [x] **Phase 0 — Terminal viewport feature-completeness.** Done.
+      Window resize, scrollback (mouse wheel + `display_offset`),
+      cell flags (bold/italic/underline/dim/strikethrough), mouse-
+      drag selection + clipboard copy, sanitized clipboard paste,
+      cursor blink, and bell flash all live in
+      [terminal_view.rs](prototype/src/terminal_view.rs) /
+      [terminal_grid.rs](prototype/src/terminal_grid.rs).
 - [x] **Phase 0.5 — Adopt gpui-component.** Done. The Zed-git swap
       sketched here originally turned out unnecessary:
       [gpui-component](https://github.com/longbridge/gpui-component)
@@ -34,39 +32,35 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       [prototype/Cargo.toml](prototype/Cargo.toml) — `gpui-component
       = "0.5"` — with no API drift to fix. 60+ widgets now available
       for Phase 2 onward.
-- [ ] **Phase 1 — Port the data layer.** Move existing pure-Rust
-      modules from `src-tauri/src/` into the prototype workspace
-      as-is — they're data/IO, not UI: `profiles`, `appdata`,
-      `settings`, `serial/`, `usbserial/`, `themes/` (incl.
+- [x] **Phase 1 — Port the data layer.** Done. `profiles`,
+      `appdata`, `settings`, `serial/`, `themes/` (incl.
       `.itermcolors` parsing), `transfer.rs`, `highlight.rs`,
-      `skins.rs`, `sanitize.rs`. All callable from gpui code, none
-      used yet.
-- [ ] **Phase 2 — Profile sidebar + connection management.** Split-
-      pane (sidebar | terminal) layout via gpui-component's
-      `resizable` + `sidebar`, profile list (`list`), profile
-      add/edit form (`form` + `input` + `select`), connect-by-
-      profile (replaces `cargo run -- <port>`), connection state
-      indicator (`notification` + `badge`), quick-connect dialog
-      (`dialog`).
-- [ ] **Phase 3 — Settings panel.** `sheet` or `dialog` for the
-      panel structure, theme picker with live preview (reuse the
-      viewport widget at small size), skin picker, keybinding
-      editor (`kbd` for display + custom capture), connection
-      defaults. All settings round-trip via Phase-1 code.
-      gpui-component has its own theme system — decide whether to
-      adopt it for app chrome or override; the *terminal viewport*
-      keeps its own palette either way.
-- [ ] **Phase 4 — Themes & skins.** Plug the theme parser into the
-      viewport's color resolution (drop the hardcoded palette in
-      [term_bridge.rs](prototype/src/term_bridge.rs)'s `resolve`).
-      Built-in themes shipped. Skin system drives app-chrome accent
-      colors / backgrounds / motion-on-off.
-- [ ] **Phase 5 — Specialty terminal features.** Hex view toggle,
-      highlight packs (regex-driven coloring overlaid on terminal
-      output), status bar (port, baud, byte counters, connection
-      state).
-- [ ] **Phase 6 — File transfer.** Send-file dialog (XMODEM /
-      YMODEM / raw paste), progress UI, cancellation.
+      `skins.rs`, `sanitize.rs` all live under
+      [prototype/src/data/](prototype/src/data/) and back the live
+      UI.
+- [x] **Phase 2 — Profile sidebar + connection management.** Done.
+      Sidebar with profile list, add/edit form (Connection /
+      Highlighting / Advanced sub-tabs), connect-by-profile via
+      `serial_io::open`, connection state in the session header
+      and the bottom status bar.
+- [x] **Phase 3 — Settings panel.** Done. Standalone window with
+      Appearance / Themes / Shortcuts / Highlighting / Advanced
+      tabs. Theme picker has live preview (the per-row Preview
+      modal); skin picker, keybinding capture, and connection
+      defaults all round-trip through `data::settings`.
+- [x] **Phase 4 — Themes & skins.** Done. Theme parser drives the
+      viewport palette via `Palette::from_theme`; the hardcoded
+      fallback in [term_bridge.rs](prototype/src/term_bridge.rs)
+      only fires when a theme id misses the store. Skins drive the
+      `SkinTokens` global that paints all the chrome.
+- [x] **Phase 5 — Specialty terminal features.** Done. Hex view
+      toggle on the profile, highlight packs with first-match
+      precedence, status bar at the bottom of the window.
+- [x] **Phase 6 — File transfer.** Done. Send File button in the
+      session header opens a file picker → protocol picker
+      (XMODEM-CRC / 1K / Classic, YMODEM) → progress dialog with
+      live bar and Cancel; success/error surface as toasts. ZMODEM
+      stays out of scope (much larger state machine).
 - [ ] **Phase 7 — Multi-window + session migration.** Open new
       window, drag-tab-between-windows protocol (or simpler: "move
       session to new window" command), window state persistence.

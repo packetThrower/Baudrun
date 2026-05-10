@@ -54,6 +54,14 @@ const POLL_INTERVAL: Duration = Duration::from_millis(1);
 /// the channel.
 const READ_BUF: usize = 4096;
 
+/// Sink for received bytes during file transfer. When set, the read
+/// loop forwards inbound bytes to this callback instead of pushing
+/// them on `read_rx` — so the protocol state machine sees raw bytes
+/// without the terminal also rendering them. Cleared via
+/// `clear_transfer_sink` when the transfer finishes (success, error,
+/// or cancel) so normal terminal flow resumes.
+pub type TransferSink = Box<dyn FnMut(&[u8]) + Send>;
+
 /// The two ends of a live serial session, as seen from the gpui side.
 pub struct SerialChannels {
     /// Async-receivable stream of bytes coming FROM the device.
@@ -63,6 +71,11 @@ pub struct SerialChannels {
     /// Pushed from the keyboard handler — `send` is non-blocking
     /// (unbounded channel) so it never stalls a keystroke.
     pub write_tx: flume::Sender<Vec<u8>>,
+    /// Slot the read loop checks each iteration. When `Some(_)`,
+    /// inbound bytes are funnelled to the sink instead of `read_rx`.
+    /// Held in a `Mutex` so the gpui thread can swap it in/out while
+    /// the read thread is mid-loop.
+    pub transfer_sink: Arc<std::sync::Mutex<Option<TransferSink>>>,
     /// Token for shutting down the OS threads. Hold for the
     /// session lifetime; call `Disconnect::shutdown` on teardown
     /// to flag the threads to exit quickly. JoinHandles inside
@@ -72,6 +85,48 @@ pub struct SerialChannels {
     /// descriptor (otherwise the next `open` races and fails with
     /// "Unable to acquire exclusive lock" on macOS).
     pub disconnect: Disconnect,
+}
+
+impl SerialChannels {
+    /// Install a transfer sink. Callers swap one in for the duration
+    /// of an XMODEM/YMODEM transfer; the read loop forwards every
+    /// inbound chunk to it instead of `read_rx`.
+    pub fn set_transfer_sink(&self, sink: TransferSink) {
+        *self.transfer_sink.lock().unwrap() = Some(sink);
+    }
+
+    /// Remove any installed transfer sink. After this returns,
+    /// inbound bytes flow back to `read_rx` and the terminal pane.
+    pub fn clear_transfer_sink(&self) {
+        *self.transfer_sink.lock().unwrap() = None;
+    }
+}
+
+/// `std::io::Write` adapter that pushes outbound bytes through the
+/// serial session's write channel. The transfer protocol state
+/// machines need a `Write` implementor; the prototype's write side
+/// is a flume sender, so we adapt rather than refactor the threads.
+pub struct ChannelWriter {
+    tx: flume::Sender<Vec<u8>>,
+}
+
+impl ChannelWriter {
+    pub fn new(tx: flume::Sender<Vec<u8>>) -> Self {
+        Self { tx }
+    }
+}
+
+impl io::Write for ChannelWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.tx
+            .send(buf.to_vec())
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "serial port closed"))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Token for shutting down a serial session's OS threads.
@@ -202,12 +257,15 @@ pub fn open(
     let (read_tx, read_rx) = flume::unbounded::<Vec<u8>>();
     let (write_tx, write_rx) = flume::unbounded::<Vec<u8>>();
     let shutdown = Arc::new(AtomicBool::new(false));
+    let transfer_sink: Arc<std::sync::Mutex<Option<TransferSink>>> =
+        Arc::new(std::sync::Mutex::new(None));
 
     let read_label = format!("serial-read({port_path})");
     let read_shutdown = shutdown.clone();
+    let read_sink = transfer_sink.clone();
     let read_thread = std::thread::Builder::new()
         .name(read_label)
-        .spawn(move || read_loop(read_port, read_tx, read_shutdown))
+        .spawn(move || read_loop(read_port, read_tx, read_sink, read_shutdown))
         .expect("spawn serial read thread");
 
     let write_label = format!("serial-write({port_path})");
@@ -220,6 +278,7 @@ pub fn open(
     Ok(SerialChannels {
         read_rx,
         write_tx,
+        transfer_sink,
         disconnect: Disconnect {
             shutdown,
             read_thread,
@@ -231,6 +290,7 @@ pub fn open(
 fn read_loop(
     mut port: Box<dyn serialport::SerialPort>,
     tx: flume::Sender<Vec<u8>>,
+    transfer_sink: Arc<std::sync::Mutex<Option<TransferSink>>>,
     shutdown: Arc<AtomicBool>,
 ) {
     let mut buf = [0u8; READ_BUF];
@@ -254,8 +314,19 @@ fn read_loop(
             Ok(_) => match port.read(&mut buf) {
                 Ok(0) => continue,
                 Ok(n) => {
-                    if tx.send(buf[..n].to_vec()).is_err() {
-                        break;
+                    // While a transfer is active, divert bytes to
+                    // its sink so the protocol state machine sees
+                    // raw input. The lock is held only across the
+                    // sink call; gpui-side install/clear happens
+                    // between iterations either way.
+                    let mut sink_guard = transfer_sink.lock().unwrap();
+                    if let Some(sink) = sink_guard.as_mut() {
+                        sink(&buf[..n]);
+                    } else {
+                        drop(sink_guard);
+                        if tx.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
                     }
                 }
                 // Shouldn't fire — bytes_to_read said data was

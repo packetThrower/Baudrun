@@ -29,20 +29,23 @@ use std::time::Duration;
 
 use gpui::{
     div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt, AppContext, Bounds,
-    Context, Entity, IntoElement, MouseButton, MouseUpEvent, Render, ScrollHandle, Task,
-    TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
+    Context, Entity, IntoElement, MouseButton, MouseUpEvent, PathPromptOptions, Render,
+    ScrollHandle, Task, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
 };
 use gpui_component::{
     checkbox::Checkbox,
     input::{Input, InputState},
+    notification::Notification,
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
-    Disableable, IndexPath, Root, Sizable, Theme, ThemeMode,
+    Disableable, IndexPath, Root, Sizable, Theme, ThemeMode, WindowExt,
 };
 use gpui::SharedString;
 
 use crate::data::appdata;
 use crate::data::highlight;
+use crate::data::transfer::{self, ChannelReader, XModemVariant};
+use crate::serial_io::{ChannelWriter, TransferSink};
 use crate::data::profiles::{self, Profile};
 use crate::data::sanitize::SanitizingLogWriter;
 use crate::data::serial::ports;
@@ -146,6 +149,22 @@ pub struct AppView {
     /// (race observed on macOS when toggling profiles quickly).
     /// `None` while disconnected.
     serial_disconnect: Option<serial_io::Disconnect>,
+    /// I/O handles needed to drive a file transfer over the live
+    /// session: a clone of the write channel (so the transfer thread
+    /// can push outbound bytes without contending with the terminal's
+    /// keystroke writer) and the slot the read loop checks for
+    /// inbound-byte diversion. `None` while disconnected.
+    transfer_io: Option<TransferIo>,
+    /// `Some(_)` while a file transfer is running. Holds the cancel
+    /// atomic, the live progress counter, and the gpui task that
+    /// polls them — dropping the option (in `finish_transfer`) is
+    /// what tears the transfer down.
+    transfer: Option<TransferState>,
+    /// `Some(_)` while the Send File dialog is open. Lives outside
+    /// the dialog because Choose…, Cancel, and Send all need to
+    /// mutate the same widget state across re-renders. Cleared in
+    /// `close_send_file_dialog` (Cancel / X / Send).
+    send_file: Option<SendFileState>,
     /// Polling task that retries `connect_to` after an unexpected
     /// session drop. Held so a user disconnect / profile switch
     /// can cancel pending retries by dropping the field. `None`
@@ -289,6 +308,56 @@ struct Editor {
     baseline: Profile,
 }
 
+/// I/O handles needed to drive a file transfer over the live serial
+/// session. Stored on `AppView` for the lifetime of the connection
+/// so `start_send_file` can install the read-side sink and hand the
+/// transfer thread its own write-channel clone.
+struct TransferIo {
+    write_tx: flume::Sender<Vec<u8>>,
+    transfer_sink: std::sync::Arc<std::sync::Mutex<Option<TransferSink>>>,
+}
+
+/// In-flight file transfer state. The poll task, the cancel atomic,
+/// and the live progress counter all live here; dropping the option
+/// is what tears the transfer down (the `Task` cancels, the dialog
+/// stops being rebuilt, and `clear_transfer_sink` was already called
+/// by the transfer thread on its way out).
+struct TransferState {
+    filename: SharedString,
+    /// Total bytes the protocol thread will push. Set once at start.
+    total: u64,
+    /// Bytes ACKed so far. Updated by the protocol's progress
+    /// callback; read on each frame by the dialog renderer. Atomic
+    /// (not Mutex) so the renderer doesn't block the protocol thread.
+    sent: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    /// Set by `cancel_transfer`; observed by `send_xmodem`/
+    /// `send_ymodem` between blocks. Same Arc the protocol thread
+    /// holds via `Options::cancel`.
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Drains the result channel and forces a re-render every tick
+    /// so the progress dialog updates without us hooking the
+    /// protocol thread directly into gpui. Dropped automatically
+    /// when `transfer` is cleared.
+    _poll_task: Task<()>,
+}
+
+#[derive(Debug)]
+enum TransferResult {
+    Ok,
+    Err(String),
+}
+
+/// Open-Send-File-dialog widget state. The Select is a gpui entity
+/// the Dialog can render directly without going through AppView.
+/// The path lives behind an `Arc<Mutex<…>>` so the Dialog builder
+/// can re-read it on each frame without leasing the AppView entity
+/// — gpui-component's dialog layer runs the builder from inside
+/// AppView's render path, where re-leasing AppView would panic.
+struct SendFileState {
+    protocol: Entity<SelectState<Vec<Opt>>>,
+    selected_path: std::sync::Arc<std::sync::Mutex<Option<std::path::PathBuf>>>,
+}
+
 impl AppView {
     pub fn new(
         terminal: Entity<TerminalView>,
@@ -332,6 +401,9 @@ impl AppView {
             connect_error: None,
             drain_task: None,
             serial_disconnect: None,
+            transfer_io: None,
+            transfer: None,
+            send_file: None,
             auto_reconnect_task: None,
             auto_reconnect_for: None,
             last_highlight_sig: None,
@@ -793,7 +865,13 @@ impl AppView {
         // keystroke settings (line_ending, backspace_key,
         // local_echo) so the encoder honours them on the next
         // keypress.
-        let write_tx = channels.write_tx;
+        // Pull off the transfer-side handles before destructuring
+        // `channels` further. The terminal swallows `write_tx`; we
+        // hand the transfer thread its own clone so the two writers
+        // (keystrokes and protocol bytes) can't deadlock each other.
+        let write_tx = channels.write_tx.clone();
+        let transfer_write = channels.write_tx;
+        let transfer_sink = channels.transfer_sink.clone();
         let settings = ProfileSettings {
             line_ending: profile.line_ending.clone(),
             backspace_key: profile.backspace_key.clone(),
@@ -888,6 +966,10 @@ impl AppView {
         });
         self.drain_task = Some(task);
         self.serial_disconnect = Some(channels.disconnect);
+        self.transfer_io = Some(TransferIo {
+            write_tx: transfer_write,
+            transfer_sink,
+        });
         self.connected_profile_id = Some(profile.id);
         // A successful (re)connect ends any auto-reconnect window —
         // the right pane should now render off the live session, not
@@ -1047,6 +1129,16 @@ impl AppView {
         let Some(id) = self.connected_profile_id.take() else {
             return;
         };
+        // Cancel any in-flight transfer first — flipping the cancel
+        // atomic lets `send_xmodem` exit on the next block boundary
+        // instead of stalling on `next_byte` after the read thread
+        // dies. We then drop the state itself, which closes the
+        // dialog and stops the poll task.
+        if let Some(t) = self.transfer.as_ref() {
+            t.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.transfer = None;
+        self.transfer_io = None;
         self.drain_task = None;
         // Cancel any pending auto-reconnect — user explicitly
         // disconnecting overrides whatever retry loop might be
@@ -1345,6 +1437,562 @@ impl AppView {
             }
         }
     }
+
+    /// "Send File…" button entry point. Builds the dialog state
+    /// (protocol Select pre-selected to YMODEM, no path yet) and
+    /// opens the modal. The dialog itself is rendered from
+    /// `Render::render` reading `self.send_file` so the live state
+    /// (chosen path, protocol) updates as the user picks them.
+    fn start_send_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.transfer.is_some() || self.send_file.is_some() {
+            return;
+        }
+        if self.transfer_io.is_none() {
+            window.push_notification(
+                Notification::error(SharedString::from(
+                    "Connect to a port before sending a file.",
+                )),
+                cx,
+            );
+            return;
+        }
+
+        let opts = transfer_protocol_opts();
+        // Default to YMODEM — matches the Tauri version + tends to
+        // be what most modern bootloaders speak.
+        let protocol = make_select(opts, YMODEM_PROTOCOL_ID, window, cx);
+        let selected_path: std::sync::Arc<std::sync::Mutex<Option<std::path::PathBuf>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        self.send_file = Some(SendFileState {
+            protocol: protocol.clone(),
+            selected_path: selected_path.clone(),
+        });
+
+        let app = cx.entity();
+        // Capture clones for each closure; dialog builder runs from
+        // inside AppView's render path so we MUST NOT read the
+        // AppView entity from inside it.
+        window.open_dialog(cx, move |dlg, _, _| {
+            let path_for_render = selected_path.clone();
+            let path_now = path_for_render.lock().unwrap().clone();
+            let path_label = path_now
+                .as_ref()
+                .map(|p| {
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| p.display().to_string())
+                })
+                .unwrap_or_default();
+            let send_enabled = path_now.is_some();
+            let app_close = app.clone();
+            let app_cancel = app.clone();
+            let app_choose = app.clone();
+            let app_send = app.clone();
+
+            dlg.title(SharedString::from("Send file"))
+                .w(px(560.0))
+                .close_button(true)
+                .on_close(move |_, _, cx| {
+                    app_close.update(cx, |this, cx| this.close_send_file_dialog(cx));
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .text_size(px(13.0))
+                        .child(send_file_field_label("Protocol"))
+                        .child(Select::new(&protocol))
+                        .child(send_file_field_label("File"))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .gap_2()
+                                .child(send_file_path_pill(path_label))
+                                .child(send_file_choose_button(move |_evt, window, cx| {
+                                    let app = app_choose.clone();
+                                    app.update(cx, |this, cx| {
+                                        this.send_file_choose(window, cx);
+                                    });
+                                })),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(rgba(0x808080AAu32))
+                                .whitespace_normal()
+                                .child(
+                                    "Start the receiver on the target device first \
+                                     (rx, loady, bootloader \u{201C}Receive File\u{201D} \
+                                     menu, etc.) before clicking Send. The transfer \
+                                     waits up to 60 s for the receiver's handshake \
+                                     before giving up.",
+                                ),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .justify_end()
+                                .gap_2()
+                                .child(send_file_secondary_button(
+                                    "Cancel",
+                                    move |_, window, cx| {
+                                        // Dismissing the overlay triggers
+                                        // `on_close` which clears state.
+                                        let _ = &app_cancel;
+                                        window.close_dialog(cx);
+                                    },
+                                ))
+                                .child(send_file_primary_button(
+                                    "Send",
+                                    send_enabled,
+                                    move |_, window, cx| {
+                                        let app = app_send.clone();
+                                        app.update(cx, |this, cx| {
+                                            this.send_file_confirm(window, cx);
+                                        });
+                                    },
+                                )),
+                        ),
+                )
+        });
+    }
+
+    /// Spawn the transfer thread and the gpui poll task, install the
+    /// read-side sink, open the progress dialog. Called once per
+    /// chosen protocol from the picker buttons.
+    fn kick_off_transfer(
+        &mut self,
+        path: std::path::PathBuf,
+        variant: Option<XModemVariant>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // Close the protocol picker first — it sits on top of the
+        // progress dialog we're about to open.
+        window.close_dialog(cx);
+
+        let Some(io) = self.transfer_io.as_ref() else { return };
+
+        let data = match std::fs::read(&path) {
+            Ok(d) => d,
+            Err(err) => {
+                window.push_notification(
+                    Notification::error(SharedString::from(format!(
+                        "Couldn't read file: {err}"
+                    ))),
+                    cx,
+                );
+                return;
+            }
+        };
+        let total = data.len() as u64;
+        let filename: SharedString = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "(unknown)".into())
+            .into();
+
+        // Inbound bytes during the transfer flow through this
+        // dedicated channel — the read thread's sink shoves chunks
+        // in, the ChannelReader pops single bytes out. Bounded would
+        // be a footgun (transfer thread blocks on a slow protocol)
+        // so unbounded matches `serial_io`'s read path.
+        let (in_tx, in_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let sink: TransferSink = Box::new(move |chunk: &[u8]| {
+            let _ = in_tx.send(chunk.to_vec());
+        });
+        io.transfer_sink.lock().unwrap().replace(sink);
+
+        let sent = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (result_tx, result_rx) = flume::bounded::<TransferResult>(1);
+
+        let progress_arc = sent.clone();
+        let progress_fn: transfer::ProgressFn =
+            std::sync::Arc::new(move |s, _t| {
+                progress_arc.store(s, std::sync::atomic::Ordering::Relaxed);
+            });
+        let opts = transfer::Options {
+            progress: Some(progress_fn),
+            cancel: Some(cancel.clone()),
+        };
+
+        let writer_tx = io.write_tx.clone();
+        let sink_slot = io.transfer_sink.clone();
+        let filename_for_thread = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "file.bin".into());
+        std::thread::Builder::new()
+            .name("transfer-driver".into())
+            .spawn(move || {
+                let mut reader = ChannelReader::new(in_rx);
+                let mut writer = ChannelWriter::new(writer_tx);
+                let result = match variant {
+                    Some(v) => {
+                        transfer::send_xmodem(&mut reader, &mut writer, &data, v, &opts)
+                    }
+                    None => transfer::send_ymodem(
+                        &mut reader,
+                        &mut writer,
+                        &filename_for_thread,
+                        &data,
+                        &opts,
+                    ),
+                };
+                // Always restore the read path before signalling
+                // done — otherwise the next inbound byte might land
+                // on a stale sink whose receiver is gone.
+                *sink_slot.lock().unwrap() = None;
+                let payload = match result {
+                    Ok(()) => TransferResult::Ok,
+                    Err(err) => TransferResult::Err(err.to_string()),
+                };
+                let _ = result_tx.send(payload);
+            })
+            .expect("spawn transfer driver thread");
+
+        // Poll task: re-renders AppView each tick (so the progress
+        // dialog updates) and watches the result channel. When the
+        // transfer thread sends a result we tear the state down and
+        // push the success/error toast.
+        let result_rx_for_task = result_rx.clone();
+        let poll_task = cx.spawn(async move |this, cx| {
+            let tick = std::time::Duration::from_millis(100);
+            loop {
+                cx.background_executor().timer(tick).await;
+                if let Ok(payload) = result_rx_for_task.try_recv() {
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.finish_transfer(payload, window, cx);
+                    });
+                    break;
+                }
+                let still = this
+                    .update(cx, |this, cx| {
+                        cx.notify();
+                        this.transfer.is_some()
+                    })
+                    .unwrap_or(false);
+                if !still {
+                    break;
+                }
+            }
+        });
+
+        let sent_for_dialog = sent.clone();
+        let app = cx.entity();
+        let filename_for_dialog = filename.clone();
+        window.open_dialog(cx, move |dlg, _, _| {
+            let s_now = sent_for_dialog.load(std::sync::atomic::Ordering::Relaxed);
+            let pct = if total > 0 {
+                ((s_now as f64 / total as f64) * 100.0).min(100.0) as u32
+            } else {
+                0
+            };
+            let app = app.clone();
+            dlg.title(SharedString::from(format!(
+                "Sending \u{201C}{filename_for_dialog}\u{201D}"
+            )))
+            .w(px(420.0))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .justify_between()
+                            .text_size(px(12.0))
+                            .text_color(rgba(0x808080CCu32))
+                            .child(div().child(format!("{} / {} bytes", s_now, total)))
+                            .child(div().child(format!("{}%", pct))),
+                    )
+                    // Bar — outer track + inner fill scaled to %.
+                    .child(
+                        div()
+                            .w_full()
+                            .h(px(6.0))
+                            .rounded(px(3.0))
+                            .bg(rgba(0x80808033u32))
+                            .child(
+                                div()
+                                    .h(px(6.0))
+                                    .w(gpui::relative(pct as f32 / 100.0))
+                                    .rounded(px(3.0))
+                                    .bg(rgba(0x4DA6FFFFu32)),
+                            ),
+                    )
+                    .child(
+                        div().flex().flex_row().justify_end().child(
+                            div()
+                                .px_3()
+                                .py_1()
+                                .rounded_md()
+                                .border_1()
+                                .border_color(rgba(0x80808055u32))
+                                .text_size(px(12.0))
+                                .cursor_pointer()
+                                .child("Cancel")
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    move |_evt: &MouseUpEvent, _window, cx| {
+                                        let app = app.clone();
+                                        app.update(cx, |this, cx| this.cancel_transfer(cx));
+                                    },
+                                ),
+                        ),
+                    ),
+            )
+        });
+
+        self.transfer = Some(TransferState {
+            filename: filename.clone(),
+            total,
+            sent,
+            cancel,
+            _poll_task: poll_task,
+        });
+        cx.notify();
+    }
+
+    /// Cancel button on the progress dialog. Flips the atomic the
+    /// protocol thread polls between blocks; the result channel
+    /// will deliver `Cancelled` shortly and `finish_transfer` will
+    /// take it from there.
+    fn cancel_transfer(&mut self, _cx: &mut Context<Self>) {
+        if let Some(t) = self.transfer.as_ref() {
+            t.cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Tear-down. Closes the progress dialog, clears `transfer`
+    /// (drops the poll task), and surfaces the outcome via toast.
+    fn finish_transfer(
+        &mut self,
+        result: TransferResult,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let filename = self
+            .transfer
+            .as_ref()
+            .map(|t| t.filename.clone())
+            .unwrap_or_else(|| SharedString::from("file"));
+        self.transfer = None;
+        // Belt-and-braces: the transfer thread already cleared the
+        // sink, but if it died on a panic before reaching that line
+        // we want to make sure the read path still recovers.
+        if let Some(io) = self.transfer_io.as_ref() {
+            *io.transfer_sink.lock().unwrap() = None;
+        }
+        window.close_dialog(cx);
+        match result {
+            TransferResult::Ok => {
+                window.push_notification(
+                    Notification::success(SharedString::from(format!(
+                        "Sent \u{201C}{filename}\u{201D}"
+                    ))),
+                    cx,
+                );
+            }
+            TransferResult::Err(msg) => {
+                window.push_notification(
+                    Notification::error(SharedString::from(format!(
+                        "Transfer failed: {msg}"
+                    ))),
+                    cx,
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    /// Choose… button on the Send file dialog. Opens the OS picker;
+    /// once a path comes back we stash it on the dialog's shared
+    /// path mutex and notify so the dialog re-renders with the
+    /// filename + the Send button enabled.
+    fn send_file_choose(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Choose a file to send".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else { return };
+            let Some(path) = paths.into_iter().next() else { return };
+            let _ = this.update(cx, |this, cx| {
+                if let Some(state) = this.send_file.as_ref() {
+                    *state.selected_path.lock().unwrap() = Some(path);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Send button. Reads the protocol pick + path off the dialog
+    /// state, clears the dialog state, then defers to the existing
+    /// `kick_off_transfer` to do the actual byte pumping. Closing
+    /// the picker dialog is done inside `kick_off_transfer` (it
+    /// reuses the same dialog slot for the progress UI).
+    fn send_file_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(state) = self.send_file.take() else { return };
+        let path = state.selected_path.lock().unwrap().clone();
+        let Some(path) = path else {
+            // No file picked yet — restore state instead of leaving
+            // the dialog wired to a torn-down handle.
+            self.send_file = Some(state);
+            return;
+        };
+        let id = read_select(&state.protocol, cx);
+        let variant = match id.as_str() {
+            "xmodem-crc" => Some(XModemVariant::Crc),
+            "xmodem-1k" => Some(XModemVariant::OneKilo),
+            "xmodem-classic" => Some(XModemVariant::Classic),
+            // Anything else (including the YMODEM id) → no variant,
+            // which `kick_off_transfer` reads as "use YMODEM".
+            _ => None,
+        };
+        self.kick_off_transfer(path, variant, window, cx);
+    }
+
+    /// Cancel / X / overlay-click. Drops dialog state and asks the
+    /// dialog layer to close. Safe to call when the dialog is
+    /// already closed (close_dialog is a no-op then).
+    fn close_send_file_dialog(&mut self, cx: &mut Context<Self>) {
+        if self.send_file.take().is_some() {
+            cx.notify();
+        }
+    }
+}
+
+/// Stable id used as the YMODEM Select option (the default pick).
+const YMODEM_PROTOCOL_ID: &str = "ymodem";
+
+/// Option list for the Send file dialog's Protocol select. Order +
+/// labels mirror the Tauri dialog so the muscle memory transfers.
+fn transfer_protocol_opts() -> Vec<Opt> {
+    vec![
+        Opt::new(
+            YMODEM_PROTOCOL_ID,
+            "YMODEM \u{2014} 1024-byte blocks with filename + size",
+        ),
+        Opt::new(
+            "xmodem-crc",
+            "XMODEM-CRC \u{2014} 128-byte blocks with CRC-16",
+        ),
+        Opt::new(
+            "xmodem-1k",
+            "XMODEM-1K \u{2014} 1024-byte blocks with CRC-16",
+        ),
+        Opt::new(
+            "xmodem-classic",
+            "XMODEM-Classic \u{2014} 128-byte blocks with checksum",
+        ),
+    ]
+}
+
+/// Small uppercase-ish field label above an input row.
+fn send_file_field_label(label: &'static str) -> gpui::Div {
+    div()
+        .text_size(px(11.0))
+        .text_color(rgba(0x808080CCu32))
+        .child(label)
+}
+
+/// Read-only path display — input-styled pill that shows the chosen
+/// filename (or a muted "No file selected" placeholder).
+fn send_file_path_pill(label: String) -> gpui::Div {
+    let placeholder = label.is_empty();
+    let text: SharedString = if placeholder {
+        SharedString::from("No file selected")
+    } else {
+        SharedString::from(label)
+    };
+    div()
+        .flex_1()
+        .px_3()
+        .py(px(6.0))
+        .rounded_md()
+        .border_1()
+        .border_color(rgba(0x80808055u32))
+        .bg(rgba(0x80808014u32))
+        .text_size(px(13.0))
+        .text_color(rgba(if placeholder {
+            0x808080AAu32
+        } else {
+            0xE4E4E7FFu32
+        }))
+        .child(text)
+}
+
+/// "Choose…" — secondary pill button next to the path display.
+fn send_file_choose_button<F>(on_click: F) -> gpui::Div
+where
+    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
+{
+    div()
+        .px_3()
+        .py(px(6.0))
+        .rounded_md()
+        .border_1()
+        .border_color(rgba(0x80808055u32))
+        .bg(rgba(0x80808022u32))
+        .text_size(px(13.0))
+        .cursor_pointer()
+        .hover(|st| st.bg(rgba(0x4DA6FF22u32)))
+        .child("Choose\u{2026}")
+        .on_mouse_up(MouseButton::Left, on_click)
+}
+
+/// Cancel-style button at the bottom of the dialog. Quiet styling
+/// (matches Tauri's secondary button) so it doesn't compete with
+/// the primary Send button.
+fn send_file_secondary_button<F>(label: &'static str, on_click: F) -> gpui::Div
+where
+    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
+{
+    div()
+        .px_4()
+        .py(px(6.0))
+        .rounded_md()
+        .border_1()
+        .border_color(rgba(0x80808055u32))
+        .text_size(px(13.0))
+        .cursor_pointer()
+        .hover(|st| st.bg(rgba(0x80808033u32)))
+        .child(label)
+        .on_mouse_up(MouseButton::Left, on_click)
+}
+
+/// Send-style primary button. Disabled state (when `enabled` is
+/// false) still renders but ignores clicks and dims out, matching
+/// Tauri's "you must pick a file first" affordance.
+fn send_file_primary_button<F>(label: &'static str, enabled: bool, on_click: F) -> gpui::Div
+where
+    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
+{
+    let text_color = if enabled { 0xFFFFFFFFu32 } else { 0xFFFFFFAAu32 };
+    let bg = if enabled { 0x4DA6FFFFu32 } else { 0x4DA6FF66u32 };
+    let mut btn = div()
+        .px_4()
+        .py(px(6.0))
+        .rounded_md()
+        .bg(rgba(bg))
+        .text_size(px(13.0))
+        .text_color(rgba(text_color))
+        .child(label);
+    if enabled {
+        btn = btn.cursor_pointer().on_mouse_up(MouseButton::Left, on_click);
+    }
+    btn
 }
 
 impl Render for AppView {
@@ -1695,6 +2343,12 @@ fn session_header(
                 .flex()
                 .flex_row()
                 .gap_2()
+                .child(pill_button(s, "Send File\u{2026}", false).on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        this.start_send_file(window, cx);
+                    }),
+                ))
                 .child(pill_button(s, "Clear", false).on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, _window, cx| {
