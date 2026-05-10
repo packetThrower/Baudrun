@@ -28,9 +28,10 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt, AppContext, Bounds,
-    Context, Entity, IntoElement, MouseButton, MouseUpEvent, PathPromptOptions, Render,
-    ScrollHandle, Task, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
+    anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
+    AppContext, Bounds, Context, Entity, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent,
+    PathPromptOptions, Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds,
+    WindowHandle, WindowOptions,
 };
 use gpui_component::{
     checkbox::Checkbox,
@@ -166,6 +167,12 @@ pub struct AppView {
     /// mutate the same widget state across re-renders. Cleared in
     /// `close_send_file_dialog` (Cancel / X / Send).
     send_file: Option<SendFileState>,
+    /// `Some(_)` while a profile-row right-click menu is showing.
+    /// Carries the right-clicked profile id + the click position so
+    /// the popup can render anchored at the cursor. Cleared by any
+    /// click — menu items handle their action first; the root
+    /// AppView listener clears state on the same mouse-up.
+    profile_context_menu: Option<ProfileContextMenu>,
     /// Polling task that retries `connect_to` after an unexpected
     /// session drop. Held so a user disconnect / profile switch
     /// can cancel pending retries by dropping the field. `None`
@@ -348,6 +355,14 @@ enum TransferResult {
     Err(String),
 }
 
+/// Right-click menu state for sidebar profile rows. Stores the
+/// profile id that was right-clicked plus the cursor position to
+/// anchor the popup to.
+struct ProfileContextMenu {
+    profile_id: String,
+    pos: gpui::Point<gpui::Pixels>,
+}
+
 /// Open-Send-File-dialog widget state. The Select is a gpui entity
 /// the Dialog can render directly without going through AppView.
 /// The path lives behind an `Arc<Mutex<…>>` so the Dialog builder
@@ -405,6 +420,7 @@ impl AppView {
             transfer_io: None,
             transfer: None,
             send_file: None,
+            profile_context_menu: None,
             auto_reconnect_task: None,
             auto_reconnect_for: None,
             last_highlight_sig: None,
@@ -1894,6 +1910,58 @@ impl AppView {
         }
     }
 
+    /// Open a fresh window and immediately connect it to the named
+    /// profile. Used by the right-click context menu on profile rows.
+    fn connect_profile_in_new_window(
+        &mut self,
+        profile_id: String,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let new_terminal = cx.new(|cx| {
+            TerminalView::new(24, 80, Palette::baudrun(), cx)
+        });
+        if let Err(err) = open_app_window(
+            cx,
+            WindowInit::FreshAutoConnect {
+                terminal: new_terminal,
+                profile_id,
+            },
+            self.profile_store.clone(),
+            self.settings_bus.clone(),
+            self.skins_store.clone(),
+            self.highlight_store.clone(),
+            self.themes_store.clone(),
+        ) {
+            log::error!("connect in new window: {err}");
+        }
+    }
+
+    /// Open the right-click context menu anchored at the click
+    /// position. Called by the sidebar profile rows on right-mouse-
+    /// down. `pos` is in window-relative coordinates so the popup
+    /// lands under the cursor regardless of where the row sat.
+    fn open_profile_context_menu(
+        &mut self,
+        profile_id: String,
+        pos: gpui::Point<gpui::Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        self.profile_context_menu = Some(ProfileContextMenu {
+            profile_id,
+            pos,
+        });
+        cx.notify();
+    }
+
+    /// Dismiss the right-click context menu. Idempotent — safe to
+    /// fire from the global mouse-up listener every time.
+    fn dismiss_profile_context_menu(&mut self, cx: &mut Context<Self>) {
+        if self.profile_context_menu.take().is_some() {
+            cx.notify();
+        }
+    }
+
     /// Take ownership of every piece of live-session state from this
     /// AppView and return it as a [`SessionBundle`]. Returns `None`
     /// when the window isn't connected to a profile (nothing to
@@ -2124,10 +2192,16 @@ pub struct SessionBundle {
 /// welcome screen. `WithSession` accepts a moved [`SessionBundle`]
 /// and installs it after construction so the destination window
 /// comes up already connected, with the source window's terminal
-/// contents intact.
+/// contents intact. `FreshAutoConnect` opens a fresh window and
+/// immediately connects to a named profile — used by the
+/// right-click "Connect in New Window" path on the sidebar.
 pub enum WindowInit {
     Fresh(Entity<TerminalView>),
     WithSession(SessionBundle),
+    FreshAutoConnect {
+        terminal: Entity<TerminalView>,
+        profile_id: String,
+    },
 }
 
 /// Open a new top-level Baudrun window with a fresh `AppView`. The
@@ -2163,11 +2237,15 @@ pub fn open_app_window(
                 window.appearance(),
                 gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
             );
-            let (terminal, session) = match init {
-                WindowInit::Fresh(t) => (t, None),
+            let (terminal, session, auto_connect_id) = match init {
+                WindowInit::Fresh(t) => (t, None, None),
                 WindowInit::WithSession(bundle) => {
-                    (bundle.terminal.clone(), Some(bundle))
+                    (bundle.terminal.clone(), Some(bundle), None)
                 }
+                WindowInit::FreshAutoConnect {
+                    terminal,
+                    profile_id,
+                } => (terminal, None, Some(profile_id)),
             };
             let app_view = cx.new(|cx| {
                 AppView::new(
@@ -2185,6 +2263,15 @@ pub fn open_app_window(
                 this.attach_appearance_observer(window, view_cx);
                 if let Some(bundle) = session {
                     this.install_session(bundle, view_cx);
+                }
+                if let Some(id) = auto_connect_id {
+                    if let Some(profile) = this.profile_store.get(&id) {
+                        this.connect_to(profile, view_cx);
+                    } else {
+                        log::warn!(
+                            "auto-connect: profile {id:?} not found in store"
+                        );
+                    }
                 }
             });
             cx.new(|cx| Root::new(app_view, window, cx))
@@ -2400,7 +2487,97 @@ impl Render for AppView {
             // -- gpui-component overlay layers (dialogs, toasts) --
             .children(dialog_layer)
             .children(notification_layer)
+            // -- profile-row right-click context menu --
+            .children(profile_context_menu_overlay(self, cx))
+            // Any mouse-up anywhere dismisses an open context menu.
+            // Menu items run their own `on_mouse_up` first (because
+            // gpui dispatches inside-out); this is the catch-all
+            // for clicks outside the menu panel.
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                    this.dismiss_profile_context_menu(cx);
+                }),
+            )
     }
+}
+
+/// Build the deferred + anchored overlay that renders the profile-
+/// row right-click context menu. Returns `None` when no menu is
+/// open. Lives outside `Render::render` to keep the body readable.
+fn profile_context_menu_overlay(
+    app: &AppView,
+    cx: &mut Context<AppView>,
+) -> Option<gpui::AnyElement> {
+    let menu = app.profile_context_menu.as_ref()?;
+    let s = *cx.global::<SkinTokens>();
+    let profile_id = menu.profile_id.clone();
+    let pos = menu.pos;
+    // When the right-clicked profile is the one this window is
+    // already connected to, "Connect in New Window" would either
+    // race the existing session for the same port or quietly steal
+    // it. Surface "Move to New Window" instead, reusing the same
+    // detach/install_session machinery the toolbar Detach button
+    // already drives.
+    let is_connected_row =
+        app.connected_profile_id.as_deref() == Some(profile_id.as_str());
+
+    let item: gpui::Div = if is_connected_row {
+        profile_menu_item(
+            s,
+            "Move Session to New Window",
+            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                this.profile_context_menu = None;
+                this.move_session_to_new_window(window, cx);
+            }),
+        )
+    } else {
+        profile_menu_item(
+            s,
+            "Connect in New Window",
+            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                let id = profile_id.clone();
+                this.profile_context_menu = None;
+                this.connect_profile_in_new_window(id, window, cx);
+            }),
+        )
+    };
+
+    let panel = div()
+        .min_w(px(220.0))
+        .bg(rgba(s.bg_panel))
+        .border_1()
+        .border_color(rgba(s.border_subtle))
+        .rounded(px(s.radius_md))
+        .shadow_md()
+        .py_1()
+        .child(item);
+    Some(deferred(anchored().position(pos).child(panel)).into_any_element())
+}
+
+/// One row inside the profile right-click menu. Plain hover-styled
+/// div — keeping it hand-rolled rather than reaching for
+/// gpui-component's PopupMenu (which routes through the Action
+/// system) since we have a single click handler that already needs
+/// the per-row profile id baked in.
+fn profile_menu_item<F>(
+    s: SkinTokens,
+    label: &'static str,
+    on_click: F,
+) -> gpui::Div
+where
+    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
+{
+    let hover_bg = s.bg_hover;
+    div()
+        .px_3()
+        .py(px(6.0))
+        .text_size(px(13.0))
+        .text_color(rgba(s.fg_primary))
+        .cursor_pointer()
+        .hover(move |st| st.bg(rgba(hover_bg)))
+        .child(label)
+        .on_mouse_up(MouseButton::Left, on_click)
 }
 
 /// Idle splash screen — shown when the app is launched with no
@@ -4319,10 +4496,18 @@ fn profile_row(
                 .child(err),
         );
     }
+    let id_for_left = id.clone();
+    let id_for_right = id;
     row.on_mouse_up(
         MouseButton::Left,
         cx.listener(move |this, _: &MouseUpEvent, window, cx| {
-            this.select_profile(id.clone(), window, cx);
+            this.select_profile(id_for_left.clone(), window, cx);
+        }),
+    )
+    .on_mouse_down(
+        MouseButton::Right,
+        cx.listener(move |this, evt: &MouseDownEvent, _, cx| {
+            this.open_profile_context_menu(id_for_right.clone(), evt.position, cx);
         }),
     )
 }
