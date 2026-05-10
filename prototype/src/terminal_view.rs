@@ -237,16 +237,29 @@ pub struct TerminalView {
     /// appear on screen. Dropping the field cancels the timer.
     hex_flush_task: Option<Task<()>>,
     /// `Some` while the active profile has highlighting on AND
-    /// at least one rule pack is enabled. Buffers bytes between
-    /// newlines, then runs each compiled regex against the line
-    /// and wraps matches in ANSI colour escapes before passing
-    /// the result down to the VT parser. `None` means raw
-    /// passthrough (no regex work happens at all).
+    /// at least one rule pack is enabled. Stateless — runs the
+    /// compiled regex set against each `\n`-terminated segment in
+    /// the chunk and wraps matches in ANSI colour escapes. The
+    /// trailing partial (no newline yet) passes through raw so
+    /// single-byte echoes from typing appear instantly.
     highlight: Option<crate::highlight_runtime::HighlightBuffer>,
     /// Idle-flush timer for the highlight buffer's partial tail
-    /// (a prompt with no trailing newline). Same shape +
-    /// rationale as `hex_flush_task`.
+    /// (a chunk that hasn't seen its `\n` yet — typing echo,
+    /// prompts). 30ms is short enough that typing feels
+    /// responsive but long enough that bytes arriving close
+    /// together coalesce into a complete line for the regex set.
     highlight_flush_task: Option<Task<()>>,
+    /// Raw device bytes captured this session, used to replay the
+    /// scrollback through a fresh highlight rule set when the
+    /// user toggles packs in Settings. Capped at
+    /// `SESSION_REPLAY_MAX_BYTES` so an hour-long firehose run
+    /// doesn't grow without bound.
+    session_bytes: Vec<u8>,
+    /// True while replaying `session_bytes` after a rule change —
+    /// guards `feed_bytes` against double-recording (so the
+    /// replayed bytes don't append a second copy to
+    /// `session_bytes`).
+    replaying: bool,
 }
 
 impl TerminalView {
@@ -320,6 +333,8 @@ impl TerminalView {
             hex_flush_task: None,
             highlight: None,
             highlight_flush_task: None,
+            session_bytes: Vec::new(),
+            replaying: false,
         }
     }
 
@@ -328,6 +343,10 @@ impl TerminalView {
     /// echo is what updates the grid via `feed_bytes`.
     pub fn set_serial_tx(&mut self, tx: flume::Sender<Vec<u8>>) {
         self.serial_tx = Some(tx);
+        // Each new serial session starts with an empty replay
+        // buffer — otherwise toggling highlight packs after a
+        // reconnect would replay the previous device's bytes too.
+        self.session_bytes.clear();
     }
 
     /// Drop the active serial sender, putting the view back into
@@ -347,9 +366,15 @@ impl TerminalView {
     /// `None` disables highlighting entirely; `Some(rules)` with
     /// an empty list also disables it (matches Tauri's "highlight
     /// off" semantics — no rules to compile).
+    ///
+    /// On rule change with non-empty session history, replays the
+    /// raw byte stream through the new rule set so existing
+    /// scrollback re-colours too. Same UX shape as a theme swap:
+    /// you change the setting, the screen agrees with it.
     pub fn set_highlight_rules(
         &mut self,
         rules: Option<Vec<crate::data::highlight::HighlightRule>>,
+        cx: &mut Context<Self>,
     ) {
         match rules {
             Some(rules) if !rules.is_empty() => {
@@ -366,9 +391,53 @@ impl TerminalView {
             }
             _ => {
                 self.highlight = None;
-                self.highlight_flush_task = None;
             }
         }
+        // Cancel any pending partial flush — its closure captured
+        // a now-stale buffer reference, and the replay below will
+        // either emit the partial freshly or drop it entirely.
+        self.highlight_flush_task = None;
+        self.replay_session(cx);
+    }
+
+    /// Reset the alacritty `Term` and re-feed the captured raw
+    /// bytes through the (now-current) transform pipeline. Called
+    /// after highlight rules change so the existing scrollback
+    /// picks up the new colouring; no-op when there's no captured
+    /// history yet.
+    fn replay_session(&mut self, cx: &mut Context<Self>) {
+        if self.session_bytes.is_empty() {
+            return;
+        }
+        // Reset alacritty `Term` + parser state so the replay
+        // doesn't pile a second copy on top of the existing grid.
+        let rows = self.grid.rows();
+        let cols = self.grid.cols();
+        let (term, processor, listener_state) = make_term(rows, cols);
+        self.term = term;
+        self.processor = processor;
+        self.listener_state = listener_state;
+        // Replace the render grid with a fresh blank one so any
+        // cells the previous replay/state left behind get
+        // overwritten — `mirror_to_grid` only writes cells the
+        // new Term reports in `display_iter`, which can be fewer
+        // than the previous frame.
+        self.grid = TerminalGrid::new(rows, cols, self.palette.fg, self.palette.bg);
+        // Reset transform state so timestamps/hex re-emit from a
+        // clean slate. Highlight is already stateless.
+        if let Some(ts) = self.timestamps_state.as_mut() {
+            *ts = TimestampInjector::new();
+        }
+        if let Some(hex) = self.hex_formatter.as_mut() {
+            *hex = HexFormatter::new();
+        }
+        // Pull bytes out under a flag so the replay's feed_bytes
+        // doesn't append a second copy back into session_bytes.
+        let bytes = std::mem::take(&mut self.session_bytes);
+        self.replaying = true;
+        self.feed_bytes(&bytes, cx);
+        self.replaying = false;
+        self.session_bytes = bytes;
     }
 
     /// Replace the active profile-keystroke settings. Called by
@@ -589,8 +658,7 @@ impl TerminalView {
         // hit the VT parser:
         //   1. Hex view: 16-byte-per-row hex dump (own line layout).
         //   2. Highlight: regex-driven ANSI colour wrappers per
-        //      device line. Skipped when hex_view is on (regexing
-        //      hex output is meaningless).
+        //      complete line. Skipped when hex_view is on.
         //   3. Timestamps: prepend `[HH:MM:SS.mmm] ` to each line
         //      that's about to start.
         // Order matters — timestamps AFTER hex+highlight means each
@@ -598,6 +666,18 @@ impl TerminalView {
         // device's own line content (without our timestamp prefix
         // confusing the regex set).
         // All three off → raw passthrough.
+        // Record raw device bytes for the highlight-rule-replay
+        // path. Skipped while replaying so we don't grow the
+        // buffer in a feedback loop. Bounded so a firehose
+        // (`debug all` on a chatty router) doesn't grow without
+        // bound — when we exceed the cap, drop the oldest bytes.
+        if !self.replaying {
+            self.session_bytes.extend_from_slice(bytes);
+            if self.session_bytes.len() > SESSION_REPLAY_MAX_BYTES {
+                let drop_n = self.session_bytes.len() - SESSION_REPLAY_MAX_BYTES;
+                self.session_bytes.drain(..drop_n);
+            }
+        }
         let (hex_bytes, hex_str_held) = if let Some(f) = self.hex_formatter.as_mut() {
             let s = f.feed(bytes);
             // Borrow-checker dance: hold the String so the slice
@@ -661,10 +741,12 @@ impl TerminalView {
         self.hex_flush_task = Some(task);
     }
 
-    /// Re-arm the highlight buffer's partial-line idle flush. Same
-    /// shape as `schedule_hex_flush` — without this the prompt
-    /// line at the end of a chunk (Cisco `Router# `, no newline)
-    /// stays buffered and never appears.
+    /// Re-arm the highlight buffer's partial-line idle flush.
+    /// 30ms is short enough that single-byte typing echoes feel
+    /// instant and long enough that bytes arriving in close
+    /// succession coalesce into a complete line before the
+    /// regex set runs against them. Without this the partial
+    /// after the last `\n` would never appear (prompts hang).
     fn schedule_highlight_flush(&mut self, cx: &mut Context<Self>) {
         let task = cx.spawn(async move |weak, cx| {
             cx.background_executor()
@@ -677,10 +759,6 @@ impl TerminalView {
                     .map(|h| h.flush_partial())
                     .unwrap_or_default();
                 if !partial.is_empty() {
-                    // Same downstream chain as `feed_bytes`:
-                    // timestamps wrap whatever the highlight
-                    // emitted (already includes any colour
-                    // escapes the buffer added).
                     let stamped = if let Some(ts) = this.timestamps_state.as_mut() {
                         ts.feed(&partial)
                     } else {
@@ -1382,12 +1460,21 @@ fn loopback_translate(bytes: &[u8]) -> Vec<u8> {
 /// before the user gets impatient.
 const HEX_PARTIAL_FLUSH_DELAY: Duration = Duration::from_millis(100);
 
-/// Idle window before an unterminated highlight tail (a prompt
-/// with no trailing newline — Cisco `Router# `, Linux `$ `) gets
-/// flushed raw so it actually appears on screen. 100ms balances
-/// "device's still typing the line" against "user is staring at
-/// a blank cursor wondering why nothing happened."
-const HIGHLIGHT_PARTIAL_FLUSH_DELAY: Duration = Duration::from_millis(100);
+/// Idle window before the highlight buffer's partial tail (a
+/// chunk that hasn't seen its `\n` yet — typing echo, prompts)
+/// gets emitted. 30ms ≈ 2 frames at 60Hz: short enough that the
+/// keystroke echo feels immediate, long enough that a flurry of
+/// bytes arriving close together (the device emitting a long
+/// reply) coalesces into a complete line for the regex set.
+const HIGHLIGHT_PARTIAL_FLUSH_DELAY: Duration = Duration::from_millis(30);
+
+/// Cap on the per-session raw-byte buffer used to replay history
+/// through a fresh highlight rule set when the user toggles packs
+/// in Settings. 1 MiB ≈ 12-15k typical lines — enough to cover
+/// the visible scrollback (default 10k lines) plus a margin,
+/// with a hard ceiling so an open-ended `debug all` session
+/// can't grow without bound.
+const SESSION_REPLAY_MAX_BYTES: usize = 1024 * 1024;
 
 /// Streaming `xxd`-style hex dump formatter. Mirrors the Tauri
 /// version's `src/lib/hexdump.ts`: 16 bytes per line with a gap

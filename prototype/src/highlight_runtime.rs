@@ -139,14 +139,25 @@ impl HighlightEngine {
     }
 }
 
-/// Line-buffered wrapper around `HighlightEngine` for streaming
-/// terminal bytes. Bytes accumulate in `pending`; complete lines
-/// (delimited by `\n`) are emitted coloured; the tail past the
-/// last newline stays pending until either the next chunk
-/// completes it or `flush_partial` is called.
+/// Line-buffered wrapper around `HighlightEngine`. Bytes
+/// accumulate in `pending`; complete lines (delimited by `\n`)
+/// get drained, run through the engine, and emitted coloured.
+/// The trailing tail (a chunk that hasn't seen its newline yet)
+/// stays in the buffer until either the next chunk completes it
+/// or `flush_partial` is called from the caller's idle timer.
+///
+/// Buffering matters because serial bytes commonly arrive
+/// one-at-a-time when the device's UART is sending interactively
+/// — a stateless approach would never see enough characters at
+/// once for a regex like `Router#` or an IP address to match.
+/// The caller is responsible for keeping the idle-flush delay
+/// short enough that typing latency stays imperceptible
+/// (~30ms is fine; 100ms is visibly laggy).
 pub struct HighlightBuffer {
     engine: HighlightEngine,
-    /// Bytes since the last newline (or last partial flush).
+    /// Bytes since the last `\n` we drained. May contain CR /
+    /// other control bytes; the engine apply step segments by
+    /// `\n` only.
     pending: Vec<u8>,
 }
 
@@ -158,27 +169,19 @@ impl HighlightBuffer {
         }
     }
 
-    /// Append `bytes`, emit every complete line coloured, keep the
-    /// trailing partial in the buffer. The returned `Vec` is what
-    /// downstream stages (timestamps, terminal feed) should treat
-    /// as the next chunk.
+    /// Append `bytes`; emit every complete (`\n`-terminated) line
+    /// through the engine; keep the trailing partial in
+    /// `pending`. The returned `Vec` is the next chunk for the
+    /// downstream pipeline.
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
         self.pending.extend_from_slice(bytes);
         let mut out = Vec::with_capacity(self.pending.len());
-        // Drain whole lines from the front of `pending`.
         loop {
-            let Some(nl_idx) = self.pending.iter().position(|&b| b == b'\n')
+            let Some(nl) = self.pending.iter().position(|&b| b == b'\n')
             else {
                 break;
             };
-            // `..=nl_idx` includes the newline so the cursor moves
-            // onto its own row downstream (terminal still sees the
-            // \n it expects). The optional `\r` immediately before
-            // it gets included naturally too.
-            let line: Vec<u8> = self.pending.drain(..=nl_idx).collect();
-            // Trim trailing \n and optional \r before regex match;
-            // the line content the rules are written against
-            // doesn't include the newline.
+            let line: Vec<u8> = self.pending.drain(..=nl).collect();
             let body_end = line
                 .len()
                 .saturating_sub(1) // drop \n
@@ -191,21 +194,17 @@ impl HighlightBuffer {
             let body_str = std::str::from_utf8(body)
                 .map(std::borrow::Cow::Borrowed)
                 .unwrap_or_else(|_| String::from_utf8_lossy(body));
-            let highlighted = self.engine.apply(&body_str);
-            out.extend_from_slice(highlighted.as_bytes());
-            // Re-append whatever line ending the device sent.
+            out.extend_from_slice(self.engine.apply(&body_str).as_bytes());
+            // Re-append the line ending byte(s) the device sent.
             out.extend_from_slice(&line[body_end..]);
         }
         out
     }
 
-    /// Drop the partial-line buffer back through the highlighter
-    /// and return the result. Used on the idle-flush timer so
-    /// prompts (no trailing newline) still appear without forcing
-    /// the user to type a newline first. The match result is
-    /// best-effort — many rules anchored to `^…$` won't match a
-    /// prompt, but substring rules (`Router#`, IP regex) still
-    /// catch fine.
+    /// Drop the partial-line buffer through the engine and
+    /// return the result. Called by the caller's idle-flush
+    /// timer so prompts (no trailing newline) appear without the
+    /// user having to type a newline first.
     pub fn flush_partial(&mut self) -> Vec<u8> {
         if self.pending.is_empty() {
             return Vec::new();

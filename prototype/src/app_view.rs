@@ -145,6 +145,14 @@ pub struct AppView {
     /// this, every reconnect attempt would flicker the user back
     /// to the welcome screen between drops.
     auto_reconnect_for: Option<String>,
+    /// Compact fingerprint of the highlight rule set last pushed
+    /// to the terminal — `(pattern, color, ignore_case)` tuples
+    /// in the order they were resolved. Used by `apply_highlight`
+    /// to skip the (expensive) session replay when an unrelated
+    /// settings change (skin, theme, log dir, …) fires the bus
+    /// subscription. `None` means "nothing applied yet" so the
+    /// first apply always runs.
+    last_highlight_sig: Option<Vec<(String, String, bool)>>,
     /// `Some` while the new-profile form is open in the right pane.
     /// The presence of this field also drives a render branch:
     /// when populated the form replaces the TerminalView; when
@@ -298,6 +306,7 @@ impl AppView {
             serial_disconnect: None,
             auto_reconnect_task: None,
             auto_reconnect_for: None,
+            last_highlight_sig: None,
             editor: None,
         };
         this.apply_settings(&initial, cx);
@@ -308,12 +317,52 @@ impl AppView {
     /// live UI. Called both at construction time and on every
     /// `SettingsEvent::Updated` from the bus. Refreshes:
     ///  * the chrome `SkinTokens` global (drives both windows'
-    ///    sidebar / panel / button colours), and
-    ///  * the terminal palette (drives terminal-pane colour
-    ///    resolution; honours per-profile theme overrides).
+    ///    sidebar / panel / button colours),
+    ///  * the terminal palette (honours per-profile theme override
+    ///    over the global), and
+    ///  * the live highlight rule set when there's an active
+    ///    session — toggling packs in Settings → Highlighting
+    ///    re-coloures incoming bytes without a reconnect.
     fn apply_settings(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
         self.apply_skin(settings, cx);
         self.apply_palette(cx);
+        self.apply_highlight(cx);
+    }
+
+    /// Push the effective highlight rule set to the terminal for
+    /// whichever profile is currently connected (or auto-
+    /// reconnecting). No-op when there's no active session — the
+    /// next `connect_to` will resolve fresh rules at that point.
+    fn apply_highlight(&mut self, cx: &mut Context<Self>) {
+        let active_id = self
+            .connected_profile_id
+            .as_deref()
+            .or(self.auto_reconnect_for.as_deref());
+        let Some(id) = active_id else { return };
+        let Some(profile) = self.profile_store.get(id) else {
+            return;
+        };
+        let rules = if profile.highlight {
+            Some(self.compute_highlight_rules(&profile, cx))
+        } else {
+            None
+        };
+        // Short-circuit when the resolved rules match what we
+        // last applied: every settings change fires this path
+        // (skin/theme/log dir/...) and the session replay is
+        // expensive enough that we want to skip it for any
+        // edit that doesn't actually move the highlight set.
+        let sig = rules.as_ref().map(|rs| {
+            rs.iter()
+                .map(|r| (r.pattern.clone(), r.color.clone(), r.ignore_case))
+                .collect::<Vec<_>>()
+        });
+        if self.last_highlight_sig == sig {
+            return;
+        }
+        self.last_highlight_sig = sig;
+        self.terminal
+            .update(cx, |t, cx| t.set_highlight_rules(rules, cx));
     }
 
     /// Resolve the active skin and write the chrome tokens into
@@ -669,10 +718,18 @@ impl AppView {
         } else {
             None
         };
-        self.terminal.update(cx, |t, _| {
+        // Cache the signature so the bus subscription's
+        // apply_highlight short-circuits when an unrelated
+        // settings change fires after this connect.
+        self.last_highlight_sig = highlight_rules.as_ref().map(|rs| {
+            rs.iter()
+                .map(|r| (r.pattern.clone(), r.color.clone(), r.ignore_case))
+                .collect()
+        });
+        self.terminal.update(cx, |t, cx| {
             t.set_serial_tx(write_tx);
             t.set_profile_settings(settings);
-            t.set_highlight_rules(highlight_rules);
+            t.set_highlight_rules(highlight_rules, cx);
         });
 
         // Optional session log. Opened lazily — failure to open
