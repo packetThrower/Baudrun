@@ -167,6 +167,15 @@ pub struct AppView {
     /// mutate the same widget state across re-renders. Cleared in
     /// `close_send_file_dialog` (Cancel / X / Send).
     send_file: Option<SendFileState>,
+    /// `Some(_)` while the Send Hex dialog is open. Holds the live
+    /// hex input plus a shared error mutex the dialog reads on
+    /// every render to surface parse / send failures inline.
+    send_hex: Option<SendHexState>,
+    /// `true` while the session-header `⋯` overflow menu is open.
+    /// Cleared by clicking an item, clicking outside (root mouse-
+    /// up listener), or any other path that calls
+    /// `dismiss_session_overflow`.
+    session_overflow_open: bool,
     /// `Some(_)` while a profile-row right-click menu is showing.
     /// Carries the right-clicked profile id + the click position so
     /// the popup can render anchored at the cursor. Cleared by any
@@ -323,12 +332,15 @@ struct Editor {
     baseline: Profile,
 }
 
-/// I/O handles needed to drive a file transfer over the live serial
-/// session. Stored on `AppView` for the lifetime of the connection
-/// so `start_send_file` can install the read-side sink and hand the
-/// transfer thread its own write-channel clone.
+/// I/O handles for the live serial session that the AppView needs
+/// to drive features other than keystroke writes — file transfer
+/// (write_tx clone + transfer_sink) and the Send Break / Send Hex
+/// menu items (break_tx, write_tx). The kept-by-value name is
+/// historical; despite its name, this struct now backs everything
+/// the session toolbar's overflow menu hits.
 struct TransferIo {
     write_tx: flume::Sender<Vec<u8>>,
+    break_tx: flume::Sender<std::time::Duration>,
     transfer_sink: std::sync::Arc<std::sync::Mutex<Option<TransferSink>>>,
 }
 
@@ -368,6 +380,15 @@ enum TransferResult {
 struct ProfileContextMenu {
     profile_id: String,
     pos: gpui::Point<gpui::Pixels>,
+}
+
+/// Open-Send-Hex-dialog widget state. The Input is a gpui entity the
+/// dialog can render directly; the error is a shared mutex the
+/// dialog reads on every render so parse failures surface inline
+/// without needing a re-open of the dialog.
+struct SendHexState {
+    input: Entity<InputState>,
+    error: std::sync::Arc<std::sync::Mutex<Option<String>>>,
 }
 
 /// Open-Send-File-dialog widget state. The Select is a gpui entity
@@ -427,6 +448,8 @@ impl AppView {
             transfer_io: None,
             transfer: None,
             send_file: None,
+            send_hex: None,
+            session_overflow_open: false,
             profile_context_menu: None,
             auto_reconnect_task: None,
             auto_reconnect_for: None,
@@ -903,6 +926,7 @@ impl AppView {
         let write_tx = channels.write_tx.clone();
         let transfer_write = channels.write_tx;
         let transfer_sink = channels.transfer_sink.clone();
+        let break_tx = channels.break_tx;
         let settings = ProfileSettings {
             line_ending: profile.line_ending.clone(),
             backspace_key: profile.backspace_key.clone(),
@@ -999,6 +1023,7 @@ impl AppView {
         self.serial_disconnect = Some(channels.disconnect);
         self.transfer_io = Some(TransferIo {
             write_tx: transfer_write,
+            break_tx,
             transfer_sink,
         });
         self.connected_profile_id = Some(profile.id);
@@ -1468,6 +1493,195 @@ impl AppView {
             }
             Err(err) => {
                 log::error!("open settings window: {err}");
+            }
+        }
+    }
+
+    /// Toggle the session-header `⋯` overflow menu. Single source
+    /// of truth so both the button click and the dismiss-on-outside
+    /// listener can drive the state.
+    fn toggle_session_overflow(&mut self, cx: &mut Context<Self>) {
+        self.session_overflow_open = !self.session_overflow_open;
+        cx.notify();
+    }
+
+    fn dismiss_session_overflow(&mut self, cx: &mut Context<Self>) {
+        if self.session_overflow_open {
+            self.session_overflow_open = false;
+            cx.notify();
+        }
+    }
+
+    /// Fire a serial break (`set_break` / sleep / `clear_break`)
+    /// down the live write channel. Surfaces success / failure via
+    /// toast since there's no inline UI affordance for it.
+    fn send_break_now(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.session_overflow_open = false;
+        let Some(io) = self.transfer_io.as_ref() else {
+            return;
+        };
+        let result = io.break_tx.send(serial_io::BREAK_DURATION);
+        cx.spawn(async move |this, cx| {
+            let _ = this.update_in(cx, |_, window, cx| match result {
+                Ok(()) => {
+                    window.push_notification(
+                        Notification::success(SharedString::from("Break sent")),
+                        cx,
+                    );
+                }
+                Err(err) => {
+                    log::error!("send break: {err}");
+                    window.push_notification(
+                        Notification::error(SharedString::from(format!(
+                            "Couldn't send break: {err}"
+                        ))),
+                        cx,
+                    );
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Open the Send Hex dialog. Builds an Input entity + the shared
+    /// error mutex, opens a gpui-component Dialog wired against
+    /// both. Cancel / Send / X close the dialog via
+    /// `close_send_hex` (drops state) and `submit_send_hex`
+    /// (parses + sends bytes + closes on success).
+    fn open_send_hex(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.session_overflow_open = false;
+        if self.transfer_io.is_none() {
+            window.push_notification(
+                Notification::error(SharedString::from(
+                    "Connect to a port before sending hex.",
+                )),
+                cx,
+            );
+            return;
+        }
+        if self.send_hex.is_some() {
+            return;
+        }
+        let input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("02 FF AA 55")
+        });
+        let error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        self.send_hex = Some(SendHexState {
+            input: input.clone(),
+            error: error.clone(),
+        });
+
+        let app = cx.entity();
+        window.open_dialog(cx, move |dlg, _, _| {
+            let app_close = app.clone();
+            let app_send = app.clone();
+            let app_cancel = app.clone();
+            let error_for_render = error.clone();
+            let live_err = error_for_render.lock().unwrap().clone();
+            dlg.title(SharedString::from("Send hex bytes"))
+                .w(px(560.0))
+                .close_button(true)
+                .on_close(move |_, _, cx| {
+                    app_close.update(cx, |this, cx| this.close_send_hex(cx));
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .text_size(px(13.0))
+                        .child(
+                            div().text_color(rgba(0x808080AAu32)).child(
+                                "Space-separated, compact, or 0x-prefixed — all \
+                                 equivalent: 02 FF AA 55, 02FFAA55, \
+                                 0x02 0xFF 0xAA 0x55.",
+                            ),
+                        )
+                        .child(Input::new(&input).appearance(true))
+                        .children(live_err.map(|err| {
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(rgba(0xCC4444FFu32))
+                                .child(SharedString::from(format!(
+                                    "Invalid: {err}"
+                                )))
+                        }))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .justify_end()
+                                .gap_2()
+                                .child(send_file_secondary_button(
+                                    "Cancel",
+                                    move |_, window, cx| {
+                                        let _ = &app_cancel;
+                                        window.close_dialog(cx);
+                                    },
+                                ))
+                                .child(send_file_primary_button(
+                                    "Send",
+                                    true,
+                                    move |_, window, cx| {
+                                        let app = app_send.clone();
+                                        app.update(cx, |this, cx| {
+                                            this.submit_send_hex(window, cx);
+                                        });
+                                    },
+                                )),
+                        ),
+                )
+        });
+    }
+
+    fn close_send_hex(&mut self, cx: &mut Context<Self>) {
+        if self.send_hex.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Parse the input as hex, send the resulting bytes through the
+    /// write channel, and either toast + close (success) or stash
+    /// the error in the shared mutex and re-render (failure). Same
+    /// rule as Tauri: strip `0x`, whitespace, commas; require an
+    /// even count of hex digits.
+    fn submit_send_hex(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(state) = self.send_hex.as_ref() else {
+            return;
+        };
+        let raw = state.input.read(cx).value().to_string();
+        match parse_hex_string(&raw) {
+            Ok(bytes) if bytes.is_empty() => {
+                *state.error.lock().unwrap() = Some("empty".into());
+                cx.notify();
+            }
+            Ok(bytes) => {
+                let Some(io) = self.transfer_io.as_ref() else {
+                    *state.error.lock().unwrap() =
+                        Some("not connected".into());
+                    cx.notify();
+                    return;
+                };
+                let count = bytes.len();
+                if let Err(err) = io.write_tx.send(bytes) {
+                    *state.error.lock().unwrap() = Some(err.to_string());
+                    cx.notify();
+                    return;
+                }
+                self.send_hex = None;
+                window.close_dialog(cx);
+                window.push_notification(
+                    Notification::success(SharedString::from(format!(
+                        "Sent {count} byte{}",
+                        if count == 1 { "" } else { "s" }
+                    ))),
+                    cx,
+                );
+            }
+            Err(msg) => {
+                *state.error.lock().unwrap() = Some(msg.to_string());
+                cx.notify();
             }
         }
     }
@@ -2115,6 +2329,129 @@ impl AppView {
     }
 }
 
+/// `⋯` button + drop-down menu rendered inline in the session
+/// header. The container is `relative` so the menu (positioned
+/// `absolute` below) anchors to it; `deferred` puts the panel above
+/// other toolbar siblings in paint order.
+fn session_overflow_button(
+    s: SkinTokens,
+    open: bool,
+    cx: &mut Context<AppView>,
+) -> gpui::Div {
+    let panel: Option<gpui::AnyElement> = if open {
+        Some(
+            deferred(
+                div()
+                    .absolute()
+                    .top_full()
+                    .right_0()
+                    .mt_1()
+                    .min_w(px(180.0))
+                    .bg(rgba(s.bg_panel))
+                    .border_1()
+                    .border_color(rgba(s.border_subtle))
+                    .rounded(px(s.radius_md))
+                    .shadow_md()
+                    .py_1()
+                    .child(profile_menu_item(
+                        s,
+                        "Send Break",
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.send_break_now(window, cx);
+                        }),
+                    ))
+                    .child(profile_menu_item(
+                        s,
+                        "Send Hex\u{2026}",
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.open_send_hex(window, cx);
+                        }),
+                    ))
+                    .child(profile_menu_item(
+                        s,
+                        "Send File\u{2026}",
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.start_send_file(window, cx);
+                        }),
+                    ))
+                    .child(profile_menu_item(
+                        s,
+                        "Move to New Window",
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.move_session_to_new_window(window, cx);
+                        }),
+                    )),
+            )
+            .into_any_element(),
+        )
+    } else {
+        None
+    };
+    div()
+        .relative()
+        .child(
+            div()
+                .id("session-overflow-btn")
+                .px_3()
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .border_color(rgba(s.border_subtle))
+                .bg(rgba(s.bg_input))
+                .text_color(rgba(s.fg_primary))
+                .text_size(px(13.0))
+                .cursor_pointer()
+                .hover(move |st| st.bg(rgba(s.bg_hover)))
+                .tooltip(|window, cx| {
+                    Tooltip::new(SharedString::from("More actions"))
+                        .build(window, cx)
+                })
+                .child("\u{22EF}")
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                        // Without `stop_propagation`, the AppView
+                        // root's mouse-up listener (which dismisses
+                        // any open popup) fires immediately after
+                        // and closes the menu we just opened.
+                        cx.stop_propagation();
+                        this.toggle_session_overflow(cx);
+                    }),
+                ),
+        )
+        .children(panel)
+}
+
+/// Parse a Send Hex string into raw bytes. Accepts space-separated,
+/// comma-separated, compact, and `0x`-prefixed input — same rules
+/// as the Tauri version's `parseHex`. Returns `Err(reason)` for
+/// odd lengths, non-hex characters, or empty input so the caller
+/// can surface the reason inline.
+fn parse_hex_string(raw: &str) -> Result<Vec<u8>, &'static str> {
+    let cleaned: String = raw
+        .replace("0x", "")
+        .replace("0X", "")
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != ',')
+        .collect();
+    if cleaned.is_empty() {
+        return Ok(Vec::new());
+    }
+    if cleaned.len() % 2 != 0 {
+        return Err("odd number of hex digits");
+    }
+    if !cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("non-hex characters");
+    }
+    let mut out = Vec::with_capacity(cleaned.len() / 2);
+    let bytes = cleaned.as_bytes();
+    for chunk in bytes.chunks_exact(2) {
+        let s = std::str::from_utf8(chunk).unwrap();
+        out.push(u8::from_str_radix(s, 16).map_err(|_| "non-hex characters")?);
+    }
+    Ok(out)
+}
+
 /// Stable id used as the YMODEM Select option (the default pick).
 const YMODEM_PROTOCOL_ID: &str = "ymodem";
 
@@ -2467,7 +2804,12 @@ impl Render for AppView {
                         .h_full()
                         .flex()
                         .flex_col()
-                        .child(session_header(profile, reconnecting, cx))
+                        .child(session_header(
+                            profile,
+                            reconnecting,
+                            self.session_overflow_open,
+                            cx,
+                        ))
                         .child(div().flex_1().min_h_0().child(terminal))
                         .into_any_element()
                 }
@@ -2598,14 +2940,15 @@ impl Render for AppView {
             .children(notification_layer)
             // -- profile-row right-click context menu --
             .children(profile_context_menu_overlay(self, cx))
-            // Any mouse-up anywhere dismisses an open context menu.
+            // Any mouse-up anywhere dismisses open popup menus.
             // Menu items run their own `on_mouse_up` first (because
             // gpui dispatches inside-out); this is the catch-all
-            // for clicks outside the menu panel.
+            // for clicks outside the menu panels.
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|this, _: &MouseUpEvent, _, cx| {
                     this.dismiss_profile_context_menu(cx);
+                    this.dismiss_session_overflow(cx);
                 }),
             )
     }
@@ -2832,6 +3175,7 @@ fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
 fn session_header(
     profile: Profile,
     reconnecting: bool,
+    overflow_open: bool,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let parity_letter = match profile.parity.as_str() {
@@ -2926,29 +3270,7 @@ fn session_header(
                 .flex()
                 .flex_row()
                 .gap_2()
-                .child(pill_button(s, "Send File\u{2026}", false).on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.start_send_file(window, cx);
-                    }),
-                ))
-                .child(
-                    div()
-                        .id("session-detach")
-                        .child(pill_button(s, "Detach \u{2197}", false))
-                        .tooltip(|window, cx| {
-                            Tooltip::new(SharedString::from(
-                                "Move this session to a new window",
-                            ))
-                            .build(window, cx)
-                        })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.move_session_to_new_window(window, cx);
-                            }),
-                        ),
-                )
+                .child(session_overflow_button(s, overflow_open, cx))
                 .child(pill_button(s, "Clear", false).on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, _window, cx| {

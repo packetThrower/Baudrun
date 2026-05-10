@@ -62,6 +62,12 @@ const READ_BUF: usize = 4096;
 /// or cancel) so normal terminal flow resumes.
 pub type TransferSink = Box<dyn FnMut(&[u8]) + Send>;
 
+/// Default duration to hold a serial break (TXD low). 300 ms is the
+/// established Cisco-ROMMON / Juniper-diag interrupt window — long
+/// enough that all our target hardware reliably recognises it,
+/// short enough that the UI doesn't feel laggy.
+pub const BREAK_DURATION: Duration = Duration::from_millis(300);
+
 /// The two ends of a live serial session, as seen from the gpui side.
 pub struct SerialChannels {
     /// Async-receivable stream of bytes coming FROM the device.
@@ -71,6 +77,11 @@ pub struct SerialChannels {
     /// Pushed from the keyboard handler — `send` is non-blocking
     /// (unbounded channel) so it never stalls a keystroke.
     pub write_tx: flume::Sender<Vec<u8>>,
+    /// Out-of-band signal channel: each `Duration` pushed here
+    /// makes the write thread hold the TX line low (`set_break`)
+    /// for that long, then clear it. Used by the session header's
+    /// "Send Break" menu item.
+    pub break_tx: flume::Sender<Duration>,
     /// Slot the read loop checks each iteration. When `Some(_)`,
     /// inbound bytes are funnelled to the sink instead of `read_rx`.
     /// Held in a `Mutex` so the gpui thread can swap it in/out while
@@ -269,6 +280,7 @@ pub fn open(
 
     let (read_tx, read_rx) = flume::unbounded::<Vec<u8>>();
     let (write_tx, write_rx) = flume::unbounded::<Vec<u8>>();
+    let (break_tx, break_rx) = flume::unbounded::<Duration>();
     let shutdown = Arc::new(AtomicBool::new(false));
     let transfer_sink: Arc<std::sync::Mutex<Option<TransferSink>>> =
         Arc::new(std::sync::Mutex::new(None));
@@ -285,12 +297,15 @@ pub fn open(
     let write_shutdown = shutdown.clone();
     let write_thread = std::thread::Builder::new()
         .name(write_label)
-        .spawn(move || write_loop(write_port, write_rx, policies, write_shutdown))
+        .spawn(move || {
+            write_loop(write_port, write_rx, break_rx, policies, write_shutdown)
+        })
         .expect("spawn serial write thread");
 
     Ok(SerialChannels {
         read_rx,
         write_tx,
+        break_tx,
         transfer_sink,
         disconnect: Disconnect {
             shutdown,
@@ -361,6 +376,7 @@ fn read_loop(
 fn write_loop(
     mut port: Box<dyn serialport::SerialPort>,
     rx: flume::Receiver<Vec<u8>>,
+    break_rx: flume::Receiver<Duration>,
     policies: LinePolicies,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -373,6 +389,21 @@ fn write_loop(
     loop {
         if shutdown.load(Ordering::Relaxed) {
             break;
+        }
+        // Out-of-band: pending break request. Cheap try_recv at the
+        // top of each iteration means the break fires on the next
+        // wake-up (worst case SHUTDOWN_POLL_INTERVAL later), which
+        // is fine for a human-initiated action.
+        if let Ok(duration) = break_rx.try_recv() {
+            if let Err(e) = port.set_break() {
+                log::error!("serial set_break: {e}");
+            } else {
+                std::thread::sleep(duration);
+                if let Err(e) = port.clear_break() {
+                    log::error!("serial clear_break: {e}");
+                }
+            }
+            continue;
         }
         match rx.recv_timeout(SHUTDOWN_POLL_INTERVAL) {
             Ok(bytes) => {
