@@ -12,8 +12,8 @@ use std::rc::Rc;
 
 use gpui::{
     div, prelude::*, px, rgba, AppContext, Context, Entity, FocusHandle, IntoElement,
-    KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent, Render, SharedString,
-    Subscription, Window,
+    KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent, PathPromptOptions,
+    Render, SharedString, Subscription, Window,
 };
 use gpui_component::{
     checkbox::Checkbox,
@@ -516,6 +516,195 @@ impl SettingsView {
         };
         self.commit(next, cx);
     }
+
+    // -- Import handlers ---------------------------------------------
+    //
+    // Three near-identical flows. Each spawns the platform file
+    // picker, awaits the user's choice, calls the relevant store's
+    // import method, and then re-enters the window context to
+    // rebuild the affected Select state(s) in place — picking up
+    // the new entry without forcing a Settings-window reopen.
+    //
+    // The window-handle dance is needed because file dialogs are
+    // async and Context<SettingsView> doesn't carry a Window
+    // reference — we capture the handle in the click listener (where
+    // `&mut Window` is in scope) and replay it through the AsyncApp
+    // when the receiver fires.
+
+    fn start_skin_import(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Import skin JSON".into()),
+        });
+        let store = self.skins_store.clone();
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            match store.import(&path) {
+                Ok(skin) => {
+                    log::info!("imported skin: {}", skin.name);
+                    let _ = this.update_in(cx, |this, window, view_cx| {
+                        this.rebuild_skin_select(window, view_cx);
+                    });
+                }
+                Err(err) => log::error!("import skin: {err}"),
+            }
+        })
+        .detach();
+    }
+
+    fn start_theme_import(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Import theme (.itermcolors or JSON)".into()),
+        });
+        let store = self.themes_store.clone();
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            match store.import(&path) {
+                Ok(theme) => {
+                    log::info!("imported theme: {}", theme.name);
+                    let _ = this.update_in(cx, |this, window, view_cx| {
+                        this.rebuild_theme_select(window, view_cx);
+                    });
+                }
+                Err(err) => log::error!("import theme: {err}"),
+            }
+        })
+        .detach();
+    }
+
+    fn start_highlight_import(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some("Import highlight pack JSON".into()),
+        });
+        let store = self.highlight_store.clone();
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            match store.import_user_pack(&path) {
+                Ok(pack) => {
+                    log::info!("imported highlight pack: {}", pack.name);
+                    // Highlighting pane reads the store directly on
+                    // each render, so a notify is enough to refresh
+                    // the toggle list — no SelectState to rebuild.
+                    let _ = this.update(cx, |_, view_cx| view_cx.notify());
+                }
+                Err(err) => log::error!("import highlight: {err}"),
+            }
+        })
+        .detach();
+    }
+
+    /// Replace `skin_select` with a freshly-built SelectState that
+    /// includes the just-imported skin in its option list. The
+    /// active selection (the `current.skin_id` the original was
+    /// seeded with) is preserved.
+    fn rebuild_skin_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self.settings.clone();
+        let opts = build_skin_opts(&self.skins_store);
+        let active = if current.skin_id.is_empty() {
+            skins::DEFAULT_SKIN_ID
+        } else {
+            current.skin_id.as_str()
+        };
+        let new_state = make_select(opts, active, window, cx);
+        let new_sub = cx.subscribe(
+            &new_state,
+            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+                if let SelectEvent::Confirm(Some(id)) = event {
+                    if &this.settings.skin_id != id {
+                        let mut next = this.settings.clone();
+                        next.skin_id = id.clone();
+                        this.commit(next, cx);
+                    }
+                }
+            },
+        );
+        self.skin_select = new_state;
+        self._skin_sub = new_sub;
+        cx.notify();
+    }
+
+    /// Same as `rebuild_skin_select` for the Themes tab.
+    fn rebuild_theme_select(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self.settings.clone();
+        let opts = build_theme_opts(&self.themes_store);
+        let active = if current.default_theme_id.is_empty() {
+            themes::DEFAULT_THEME_ID
+        } else {
+            current.default_theme_id.as_str()
+        };
+        let new_state = make_select(opts, active, window, cx);
+        let new_sub = cx.subscribe(
+            &new_state,
+            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+                if let SelectEvent::Confirm(Some(id)) = event {
+                    if &this.settings.default_theme_id != id {
+                        let mut next = this.settings.clone();
+                        next.default_theme_id = id.clone();
+                        this.commit(next, cx);
+                    }
+                }
+            },
+        );
+        self.theme_select = new_state;
+        self._theme_sub = new_sub;
+        cx.notify();
+    }
+}
+
+/// Pull skin options out of the store + tag user-imported entries
+/// with "(custom)". Used at SettingsView::new and on rebuild after
+/// import.
+fn build_skin_opts(store: &skins::Store) -> Vec<Opt> {
+    store
+        .list()
+        .into_iter()
+        .map(|s| {
+            let title = if s.source == "user" {
+                format!("{} (custom)", s.name)
+            } else {
+                s.name
+            };
+            Opt::new(&s.id, &title)
+        })
+        .collect()
+}
+
+fn build_theme_opts(store: &themes::Store) -> Vec<Opt> {
+    store
+        .list()
+        .into_iter()
+        .map(|t| {
+            let title = if t.source == "user" {
+                format!("{} (custom)", t.name)
+            } else {
+                t.name
+            };
+            Opt::new(&t.id, &title)
+        })
+        .collect()
 }
 
 // Chrome colours used to live as `const`s here, but Phase 4 slice 3
@@ -562,8 +751,8 @@ impl Render for SettingsView {
 impl SettingsView {
     fn pane_content(&self, s: SkinTokens, cx: &mut Context<Self>) -> gpui::AnyElement {
         match self.tab {
-            SettingsTab::Appearance => self.appearance_pane(s).into_any_element(),
-            SettingsTab::Themes => self.themes_pane(s).into_any_element(),
+            SettingsTab::Appearance => self.appearance_pane(s, cx).into_any_element(),
+            SettingsTab::Themes => self.themes_pane(s, cx).into_any_element(),
             SettingsTab::Shortcuts => self.shortcuts_pane(s, cx).into_any_element(),
             SettingsTab::Highlighting => self.highlighting_pane(s, cx).into_any_element(),
             SettingsTab::Advanced => self.advanced_pane(s, cx).into_any_element(),
@@ -686,7 +875,18 @@ impl SettingsView {
             ))
     }
 
-    fn themes_pane(&self, s: SkinTokens) -> impl IntoElement {
+    fn themes_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(Select::new(&self.theme_select))
+            .child(import_button(
+                s,
+                "Import theme\u{2026}",
+                cx,
+                |this, window, cx| this.start_theme_import(window, cx),
+            ));
         div()
             .flex()
             .flex_col()
@@ -698,17 +898,22 @@ impl SettingsView {
                     "Terminal palette new sessions start with — affects \
                      the 16 ANSI colours, default foreground/background, \
                      selection, and cursor. Per-profile overrides go on \
-                     the profile form. Built-in themes ship with the \
-                     app; user themes load from $SUPPORT_DIR/themes/.",
+                     the profile form. Import accepts iTerm2 \
+                     `.itermcolors` files or a Baudrun-format JSON.",
                 ),
-                Select::new(&self.theme_select),
+                body,
             ))
     }
 
     fn highlighting_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
         let enabled = self.enabled_packs();
         let packs = self.highlight_store.list();
-        let rows = packs.into_iter().map(move |p| {
+        // Collect eagerly so cx is no longer captured by the
+        // lazy iterator by the time we hand it to import_button
+        // below — a `move` closure on the iterator would pin the
+        // mutable borrow of cx across the import_button call and
+        // the borrow checker rejects it.
+        let rows: Vec<gpui::Div> = packs.into_iter().map(|p| {
             let id_for_label = p.id.clone();
             let id_for_setter = p.id.clone();
             let is_on = enabled.iter().any(|e| e == &p.id);
@@ -755,8 +960,19 @@ impl SettingsView {
                         .whitespace_normal()
                         .child(desc),
                 )
-        });
+        }).collect();
 
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(import_button(
+                s,
+                "Import pack\u{2026}",
+                cx,
+                |this, window, cx| this.start_highlight_import(window, cx),
+            ))
+            .child(div().flex().flex_col().gap_3().children(rows));
         div()
             .flex()
             .flex_col()
@@ -771,11 +987,19 @@ impl SettingsView {
                      unchecked highlighting is off, even if a profile has \
                      it enabled.",
                 ),
-                div().flex().flex_col().gap_3().children(rows),
+                body,
             ))
     }
 
-    fn appearance_pane(&self, s: SkinTokens) -> impl IntoElement {
+    fn appearance_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let skin_body = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(Select::new(&self.skin_select))
+            .child(import_button(s, "Import skin\u{2026}", cx, |this, window, cx| {
+                this.start_skin_import(window, cx);
+            }));
         div()
             .flex()
             .flex_col()
@@ -786,10 +1010,11 @@ impl SettingsView {
                 Some(
                     "How the app chrome (sidebar, panes, buttons) looks. \
                      Doesn't affect the terminal palette — that's the \
-                     Themes tab. Imported user skins live next to the \
-                     built-ins after a launch.",
+                     Themes tab. Use Import to add a hand-authored skin \
+                     JSON; it'll appear at the bottom of the picker as \
+                     `(custom)`.",
                 ),
-                Select::new(&self.skin_select),
+                skin_body,
             ))
             .child(section_card_with_desc(
                 s,
@@ -1040,6 +1265,43 @@ where
             .on_click(cx.listener(move |this, checked: &bool, _, cx| {
                 setter(this, *checked, cx);
             })),
+    )
+}
+
+/// Pill-style "Import\u{2026}" button used at the bottom of each
+/// asset section. Matches the visual weight of the surrounding
+/// chrome — slightly raised on the panel's translucent bg, accent
+/// border on hover for affordance. The on-click handler lives in
+/// `SettingsView::start_*_import`.
+fn import_button<F>(
+    s: SkinTokens,
+    label: &'static str,
+    cx: &mut Context<SettingsView>,
+    on_click: F,
+) -> gpui::Div
+where
+    F: Fn(&mut SettingsView, &mut Window, &mut Context<SettingsView>) + 'static,
+{
+    let accent = s.accent;
+    div().child(
+        div()
+            .px_3()
+            .py_1()
+            .rounded_md()
+            .border_1()
+            .border_color(rgba(s.border_subtle))
+            .bg(rgba(s.bg_input))
+            .text_color(rgba(s.fg_primary))
+            .text_size(px(12.0))
+            .cursor_pointer()
+            .hover(move |st| st.border_color(rgba(accent)))
+            .child(label)
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                    on_click(this, window, cx);
+                }),
+            ),
     )
 }
 
