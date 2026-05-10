@@ -83,15 +83,46 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       gpui), Config Directory (needs a filesystem dialog, deferred
       to its own slice), Installed Skins / Themes management lists
       (delete/import beyond what the picker shows; deferred).
-- [ ] **Phase 4 — Themes & skins.** Plug the theme parser into the
-      viewport's color resolution (drop the hardcoded palette in
-      [term_bridge.rs](prototype/src/term_bridge.rs)'s `resolve`).
-      Built-in themes shipped. Skin system drives app-chrome accent
-      colors / backgrounds / motion-on-off.
-- [ ] **Phase 5 — Specialty terminal features.** Hex view toggle,
-      highlight packs (regex-driven coloring overlaid on terminal
-      output), status bar (port, baud, byte counters, connection
-      state).
+- [x] **Phase 4 — Themes & skins.** Done. Theme parser feeds
+      `term_bridge::Palette` (replaces the hardcoded resolver);
+      `Settings::default_theme_id` drives the global palette and
+      `Profile::theme_id` is the per-profile override. New
+      `SettingsBus` entity broadcasts changes — main window +
+      Settings window both subscribe so a theme/skin pick re-paints
+      live across windows. `SkinTokens` global resolves every
+      chrome colour from the active skin's vars (`--bg-sidebar`,
+      `--bg-panel`, `--fg-primary`, …) including light/dark
+      overlays; the `--shell-bg` (or `--bg-window`) gradient first-
+      stop paints as the opaque base so translucent panels
+      composite correctly. gpui-component's `Theme` mode
+      (light/dark) + `input` / `popover` / `accent` / `radius` /
+      `font_family` / `mono_font_family` overrides track the skin
+      so widgets (Select, Input, Checkbox) match the picked skin
+      instead of staying frozen at boot defaults. Profile editor's
+      Connection tab grew a "Terminal Theme" card with "Use global
+      default" as the first option.
+      *Deferred:* font-size live-apply (the Settings field saves
+      but doesn't resize the terminal grid yet — needs cell
+      remeasure), system-appearance auto-detect for `Auto`
+      (gpui has `WindowAppearance::Light/Dark` but no observer is
+      wired), per-element backdrop blur (gpui's blur is
+      window-level), gradient `--shell-bg` flattens to its first
+      stop only, box-shadow chrome (`--shadow-panel`) — most
+      visible on macOS-26 / Liquid Glass.
+- [ ] **Phase 5 — Specialty terminal features.** Mostly done:
+      hex-view toggle (xxd-style dump per profile), timestamps
+      (dim `[HH:MM:SS.mmm]` line prefix), highlight packs
+      (regex-driven colouring overlaid on terminal output —
+      live-apply, history replay through a captured byte buffer
+      on rule change, fast Aho-Corasick path for keyword-
+      alternation rules, 14-colour palette including ANSI bright
+      variants). Cisco IOS pack retinted code-editor-style so
+      declarations / properties / values / states / numerics /
+      destructive-ops each pick a distinct hue. Status-bar
+      footer carries connection state today.
+      *Remaining:* status-bar enhancements (RX/TX byte counters,
+      port-rescan indicator, update toast slot — Tauri carries
+      these on the same row).
 - [ ] **Phase 6 — File transfer.** Send-file dialog (XMODEM /
       YMODEM / raw paste), progress UI, cancellation.
 - [ ] **Phase 7 — Multi-window + session migration.** Open new
