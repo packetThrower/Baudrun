@@ -17,12 +17,58 @@
 //! RE2-based and runs in linear time relative to input — there is
 //! no catastrophic backtracking to defend against.
 
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use regex::{Regex, RegexBuilder};
 
 use crate::data::highlight::HighlightRule;
 
 /// SGR reset — closes every colour run we open.
 const ANSI_RESET: &str = "\x1b[0m";
+
+/// Detect the `\b(?:foo|bar|baz)\b` (or `\b(foo|bar|baz)\b`)
+/// shape and return the keyword list. Returns `None` if any
+/// alternative contains regex metacharacters or the surrounding
+/// shape doesn't match — caller falls back to the regex engine.
+///
+/// Many bundled rules use exactly this shape for "match any of
+/// these keywords" — e.g. baudrun-default's state-good rule
+/// (`\b(?:up|online|active|established|...)\b`), cisco-ios's
+/// STP roles, OSPF / BGP state lists. Routing them through an
+/// Aho–Corasick automaton instead of the regex DFA is a big win
+/// when the keyword set is large.
+fn extract_word_alternation(pattern: &str) -> Option<Vec<String>> {
+    let inner = pattern.strip_prefix("\\b")?.strip_suffix("\\b")?;
+    let alternatives = inner
+        .strip_prefix("(?:")
+        .or_else(|| inner.strip_prefix('('))
+        .and_then(|s| s.strip_suffix(')'))?;
+    let mut words = Vec::new();
+    for alt in alternatives.split('|') {
+        if alt.is_empty() {
+            return None;
+        }
+        // Reject anything that looks like regex metacharacters
+        // — the alternation has to be plain literals for the
+        // Aho–Corasick path to be safe. `-` is allowed since it
+        // shows up in interface keywords (`err-disabled`,
+        // `Port-channel`, etc.) and isn't a metachar outside of
+        // character classes.
+        if alt.bytes().any(|b| {
+            matches!(
+                b,
+                b'\\' | b'|' | b'(' | b')' | b'[' | b']' | b'{' | b'}'
+                    | b'?' | b'*' | b'+' | b'.' | b'^' | b'$'
+            )
+        }) {
+            return None;
+        }
+        words.push(alt.to_string());
+    }
+    if words.is_empty() {
+        return None;
+    }
+    Some(words)
+}
 
 /// Map a rule's named colour to its SGR open sequence. Unknown
 /// values fall back to `dim` (90), matching the Tauri reader.
@@ -38,10 +84,56 @@ fn ansi_open(color: &str) -> &'static str {
     }
 }
 
+/// Compiled rule. Two flavours:
+///
+///  * `Literals` — the source pattern was a `\b(?:foo|bar|baz)\b`
+///    style alternation of plain literals, decomposed into a
+///    single Aho–Corasick automaton over the keyword set. Word
+///    boundaries are checked by the caller because Aho–Corasick
+///    has no notion of `\b`. ~10–20× faster than running the
+///    equivalent regex on long lines.
+///  * `Regex` — anything else: real regex with metacharacters,
+///    capture groups, anchors, etc. Still fast (the `regex` crate
+///    is RE2-based), just slower than the literal-set path.
 #[derive(Debug)]
-struct CompiledRule {
-    re: Regex,
-    open: &'static str,
+enum CompiledRule {
+    Literals { ac: AhoCorasick, open: &'static str },
+    Regex { re: Regex, open: &'static str },
+}
+
+impl CompiledRule {
+    /// Append `(start, end)` byte spans matched by this rule to
+    /// `out`. Both flavours emit non-overlapping leftmost-first
+    /// matches; word-boundary trimming for the literals path
+    /// is applied here so the caller doesn't have to know which
+    /// flavour it's looking at.
+    fn find_into(&self, line: &str, out: &mut Vec<(usize, usize, &'static str)>) {
+        match self {
+            CompiledRule::Regex { re, open } => {
+                for m in re.find_iter(line) {
+                    if m.start() != m.end() {
+                        out.push((m.start(), m.end(), open));
+                    }
+                }
+            }
+            CompiledRule::Literals { ac, open } => {
+                let bytes = line.as_bytes();
+                for m in ac.find_iter(line) {
+                    let (s, e) = (m.start(), m.end());
+                    let pre_ok = s == 0 || !is_word_byte(bytes[s - 1]);
+                    let post_ok = e == bytes.len() || !is_word_byte(bytes[e]);
+                    if pre_ok && post_ok && s != e {
+                        out.push((s, e, open));
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[inline]
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
 }
 
 /// Compiled set of highlight rules + the per-line applier.
@@ -60,14 +152,36 @@ impl HighlightEngine {
     pub fn from_rules(rules: &[HighlightRule]) -> Self {
         let mut compiled = Vec::with_capacity(rules.len());
         for rule in rules {
+            let open = ansi_open(&rule.color);
+            // Try the fast literal-alternation path first. Many
+            // bundled rules (`up|down|...`, `tagged|untagged|...`,
+            // STP / OSPF / BGP states) match this shape and run
+            // an order of magnitude faster through Aho–Corasick.
+            if let Some(words) = extract_word_alternation(&rule.pattern) {
+                match AhoCorasickBuilder::new()
+                    .ascii_case_insensitive(rule.ignore_case)
+                    .match_kind(MatchKind::LeftmostFirst)
+                    .build(&words)
+                {
+                    Ok(ac) => {
+                        compiled.push(CompiledRule::Literals { ac, open });
+                        continue;
+                    }
+                    Err(err) => {
+                        log::warn!(
+                            "highlight: aho-corasick build failed for {:?}, \
+                             falling back to regex: {err}",
+                            rule.pattern
+                        );
+                    }
+                }
+            }
+            // Generic regex path.
             match RegexBuilder::new(&rule.pattern)
                 .case_insensitive(rule.ignore_case)
                 .build()
             {
-                Ok(re) => compiled.push(CompiledRule {
-                    re,
-                    open: ansi_open(&rule.color),
-                }),
+                Ok(re) => compiled.push(CompiledRule::Regex { re, open }),
                 Err(err) => {
                     log::warn!(
                         "highlight: dropping rule with invalid pattern {:?}: {err}",
@@ -107,17 +221,16 @@ impl HighlightEngine {
         }
 
         let mut matches: Vec<(usize, usize, &'static str)> = Vec::new();
+        let mut staging: Vec<(usize, usize, &'static str)> = Vec::new();
         for rule in &self.rules {
-            for m in rule.re.find_iter(line) {
-                let (start, end) = (m.start(), m.end());
-                if end == start {
-                    continue;
-                }
+            staging.clear();
+            rule.find_into(line, &mut staging);
+            for &(start, end, open) in &staging {
                 let overlaps = matches
                     .iter()
                     .any(|(s, e, _)| !(end <= *s || start >= *e));
                 if !overlaps {
-                    matches.push((start, end, rule.open));
+                    matches.push((start, end, open));
                 }
             }
         }

@@ -86,6 +86,11 @@ thiserror = "2"
 anyhow = "1"
 regex = "1"             # used by USB enumeration (parsing system_profiler /
                         # PowerShell output) and the highlight rule engine
+aho-corasick = "1"      # multi-keyword search for `\b(?:foo|bar|...)\b` style
+                        # rules in highlight packs — much faster than running
+                        # the same patterns through the regex DFA when the
+                        # pack carries dozens of keyword alternations (state
+                        # words, STP roles, BGP states, etc.)
 base64 = "0.22"
 rusb = "0.9"            # libusb backend for the CP210x direct driver in
                         # `data::usbserial`
