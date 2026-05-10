@@ -16,13 +16,12 @@ often since gpui's Linux backend is the least-mature of the three.
 Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
 
 - [x] **Phase 0 — Terminal viewport feature-completeness.** Done.
-      Resize, scrollback (mouse-wheel + `display_offset`), cell
-      flags (bold/italic/underline/dim/strikethrough), mouse-drag
-      selection + Cmd-C copy, clipboard paste with CR/LF
-      normalisation, blinking cursor, visual bell flash. IME
-      plumbing is the gpui default — sufficient for ASCII / named
-      keys, untested for CJK and revisited if a real user needs
-      it.
+      Window resize, scrollback (mouse wheel + `display_offset`),
+      cell flags (bold/italic/underline/dim/strikethrough), mouse-
+      drag selection + clipboard copy, sanitized clipboard paste,
+      cursor blink, and bell flash all live in
+      [terminal_view.rs](prototype/src/terminal_view.rs) /
+      [terminal_grid.rs](prototype/src/terminal_grid.rs).
 - [x] **Phase 0.5 — Adopt gpui-component.** Done. The Zed-git swap
       sketched here originally turned out unnecessary:
       [gpui-component](https://github.com/longbridge/gpui-component)
@@ -33,101 +32,151 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       [prototype/Cargo.toml](prototype/Cargo.toml) — `gpui-component
       = "0.5"` — with no API drift to fix. 60+ widgets now available
       for Phase 2 onward.
-- [x] **Phase 1 — Port the data layer.** Done. Modules under
-      `prototype/src/data/`: profiles, appdata, settings, serial/
-      (incl. ports enumeration + chipsets + libusb stub),
-      usbserial/, themes/, highlight.rs, skins.rs, sanitize.rs,
-      transfer.rs. Resources directory carries the bundled JSONs
-      verbatim. Path rewrite was mechanical (`crate::X` →
-      `crate::data::X`) with `#![allow(dead_code, unused_imports)]`
-      until later phases consume them.
+- [x] **Phase 1 — Port the data layer.** Done. `profiles`,
+      `appdata`, `settings`, `serial/`, `themes/` (incl.
+      `.itermcolors` parsing), `transfer.rs`, `highlight.rs`,
+      `skins.rs`, `sanitize.rs` all live under
+      [prototype/src/data/](prototype/src/data/) and back the live
+      UI.
 - [x] **Phase 2 — Profile sidebar + connection management.** Done.
-      Sidebar with profile list (hand-rolled, not gpui-component
-      `sidebar` yet), profile add/edit/delete form with header +
-      Connection card + Advanced card and a left-rail sub-tab,
-      connect-by-profile + Connect button (replaces `cargo run --
-      <port>`), Serial Port enumeration with rescan, layered flow
-      mirroring Tauri (click profile → editor → Connect → terminal
-      → Disconnect → editor), session header with Clear/Disconnect
-      pills + status dot, welcome screen when no profile is
-      selected, status-bar footer (connected / editing / idle),
-      scrollback indicator on the terminal viewport, reactive Save
-      button (bright when dirty, dim when clean). All per-profile
-      feature checkboxes wired: `paste_warn_multiline` +
-      `paste_slow` + `paste_char_delay_ms`, `dtr_on_*` /
-      `rts_on_*`, `log_enabled` (sanitized session log to disk),
-      `hex_view` (xxd-style dump with idle flush), `timestamps`
-      (dim wall-clock prefix per line), `auto_reconnect` (2s
-      retry-poll for ~30s with amber-pulse indicator on both the
-      session header dot and the sidebar row dot, matching Tauri's
-      reconnect signal). `local_echo` / `line_ending` /
-      `backspace_key` already wired from the structure pass.
-      Quick-connect dialog dropped — Tauri version doesn't have
-      one.
-- [x] **Phase 3 — Settings panel.** Done. Standalone OS window
-      (mirrors the Tauri shape — separate window so theme/skin
-      swaps can render live in the main window without flipping
-      past a modal). Five-tab left rail with the same Tauri labels:
-      Appearance (skin picker, appearance mode, terminal font size),
-      Themes (default-theme picker), Shortcuts (12 actions with
-      click-to-capture key recording, ↺ reset, W3C aria-keyshortcuts
-      storage round-trippable with the Tauri build), Highlighting
-      (per-pack toggles), Advanced (log dir + USB driver detection
-      + copy-on-select + update-check toggles). All edits live-save
-      through the Phase-1 stores; chrome matches the profile editor
-      (PANEL_BG cards, translucent-blue active rail, small Input /
-      Checkbox / Select sizing). Live-apply (skin/theme/font-size
-      changes re-render the main window) is deferred to Phase 4.
-      Skipped from the Tauri panel: Screen Reader and Terminal
-      Renderer (xterm.js-specific; no equivalent in alacritty +
-      gpui), Config Directory (needs a filesystem dialog, deferred
-      to its own slice), Installed Skins / Themes management lists
-      (delete/import beyond what the picker shows; deferred).
-- [x] **Phase 4 — Themes & skins.** Done. Theme parser feeds
-      `term_bridge::Palette` (replaces the hardcoded resolver);
-      `Settings::default_theme_id` drives the global palette and
-      `Profile::theme_id` is the per-profile override. New
-      `SettingsBus` entity broadcasts changes — main window +
-      Settings window both subscribe so a theme/skin pick re-paints
-      live across windows. `SkinTokens` global resolves every
-      chrome colour from the active skin's vars (`--bg-sidebar`,
-      `--bg-panel`, `--fg-primary`, …) including light/dark
-      overlays; the `--shell-bg` (or `--bg-window`) gradient first-
-      stop paints as the opaque base so translucent panels
-      composite correctly. gpui-component's `Theme` mode
-      (light/dark) + `input` / `popover` / `accent` / `radius` /
-      `font_family` / `mono_font_family` overrides track the skin
-      so widgets (Select, Input, Checkbox) match the picked skin
-      instead of staying frozen at boot defaults. Profile editor's
-      Connection tab grew a "Terminal Theme" card with "Use global
-      default" as the first option.
-      *Deferred:* font-size live-apply (the Settings field saves
-      but doesn't resize the terminal grid yet — needs cell
-      remeasure), system-appearance auto-detect for `Auto`
-      (gpui has `WindowAppearance::Light/Dark` but no observer is
-      wired), per-element backdrop blur (gpui's blur is
-      window-level), gradient `--shell-bg` flattens to its first
-      stop only, box-shadow chrome (`--shadow-panel`) — most
-      visible on macOS-26 / Liquid Glass.
-- [ ] **Phase 5 — Specialty terminal features.** Mostly done:
-      hex-view toggle (xxd-style dump per profile), timestamps
-      (dim `[HH:MM:SS.mmm]` line prefix), highlight packs
-      (regex-driven colouring overlaid on terminal output —
-      live-apply, history replay through a captured byte buffer
-      on rule change, fast Aho-Corasick path for keyword-
-      alternation rules, 14-colour palette including ANSI bright
-      variants). Cisco IOS pack retinted code-editor-style so
-      declarations / properties / values / states / numerics /
-      destructive-ops each pick a distinct hue. Status-bar
-      footer carries connection state today.
-      *Remaining:* status-bar enhancements (RX/TX byte counters,
-      port-rescan indicator, update toast slot — Tauri carries
-      these on the same row).
-- [ ] **Phase 6 — File transfer.** Send-file dialog (XMODEM /
-      YMODEM / raw paste), progress UI, cancellation.
-- [ ] **Phase 7 — Multi-window + session migration.** Open new
-      window, drag-tab-between-windows protocol (or simpler: "move
-      session to new window" command), window state persistence.
+      Sidebar with profile list, add/edit form (Connection /
+      Highlighting / Advanced sub-tabs), connect-by-profile via
+      `serial_io::open`, connection state in the session header
+      and the bottom status bar.
+- [x] **Phase 3 — Settings panel.** Done. Standalone window with
+      Appearance / Themes / Shortcuts / Highlighting / Advanced
+      tabs. Theme picker has live preview (the per-row Preview
+      modal); skin picker, keybinding capture, and connection
+      defaults all round-trip through `data::settings`.
+- [x] **Phase 4 — Themes & skins.** Done. Theme parser drives the
+      viewport palette via `Palette::from_theme`; the hardcoded
+      fallback in [term_bridge.rs](prototype/src/term_bridge.rs)
+      only fires when a theme id misses the store. Skins drive the
+      `SkinTokens` global that paints all the chrome.
+- [x] **Phase 5 — Specialty terminal features.** Done. Hex view
+      toggle on the profile, highlight packs with first-match
+      precedence, status bar at the bottom of the window.
+- [x] **Phase 6 — File transfer.** Done. Send File button in the
+      session header opens a file picker → protocol picker
+      (XMODEM-CRC / 1K / Classic, YMODEM) → progress dialog with
+      live bar and Cancel; success/error surface as toasts. ZMODEM
+      stays out of scope (much larger state machine).
+- [x] **Phase 7 — Multi-window + session migration.** Done (except
+      window-state persistence). Sidebar `⧉` icon opens a new
+      top-level window sharing the same stores + `SettingsBus` so
+      settings stay in lockstep. Session-header `⋯` overflow menu
+      and sidebar right-click both offer "Move Session to New
+      Window" — `extract_session` / `install_session` hand the
+      live TerminalView entity, OS threads, drain task, and
+      transfer state over without dropping the port. Right-click
+      on a non-connected profile offers "Connect in New Window"
+      which spawns + auto-connects in one step. `Disconnect` got a
+      `Drop` impl so window close also tears the port down within
+      ~50 ms.
+- [x] **Suspend / resume.** Done. Pill in the session header keeps
+      the port open + bytes flowing into scrollback while hiding
+      the terminal viewport so the user can browse other profiles
+      / Settings without disconnecting. Resume banner appears at
+      the top of the connected profile's editor, or a centered
+      placeholder pane shows when the user navigates away with no
+      editor open. Clicking the connected sidebar row implicitly
+      resumes.
+- [x] **Send Break + Send Hex.** Done. Session-header `⋯`
+      overflow menu hosts Send Break (300 ms `set_break` /
+      `clear_break` via a dedicated `break_tx` channel polled by
+      the write thread), Send Hex (modal with the same parser the
+      Tauri version uses — `0x` / spaces / commas all strip),
+      and Send File alongside Move-to-New-Window.
+- [ ] **Phase 7.5 — Settings + Profile Form parity.** Items that
+      exist in the Tauri build but are still missing or only
+      partially wired in the gpui prototype. Diffed against
+      `src/lib/Settings.svelte` + `src/lib/ProfileForm.svelte`.
+
+      Settings — Appearance tab
+      - [ ] **Scrollback lines** input (Tauri:
+            `settings.scrollbackLines`, default 10000). Data field
+            exists on `Settings`; UI control + plumb to the
+            TerminalView's `display_offset`-driven scrollback.
+      - [ ] **Installed Skins list.** Currently only the picker
+            select + a trash button when the active selection is
+            custom. Tauri renders a full list with per-row delete
+            (and 10-s undo). Pair with the undo-toast item below.
+
+      Settings — Advanced tab
+      - [ ] **Choose… / Reset buttons** next to Session Log
+            Directory (currently text input only — user has to
+            type or paste a path).
+      - [ ] **Screen Reader Support toggle**
+            (`settings.screen_reader_mode`). Lower priority than
+            the others; check whether gpui exposes an equivalent
+            ARIA hook before committing.
+      - [ ] **Config Directory** read-only display + Choose… /
+            Reset. Lets the user point Baudrun at a different
+            support dir (portable installs, shared profiles).
+      - Terminal Renderer (DOM/WebGL toggle) is **N/A** —
+        prototype uses gpui paint, not xterm.js.
+
+      Settings — chrome
+      - [ ] **Filter / search input** at the top of the Settings
+            window. Tauri uses `keywords` per section to scroll-
+            and-highlight matches as the user types; current
+            prototype has tabs only.
+      - [ ] **Undo-delete** for imported skins / themes / packs.
+            Replace the immediate delete with a 10-s "removed,
+            Undo" toast (Tauri uses the status bar; we can use
+            the existing notification layer).
+
+      Profile Form
+      - [ ] **Missing-driver banner** above the Serial Port field
+            when an unenrolled USB-serial adapter is plugged in.
+            Backend `data::serial::detect` is ready (already used
+            for the Settings toggle); profile editor just needs
+            the banner UI.
+      - [ ] **Header buttons when connected.** When the editor is
+            open for the connected profile while suspended, the
+            form header still shows Connect — Tauri swaps that
+            for Disconnect + Resume. We have a Resume banner
+            above the form already; this would move both
+            affordances into the header for visual parity.
+
+      Cosmetic / non-blocking
+      - Welcome pane wording differs slightly from Tauri; not
+        worth a dedicated bullet but worth a pass when the
+        rest of the list lands.
+- [x] **Phase 7.6 — Tauri features dropped on purpose.** Things
+      the Tauri build has that the gpui prototype intentionally
+      does not. Logged here so the migration audit doesn't keep
+      relitigating them.
+
+      - **Terminal Renderer setting** (Settings → Advanced →
+        `terminal_renderer`). Tauri exposed a DOM / WebGL choice
+        for xterm.js's renderer; gpui paints natively, so the
+        whole setting is moot. The field is left on `Settings`
+        only so existing `settings.json` files round-trip
+        without losing data.
+      - **ZMODEM** file transfer. Phase 6 ships XMODEM-Classic /
+        CRC / 1K and YMODEM. ZMODEM is a substantially larger
+        state machine and most embedded-bootloader / network-
+        gear targets don't speak it. Documented in
+        `data/transfer.rs` and called out in the Phase 6 commit;
+        revisit on real demand.
+      - **Drag-tab-between-windows.** Replaced by the explicit
+        "Move Session to New Window" actions in the toolbar
+        overflow + sidebar right-click menu. Cross-window drag-
+        out-to-spawn needs platform NSDraggingSource / OLE
+        plumbing that gpui doesn't expose generically; the
+        explicit gesture covers the same UX without the
+        platform work.
+      - **`tauri-plugin-updater`.** Gone with Tauri itself.
+        Phase 9 picks a replacement (`cargo-dist` or
+        `self_update`).
+      - **WKWebView paste-confirm modal hack.** Tauri needed a
+        custom modal because WKWebView swallows `window.confirm`.
+        gpui's dialog layer doesn't have the same limitation, so
+        the prototype can wire paste-confirm through
+        `window.open_dialog` directly when that feature lands
+        (currently the multi-line warn is just a checkbox in
+        the profile editor with no live confirm UI).
 - [ ] **Phase 8 — System integration.** Application menu (macOS),
       icon, metadata, file associations, single-instance behavior
       cross-platform, prefers-reduced-motion equivalent.
