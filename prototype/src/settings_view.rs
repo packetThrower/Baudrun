@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgba, AppContext, Context, Entity, FocusHandle, IntoElement,
-    KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent, PathPromptOptions,
-    Render, SharedString, Subscription, Window,
+    div, prelude::*, px, rgba, AppContext, Context, ElementId, Entity, FocusHandle,
+    IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent,
+    PathPromptOptions, Render, SharedString, Subscription, Window,
 };
 use gpui_component::{
     checkbox::Checkbox,
@@ -21,6 +21,7 @@ use gpui_component::{
     kbd::Kbd,
     notification::Notification,
     select::{Select, SelectEvent, SelectItem, SelectState},
+    tooltip::Tooltip,
     IndexPath, Root, Sizable, WindowExt,
 };
 
@@ -652,11 +653,16 @@ impl SettingsView {
         );
     }
 
-    /// Same as `delete_active_skin` for the Themes tab — checks the
-    /// active `default_theme_id` is a user import, deletes it, and
-    /// resets the default to the built-in baudrun palette.
-    fn delete_active_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.settings.default_theme_id.clone();
+    /// Per-row delete on the Themes tab. Refuses non-custom themes.
+    /// If the theme being deleted is the currently-selected default,
+    /// also resets `default_theme_id` to the built-in baudrun palette
+    /// so the live terminal doesn't end up pointing at a dead id.
+    fn delete_named_theme(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(theme) = self.themes_store.get(&id) else { return };
         if theme.source != "user" {
             return;
@@ -672,9 +678,11 @@ impl SettingsView {
             );
             return;
         }
-        let mut next = self.settings.clone();
-        next.default_theme_id = themes::DEFAULT_THEME_ID.to_string();
-        self.commit(next, cx);
+        if self.settings.default_theme_id == id {
+            let mut next = self.settings.clone();
+            next.default_theme_id = themes::DEFAULT_THEME_ID.to_string();
+            self.commit(next, cx);
+        }
         self.rebuild_theme_select(window, cx);
         window.push_notification(
             Notification::success(SharedString::from(format!(
@@ -682,6 +690,41 @@ impl SettingsView {
             ))),
             cx,
         );
+    }
+
+    /// Open a modal showing the theme's bg/fg painted with a sample
+    /// of styled terminal output — lets the user evaluate a palette
+    /// without committing it as the default.
+    fn open_theme_preview(
+        &mut self,
+        theme_id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(theme) = self.themes_store.get(&theme_id) else { return };
+        let title = SharedString::from(theme.name.clone());
+        let subtitle = SharedString::from(if theme.source == "user" {
+            "Imported theme \u{00B7} sample network-gear output"
+        } else {
+            "Built-in theme \u{00B7} sample network-gear output"
+        });
+        window.open_dialog(cx, move |dlg, _, _| {
+            dlg.title(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(div().text_size(px(16.0)).child(title.clone()))
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .text_color(rgba(0x808080AAu32))
+                            .child(subtitle.clone()),
+                    ),
+            )
+            .w(px(720.0))
+            .child(theme_preview_block(&theme))
+        });
     }
 
     /// Per-row delete on the Highlighting tab. Only invoked from rows
@@ -1038,47 +1081,143 @@ impl SettingsView {
     }
 
     fn themes_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_is_custom = self
-            .themes_store
-            .get(&self.settings.default_theme_id)
-            .map(|t| t.source == "user")
-            .unwrap_or(false);
-        let mut button_row = div().flex().flex_row().gap_2().child(import_button(
+        // -- Card 1: Default Theme picker --
+        let default_card = section_card_with_desc(
             s,
-            "Import theme\u{2026}",
-            cx,
-            |this, window, cx| this.start_theme_import(window, cx),
-        ));
-        if active_is_custom {
-            button_row = button_row.child(trash_button(
-                s,
-                "Delete current theme",
-                cx,
-                |this, window, cx| this.delete_active_theme(window, cx),
-            ));
-        }
-        let body = div()
+            "Default Theme",
+            Some("Used by any profile that doesn't set its own theme."),
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(div().text_size(px(11.0)).text_color(rgba(s.fg_secondary)).child("Theme"))
+                .child(Select::new(&self.theme_select)),
+        );
+
+        // -- Card 2: Installed Themes list --
+        let themes_list = self.themes_store.list();
+        let rows: Vec<gpui::Div> = themes_list
+            .into_iter()
+            .map(|theme| self.theme_row(&theme, s, cx))
+            .collect();
+
+        let installed_card = div()
+            .w_full()
+            .bg(rgba(s.bg_panel))
+            .border_1()
+            .border_color(rgba(s.border_subtle))
+            .rounded(px(s.radius_lg))
+            .px_4()
+            .py_3()
             .flex()
             .flex_col()
-            .gap_2()
-            .child(Select::new(&self.theme_select))
-            .child(button_row);
+            .gap_3()
+            .child(
+                // Title row with Import button on the right — matches
+                // the Tauri layout where "Installed Themes" and the
+                // import action share one line.
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(15.0))
+                            .text_color(rgba(s.fg_primary))
+                            .child("Installed Themes"),
+                    )
+                    .child(import_button(
+                        s,
+                        "Import .itermcolors\u{2026}",
+                        cx,
+                        |this, window, cx| this.start_theme_import(window, cx),
+                    )),
+            )
+            .child(div().flex().flex_col().gap_2().children(rows));
+
         div()
             .flex()
             .flex_col()
             .gap_3()
-            .child(section_card_with_desc(
+            .child(default_card)
+            .child(installed_card)
+    }
+
+    /// One row inside the Installed Themes card. Mirrors Tauri's layout:
+    /// swatch strip on the left, name + source-tag in the middle, and
+    /// (for user imports) a trash button followed by a Preview button
+    /// on the right. The Preview button opens the modal regardless of
+    /// whether the theme is currently set as default.
+    fn theme_row(
+        &self,
+        theme: &themes::Theme,
+        s: SkinTokens,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let theme_id = theme.id.clone();
+        let theme_id_for_delete = theme.id.clone();
+        let is_custom = theme.source == "user";
+        let tag = if is_custom { "Custom" } else { "Built-in" };
+
+        let mut right = div().flex().flex_row().items_center().gap_2();
+        if is_custom {
+            let trash_id = ElementId::Name(SharedString::from(format!(
+                "trash-theme-{}",
+                theme.id
+            )));
+            right = right.child(trash_button(
                 s,
-                "Default Theme",
-                Some(
-                    "Terminal palette new sessions start with — affects \
-                     the 16 ANSI colours, default foreground/background, \
-                     selection, and cursor. Per-profile overrides go on \
-                     the profile form. Import accepts iTerm2 \
-                     `.itermcolors` files or a Baudrun-format JSON.",
-                ),
-                body,
-            ))
+                trash_id,
+                "Delete imported theme",
+                cx,
+                move |this, window, cx| {
+                    this.delete_named_theme(theme_id_for_delete.clone(), window, cx);
+                },
+            ));
+        }
+        right = right.child(import_button(
+            s,
+            // The shape of import_button (pill, accent hover) is also
+            // what we want for Preview — reuse rather than duplicate
+            // a near-identical helper.
+            "Preview",
+            cx,
+            move |this, window, cx| this.open_theme_preview(theme_id.clone(), window, cx),
+        ));
+
+        div()
+            .w_full()
+            .bg(rgba(s.bg_input))
+            .border_1()
+            .border_color(rgba(s.border_subtle))
+            .rounded(px(s.radius_md))
+            .px_3()
+            .py_2()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_3()
+            .child(theme_swatches(theme))
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(rgba(s.fg_primary))
+                            .child(SharedString::from(theme.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(rgba(s.fg_secondary))
+                            .child(tag),
+                    ),
+            )
+            .child(right)
     }
 
     fn highlighting_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1134,8 +1273,13 @@ impl SettingsView {
                     ),
                 );
             if is_custom {
+                let trash_id = ElementId::Name(SharedString::from(format!(
+                    "trash-pack-{}",
+                    id_for_delete
+                )));
                 top = top.child(trash_button(
                     s,
+                    trash_id,
                     "Delete imported pack",
                     cx,
                     move |this, window, cx| {
@@ -1203,7 +1347,8 @@ impl SettingsView {
         if active_is_custom {
             button_row = button_row.child(trash_button(
                 s,
-                "Delete current skin",
+                "trash-skin",
+                "Delete imported skin",
                 cx,
                 |this, window, cx| this.delete_active_skin(window, cx),
             ));
@@ -1519,13 +1664,217 @@ where
     )
 }
 
+/// Compact swatch strip — 8 normal-ANSI colors as small rounded tiles
+/// fused into a single horizontal pill. Sits at the left of each
+/// installed-themes row so the user can compare palettes at a glance
+/// without opening the full preview dialog.
+fn theme_swatches(theme: &themes::Theme) -> impl IntoElement {
+    let palette = [
+        &theme.black,
+        &theme.red,
+        &theme.green,
+        &theme.yellow,
+        &theme.blue,
+        &theme.magenta,
+        &theme.cyan,
+        &theme.white,
+    ];
+    div()
+        .flex()
+        .flex_row()
+        .overflow_hidden()
+        .rounded(px(6.0))
+        .children(palette.into_iter().map(|hex| {
+            let color = parse_theme_color(hex).unwrap_or(0x808080FFu32);
+            div().w(px(16.0)).h(px(28.0)).bg(rgba(color))
+        }))
+}
+
+/// Sample lines for the theme-preview dialog. Each entry is one line
+/// rendered as a horizontal flex of (palette-slot, text) spans. Slots
+/// resolve against the theme being previewed so the snippet shows
+/// every major colour the palette declares — `magenta` for keywords,
+/// `green`/`red`/`yellow` for status, `cyan` for identifiers, plain
+/// `fg` for prose.
+fn preview_sample_lines() -> Vec<Vec<(&'static str, &'static str)>> {
+    vec![
+        vec![("fg", "RUGGEDCOM RS900G login: "), ("magenta", "admin")],
+        vec![("fg", "Password: "), ("yellow", "********")],
+        vec![],
+        vec![
+            ("fg", "Last login: Fri Apr 17 "),
+            ("cyan", "11:47:05"),
+            ("fg", " 2026 from "),
+            ("cyan", "192.168.1.47"),
+        ],
+        vec![("fg", "RUGGEDCOM RS900G # show interfaces status")],
+        vec![],
+        vec![
+            ("magenta", "Interface"),
+            ("fg", "          Status  VLAN  "),
+            ("magenta", "Duplex Speed"),
+        ],
+        vec![
+            ("green", "GigabitEthernet0/1"),
+            ("fg", "  "),
+            ("green", "up"),
+            ("fg", "      1     "),
+            ("green", "full"),
+            ("fg", "    1000"),
+        ],
+        vec![
+            ("green", "GigabitEthernet0/2"),
+            ("fg", "  "),
+            ("red", "down"),
+            ("fg", "    -     -       -"),
+        ],
+        vec![
+            ("green", "Gi1/0/3"),
+            ("fg", "             "),
+            ("green", "up"),
+            ("fg", "      10    "),
+            ("green", "full"),
+            ("fg", "    1000"),
+        ],
+        vec![
+            ("green", "FastEthernet0/24"),
+            ("fg", "    "),
+            ("red", "err-disabled"),
+            ("fg", "  -     -       -"),
+        ],
+        vec![
+            ("green", "ge-0/0/1"),
+            ("fg", "            "),
+            ("green", "up"),
+            ("fg", "      -     "),
+            ("green", "full"),
+            ("fg", "    10000"),
+        ],
+        vec![],
+        vec![
+            ("cyan", "11:47:12.120"),
+            ("fg", " MAC "),
+            ("magenta", "aa:bb:cc:dd:ee:ff"),
+            ("fg", " learned on "),
+            ("magenta", "Gi1/0/1"),
+        ],
+        vec![
+            ("cyan", "11:47:13.440"),
+            ("fg", " "),
+            ("yellow", "WARNING"),
+            ("fg", ": "),
+            ("magenta", "STP"),
+            ("fg", " "),
+            ("yellow", "learning"),
+            ("fg", " on "),
+            ("magenta", "Port-channel1"),
+        ],
+        vec![
+            ("cyan", "11:47:15.002"),
+            ("fg", " Link "),
+            ("red", "DOWN"),
+            ("fg", " on "),
+            ("magenta", "GigabitEthernet0/2"),
+        ],
+        vec![
+            ("cyan", "11:47:18.881"),
+            ("fg", " Route "),
+            ("magenta", "192.168.1.47/24"),
+            ("fg", " via "),
+            ("green", "ge-0/0/1"),
+            ("fg", " "),
+            ("green", "established"),
+        ],
+        vec![],
+        vec![
+            ("cyan", "2026-04-17 11:48:00"),
+            ("fg", " Session idle "),
+            ("red", "timeout"),
+            ("fg", ": "),
+            ("cyan", "00:10:00"),
+        ],
+        vec![("fg", "RUGGEDCOM RS900G #")],
+    ]
+}
+
+/// Build the body of the theme-preview dialog — a styled block of
+/// fake network-gear output painted in the chosen theme's palette.
+/// Each line is rendered as a horizontal flex so per-span colouring
+/// just works without HTML-style markup.
+fn theme_preview_block(theme: &themes::Theme) -> impl IntoElement {
+    let bg = parse_theme_color(&theme.background).unwrap_or(0x000000FFu32);
+    let fg = parse_theme_color(&theme.foreground).unwrap_or(0xE4E4E7FFu32);
+    let pick = |slot: &str| -> u32 {
+        let raw = match slot {
+            "fg" => &theme.foreground,
+            "bg" => &theme.background,
+            "black" => &theme.black,
+            "red" => &theme.red,
+            "green" => &theme.green,
+            "yellow" => &theme.yellow,
+            "blue" => &theme.blue,
+            "magenta" => &theme.magenta,
+            "cyan" => &theme.cyan,
+            "white" => &theme.white,
+            _ => &theme.foreground,
+        };
+        parse_theme_color(raw).unwrap_or(0x808080FFu32)
+    };
+    let line_views: Vec<gpui::Div> = preview_sample_lines()
+        .into_iter()
+        .map(|spans| {
+            // Empty line → render a thin spacer so blank lines in the
+            // sample read as actual blank lines, not collapsed gaps.
+            if spans.is_empty() {
+                return div().h(px(8.0));
+            }
+            div()
+                .flex()
+                .flex_row()
+                .children(spans.into_iter().map(|(slot, text)| {
+                    div()
+                        .text_color(rgba(pick(slot)))
+                        .child(SharedString::from(text))
+                }))
+        })
+        .collect();
+    div()
+        .px_4()
+        .py_3()
+        .rounded_md()
+        .bg(rgba(bg))
+        .text_color(rgba(fg))
+        .text_size(px(13.0))
+        .font_family("Menlo")
+        .flex()
+        .flex_col()
+        .children(line_views)
+}
+
+/// Compact `#rrggbb` parser specialised for the theme JSON shape.
+/// Themes never carry alpha, so we always pack `0xFF` and let the
+/// caller treat it as `0xRRGGBBAA`. Returns `None` on any malformed
+/// input — the caller falls back to a neutral grey so the preview
+/// doesn't disappear on a single bad slot.
+fn parse_theme_color(s: &str) -> Option<u32> {
+    let hex = s.trim().strip_prefix('#')?;
+    if hex.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some(((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | 0xFF)
+}
+
 /// Square icon-button rendering a trash glyph. Used next to import
 /// buttons (skin / theme tabs) and per-row in the highlight tab to
 /// remove a user-imported entry. Hover swaps to the danger token so
 /// the destructive intent is obvious before the click.
 fn trash_button<F>(
     s: SkinTokens,
-    _tooltip: &'static str,
+    id: impl Into<ElementId>,
+    tip: &'static str,
     cx: &mut Context<SettingsView>,
     on_click: F,
 ) -> gpui::Div
@@ -1533,8 +1882,10 @@ where
     F: Fn(&mut SettingsView, &mut Window, &mut Context<SettingsView>) + 'static,
 {
     let danger = s.danger;
+    let tip_text = SharedString::from(tip);
     div().child(
         div()
+            .id(id)
             .px_2()
             .py_1()
             .rounded_md()
@@ -1545,6 +1896,9 @@ where
             .text_size(px(12.0))
             .cursor_pointer()
             .hover(move |st| st.border_color(rgba(danger)).text_color(rgba(danger)))
+            .tooltip(move |window, cx| {
+                Tooltip::new(tip_text.clone()).build(window, cx)
+            })
             .child("\u{1F5D1}")
             .on_mouse_up(
                 MouseButton::Left,
