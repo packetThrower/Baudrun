@@ -227,6 +227,15 @@ struct Editor {
     log_enabled: bool,
     auto_reconnect: bool,
 
+    // -- Advanced / Appearance --
+    /// Per-profile theme override. The first option in the picker
+    /// is `Opt::new("", "Use global default")`, with the empty id
+    /// meaning "fall through to settings.default_theme_id" — same
+    /// shape Tauri uses for `themeId`. Profiles ship with empty
+    /// here from `Profile::defaults()` so users only opt into
+    /// per-profile themes deliberately.
+    theme: Entity<SelectState<Vec<Opt>>>,
+
     // -- Advanced / Paste safety --
     paste_warn_multiline: bool,
     paste_slow: bool,
@@ -310,27 +319,66 @@ impl AppView {
 
     /// Apply the relevant slots of a `Settings` snapshot to the
     /// live UI. Called both at construction time and on every
-    /// `SettingsEvent::Updated` from the bus. Today: looks up the
-    /// active theme via `themes_store` and pushes the resulting
-    /// palette to the terminal pane. Future Phase-4 slices add
-    /// font-size + skin-token application here.
-    fn apply_settings(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
-        // `default_theme_id` empty falls back to the built-in
-        // Baudrun theme — same precedence the Tauri reader uses.
+    /// `SettingsEvent::Updated` from the bus. Today: re-resolves
+    /// the active palette and pushes it to the terminal. Future
+    /// Phase-4 slices add font-size + skin-token application here.
+    /// The settings argument is unused right now — we re-read from
+    /// the bus inside `compute_palette` — but kept in the signature
+    /// for symmetry with the subscription handler shape.
+    fn apply_settings(&mut self, _settings: &settings::Settings, cx: &mut Context<Self>) {
+        self.apply_palette(cx);
+    }
+
+    /// Resolve the effective palette right now and push it to the
+    /// terminal. Resolution honours the precedence the Tauri side
+    /// established: the connected profile's `theme_id` override
+    /// wins, falling back to the global `default_theme_id`, then
+    /// the built-in Baudrun palette if both lookups miss. Called
+    /// after every `connect_to` (so a profile-scoped theme takes
+    /// effect on connect) and after every settings update (so a
+    /// global change applies live unless an override is shadowing
+    /// it).
+    fn apply_palette(&mut self, cx: &mut Context<Self>) {
+        let palette = self.compute_palette(cx);
+        self.terminal
+            .update(cx, |term, cx| term.set_palette(palette, cx));
+    }
+
+    /// Pure resolver — reads from the bus + stores, no mutation.
+    /// Treats `auto_reconnect_for` the same as `connected_profile_id`
+    /// for the override check: a transient drop shouldn't yank the
+    /// terminal back to the global palette mid-retry.
+    fn compute_palette(&self, cx: &mut Context<Self>) -> Palette {
+        let active_profile_id = self
+            .connected_profile_id
+            .as_deref()
+            .or(self.auto_reconnect_for.as_deref());
+        if let Some(id) = active_profile_id {
+            if let Some(profile) = self.profile_store.get(id) {
+                if !profile.theme_id.is_empty() {
+                    if let Some(theme) = self.themes_store.get(&profile.theme_id) {
+                        return Palette::from_theme(&theme);
+                    }
+                    log::warn!(
+                        "profile theme {:?} not found, falling back to global",
+                        profile.theme_id
+                    );
+                }
+            }
+        }
+        let settings = self.settings_bus.read(cx).current();
         let theme_id = if settings.default_theme_id.is_empty() {
             themes::DEFAULT_THEME_ID
         } else {
             settings.default_theme_id.as_str()
         };
-        let palette = match self.themes_store.get(theme_id) {
+        match self.themes_store.get(theme_id) {
             Some(theme) => Palette::from_theme(&theme),
             None => {
                 log::warn!("theme {theme_id:?} not found, using built-in baudrun");
                 Palette::baudrun()
             }
-        };
-        self.terminal
-            .update(cx, |term, cx| term.set_palette(palette, cx));
+        }
     }
 
     /// Click handler for a profile row. Opens the profile editor
@@ -560,13 +608,23 @@ impl AppView {
         // Clear any stale failure message from a prior attempt
         // (e.g. earlier ticks of the auto-reconnect retry loop).
         self.connect_error = None;
+        // Re-resolve the palette now that `connected_profile_id` is
+        // set — `compute_palette` will pick up this profile's
+        // `theme_id` override (if any) and shadow the global default.
+        self.apply_palette(cx);
     }
 
     /// Open the form for a new profile, seeded from `Profile::defaults`.
     /// Idempotent if already open — re-creates the field state so the
     /// user gets a fresh form rather than whatever they typed before.
     fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor = Some(build_editor(None, &Profile::defaults(), window, cx));
+        self.editor = Some(build_editor(
+            None,
+            &Profile::defaults(),
+            &self.themes_store,
+            window,
+            cx,
+        ));
         cx.notify();
     }
 
@@ -584,7 +642,13 @@ impl AppView {
         let Some(profile) = self.profile_store.get(&id) else {
             return;
         };
-        self.editor = Some(build_editor(Some(id), &profile, window, cx));
+        self.editor = Some(build_editor(
+            Some(id),
+            &profile,
+            &self.themes_store,
+            window,
+            cx,
+        ));
         cx.notify();
     }
 
@@ -1446,6 +1510,7 @@ const BTN_FG_DANGER: u32 = 0xff453aFF;
 fn build_editor(
     profile_id: Option<String>,
     profile: &Profile,
+    themes_store: &themes::Store,
     window: &mut Window,
     cx: &mut Context<AppView>,
 ) -> Editor {
@@ -1458,6 +1523,23 @@ fn build_editor(
         })
     };
     let port = make_select(port_opts(&profile.port_name), &profile.port_name, window, cx);
+    // Per-profile theme picker. Empty-id row "Use global default"
+    // is the first option so the override is opt-in — saving an
+    // editor with that selected reverts to inheriting from
+    // settings.default_theme_id.
+    let theme = {
+        let mut opts = Vec::with_capacity(themes_store.list().len() + 1);
+        opts.push(Opt::new("", "Use global default"));
+        for t in themes_store.list() {
+            let title = if t.source == "user" {
+                format!("{} (custom)", t.name)
+            } else {
+                t.name
+            };
+            opts.push(Opt::new(&t.id, &title));
+        }
+        make_select(opts, &profile.theme_id, window, cx)
+    };
     let paste_delay_val = profile.paste_char_delay_ms.unwrap_or(10).to_string();
     let paste_char_delay_ms = cx.new(|cx| {
         InputState::new(window, cx)
@@ -1516,6 +1598,7 @@ fn build_editor(
         timestamps: profile.timestamps,
         log_enabled: profile.log_enabled,
         auto_reconnect: profile.auto_reconnect,
+        theme,
         paste_warn_multiline: profile.paste_warn_multiline,
         paste_slow: profile.paste_slow,
         paste_char_delay_ms,
@@ -1555,6 +1638,9 @@ fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<
     profile.timestamps = editor.timestamps;
     profile.log_enabled = editor.log_enabled;
     profile.auto_reconnect = editor.auto_reconnect;
+    // Empty id is the explicit "Use global default" pick — store
+    // it as-is so `compute_palette` falls through to the global.
+    profile.theme_id = read_select(&editor.theme, cx);
     profile.paste_warn_multiline = editor.paste_warn_multiline;
     profile.paste_slow = editor.paste_slow;
     // Empty / non-numeric → None (rolls back to the store's default
@@ -1643,6 +1729,7 @@ fn editor_fields_match(a: &Profile, b: &Profile) -> bool {
         && a.paste_warn_multiline == b.paste_warn_multiline
         && a.paste_slow == b.paste_slow
         && a.paste_char_delay_ms == b.paste_char_delay_ms
+        && a.theme_id == b.theme_id
 }
 
 /// One choice in a select widget. `id` is the canonical value
@@ -1903,6 +1990,7 @@ struct EditorRender {
     paste_warn_multiline: bool,
     paste_slow: bool,
     paste_char_delay_ms: Entity<InputState>,
+    theme: Entity<SelectState<Vec<Opt>>>,
     error: Option<String>,
     scroll_handle: ScrollHandle,
 }
@@ -1941,6 +2029,7 @@ impl EditorRender {
             paste_warn_multiline: e.paste_warn_multiline,
             paste_slow: e.paste_slow,
             paste_char_delay_ms: e.paste_char_delay_ms.clone(),
+            theme: e.theme.clone(),
             error: e.error.clone(),
             scroll_handle: e.scroll_handle.clone(),
         }
@@ -2099,6 +2188,7 @@ fn form_body(er: EditorRender, cx: &mut Context<AppView>) -> impl IntoElement {
                 er.local_echo,
                 cx,
             ))
+            .child(theme_card(er.theme))
             .into_any_element(),
         EditorTab::Advanced => advanced_pane(
             er.dtr_on_connect,
@@ -2480,6 +2570,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn advanced_pane(
     dtr_on_connect: Entity<SelectState<Vec<Opt>>>,
     rts_on_connect: Entity<SelectState<Vec<Opt>>>,
@@ -2539,6 +2630,26 @@ fn advanced_pane(
             paste_char_delay_ms,
             cx,
         ))
+}
+
+/// Per-profile theme override card. The `theme` Select's first
+/// option is "Use global default" with an empty id; saving with
+/// that selected leaves `Profile::theme_id` empty, which
+/// `compute_palette` treats as fall-through to
+/// `Settings::default_theme_id`. The same Select otherwise lists
+/// every theme `themes_store` knows about.
+fn theme_card(theme: Entity<SelectState<Vec<Opt>>>) -> gpui::Div {
+    section_card_with_desc(
+        "Terminal Theme",
+        Some(
+            "Override the global default theme just for this profile. \
+             Useful for keeping different palettes on different \
+             devices (e.g. red-tinged for production routers, calm \
+             green for the lab switch). Leave on \"Use global \
+             default\" to inherit from Settings \u{2192} Themes.",
+        ),
+        Select::new(&theme).small(),
+    )
 }
 
 fn control_lines_card(
