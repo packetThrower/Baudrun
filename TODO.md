@@ -87,6 +87,96 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       the write thread), Send Hex (modal with the same parser the
       Tauri version uses — `0x` / spaces / commas all strip),
       and Send File alongside Move-to-New-Window.
+- [ ] **Phase 7.5 — Settings + Profile Form parity.** Items that
+      exist in the Tauri build but are still missing or only
+      partially wired in the gpui prototype. Diffed against
+      `src/lib/Settings.svelte` + `src/lib/ProfileForm.svelte`.
+
+      Settings — Appearance tab
+      - [ ] **Scrollback lines** input (Tauri:
+            `settings.scrollbackLines`, default 10000). Data field
+            exists on `Settings`; UI control + plumb to the
+            TerminalView's `display_offset`-driven scrollback.
+      - [ ] **Installed Skins list.** Currently only the picker
+            select + a trash button when the active selection is
+            custom. Tauri renders a full list with per-row delete
+            (and 10-s undo). Pair with the undo-toast item below.
+
+      Settings — Advanced tab
+      - [ ] **Choose… / Reset buttons** next to Session Log
+            Directory (currently text input only — user has to
+            type or paste a path).
+      - [ ] **Screen Reader Support toggle**
+            (`settings.screen_reader_mode`). Lower priority than
+            the others; check whether gpui exposes an equivalent
+            ARIA hook before committing.
+      - [ ] **Config Directory** read-only display + Choose… /
+            Reset. Lets the user point Baudrun at a different
+            support dir (portable installs, shared profiles).
+      - Terminal Renderer (DOM/WebGL toggle) is **N/A** —
+        prototype uses gpui paint, not xterm.js.
+
+      Settings — chrome
+      - [ ] **Filter / search input** at the top of the Settings
+            window. Tauri uses `keywords` per section to scroll-
+            and-highlight matches as the user types; current
+            prototype has tabs only.
+      - [ ] **Undo-delete** for imported skins / themes / packs.
+            Replace the immediate delete with a 10-s "removed,
+            Undo" toast (Tauri uses the status bar; we can use
+            the existing notification layer).
+
+      Profile Form
+      - [ ] **Missing-driver banner** above the Serial Port field
+            when an unenrolled USB-serial adapter is plugged in.
+            Backend `data::serial::detect` is ready (already used
+            for the Settings toggle); profile editor just needs
+            the banner UI.
+      - [ ] **Header buttons when connected.** When the editor is
+            open for the connected profile while suspended, the
+            form header still shows Connect — Tauri swaps that
+            for Disconnect + Resume. We have a Resume banner
+            above the form already; this would move both
+            affordances into the header for visual parity.
+
+      Cosmetic / non-blocking
+      - Welcome pane wording differs slightly from Tauri; not
+        worth a dedicated bullet but worth a pass when the
+        rest of the list lands.
+- [x] **Phase 7.6 — Tauri features dropped on purpose.** Things
+      the Tauri build has that the gpui prototype intentionally
+      does not. Logged here so the migration audit doesn't keep
+      relitigating them.
+
+      - **Terminal Renderer setting** (Settings → Advanced →
+        `terminal_renderer`). Tauri exposed a DOM / WebGL choice
+        for xterm.js's renderer; gpui paints natively, so the
+        whole setting is moot. The field is left on `Settings`
+        only so existing `settings.json` files round-trip
+        without losing data.
+      - **ZMODEM** file transfer. Phase 6 ships XMODEM-Classic /
+        CRC / 1K and YMODEM. ZMODEM is a substantially larger
+        state machine and most embedded-bootloader / network-
+        gear targets don't speak it. Documented in
+        `data/transfer.rs` and called out in the Phase 6 commit;
+        revisit on real demand.
+      - **Drag-tab-between-windows.** Replaced by the explicit
+        "Move Session to New Window" actions in the toolbar
+        overflow + sidebar right-click menu. Cross-window drag-
+        out-to-spawn needs platform NSDraggingSource / OLE
+        plumbing that gpui doesn't expose generically; the
+        explicit gesture covers the same UX without the
+        platform work.
+      - **`tauri-plugin-updater`.** Gone with Tauri itself.
+        Phase 9 picks a replacement (`cargo-dist` or
+        `self_update`).
+      - **WKWebView paste-confirm modal hack.** Tauri needed a
+        custom modal because WKWebView swallows `window.confirm`.
+        gpui's dialog layer doesn't have the same limitation, so
+        the prototype can wire paste-confirm through
+        `window.open_dialog` directly when that feature lands
+        (currently the multi-line warn is just a checkbox in
+        the profile editor with no live confirm UI).
 - [ ] **Phase 8 — System integration.** Application menu (macOS),
       icon, metadata, file associations, single-instance behavior
       cross-platform, prefers-reduced-motion equivalent.
