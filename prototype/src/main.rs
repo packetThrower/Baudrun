@@ -21,10 +21,10 @@ mod terminal_view;
 
 use std::rc::Rc;
 
-use gpui::{px, App, AppContext, Bounds, TitlebarOptions, WindowBounds, WindowOptions};
-use gpui_component::{scroll::ScrollbarShow, Root, Theme};
+use gpui::{px, App, AppContext};
+use gpui_component::{scroll::ScrollbarShow, Theme};
 
-use app_view::AppView;
+use app_view::{open_app_window, WindowInit};
 use settings_bus::SettingsBus;
 use terminal_view::TerminalView;
 
@@ -157,8 +157,6 @@ fn main() {
             Err(err) => fallback_themes_store(format!("support dir unavailable: {err}")),
         };
 
-        let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
-
         // Build the TerminalView entity first; AppView will own a
         // handle to it and render it inside the right pane.
         // Boot palette = the hardcoded Baudrun default. AppView
@@ -169,70 +167,22 @@ fn main() {
             TerminalView::new(24, 80, term_bridge::Palette::baudrun(), cx)
         });
 
-        let profile_store_for_window = profile_store.clone();
-        let settings_store_for_window = settings_store.clone();
-        let skins_store_for_window = skins_store.clone();
-        let highlight_store_for_window = highlight_store.clone();
-        let themes_store_for_window = themes_store.clone();
-        let terminal_for_window = terminal.clone();
-        let window = cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    titlebar: Some(TitlebarOptions {
-                        title: Some("Baudrun (prototype) · phase 3".into()),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                move |window, cx| {
-                    // The window root must be a `Root` so the
-                    // tooltip/notification/modal layer paints on top
-                    // of (and dispatches events through) the rest of
-                    // the UI. Our actual app view lives as Root's
-                    // child. SettingsBus is built INSIDE the window
-                    // builder so it lives in the same App scope as
-                    // the views that subscribe to it; the same Entity
-                    // gets shared with the Settings window when AppView
-                    // opens it.
-                    let settings_bus =
-                        cx.new(|_| SettingsBus::new(settings_store_for_window));
-                    // Snapshot the OS appearance at boot. Drives
-                    // `Settings → Appearance → Auto` — without
-                    // this we'd default Auto to dark on a light-
-                    // mode machine. Live OS-mode toggling without
-                    // restart is a follow-up (needs a
-                    // `WindowAppearance` observer).
-                    let system_dark = matches!(
-                        window.appearance(),
-                        gpui::WindowAppearance::Dark
-                            | gpui::WindowAppearance::VibrantDark
-                    );
-                    let app_view = cx.new(|cx| {
-                        AppView::new(
-                            terminal_for_window,
-                            profile_store_for_window,
-                            settings_bus,
-                            skins_store_for_window,
-                            highlight_store_for_window,
-                            themes_store_for_window,
-                            system_dark,
-                            cx,
-                        )
-                    });
-                    // Hook the OS-appearance observer now while
-                    // `&mut Window` is in scope. AppView holds the
-                    // returned Subscription so the callback stays
-                    // alive for the view's lifetime; on each fire
-                    // it updates `system_dark` and re-applies the
-                    // skin if the user is on `Auto`.
-                    app_view.update(cx, |this, view_cx| {
-                        this.attach_appearance_observer(window, view_cx);
-                    });
-                    cx.new(|cx| Root::new(app_view, window, cx))
-                },
-            )
-            .expect("open window");
+        // Build SettingsBus once at App scope so additional windows
+        // (opened via the sidebar's New Window button) share the
+        // same source of truth — a settings change in one window
+        // live-applies to all of them.
+        let settings_bus = cx.new(|_| SettingsBus::new(settings_store.clone()));
+
+        let window = open_app_window(
+            cx,
+            WindowInit::Fresh(terminal.clone()),
+            profile_store.clone(),
+            settings_bus.clone(),
+            skins_store.clone(),
+            highlight_store.clone(),
+            themes_store.clone(),
+        )
+        .expect("open window");
 
         // Re-bind for the rest of the function (serial / focus
         // wiring still operates on the TerminalView directly).

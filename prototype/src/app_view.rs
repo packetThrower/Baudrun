@@ -38,6 +38,7 @@ use gpui_component::{
     notification::Notification,
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
+    tooltip::Tooltip,
     Disableable, IndexPath, Root, Sizable, Theme, ThemeMode, WindowExt,
 };
 use gpui::SharedString;
@@ -1871,6 +1872,108 @@ impl AppView {
             cx.notify();
         }
     }
+
+    /// Open a new top-level Baudrun window with a fresh `AppView`.
+    /// Stores + `SettingsBus` are shared with this window's instance
+    /// so settings stay in sync across the two; the new window
+    /// starts disconnected with a blank terminal.
+    fn open_new_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let new_terminal = cx.new(|cx| {
+            TerminalView::new(24, 80, Palette::baudrun(), cx)
+        });
+        if let Err(err) = open_app_window(
+            cx,
+            WindowInit::Fresh(new_terminal),
+            self.profile_store.clone(),
+            self.settings_bus.clone(),
+            self.skins_store.clone(),
+            self.highlight_store.clone(),
+            self.themes_store.clone(),
+        ) {
+            log::error!("open new window: {err}");
+        }
+    }
+
+    /// Take ownership of every piece of live-session state from this
+    /// AppView and return it as a [`SessionBundle`]. Returns `None`
+    /// when the window isn't connected to a profile (nothing to
+    /// move). The fields cleared here mirror the destination's
+    /// `install_session` write set so a round trip is lossless.
+    fn extract_session(&mut self) -> Option<SessionBundle> {
+        let connected_profile_id = self.connected_profile_id.take()?;
+        let serial_disconnect = self.serial_disconnect.take()?;
+        let transfer_io = self.transfer_io.take()?;
+        Some(SessionBundle {
+            terminal: self.terminal.clone(),
+            drain_task: self.drain_task.take(),
+            serial_disconnect,
+            transfer_io,
+            transfer: self.transfer.take(),
+            connected_profile_id,
+            auto_reconnect_for: self.auto_reconnect_for.take(),
+            auto_reconnect_task: self.auto_reconnect_task.take(),
+            last_highlight_sig: self.last_highlight_sig.take(),
+        })
+    }
+
+    /// Install a moved [`SessionBundle`] onto this AppView. Replaces
+    /// the placeholder TerminalView with the moved one, takes over
+    /// the OS-thread token, drain task, and transfer state, and
+    /// re-applies the palette so chrome that depends on the
+    /// connected profile (status dot, header, status bar text)
+    /// reflects the moved session immediately.
+    pub fn install_session(
+        &mut self,
+        bundle: SessionBundle,
+        cx: &mut Context<Self>,
+    ) {
+        self.terminal = bundle.terminal;
+        self.drain_task = bundle.drain_task;
+        self.serial_disconnect = Some(bundle.serial_disconnect);
+        self.transfer_io = Some(bundle.transfer_io);
+        self.transfer = bundle.transfer;
+        self.connected_profile_id = Some(bundle.connected_profile_id);
+        self.auto_reconnect_for = bundle.auto_reconnect_for;
+        self.auto_reconnect_task = bundle.auto_reconnect_task;
+        self.last_highlight_sig = bundle.last_highlight_sig;
+        // Re-resolve the palette now that `connected_profile_id` is
+        // set on this AppView — covers the case where the moved
+        // session's profile carried a per-profile theme override.
+        self.apply_palette(cx);
+        cx.notify();
+    }
+
+    /// Move the live serial session out of this window into a freshly
+    /// opened one. The source window swaps its terminal for a blank
+    /// placeholder and ends up on the welcome screen; the destination
+    /// window comes up already connected with the same terminal
+    /// contents (scrollback included), the same OS thread, and any
+    /// in-flight file transfer intact.
+    fn move_session_to_new_window(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(bundle) = self.extract_session() else { return };
+        // Replace this window's terminal with a blank one so the
+        // source view doesn't render someone else's connected grid.
+        self.terminal = cx.new(|cx| {
+            TerminalView::new(24, 80, Palette::baudrun(), cx)
+        });
+        cx.notify();
+
+        if let Err(err) = open_app_window(
+            cx,
+            WindowInit::WithSession(bundle),
+            self.profile_store.clone(),
+            self.settings_bus.clone(),
+            self.skins_store.clone(),
+            self.highlight_store.clone(),
+            self.themes_store.clone(),
+        ) {
+            log::error!("move session to new window: {err}");
+        }
+    }
 }
 
 /// Stable id used as the YMODEM Select option (the default pick).
@@ -1993,6 +2096,100 @@ where
         btn = btn.cursor_pointer().on_mouse_up(MouseButton::Left, on_click);
     }
     btn
+}
+
+/// Bundle of live serial-session state that can be moved from one
+/// window's `AppView` to another. Captures everything the source
+/// AppView held about the live connection — the TerminalView entity
+/// (bytes already on screen and in scrollback), the OS-side
+/// disconnect token, the read-loop drain task, transfer I/O, and
+/// any in-flight transfer + auto-reconnect bookkeeping. Built by
+/// [`AppView::extract_session`] on the source side and consumed by
+/// [`AppView::install_session`] on the destination side.
+pub struct SessionBundle {
+    terminal: Entity<TerminalView>,
+    drain_task: Option<Task<()>>,
+    serial_disconnect: serial_io::Disconnect,
+    transfer_io: TransferIo,
+    transfer: Option<TransferState>,
+    connected_profile_id: String,
+    auto_reconnect_for: Option<String>,
+    auto_reconnect_task: Option<Task<()>>,
+    last_highlight_sig: Option<Vec<(String, String, bool)>>,
+}
+
+/// What kind of window to open via [`open_app_window`]. `Fresh`
+/// takes a caller-built TerminalView (so main.rs can still hold the
+/// handle for the CLI serial-port attach path) and lands on the
+/// welcome screen. `WithSession` accepts a moved [`SessionBundle`]
+/// and installs it after construction so the destination window
+/// comes up already connected, with the source window's terminal
+/// contents intact.
+pub enum WindowInit {
+    Fresh(Entity<TerminalView>),
+    WithSession(SessionBundle),
+}
+
+/// Open a new top-level Baudrun window with a fresh `AppView`. The
+/// stores + `SettingsBus` are shared (cloned `Rc`/`Entity`) so each
+/// window's settings live-update in lockstep with the others, but
+/// the `TerminalView`, sidebar, profile editor, and transfer state
+/// are per-window — connecting in one window doesn't touch the
+/// terminal in another. Used both at startup (one window) and from
+/// `AppView::open_new_window` / `move_session_to_new_window`.
+pub fn open_app_window(
+    cx: &mut gpui::App,
+    init: WindowInit,
+    profile_store: Rc<profiles::Store>,
+    settings_bus: Entity<SettingsBus>,
+    skins_store: Rc<skins::Store>,
+    highlight_store: Rc<highlight::Store>,
+    themes_store: Rc<themes::Store>,
+) -> gpui::Result<WindowHandle<Root>> {
+    let bounds = Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx);
+    cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            titlebar: Some(TitlebarOptions {
+                title: Some("Baudrun".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        move |window, cx| {
+            // Snapshot the OS appearance for the picker's "Auto" pick;
+            // the appearance observer below picks up live changes.
+            let system_dark = matches!(
+                window.appearance(),
+                gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
+            );
+            let (terminal, session) = match init {
+                WindowInit::Fresh(t) => (t, None),
+                WindowInit::WithSession(bundle) => {
+                    (bundle.terminal.clone(), Some(bundle))
+                }
+            };
+            let app_view = cx.new(|cx| {
+                AppView::new(
+                    terminal,
+                    profile_store,
+                    settings_bus,
+                    skins_store,
+                    highlight_store,
+                    themes_store,
+                    system_dark,
+                    cx,
+                )
+            });
+            app_view.update(cx, |this, view_cx| {
+                this.attach_appearance_observer(window, view_cx);
+                if let Some(bundle) = session {
+                    this.install_session(bundle, view_cx);
+                }
+            });
+            cx.new(|cx| Root::new(app_view, window, cx))
+        },
+    )
 }
 
 impl Render for AppView {
@@ -2349,6 +2546,23 @@ fn session_header(
                         this.start_send_file(window, cx);
                     }),
                 ))
+                .child(
+                    div()
+                        .id("session-detach")
+                        .child(pill_button(s, "Detach \u{2197}", false))
+                        .tooltip(|window, cx| {
+                            Tooltip::new(SharedString::from(
+                                "Move this session to a new window",
+                            ))
+                            .build(window, cx)
+                        })
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.move_session_to_new_window(window, cx);
+                            }),
+                        ),
+                )
                 .child(pill_button(s, "Clear", false).on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, _window, cx| {
@@ -2406,15 +2620,21 @@ fn status_bar(
 fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
     let hover_bg = s.bg_hover;
-    // Shared chrome for the inline icon-buttons (+ and ⚙). Same
-    // padding / hover treatment so they read as a pair.
-    let icon_btn = move || {
+    // Shared chrome for the inline icon-buttons. Each button needs
+    // its own stable id so the tooltip layer can disambiguate hover
+    // targets, and a label string for the tooltip itself.
+    let icon_btn = move |id: &'static str, tip: &'static str| {
+        let tip_text = SharedString::from(tip);
         div()
+            .id(SharedString::from(id))
             .px_2()
             .rounded_sm()
             .text_color(rgba(s.fg_primary))
             .hover(move |st| st.bg(rgba(hover_bg)))
             .cursor_pointer()
+            .tooltip(move |window, cx| {
+                Tooltip::new(tip_text.clone()).build(window, cx)
+            })
     };
     div()
         .w_full()
@@ -2436,13 +2656,29 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
                 .items_center()
                 .gap_1()
                 .child(
-                    icon_btn()
+                    icon_btn("nav-add-profile", "New profile")
                         .text_size(px(16.0))
                         .child("+")
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(|this, _: &MouseUpEvent, window, cx| {
                                 this.open_editor(window, cx);
+                            }),
+                        ),
+                )
+                // Unicode "two joined squares" (`⧉`) — the new-window
+                // glyph. Same icon-button chrome as `+` and `⚙` so
+                // the trio reads as one cluster. macOS users who
+                // expect Cmd+N can still use it once Phase 8 wires
+                // the application menu.
+                .child(
+                    icon_btn("nav-new-window", "New window")
+                        .text_size(px(15.0))
+                        .child("\u{29C9}")
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.open_new_window(window, cx);
                             }),
                         ),
                 )
@@ -2453,7 +2689,7 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
                 // two glyphs visually balance — `+` is a thin stroke,
                 // the gear is a denser shape.
                 .child(
-                    icon_btn()
+                    icon_btn("nav-settings", "Settings")
                         .text_size(px(15.0))
                         .child("\u{2699}")
                         .on_mouse_up(

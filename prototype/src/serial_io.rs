@@ -130,14 +130,15 @@ impl io::Write for ChannelWriter {
 }
 
 /// Token for shutting down a serial session's OS threads.
-/// Created by `open`; calling `shutdown` flips the shared
-/// `Arc<AtomicBool>` the threads check each iteration, then drops
-/// the `JoinHandle`s (which detaches them — the threads still wind
-/// down on their own within ~POLL_INTERVAL of the flag being
-/// set). We deliberately don't `join` because either thread could
-/// be stuck on a blocking syscall (`port.write_all` waiting on
-/// RTS/CTS, an unresponsive disconnect ioctl), and joining them
-/// would freeze the UI.
+/// Created by `open`; calling `shutdown` (or just letting the
+/// struct drop) flips the shared `Arc<AtomicBool>` the threads
+/// check each iteration, then drops the `JoinHandle`s (which
+/// detaches them — the threads still wind down on their own
+/// within ~POLL_INTERVAL of the flag being set). We deliberately
+/// don't `join` because either thread could be stuck on a
+/// blocking syscall (`port.write_all` waiting on RTS/CTS, an
+/// unresponsive disconnect ioctl), and joining them would freeze
+/// the UI.
 pub struct Disconnect {
     shutdown: Arc<AtomicBool>,
     read_thread: std::thread::JoinHandle<()>,
@@ -145,12 +146,24 @@ pub struct Disconnect {
 }
 
 impl Disconnect {
-    /// Signal the OS threads to exit. Returns immediately; the
-    /// threads will check the flag on their next loop iteration
-    /// (worst case ~SHUTDOWN_POLL_INTERVAL away) and drop their
-    /// port handles, releasing the file descriptor so a subsequent
-    /// `open` can succeed.
+    /// Explicit shutdown for paths that want the signal alongside
+    /// the drop (or want to drop later for some reason). Equivalent
+    /// to dropping the struct — `Drop` flips the same flag.
     pub fn shutdown(self) {
+        // The atomic is also flipped in `Drop` below; setting it
+        // here is a (cheap) belt-and-braces in case a callsite
+        // relies on the flag being live before the drop site runs.
+        self.shutdown.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Drop for Disconnect {
+    fn drop(&mut self) {
+        // Window-close / panic / any other drop path lands here.
+        // Without this, the threads would only notice the session
+        // ended via channel-disconnect detection (write loop:
+        // ~50 ms recv_timeout cycle, read loop: next failed send),
+        // and only if no stray sender/receiver clone outlived us.
         self.shutdown.store(true, Ordering::Relaxed);
     }
 }
