@@ -346,10 +346,20 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             still need a named-mutex / unix-socket equivalent —
             tracked separately when those platforms become a
             primary target.
-      - [ ] **Quit confirmation when a session is active.**
-            Prompt before tearing down a live serial connection
-            on Cmd+Q / window-close-all so a stray keystroke
-            doesn't lose a reconnect-in-progress.
+      - [x] **Quit confirmation when a session is active.**
+            Cmd+Q now routes through `confirm_quit_then_quit`,
+            which (deferred out of the action's window-update so
+            the per-window probes don't re-enter the same window)
+            scans `cx.windows()` for any AppView whose new
+            `has_live_session` returns true — connected profile,
+            in-flight X/YMODEM transfer, or active auto-reconnect
+            retry. No live session → quits immediately. Live
+            session → opens an alert dialog ("Quit Baudrun?" with
+            Quit / Cancel + Esc-to-dismiss) anchored to the
+            window that owns the session. The window-close-all
+            path on macOS doesn't actually quit (handled by the
+            single-instance commit), so the Cmd+Q gate covers the
+            real "stray keystroke kills your session" risk.
       - [ ] **Prefers-reduced-motion** — query the OS setting
             (NSWorkspace on macOS, SPI_GETCLIENTAREAANIMATION on
             Windows, GTK / Qt on Linux) and skip pulse animations
