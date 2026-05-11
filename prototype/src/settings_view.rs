@@ -461,6 +461,49 @@ impl SettingsView {
         self.commit(next, cx);
     }
 
+    /// Choose… button on Session Log Directory. Opens the OS folder
+    /// picker; on result we mirror the path back into the Input
+    /// (visible feedback) AND commit it to the persisted Settings.
+    fn choose_log_dir(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Choose session log directory".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else { return };
+            let Some(path) = paths.into_iter().next() else { return };
+            let path_str = path.display().to_string();
+            let _ = this.update_in(cx, |this, window, view_cx| {
+                this.log_dir
+                    .update(view_cx, |state, view_cx| {
+                        state.set_value(path_str.clone(), window, view_cx);
+                    });
+                if this.settings.log_dir != path_str {
+                    let mut next = this.settings.clone();
+                    next.log_dir = path_str;
+                    this.commit(next, view_cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Reset button on Session Log Directory. Empties the field and
+    /// commits an empty value — the Phase-1 logger reads that as
+    /// "use the default location" (the support dir's `logs/` subdir).
+    fn reset_log_dir(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.log_dir.update(cx, |state, cx| {
+            state.set_value("", window, cx);
+        });
+        if !self.settings.log_dir.is_empty() {
+            let mut next = self.settings.clone();
+            next.log_dir = String::new();
+            self.commit(next, cx);
+        }
+    }
+
     fn set_restore_window_state(&mut self, enabled: bool, cx: &mut Context<Self>) {
         let mut next = self.settings.clone();
         // Stored inverted — same shape as drivers / update check —
@@ -1585,7 +1628,28 @@ impl SettingsView {
                     "Where profiles with \"Record session to file\" enabled \
                      write their logs. Leave blank to use the default.",
                 ),
-                Input::new(&self.log_dir).small().appearance(true),
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex_1()
+                            .child(Input::new(&self.log_dir).small().appearance(true)),
+                    )
+                    .child(import_button(
+                        s,
+                        "Choose\u{2026}",
+                        cx,
+                        |this, window, cx| this.choose_log_dir(window, cx),
+                    ))
+                    .child(import_button(
+                        s,
+                        "Reset",
+                        cx,
+                        |this, window, cx| this.reset_log_dir(window, cx),
+                    )),
             ))
             .child(section_card_with_desc(
                 s,

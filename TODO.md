@@ -100,15 +100,22 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             (which pushes a fresh `term::Config` through
             `Term::set_options`) on live edits. Status bar shows
             `<filled>/<max>` on the right.
-      - [ ] **Installed Skins list.** Currently only the picker
-            select + a trash button when the active selection is
-            custom. Tauri renders a full list with per-row delete
-            (and 10-s undo). Pair with the undo-toast item below.
+      - [x] **Installed Skins list.** Done. New "Installed Skins"
+            card in the Appearance tab — header with import on the
+            right, one row per user-imported skin showing name +
+            "Custom" tag (with "· dark-only" suffix when
+            `supports_light` is false) + 🗑 button. Empty state
+            shows a muted hint. Deleting the active skin falls
+            back to the built-in `baudrun` default. Undo-toast
+            still pending (tracked under "Settings — chrome").
 
       Settings — Advanced tab
-      - [ ] **Choose… / Reset buttons** next to Session Log
-            Directory (currently text input only — user has to
-            type or paste a path).
+      - [x] **Choose… / Reset buttons** next to Session Log
+            Directory. Done. `choose_log_dir` opens the OS folder
+            picker via `cx.prompt_for_paths` with `directories:
+            true` and mirrors the result into both the Input and
+            the persisted setting; `reset_log_dir` clears both
+            back to the default-location signal (empty string).
       - [ ] **Screen Reader Support toggle**
             (`settings.screen_reader_mode`). Lower priority than
             the others; check whether gpui exposes an equivalent
