@@ -116,13 +116,19 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             true` and mirrors the result into both the Input and
             the persisted setting; `reset_log_dir` clears both
             back to the default-location signal (empty string).
-      - [ ] **Screen Reader Support toggle**
-            (`settings.screen_reader_mode`). Lower priority than
-            the others; check whether gpui exposes an equivalent
-            ARIA hook before committing.
-      - [ ] **Config Directory** read-only display + Choose… /
-            Reset. Lets the user point Baudrun at a different
-            support dir (portable installs, shared profiles).
+      - Screen Reader Support toggle moved to Phase 7.6 — gpui
+        0.2 exposes no accessibility primitives (no ARIA, no
+        NSAccessibility bridge), so there's nowhere to wire the
+        toggle to. Revisit when gpui ships a11y hooks upstream.
+      - [x] **Config Directory** display + Choose… / Reset. Done.
+            Custom card with the resolved support-dir path in a
+            read-only Input, plus three pills: Reveal (opens the
+            directory in Finder / Explorer / xdg-open via
+            `cx.open_url("file://…")` with a percent-encoded
+            path), Choose… (folder picker → `appdata::write_override`),
+            and Reset (clears the override). Choose / Reset toast
+            "Restart Baudrun to use it" — re-binding every live
+            Store at runtime is heavier than this slice covers.
       - Terminal Renderer (DOM/WebGL toggle) is **N/A** —
         prototype uses gpui paint, not xterm.js.
 
@@ -180,6 +186,14 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       - **`tauri-plugin-updater`.** Gone with Tauri itself.
         Phase 9 picks a replacement (`cargo-dist` or
         `self_update`).
+      - **Screen Reader Support toggle.** Tauri exposed this as
+        the xterm.js ARIA live-region preference. gpui 0.2
+        ships no accessibility primitives (no ARIA, no
+        NSAccessibility bridge — the platform layers only
+        forward focus + key input). The data field stays on
+        `Settings` so old settings.json files round-trip, but
+        there's no UI control. Revisit when gpui adds a11y
+        hooks upstream.
       - **WKWebView paste-confirm modal hack.** Tauri needed a
         custom modal because WKWebView swallows `window.confirm`.
         gpui's dialog layer doesn't have the same limitation, so

@@ -25,6 +25,7 @@ use gpui_component::{
     IndexPath, Root, Sizable, WindowExt,
 };
 
+use crate::data::appdata;
 use crate::data::highlight;
 use crate::data::settings::Settings;
 use crate::data::skins;
@@ -163,6 +164,11 @@ pub struct SettingsView {
     /// subscription. Underscore prefix marks "owned solely for
     /// drop-time effect, never read."
     _log_dir_sub: Subscription,
+    /// Cached resolved support-dir path. Read once at construction
+    /// + refreshed after Choose / Reset so the read-only display
+    /// reflects what the next launch will use without re-touching
+    /// the filesystem on every render.
+    config_dir_display: SharedString,
 }
 
 impl SettingsView {
@@ -398,6 +404,7 @@ impl SettingsView {
             capture_focus: cx.focus_handle(),
             log_dir,
             _log_dir_sub: log_dir_sub,
+            config_dir_display: resolve_config_dir_display(),
         }
     }
 
@@ -459,6 +466,100 @@ impl SettingsView {
         let mut next = self.settings.clone();
         next.include_prerelease_updates = enabled;
         self.commit(next, cx);
+    }
+
+    /// Reveal button on the Config Directory card. Opens the
+    /// current support dir IN PLACE (showing its contents) in the
+    /// platform file manager. `cx.reveal_path` on macOS opens the
+    /// PARENT directory and selects the target, which leaves the
+    /// user staring at `~/Library/Application Support/` with
+    /// Baudrun highlighted — not what we want here. `open_url`
+    /// with a `file://` URL hands off to the OS handler which
+    /// opens the directory's contents instead.
+    fn reveal_config_dir(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match appdata::support_dir() {
+            Ok(path) => {
+                let encoded = encode_file_path(&path);
+                cx.open_url(&format!("file://{encoded}"));
+            }
+            Err(err) => {
+                log::error!("reveal config dir: {err}");
+                cx.spawn(async move |this, cx| {
+                    let _ = this.update_in(cx, |_, window, view_cx| {
+                        window.push_notification(
+                            Notification::error(SharedString::from(format!(
+                                "Couldn't open config directory: {err}"
+                            ))),
+                            view_cx,
+                        );
+                    });
+                })
+                .detach();
+            }
+        }
+    }
+
+    /// Choose… button on the Config Directory card. Opens the OS
+    /// folder picker; on result writes the override file so the
+    /// next launch resolves to the new directory, then refreshes
+    /// the read-only display. Surfaces a "restart to use" toast —
+    /// re-binding every live Store at runtime is more surgery than
+    /// this slice covers.
+    fn choose_config_dir(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let receiver = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: false,
+            prompt: Some("Choose Baudrun config directory".into()),
+        });
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(paths))) = receiver.await else { return };
+            let Some(path) = paths.into_iter().next() else { return };
+            let _ = this.update_in(cx, |this, window, view_cx| {
+                if let Err(err) = appdata::write_override(Some(&path)) {
+                    log::error!("write config dir override: {err}");
+                    window.push_notification(
+                        Notification::error(SharedString::from(format!(
+                            "Couldn't set config directory: {err}"
+                        ))),
+                        view_cx,
+                    );
+                    return;
+                }
+                this.config_dir_display = resolve_config_dir_display();
+                view_cx.notify();
+                window.push_notification(
+                    Notification::success(SharedString::from(
+                        "Config directory set. Restart Baudrun to use it.",
+                    )),
+                    view_cx,
+                );
+            });
+        })
+        .detach();
+    }
+
+    /// Reset the Config Directory override back to the platform
+    /// default. Same restart caveat as Choose…
+    fn reset_config_dir(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Err(err) = appdata::write_override(None) {
+            log::error!("clear config dir override: {err}");
+            window.push_notification(
+                Notification::error(SharedString::from(format!(
+                    "Couldn't reset config directory: {err}"
+                ))),
+                cx,
+            );
+            return;
+        }
+        self.config_dir_display = resolve_config_dir_display();
+        cx.notify();
+        window.push_notification(
+            Notification::success(SharedString::from(
+                "Config directory reset. Restart Baudrun to use the default.",
+            )),
+            cx,
+        );
     }
 
     /// Choose… button on Session Log Directory. Opens the OS folder
@@ -1722,6 +1823,107 @@ impl SettingsView {
                         SettingsView::set_include_prerelease,
                     )),
             ))
+            .child(
+                // Custom card layout — section_card_with_desc puts
+                // description directly under the title and a single
+                // body block beneath that, but we want a Reveal
+                // pill on the right of the title row (parallel to
+                // how "Installed Themes" hosts its Import button).
+                div()
+                    .w_full()
+                    .bg(rgba(s.bg_panel))
+                    .border_1()
+                    .border_color(rgba(s.border_subtle))
+                    .rounded(px(s.radius_lg))
+                    .shadow_sm()
+                    .px_4()
+                    .py_3()
+                    .flex()
+                    .flex_col()
+                    .gap_3()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    // `min_w_0` lets the description
+                                    // wrap below its intrinsic min-
+                                    // content width — without it the
+                                    // long copy widens the column,
+                                    // pushes the Reveal pill off-
+                                    // screen, and pulls the rest of
+                                    // the card with it.
+                                    .min_w_0()
+                                    .flex_1()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .text_size(px(15.0))
+                                            .text_color(rgba(s.fg_primary))
+                                            .child("Config Directory"),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(12.0))
+                                            .text_color(rgba(s.fg_secondary))
+                                            .whitespace_normal()
+                                            .child(
+                                                "Where Baudrun stores profiles, themes, \
+                                                 skins, highlight packs, and \
+                                                 settings.json. Choose a different \
+                                                 location to share configs across \
+                                                 machines (Dropbox, iCloud Drive, \
+                                                 dotfile repo) or to test from a clean \
+                                                 directory. Takes effect on the next \
+                                                 launch.",
+                                            ),
+                                    ),
+                            )
+                            .child(import_button(
+                                s,
+                                "Reveal",
+                                cx,
+                                |this, window, cx| this.reveal_config_dir(window, cx),
+                            )),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .px_3()
+                                    .py(px(6.0))
+                                    .rounded_md()
+                                    .border_1()
+                                    .border_color(rgba(s.border_subtle))
+                                    .bg(rgba(s.bg_input))
+                                    .text_size(px(12.0))
+                                    .text_color(rgba(s.fg_secondary))
+                                    .child(self.config_dir_display.clone()),
+                            )
+                            .child(import_button(
+                                s,
+                                "Choose\u{2026}",
+                                cx,
+                                |this, window, cx| this.choose_config_dir(window, cx),
+                            ))
+                            .child(import_button(
+                                s,
+                                "Reset",
+                                cx,
+                                |this, window, cx| this.reset_config_dir(window, cx),
+                            )),
+                    ),
+            )
     }
 }
 
@@ -1892,6 +2094,38 @@ where
 /// chrome — slightly raised on the panel's translucent bg, accent
 /// border on hover for affordance. The on-click handler lives in
 /// `SettingsView::start_*_import`.
+/// Percent-encode a filesystem path for use in a `file://` URL.
+/// Keeps the RFC 3986 unreserved set plus `/` (path separator)
+/// verbatim and `%xx`-encodes everything else. Handles the common
+/// case of macOS paths containing spaces
+/// (`~/Library/Application Support/...`) — without this, the URL
+/// constructor rejects the unencoded space and the open is a
+/// silent no-op.
+fn encode_file_path(p: &std::path::Path) -> String {
+    let s = p.to_string_lossy();
+    let mut out = String::with_capacity(s.len());
+    for &byte in s.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Resolve the current Baudrun support directory for display in
+/// Settings → Advanced → Config Directory. Falls back to a sentinel
+/// string when the resolver errors out so the UI still has
+/// something to show.
+fn resolve_config_dir_display() -> SharedString {
+    match appdata::support_dir() {
+        Ok(path) => SharedString::from(path.display().to_string()),
+        Err(err) => SharedString::from(format!("(unavailable: {err})")),
+    }
+}
+
 fn import_button<F>(
     s: SkinTokens,
     label: &'static str,
