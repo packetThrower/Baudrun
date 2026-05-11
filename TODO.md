@@ -235,11 +235,32 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             Edit / View entries + the rest of the standard
             macOS slots (Services, Hide, Show All) come along
             with the next sub-items below.
-      - [ ] **Wire Settings → Shortcuts bindings to menu items**
-            so the user's keybinding overrides show up next to
-            menu labels (Cmd+K for Clear, Cmd+Shift+S for
-            Suspend, etc.) and pressing the combo from anywhere
-            in the window dispatches the action.
+      - [x] **Wire Settings → Shortcuts bindings to menu items.**
+            Twelve new gpui actions (`Connect`, `Disconnect`,
+            `Suspend`, `Resume`, `ClearTerminal`, `SendBreak`,
+            `SendFile`, `NewProfile`, `OpenInNewWindow`,
+            `FontIncrease/Decrease/Reset`) map 1:1 to
+            `settings_view::SHORTCUT_ACTIONS`. At boot,
+            `apply_shortcut_bindings` reads each action's
+            effective spec (`effective_shortcut` from
+            settings_view), converts via the new
+            `spec_to_gpui_binding` helper (W3C `Meta+Shift+K` →
+            gpui `cmd-shift-k`), and registers them all via
+            `cx.bind_keys`. The same function rebuilds the
+            menubar (`Baudrun / File / Session / View / Window /
+            Help`) so the accelerators next to each label reflect
+            the new bindings. A SettingsBus subscription re-runs
+            the whole apply step on every `Updated` event, so
+            edits in Settings → Shortcuts propagate to the
+            menubar live. Per-window dispatch is wired on
+            `AppView`'s outermost div via twelve `.on_action`
+            handlers — Connect saves+connects through the open
+            editor or kicks off `connect_to` for the sidebar
+            selection; ClearTerminal forwards to
+            `TerminalView::clear_screen`; Font* writes through
+            `SettingsBus::replace` so the existing
+            `apply_font_size` re-render path handles the
+            push to alacritty.
       - [ ] **About Baudrun panel** — standard macOS "About"
             sheet showing version, copyright, GitHub link. Tauri
             shipped one; gpui's panel can be a small modal.
