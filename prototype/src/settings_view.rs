@@ -164,6 +164,14 @@ pub struct SettingsView {
     /// subscription. Underscore prefix marks "owned solely for
     /// drop-time effect, never read."
     _log_dir_sub: Subscription,
+
+    // -- Window-header filter state --
+    filter_input: Entity<InputState>,
+    _filter_sub: Subscription,
+    /// Lowercased mirror of `filter_input`'s text. Empty means "no
+    /// filter active"; non-empty drives the per-section fade + the
+    /// dim-tabs-without-matches behaviour in the left rail.
+    filter_text: String,
     /// Cached resolved support-dir path. Read once at construction
     /// + refreshed after Choose / Reset so the read-only display
     /// reflects what the next launch will use without re-touching
@@ -382,6 +390,25 @@ impl SettingsView {
                 }
             });
 
+        // Filter input — lives in the window header, drives the
+        // per-section fade and the tab-rail dimming. Subscribed on
+        // `Change` (every keystroke) so the dim animates live; no
+        // need to wait for Blur the way the saved-setting inputs do.
+        let filter_input = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Filter settings\u{2026}")
+        });
+        let filter_sub =
+            cx.subscribe(&filter_input, |this, input, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    let value = input.read(cx).value().to_string();
+                    let next = value.trim().to_lowercase();
+                    if next != this.filter_text {
+                        this.filter_text = next;
+                        cx.notify();
+                    }
+                }
+            });
+
         Self {
             settings_bus,
             skins_store,
@@ -405,6 +432,9 @@ impl SettingsView {
             log_dir,
             _log_dir_sub: log_dir_sub,
             config_dir_display: resolve_config_dir_display(),
+            filter_input,
+            _filter_sub: filter_sub,
+            filter_text: String::new(),
         }
     }
 
@@ -460,6 +490,62 @@ impl SettingsView {
         // Inverted same as drivers — see comment above.
         next.disable_update_check = !enabled;
         self.commit(next, cx);
+    }
+
+    /// Opacity multiplier for a section card given the current
+    /// filter text. Empty filter → 1.0 (full visibility). Non-empty
+    /// → 1.0 when the section's title or keyword list contains the
+    /// filter substring (case-insensitive), 0.30 otherwise. The
+    /// dimmed section stays interactive; the user can still tweak
+    /// it via keyboard / mouse without clearing the filter first.
+    fn filter_opacity(&self, title: &str) -> f32 {
+        if self.section_matches_filter(title) { 1.0 } else { 0.18 }
+    }
+
+    /// Wrap a section card with the filter-aware opacity. Every
+    /// pane builder calls this in place of the bare
+    /// `section_card_with_desc` so the filter dim applies
+    /// consistently. Non-matching sections still paint full-size
+    /// and stay clickable — they just fade.
+    fn filtered_card(
+        &self,
+        s: SkinTokens,
+        title: &'static str,
+        description: Option<&'static str>,
+        body: impl IntoElement,
+    ) -> gpui::Div {
+        section_card_with_desc(s, title, description, body)
+            .opacity(self.filter_opacity(title))
+    }
+
+    fn section_matches_filter(&self, title: &str) -> bool {
+        if self.filter_text.is_empty() {
+            return true;
+        }
+        if title.to_lowercase().contains(&self.filter_text) {
+            return true;
+        }
+        SECTION_KEYWORDS
+            .iter()
+            .find(|(t, _)| *t == title)
+            .map(|(_, kws)| kws.to_lowercase().contains(&self.filter_text))
+            .unwrap_or(false)
+    }
+
+    /// True when the given tab has at least one matching section
+    /// under the current filter. Drives the tab-rail dim — tabs
+    /// with no hits read as "nothing here to find."
+    fn tab_has_filter_matches(&self, tab: SettingsTab) -> bool {
+        if self.filter_text.is_empty() {
+            return true;
+        }
+        TAB_SECTIONS
+            .iter()
+            .find(|(t, _)| *t == tab)
+            .map(|(_, titles)| {
+                titles.iter().any(|title| self.section_matches_filter(title))
+            })
+            .unwrap_or(true)
     }
 
     fn set_include_prerelease(&mut self, enabled: bool, cx: &mut Context<Self>) {
@@ -1149,14 +1235,25 @@ impl Render for SettingsView {
                     .size_full()
                     .flex()
                     .flex_col()
-                    .child(window_header(s))
+                    .child(window_header(
+                        s,
+                        &self.filter_input,
+                        !self.filter_text.is_empty(),
+                        cx,
+                    ))
                     .child(
                         div()
                             .flex_1()
                             .min_h_0()
                             .flex()
                             .flex_row()
-                            .child(rail(s, self.tab, cx))
+                            .child({
+                                let matches: Vec<(SettingsTab, bool)> = SettingsTab::ALL
+                                    .iter()
+                                    .map(|&t| (t, self.tab_has_filter_matches(t)))
+                                    .collect();
+                                rail(s, self.tab, &matches, cx)
+                            })
                             .child(scrollable_pane(self.pane_content(s, cx))),
                     ),
             )
@@ -1277,7 +1374,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap_3()
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Keyboard Shortcuts",
                 Some(
@@ -1294,7 +1391,7 @@ impl SettingsView {
 
     fn themes_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
         // -- Card 1: Default Theme picker --
-        let default_card = section_card_with_desc(
+        let default_card = self.filtered_card(
             s,
             "Default Theme",
             Some("Used by any profile that doesn't set its own theme."),
@@ -1350,6 +1447,7 @@ impl SettingsView {
                     )),
             )
             .child(div().flex().flex_col().gap_2().children(rows));
+        let installed_card = installed_card.opacity(self.filter_opacity("Installed Themes"));
 
         div()
             .flex()
@@ -1533,7 +1631,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap_3()
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Highlight Packs",
                 Some(
@@ -1551,7 +1649,7 @@ impl SettingsView {
         // -- App Skin: just the picker now. Import + per-skin
         // delete moved into the Installed Skins card below to
         // match the Tauri layout.
-        let app_skin_card = section_card_with_desc(
+        let app_skin_card = self.filtered_card(
             s,
             "App Skin",
             Some(
@@ -1614,13 +1712,14 @@ impl SettingsView {
                     )),
             )
             .child(installed_body);
+        let installed_card = installed_card.opacity(self.filter_opacity("Installed Skins"));
 
         div()
             .flex()
             .flex_col()
             .gap_3()
             .child(app_skin_card)
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Appearance",
                 Some(
@@ -1631,7 +1730,7 @@ impl SettingsView {
                 Select::new(&self.appearance_select),
             ))
             .child(installed_card)
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Terminal Font Size",
                 Some(
@@ -1641,7 +1740,7 @@ impl SettingsView {
                 ),
                 Input::new(&self.font_size).small().appearance(true),
             ))
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Scrollback",
                 Some(
@@ -1722,7 +1821,7 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap_3()
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Session Log Directory",
                 Some(
@@ -1752,7 +1851,7 @@ impl SettingsView {
                         |this, window, cx| this.reset_log_dir(window, cx),
                     )),
             ))
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "USB Driver Detection",
                 Some(
@@ -1768,7 +1867,7 @@ impl SettingsView {
                     SettingsView::set_detect_drivers,
                 ),
             ))
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Copy on Select",
                 Some(
@@ -1784,7 +1883,7 @@ impl SettingsView {
                     SettingsView::set_copy_on_select,
                 ),
             ))
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Window State",
                 Some(
@@ -1800,7 +1899,7 @@ impl SettingsView {
                     SettingsView::set_restore_window_state,
                 ),
             ))
-            .child(section_card_with_desc(
+            .child(self.filtered_card(
                 s,
                 "Updates",
                 Some("Check GitHub on app launch for a newer Baudrun release."),
@@ -1836,6 +1935,7 @@ impl SettingsView {
                     .border_color(rgba(s.border_subtle))
                     .rounded(px(s.radius_lg))
                     .shadow_sm()
+                    .opacity(self.filter_opacity("Config Directory"))
                     .px_4()
                     .py_3()
                     .flex()
@@ -1930,7 +2030,12 @@ impl SettingsView {
 /// Window-top header bar. Mirrors `form_header` — title at the
 /// Baudrun `--font-size-h1` (24px), uppercase tag underneath, full
 /// width with a subtle bottom border.
-fn window_header(s: SkinTokens) -> impl IntoElement {
+fn window_header(
+    s: SkinTokens,
+    filter_input: &Entity<InputState>,
+    filter_active: bool,
+    cx: &mut Context<SettingsView>,
+) -> impl IntoElement {
     div()
         .w_full()
         .px_6()
@@ -1938,27 +2043,106 @@ fn window_header(s: SkinTokens) -> impl IntoElement {
         .border_b_1()
         .border_color(rgba(s.border_subtle))
         .flex()
-        .flex_col()
-        .gap_1()
+        .flex_row()
+        .items_center()
+        .gap_4()
         .child(
             div()
-                .text_size(px(24.0))
-                .text_color(rgba(s.fg_primary))
-                .child("Settings"),
+                .flex_1()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_size(px(24.0))
+                        .text_color(rgba(s.fg_primary))
+                        .child("Settings"),
+                )
+                .child(
+                    div()
+                        .text_size(px(10.0))
+                        .text_color(rgba(s.fg_tertiary))
+                        .child("GLOBAL DEFAULTS"),
+                ),
         )
         .child(
+            // `relative` so the absolutely-positioned clear glyph
+            // anchors to the input's right edge. We hand-roll the
+            // `×` instead of using `Input::cleanable(true)` — that
+            // path renders gpui-component's `IconName::CircleX`
+            // SVG which the prototype doesn't bundle (the icon
+            // shows up blank, leaving just the hover circle).
             div()
-                .text_size(px(10.0))
-                .text_color(rgba(s.fg_tertiary))
-                .child("GLOBAL DEFAULTS"),
+                .relative()
+                .w(px(220.0))
+                .child(
+                    Input::new(filter_input).small().appearance(true),
+                )
+                .when(filter_active, |row| {
+                    row.child(
+                        div()
+                            .id("settings-filter-clear")
+                            .absolute()
+                            .top(px(0.0))
+                            .right(px(6.0))
+                            .h_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(14.0))
+                            .text_color(rgba(s.fg_tertiary))
+                            .cursor_pointer()
+                            .hover(|st| st.text_color(rgba(s.fg_primary)))
+                            .tooltip(|window, cx| {
+                                Tooltip::new(SharedString::from("Clear filter"))
+                                    .build(window, cx)
+                            })
+                            .child("\u{00D7}")
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                    // Clear the input AND the
+                                    // derived `filter_text`
+                                    // explicitly — relying on the
+                                    // Change subscription to do
+                                    // both isn't reliable (the
+                                    // event sometimes doesn't reach
+                                    // us when set_value runs from
+                                    // inside another listener).
+                                    this.filter_input.update(cx, |state, cx| {
+                                        state.set_value("", window, cx);
+                                    });
+                                    if !this.filter_text.is_empty() {
+                                        this.filter_text.clear();
+                                        cx.notify();
+                                    }
+                                }),
+                            ),
+                    )
+                }),
         )
 }
 
 /// Left-rail tab nav. Same shape as `form_tab_nav` — translucent
 /// blue active background, muted text for inactive entries, hover
-/// fades to the button-bg token.
-fn rail(s: SkinTokens, active: SettingsTab, cx: &mut Context<SettingsView>) -> impl IntoElement {
-    let item = move |label: &'static str, tab: SettingsTab| {
+/// fades to the button-bg token. Tabs whose sections all miss the
+/// current filter render at 0.35 opacity so the user can see at a
+/// glance where their hits are; they stay clickable so a typo in
+/// the filter doesn't lock the user out of the rest of the panel.
+fn rail(
+    s: SkinTokens,
+    active: SettingsTab,
+    has_matches: &[(SettingsTab, bool)],
+    cx: &mut Context<SettingsView>,
+) -> impl IntoElement {
+    let lookup_match = |tab: SettingsTab| -> bool {
+        has_matches
+            .iter()
+            .find(|(t, _)| *t == tab)
+            .map(|(_, m)| *m)
+            .unwrap_or(true)
+    };
+    let item = move |label: &'static str, tab: SettingsTab, dimmed: bool| {
         let is_active = tab == active;
         let bg = if is_active {
             rgba(s.bg_active)
@@ -1971,6 +2155,7 @@ fn rail(s: SkinTokens, active: SettingsTab, cx: &mut Context<SettingsView>) -> i
             rgba(s.fg_secondary)
         };
         let hover_bg = s.bg_input;
+        let opacity = if dimmed { 0.35 } else { 1.0 };
         div()
             .w_full()
             .px_3()
@@ -1978,6 +2163,7 @@ fn rail(s: SkinTokens, active: SettingsTab, cx: &mut Context<SettingsView>) -> i
             .rounded_md()
             .bg(bg)
             .text_color(fg)
+            .opacity(opacity)
             .cursor_pointer()
             .hover(move |st| st.bg(rgba(hover_bg)))
             .child(label)
@@ -2000,7 +2186,9 @@ fn rail(s: SkinTokens, active: SettingsTab, cx: &mut Context<SettingsView>) -> i
         .flex_col()
         .gap_1()
         .text_size(px(13.0))
-        .children(SettingsTab::ALL.iter().map(|&t| item(t.label(), t)))
+        .children(SettingsTab::ALL.iter().map(|&t| {
+            item(t.label(), t, !lookup_match(t))
+        }))
 }
 
 /// Scrollable pane wrapper. Same min_w_0/min_h_0 dance as
@@ -2094,6 +2282,66 @@ where
 /// chrome — slightly raised on the panel's translucent bg, accent
 /// border on hover for affordance. The on-click handler lives in
 /// `SettingsView::start_*_import`.
+/// Section title → extra keyword string for the Settings filter
+/// box. Titles already match against themselves; this table is for
+/// synonyms / related concepts so a user typing "ports" or
+/// "voiceover" lands at the relevant section even when the title
+/// itself doesn't contain the word. Keep entries lowercase — the
+/// matcher normalises before comparing.
+const SECTION_KEYWORDS: &[(&str, &str)] = &[
+    ("App Skin", "chrome appearance theme accent radius font ui interface look feel \
+                   style baudrun dracula synthwave crt monokai gruvbox solarized nord \
+                   tokyo night brogrammer terminal panel sidebar widget"),
+    ("Appearance", "light dark auto system mode follow os macos windows night day"),
+    ("Installed Skins", "import custom skin manage delete remove add upload trash \
+                         user imported personalize"),
+    ("Terminal Font Size", "font size monospace terminal text glyph pixel zoom"),
+    ("Scrollback", "scrollback lines buffer history wheel scroll mouse pixels page"),
+    ("Default Theme", "theme palette ansi colour color terminal viewport baudrun \
+                       dracula monokai gruvbox solarized nord onedark tomorrow brogrammer"),
+    ("Installed Themes", "import itermcolors theme manage delete remove preview \
+                          color colour palette terminal user custom"),
+    ("Keyboard Shortcuts", "binding key hotkey shortcut clear send break suspend resume \
+                            connect disconnect copy paste cmd ctrl meta combo capture \
+                            override default"),
+    ("Highlight Packs", "highlight pack rule regex syntax colour color match \
+                         cisco junos arista mikrotik aruba routeros eos vendor \
+                         network bgp ospf stp interface log error warning"),
+    ("Session Log Directory", "log directory folder record session save path file \
+                               record-to-file logfile capture record"),
+    ("USB Driver Detection", "usb driver detection cp210x ftdi pl2303 ch340 banner \
+                              adapter notice missing driver pop-up alert"),
+    ("Copy on Select", "copy clipboard selection putty mouse drag autoselect auto \
+                        copy on select autocopy"),
+    ("Window State", "window position size remember restore launch persistence \
+                      geometry frame bounds layout"),
+    ("Updates", "update github release version check prerelease alpha beta rc \
+                 changelog new available notification download"),
+    ("Config Directory", "config directory folder path location store dropbox icloud \
+                          override support portable share xdg appdata application support"),
+];
+
+const TAB_SECTIONS: &[(SettingsTab, &[&str])] = &[
+    (SettingsTab::Appearance, &[
+        "App Skin",
+        "Appearance",
+        "Installed Skins",
+        "Terminal Font Size",
+        "Scrollback",
+    ]),
+    (SettingsTab::Themes, &["Default Theme", "Installed Themes"]),
+    (SettingsTab::Shortcuts, &["Keyboard Shortcuts"]),
+    (SettingsTab::Highlighting, &["Highlight Packs"]),
+    (SettingsTab::Advanced, &[
+        "Session Log Directory",
+        "USB Driver Detection",
+        "Copy on Select",
+        "Window State",
+        "Updates",
+        "Config Directory",
+    ]),
+];
+
 /// Percent-encode a filesystem path for use in a `file://` URL.
 /// Keeps the RFC 3986 unreserved set plus `/` (path separator)
 /// verbatim and `%xx`-encodes everything else. Handles the common

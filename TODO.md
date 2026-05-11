@@ -133,10 +133,15 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
         prototype uses gpui paint, not xterm.js.
 
       Settings — chrome
-      - [ ] **Filter / search input** at the top of the Settings
-            window. Tauri uses `keywords` per section to scroll-
-            and-highlight matches as the user types; current
-            prototype has tabs only.
+      - [x] **Filter / search input.** Done. Filter Input on the
+            right of the window header dims non-matching section
+            cards to 0.18 opacity (case-insensitive match against
+            title + a `SECTION_KEYWORDS` synonym table) and also
+            dims left-rail tabs whose sections all miss the
+            filter. Hand-rolled `×` clear glyph on the right of
+            the input (gpui-component's built-in `cleanable`
+            renders an `IconName::CircleX` SVG the prototype
+            doesn't bundle, so the icon ends up blank).
       - [ ] **Undo-delete** for imported skins / themes / packs.
             Replace the immediate delete with a 10-s "removed,
             Undo" toast (Tauri uses the status bar; we can use
