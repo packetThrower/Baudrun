@@ -87,57 +87,90 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       the write thread), Send Hex (modal with the same parser the
       Tauri version uses — `0x` / spaces / commas all strip),
       and Send File alongside Move-to-New-Window.
-- [ ] **Phase 7.5 — Settings + Profile Form parity.** Items that
-      exist in the Tauri build but are still missing or only
-      partially wired in the gpui prototype. Diffed against
+- [x] **Phase 7.5 — Settings + Profile Form parity.** Done. Every
+      sub-item below either landed or was reclassified into Phase
+      7.6 (deliberate drops). Diffed against
       `src/lib/Settings.svelte` + `src/lib/ProfileForm.svelte`.
 
       Settings — Appearance tab
-      - [ ] **Scrollback lines** input (Tauri:
-            `settings.scrollbackLines`, default 10000). Data field
-            exists on `Settings`; UI control + plumb to the
-            TerminalView's `display_offset`-driven scrollback.
-      - [ ] **Installed Skins list.** Currently only the picker
-            select + a trash button when the active selection is
-            custom. Tauri renders a full list with per-row delete
-            (and 10-s undo). Pair with the undo-toast item below.
+      - [x] **Scrollback lines** input. Done. Appearance tab grew
+            a Scrollback Input matching the Font Size slot.
+            `Settings::scrollback_lines` flows into
+            `TerminalView::new` on boot and `set_scrollback_lines`
+            (which pushes a fresh `term::Config` through
+            `Term::set_options`) on live edits. Status bar shows
+            `<filled>/<max>` on the right.
+      - [x] **Installed Skins list.** Done. New "Installed Skins"
+            card in the Appearance tab — header with import on the
+            right, one row per user-imported skin showing name +
+            "Custom" tag (with "· dark-only" suffix when
+            `supports_light` is false) + 🗑 button. Empty state
+            shows a muted hint. Deleting the active skin falls
+            back to the built-in `baudrun` default. Undo-toast
+            still pending (tracked under "Settings — chrome").
 
       Settings — Advanced tab
-      - [ ] **Choose… / Reset buttons** next to Session Log
-            Directory (currently text input only — user has to
-            type or paste a path).
-      - [ ] **Screen Reader Support toggle**
-            (`settings.screen_reader_mode`). Lower priority than
-            the others; check whether gpui exposes an equivalent
-            ARIA hook before committing.
-      - [ ] **Config Directory** read-only display + Choose… /
-            Reset. Lets the user point Baudrun at a different
-            support dir (portable installs, shared profiles).
+      - [x] **Choose… / Reset buttons** next to Session Log
+            Directory. Done. `choose_log_dir` opens the OS folder
+            picker via `cx.prompt_for_paths` with `directories:
+            true` and mirrors the result into both the Input and
+            the persisted setting; `reset_log_dir` clears both
+            back to the default-location signal (empty string).
+      - Screen Reader Support toggle moved to Phase 7.6 — gpui
+        0.2 exposes no accessibility primitives (no ARIA, no
+        NSAccessibility bridge), so there's nowhere to wire the
+        toggle to. Revisit when gpui ships a11y hooks upstream.
+      - [x] **Config Directory** display + Choose… / Reset. Done.
+            Custom card with the resolved support-dir path in a
+            read-only Input, plus three pills: Reveal (opens the
+            directory in Finder / Explorer / xdg-open via
+            `cx.open_url("file://…")` with a percent-encoded
+            path), Choose… (folder picker → `appdata::write_override`),
+            and Reset (clears the override). Choose / Reset toast
+            "Restart Baudrun to use it" — re-binding every live
+            Store at runtime is heavier than this slice covers.
       - Terminal Renderer (DOM/WebGL toggle) is **N/A** —
         prototype uses gpui paint, not xterm.js.
 
       Settings — chrome
-      - [ ] **Filter / search input** at the top of the Settings
-            window. Tauri uses `keywords` per section to scroll-
-            and-highlight matches as the user types; current
-            prototype has tabs only.
-      - [ ] **Undo-delete** for imported skins / themes / packs.
-            Replace the immediate delete with a 10-s "removed,
-            Undo" toast (Tauri uses the status bar; we can use
-            the existing notification layer).
+      - [x] **Filter / search input.** Done. Filter Input on the
+            right of the window header dims non-matching section
+            cards to 0.18 opacity (case-insensitive match against
+            title + a `SECTION_KEYWORDS` synonym table) and also
+            dims left-rail tabs whose sections all miss the
+            filter. Hand-rolled `×` clear glyph on the right of
+            the input (gpui-component's built-in `cleanable`
+            renders an `IconName::CircleX` SVG the prototype
+            doesn't bundle, so the icon ends up blank).
+      - [x] **Undo-delete** for imported skins / themes / packs.
+            Done. Each store grew a `restore` method that re-
+            persists the JSON + re-adds to the in-memory list.
+            Delete handlers snapshot the item before calling
+            store.delete, then push a notification with an Undo
+            action button that hands the snapshot back to the
+            restore method. Notification dismisses ~1.5 s after
+            the Undo click (entity-scoped spawn so the timer
+            survives tab switches mid-wait) and a follow-up
+            "Restored …" toast confirms the action.
 
       Profile Form
-      - [ ] **Missing-driver banner** above the Serial Port field
-            when an unenrolled USB-serial adapter is plugged in.
-            Backend `data::serial::detect` is ready (already used
-            for the Settings toggle); profile editor just needs
-            the banner UI.
-      - [ ] **Header buttons when connected.** When the editor is
-            open for the connected profile while suspended, the
-            form header still shows Connect — Tauri swaps that
-            for Disconnect + Resume. We have a Resume banner
-            above the form already; this would move both
-            affordances into the header for visual parity.
+      - [x] **Missing-driver banner.** Done. Profile editor's
+            Connection card renders a yellow banner above the
+            Serial Port picker for each unenrolled USB-serial
+            adapter detected by `data::serial::detect`
+            (macOS/Windows; Linux returns empty since the kernel
+            handles driver loading there). Shows chipset name +
+            optional reason + product/manufacturer/serial, with an
+            "Install driver…" pill that opens the vendor URL via
+            `cx.open_url`. Detection is gated by Settings →
+            Advanced → USB Driver Detection.
+      - [x] **Header buttons when connected.** Done. The form
+            header swaps Connect for Disconnect + Resume when the
+            editor is open on the connected profile while suspended
+            (the existing `show_resume` signal threads down to
+            `form_pane` → `form_header` as a `connected_session`
+            flag). The Resume banner above the form stays for the
+            "port still open, bytes still flowing" context line.
 
       Cosmetic / non-blocking
       - Welcome pane wording differs slightly from Tauri; not
@@ -170,6 +203,14 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       - **`tauri-plugin-updater`.** Gone with Tauri itself.
         Phase 9 picks a replacement (`cargo-dist` or
         `self_update`).
+      - **Screen Reader Support toggle.** Tauri exposed this as
+        the xterm.js ARIA live-region preference. gpui 0.2
+        ships no accessibility primitives (no ARIA, no
+        NSAccessibility bridge — the platform layers only
+        forward focus + key input). The data field stays on
+        `Settings` so old settings.json files round-trip, but
+        there's no UI control. Revisit when gpui adds a11y
+        hooks upstream.
       - **WKWebView paste-confirm modal hack.** Tauri needed a
         custom modal because WKWebView swallows `window.confirm`.
         gpui's dialog layer doesn't have the same limitation, so
