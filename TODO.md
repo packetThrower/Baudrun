@@ -418,9 +418,100 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
               config — can pick a profile to connect to, can't
               edit one.
 - [ ] **Phase 9 — Auto-updater + distribution.** `tauri-plugin-updater`
-      is gone post-Tauri; investigate `cargo-dist` or the
-      `self_update` crate. Code signing per platform. CI build
-      pipeline (probably GitHub Actions ARM + x64 for each OS).
+      is gone post-Tauri; the goal is one signed, notarized,
+      auto-updating Baudrun.app per tagged release. Pick whichever
+      sub-item is easiest to land first; they're independently
+      shippable.
+
+      Foundation
+      - [ ] **Wire prototype into CI.** `.github/workflows/ci.yml`
+            currently only runs `cargo check / clippy / test --lib`
+            against `src-tauri/`. Mirror that under
+            `prototype/` so we catch regressions on the active
+            crate. Cheap to set up; everything else in Phase 9
+            depends on the build going green from a clean clone.
+
+      Bundling
+      - [ ] **Pick a bundler.** Three serious options:
+            `cargo-bundle` (simple, makes .app/.dmg, less active),
+            `cargo-dist` (opinionated, generates CI + release
+            workflows, much more "batteries included"), or hand-
+            rolled scripts (max control, more work). Pick one and
+            document the decision before writing any build code so
+            the rest of Phase 9 inherits the choice.
+      - [ ] **Local `.app` build that works.** `cargo bundle
+            --release` (or chosen-tool equivalent) produces a
+            Baudrun.app that double-clicks open on a fresh macOS
+            user. Picks up our `prototype/resources/Info.plist`
+            + `resources/icons/icon.icns` (and overrides Cargo's
+            default Info.plist with our hand-curated one). No
+            signing yet — just a working .app.
+      - [ ] **Windows + Linux smoke builds.** `cargo build
+            --release` succeeds on both; .msi / .deb / AppImage
+            output once the bundler choice settles. Lower
+            priority than macOS — Windows is the primary
+            secondary target, Linux is best-effort until gpui's
+            Wayland story matures.
+
+      Signing + notarization (macOS first)
+      - [ ] **Developer ID Application signing.** Port the
+            existing `.github/workflows/release.yml`'s signing
+            block (it's already wired against the Tauri build) to
+            the new bundle. Secrets stay the same:
+            `APPLE_SIGNING_IDENTITY`,
+            `APPLE_SIGNING_CERTIFICATE`,
+            `APPLE_CERTIFICATE_PASSWORD`.
+      - [ ] **Notarization + staple.** Submit signed .app to
+            Apple, wait for OK, staple ticket so Gatekeeper
+            doesn't network-fetch on every launch. The existing
+            release.yml does this for Tauri; same job needs to
+            run against our output.
+      - [ ] **Hardened runtime + entitlements.** Required for
+            notarization. We need `com.apple.security.cs.disable-
+            library-validation` (gpui dynamically loads its
+            renderer dylib) and probably nothing else — the
+            prototype reads serial ports via standard POSIX which
+            doesn't need an entitlement.
+
+      Release pipeline
+      - [ ] **New release workflow for prototype.** Fork
+            `.github/workflows/release.yml`, swap the `tauri
+            build` step for the bundler choice, keep the macOS
+            arm64 + amd64 matrix the Tauri version already uses
+            (`macos-26` for arm64, `macos-15-intel` for amd64),
+            and upload the signed `.dmg` / `.zip` to the
+            tag-triggered GitHub Release. Tauri's pre-release
+            handling (semver tag with hyphen → `prerelease=true`)
+            ports cleanly.
+      - [ ] **CI build coverage.** Compile the prototype's
+            release-mode bundle on every PR (no signing, no
+            upload) so a broken bundle catches before it merges.
+            Skip signing in PRs — only the tag job has the
+            signing secrets.
+
+      Auto-updater
+      - [ ] **Pick the updater crate.** `self_update` is the
+            obvious starting candidate: pulls assets from GitHub
+            Releases, verifies a checksum, replaces the running
+            binary. `cargo-dist` bundles its own updater
+            (`cargo-dist update` flow) if we pick it as the
+            bundler. Decide alongside the bundler choice — they
+            interact.
+      - [ ] **On-launch update check.** Honour the existing
+            `disable_update_check` + `include_prerelease_updates`
+            settings (they're already in `settings.json` and
+            persisted from the Tauri version). Compare local
+            version (`CARGO_PKG_VERSION`) against the highest
+            GitHub Release tag; surface a footer toast +
+            "Download" link when a newer release exists.
+            `dismissed_update_version` already gates the toast
+            against re-prompting after the user clicks away.
+      - [ ] **Apply update on quit.** One-click "Install" in the
+            toast that downloads the new .app, replaces the
+            running bundle, and re-launches. Has to defer the
+            replace until after the current process exits — same
+            constraint Sparkle handles on macOS via a relauncher
+            helper.
 - [ ] **Phase 10 — Polish & cutover.** Cross-platform perf passes.
       Migration of existing user data (profiles, themes) from old
       app's config dir. Beta on the experiments branch. `git merge
