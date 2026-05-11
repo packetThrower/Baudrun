@@ -322,10 +322,15 @@ fn cube_step(v: u8) -> u8 {
 pub fn make_term(
     rows: usize,
     cols: usize,
+    scrolling_history: usize,
 ) -> (Term<TerminalListener>, Processor, Rc<ListenerState>) {
     let state = Rc::new(ListenerState::default());
     let listener = TerminalListener { state: state.clone() };
-    let term = Term::new(Config::default(), &Dims { rows, cols }, listener);
+    let config = Config {
+        scrolling_history,
+        ..Config::default()
+    };
+    let term = Term::new(config, &Dims { rows, cols }, listener);
     (term, Processor::new(), state)
 }
 

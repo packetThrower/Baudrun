@@ -157,21 +157,28 @@ fn main() {
             Err(err) => fallback_themes_store(format!("support dir unavailable: {err}")),
         };
 
-        // Build the TerminalView entity first; AppView will own a
-        // handle to it and render it inside the right pane.
-        // Boot palette = the hardcoded Baudrun default. AppView
-        // re-applies the user's `default_theme_id` from settings
-        // immediately after construction so a fresh launch lands
-        // on the right palette before the first frame paints.
-        let terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, term_bridge::Palette::baudrun(), cx)
-        });
-
         // Build SettingsBus once at App scope so additional windows
         // (opened via the sidebar's New Window button) share the
         // same source of truth — a settings change in one window
-        // live-applies to all of them.
+        // live-applies to all of them. Built before the TerminalView
+        // so the boot scrollback can come from the persisted value.
         let settings_bus = cx.new(|_| SettingsBus::new(settings_store.clone()));
+        let boot_scrollback = settings_bus.read(cx).current().effective_scrollback();
+
+        // Build the TerminalView entity. Boot palette = the
+        // hardcoded Baudrun default. AppView re-applies the user's
+        // `default_theme_id` immediately after construction so a
+        // fresh launch lands on the right palette before the first
+        // frame paints.
+        let terminal = cx.new(|cx| {
+            TerminalView::new(
+                24,
+                80,
+                term_bridge::Palette::baudrun(),
+                boot_scrollback,
+                cx,
+            )
+        });
 
         let window = open_app_window(
             cx,

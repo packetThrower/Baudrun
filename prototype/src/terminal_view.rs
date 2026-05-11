@@ -152,6 +152,12 @@ pub struct TerminalView {
     /// via `set_palette` when the user picks a different theme in
     /// the Settings window.
     palette: Palette,
+    /// Effective scrollback line count. Snapshotted at construction
+    /// and updated by `set_scrollback_lines`; mirrored back to the
+    /// underlying Term via `set_options`. Held on the view so the
+    /// highlight-replay path can rebuild the Term with the same
+    /// buffer size instead of falling back to alacritty's default.
+    scrollback_lines: usize,
     /// Shared with the `TerminalListener` inside `term`. Polled
     /// after each `feed_bytes` to pick up bell events that fired
     /// during the parser advance.
@@ -267,9 +273,10 @@ impl TerminalView {
         rows: usize,
         cols: usize,
         palette: Palette,
+        scrolling_history: usize,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (term, processor, listener_state) = make_term(rows, cols);
+        let (term, processor, listener_state) = make_term(rows, cols, scrolling_history);
         let mut grid = TerminalGrid::new(rows, cols, palette.fg, palette.bg);
         // Paint the initial Term state into the grid so the cursor
         // is visible at startup. Without this the grid stays blank
@@ -316,6 +323,7 @@ impl TerminalView {
             grid,
             focus_handle: cx.focus_handle(),
             palette,
+            scrollback_lines: scrolling_history,
             listener_state,
             serial_tx: None,
             profile_settings: ProfileSettings::default(),
@@ -413,7 +421,8 @@ impl TerminalView {
         // doesn't pile a second copy on top of the existing grid.
         let rows = self.grid.rows();
         let cols = self.grid.cols();
-        let (term, processor, listener_state) = make_term(rows, cols);
+        let (term, processor, listener_state) =
+            make_term(rows, cols, self.scrollback_lines);
         self.term = term;
         self.processor = processor;
         self.listener_state = listener_state;
@@ -486,6 +495,34 @@ impl TerminalView {
             &self.palette,
             self.cursor_blink_phase,
         );
+        cx.notify();
+    }
+
+    /// Resize the underlying alacritty Term's scrollback to `lines`.
+    /// Pushes a fresh `term::Config` through `set_options` — the
+    /// only field that actually changes is `scrolling_history`, but
+    /// alacritty's API takes the whole Config so we build it from
+    /// the default each call. Shrinking drops the oldest scrollback
+    /// rows immediately; growing leaves new room at the top of the
+    /// buffer for the next inbound chunk.
+    /// Current (filled, max) scrollback line count. The status bar
+    /// uses it to render the `X/Y` indicator. Filled comes from
+    /// alacritty's grid (rows currently held above the visible
+    /// area); max is the configured `scrolling_history`.
+    pub fn scrollback_state(&self) -> (usize, usize) {
+        (self.term.grid().history_size(), self.scrollback_lines)
+    }
+
+    pub fn set_scrollback_lines(&mut self, lines: usize, cx: &mut Context<Self>) {
+        if self.scrollback_lines == lines {
+            return;
+        }
+        self.scrollback_lines = lines;
+        let cfg = alacritty_terminal::term::Config {
+            scrolling_history: lines,
+            ..alacritty_terminal::term::Config::default()
+        };
+        self.term.set_options(cfg);
         cx.notify();
     }
 

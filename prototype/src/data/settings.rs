@@ -141,6 +141,25 @@ pub struct WindowGeometry {
     pub height: i32,
 }
 
+/// Fallback when `Settings::scrollback_lines` is unset / zero.
+/// Matches `alacritty_terminal::term::Config::default()` so the
+/// boot terminal has the same buffer size a brand-new Settings
+/// file would produce.
+pub const DEFAULT_SCROLLBACK_LINES: usize = 10_000;
+
+impl Settings {
+    /// Resolve the effective scrollback line count. Zero / negative
+    /// values (which the `i32` field allows for schema reasons but
+    /// the UI rejects) fall back to the default.
+    pub fn effective_scrollback(&self) -> usize {
+        if self.scrollback_lines > 0 {
+            self.scrollback_lines as usize
+        } else {
+            DEFAULT_SCROLLBACK_LINES
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Settings {

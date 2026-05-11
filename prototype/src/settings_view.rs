@@ -137,6 +137,8 @@ pub struct SettingsView {
     _appearance_sub: Subscription,
     font_size: Entity<InputState>,
     _font_size_sub: Subscription,
+    scrollback: Entity<InputState>,
+    _scrollback_sub: Subscription,
 
     // -- Themes tab state --
     theme_select: Entity<SelectState<Vec<Opt>>>,
@@ -253,7 +255,9 @@ impl SettingsView {
         });
         let font_size_sub =
             cx.subscribe(&font_size, |this, input, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Blur) {
+                // Commit on Blur (focus loss) AND on Enter so the
+                // user can lock in a value without tabbing away.
+                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
                     let raw = input.read(cx).value().to_string();
                     let parsed = raw.trim();
                     let next_value = if parsed.is_empty() {
@@ -273,6 +277,44 @@ impl SettingsView {
                     if next_value != this.settings.font_size {
                         let mut next = this.settings.clone();
                         next.font_size = next_value;
+                        this.commit(next, cx);
+                    }
+                }
+            });
+
+        let scrollback_initial = if current.scrollback_lines > 0 {
+            current.scrollback_lines.to_string()
+        } else {
+            String::new()
+        };
+        let scrollback = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("10000")
+                .default_value(scrollback_initial.as_str())
+        });
+        let scrollback_sub =
+            cx.subscribe(&scrollback, |this, input, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                    let raw = input.read(cx).value().to_string();
+                    let parsed = raw.trim();
+                    let next_value = if parsed.is_empty() {
+                        0
+                    } else {
+                        match parsed.parse::<i32>() {
+                            // Sanity cap: 1M lines is already
+                            // multi-gigabyte territory and anything
+                            // higher is a typo. Negative gets
+                            // rejected via the `n > 0` arm.
+                            Ok(n) if (1..=1_000_000).contains(&n) => n,
+                            _ => {
+                                log::warn!("scrollback: invalid value {raw:?}");
+                                return;
+                            }
+                        }
+                    };
+                    if next_value != this.settings.scrollback_lines {
+                        let mut next = this.settings.clone();
+                        next.scrollback_lines = next_value;
                         this.commit(next, cx);
                     }
                 }
@@ -324,7 +366,7 @@ impl SettingsView {
         // character — wasteful, and noisy for `fs::write`.
         let log_dir_sub =
             cx.subscribe(&log_dir, |this, input, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Blur) {
+                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
                     let value = input.read(cx).value().to_string();
                     if value != this.settings.log_dir {
                         let mut next = this.settings.clone();
@@ -347,6 +389,8 @@ impl SettingsView {
             appearance_select,
             _appearance_sub: appearance_sub,
             font_size,
+            scrollback,
+            _scrollback_sub: scrollback_sub,
             _font_size_sub: font_size_sub,
             theme_select,
             _theme_sub: theme_sub,
@@ -1406,6 +1450,17 @@ impl SettingsView {
                      terminal grid only — chrome text size is fixed.",
                 ),
                 Input::new(&self.font_size).small().appearance(true),
+            ))
+            .child(section_card_with_desc(
+                s,
+                "Scrollback",
+                Some(
+                    "Lines of terminal output retained for mouse-wheel \
+                     scrollback. Higher values use more memory but let \
+                     you scroll further back through chatty sessions. \
+                     Leave blank to use the default (10000).",
+                ),
+                Input::new(&self.scrollback).small().appearance(true),
             ))
     }
 

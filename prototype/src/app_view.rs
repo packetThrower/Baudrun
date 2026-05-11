@@ -476,6 +476,17 @@ impl AppView {
         self.apply_palette(cx);
         self.apply_highlight(cx);
         self.apply_font_size(settings, cx);
+        self.apply_scrollback(settings, cx);
+    }
+
+    fn apply_scrollback(
+        &mut self,
+        settings: &settings::Settings,
+        cx: &mut Context<Self>,
+    ) {
+        let lines = settings.effective_scrollback();
+        self.terminal
+            .update(cx, |t, cx| t.set_scrollback_lines(lines, cx));
     }
 
     /// Push the user's terminal font size to the view. Empty / 0
@@ -2156,8 +2167,9 @@ impl AppView {
     /// so settings stay in sync across the two; the new window
     /// starts disconnected with a blank terminal.
     fn open_new_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
         let new_terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), cx)
+            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
         });
         if let Err(err) = open_app_window(
             cx,
@@ -2180,8 +2192,9 @@ impl AppView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
         let new_terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), cx)
+            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
         });
         if let Err(err) = open_app_window(
             cx,
@@ -2341,8 +2354,9 @@ impl AppView {
         let Some(bundle) = self.extract_session() else { return };
         // Replace this window's terminal with a blank one so the
         // source view doesn't render someone else's connected grid.
+        let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
         self.terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), cx)
+            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
         });
         cx.notify();
 
@@ -3014,6 +3028,7 @@ impl Render for AppView {
                         connected_for_status.as_ref(),
                         reconnecting,
                         editor_name.as_deref(),
+                        Some(self.terminal.read(cx).scrollback_state()),
                     )),
             )
             // -- gpui-component overlay layers (dialogs, toasts) --
@@ -3396,6 +3411,7 @@ fn status_bar(
     connected: Option<&Profile>,
     reconnecting: bool,
     editing_profile_name: Option<&str>,
+    scrollback: Option<(usize, usize)>,
 ) -> impl IntoElement {
     let text = match (connected, editing_profile_name) {
         (Some(p), _) if reconnecting => {
@@ -3406,6 +3422,7 @@ fn status_bar(
         (None, Some(_)) => "Editing new profile".to_string(),
         (None, None) => "Not connected".to_string(),
     };
+    let scrollback_text = scrollback.map(|(filled, max)| format!("{filled}/{max}"));
     div()
         .w_full()
         .px_4()
@@ -3415,7 +3432,21 @@ fn status_bar(
         .border_color(rgba(s.border_subtle))
         .text_size(px(11.0))
         .text_color(rgba(s.fg_secondary))
-        .child(text)
+        .flex()
+        .flex_row()
+        .items_center()
+        .child(div().flex_1().child(text))
+        .children(scrollback_text.map(|t| {
+            div()
+                .id("status-scrollback")
+                .child(t)
+                .tooltip(|window, cx| {
+                    Tooltip::new(SharedString::from(
+                        "Scrollback lines: filled / max",
+                    ))
+                    .build(window, cx)
+                })
+        }))
 }
 
 /// Sidebar header row: muted "PROFILES" label on the left, "+"
