@@ -261,9 +261,15 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             `SettingsBus::replace` so the existing
             `apply_font_size` re-render path handles the
             push to alacritty.
-      - [ ] **About Baudrun panel** — standard macOS "About"
-            sheet showing version, copyright, GitHub link. Tauri
-            shipped one; gpui's panel can be a small modal.
+      - [x] **About Baudrun panel.** New `About` action wired to
+            the Baudrun → "About Baudrun" menu item (above Quit).
+            `shortcut_about` opens a gpui-component `Dialog` over
+            the active window with name, version (from
+            `CARGO_PKG_VERSION`), tagline (from
+            `CARGO_PKG_DESCRIPTION`), copyright, and a "View on
+            GitHub" link that calls `cx.open_url` to launch the
+            repo in the user's default browser. No accelerator —
+            About is menu-only, so no Settings → Shortcuts entry.
       - [ ] **Dock menu** (macOS) — right-click on the dock icon
             offers "New Window" + recent profiles for one-click
             reconnect.

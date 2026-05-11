@@ -47,6 +47,7 @@ pub(crate) mod actions {
         [
             Quit,
             NewWindow,
+            About,
             Connect,
             Disconnect,
             Suspend,
@@ -63,7 +64,7 @@ pub(crate) mod actions {
     );
 }
 use actions::{
-    ClearTerminal, Connect, Disconnect, FontDecrease, FontIncrease, FontReset,
+    About, ClearTerminal, Connect, Disconnect, FontDecrease, FontIncrease, FontReset,
     NewProfile, NewWindow, OpenInNewWindow, Quit, Resume, SendBreak, SendFile,
     Suspend,
 };
@@ -338,6 +339,9 @@ fn install_app_menu(
     // via `cx.bind_keys` — drives both menu accelerators and
     // anywhere-in-window dispatch.
     cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &About, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.shortcut_about(window, cx));
+    });
 
     // App-level handlers for every shortcut action. There are two
     // problems an App-level handler solves at once on macOS:
@@ -618,7 +622,11 @@ fn install_menus(cx: &mut App) {
         // hint purposes. Services / Hide / Hide Others / Show All
         // are added automatically by AppKit when the platform
         // recognises the slot.
-        Menu::new("Baudrun").items([MenuItem::action("Quit Baudrun", Quit)]),
+        Menu::new("Baudrun").items([
+            MenuItem::action("About Baudrun", About),
+            MenuItem::separator(),
+            MenuItem::action("Quit Baudrun", Quit),
+        ]),
         Menu::new("File").items([
             MenuItem::action("New Window", NewWindow),
             MenuItem::action("New Profile", NewProfile),

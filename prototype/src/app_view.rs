@@ -2412,6 +2412,25 @@ impl AppView {
         self.open_editor(window, cx);
     }
 
+    /// Show the standard macOS-style "About Baudrun" sheet. Opens
+    /// a gpui-component Dialog over the active window with name,
+    /// version, copyright, and a clickable GitHub link. Triggered
+    /// by the Baudrun → About menu item.
+    pub(crate) fn shortcut_about(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.open_dialog(cx, |dialog, _window, _cx| {
+            // No accelerator on this one — About is menu-only,
+            // hence no Settings → Shortcuts entry. The title bar's
+            // close button (`.close_button(true)`) is enough to
+            // dismiss; no OK / Cancel footer needed for a sheet
+            // that's purely informational.
+            dialog
+                .title("About Baudrun")
+                .close_button(true)
+                .width(px(360.0))
+                .child(about_dialog_body())
+        });
+    }
+
     /// Open the currently-selected profile in a new window, already
     /// connected. Falls back to `open_new_window` (empty welcome
     /// screen) when no profile is selected — mirrors the right-
@@ -3372,6 +3391,56 @@ fn suspended_pane(
                 this.resume_session(window, cx);
             }),
         ))
+}
+
+/// Body content for the About dialog: app name, version, one-line
+/// description, copyright, and a GitHub link. The Dialog wrapper
+/// supplies the title bar and Close button; we just hand back the
+/// flex column that sits below the title.
+fn about_dialog_body() -> impl IntoElement {
+    const GITHUB_URL: &str = "https://github.com/packetThrower/Baudrun";
+    let version = env!("CARGO_PKG_VERSION");
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .pt_2()
+        .child(
+            div()
+                .text_xl()
+                .font_weight(gpui::FontWeight::BOLD)
+                .child("Baudrun"),
+        )
+        .child(
+            div()
+                .text_sm()
+                .opacity(0.75)
+                .child(format!("Version {version} (prototype)")),
+        )
+        .child(
+            // Tagline pulls from the same source-of-truth as
+            // Cargo.toml's `description` so a future product-copy
+            // change doesn't have to remember to update two files.
+            div()
+                .text_sm()
+                .child(env!("CARGO_PKG_DESCRIPTION").to_string()),
+        )
+        .child(
+            div()
+                .text_sm()
+                .opacity(0.65)
+                .child("© 2025–2026 packetThrower / Baudrun contributors"),
+        )
+        .child(
+            div()
+                .id("about-github-link")
+                .text_sm()
+                .text_color(gpui::rgba(0x3b82f6ffu32))
+                .cursor_pointer()
+                .hover(|s| s.text_color(gpui::rgba(0x60a5faffu32)))
+                .on_click(|_evt, _window, cx| cx.open_url(GITHUB_URL))
+                .child("View on GitHub"),
+        )
 }
 
 fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
