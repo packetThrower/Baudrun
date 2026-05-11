@@ -290,6 +290,13 @@ struct Editor {
     /// `override_highlight_packs` is true.
     enabled_highlight_packs: Vec<String>,
 
+    /// Snapshot of unenrolled USB-serial adapters detected when the
+    /// editor was opened. Rendered as a yellow banner above the
+    /// Serial Port field so the user sees what's plugged in but not
+    /// drivered. Re-evaluated each time the rescan button fires so
+    /// the banner reflects current OS state.
+    missing_drivers: Vec<crate::data::serial::chipsets::USBSerialCandidate>,
+
     // -- Advanced / Appearance --
     /// Per-profile theme override. The first option in the picker
     /// is `Opt::new("", "Use global default")`, with the empty id
@@ -1066,10 +1073,12 @@ impl AppView {
     /// Idempotent if already open — re-creates the field state so the
     /// user gets a fresh form rather than whatever they typed before.
     fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let detect = !self.settings_bus.read(cx).current().disable_driver_detection;
         self.editor = Some(build_editor(
             None,
             &Profile::defaults(),
             &self.themes_store,
+            detect,
             window,
             cx,
         ));
@@ -1090,10 +1099,12 @@ impl AppView {
         let Some(profile) = self.profile_store.get(&id) else {
             return;
         };
+        let detect = !self.settings_bus.read(cx).current().disable_driver_detection;
         self.editor = Some(build_editor(
             Some(id),
             &profile,
             &self.themes_store,
+            detect,
             window,
             cx,
         ));
@@ -3555,6 +3566,7 @@ fn build_editor(
     profile_id: Option<String>,
     profile: &Profile,
     themes_store: &themes::Store,
+    detect_drivers: bool,
     window: &mut Window,
     cx: &mut Context<AppView>,
 ) -> Editor {
@@ -3652,6 +3664,11 @@ fn build_editor(
             .enabled_highlight_presets
             .clone()
             .unwrap_or_default(),
+        missing_drivers: if detect_drivers {
+            detect_missing_drivers()
+        } else {
+            Vec::new()
+        },
         paste_warn_multiline: profile.paste_warn_multiline,
         paste_slow: profile.paste_slow,
         paste_char_delay_ms,
@@ -4070,6 +4087,7 @@ struct EditorRender {
     highlight: bool,
     override_highlight_packs: bool,
     enabled_highlight_packs: Vec<String>,
+    missing_drivers: Vec<crate::data::serial::chipsets::USBSerialCandidate>,
     error: Option<String>,
     scroll_handle: ScrollHandle,
 }
@@ -4112,6 +4130,7 @@ impl EditorRender {
             highlight: e.highlight,
             override_highlight_packs: e.override_highlight_packs,
             enabled_highlight_packs: e.enabled_highlight_packs.clone(),
+            missing_drivers: e.missing_drivers.clone(),
             error: e.error.clone(),
             scroll_handle: e.scroll_handle.clone(),
         }
@@ -4280,6 +4299,7 @@ fn form_body(
                 er.parity,
                 er.stop_bits,
                 er.flow_control,
+                er.missing_drivers.clone(),
                 cx,
             ))
             .child(terminal_card(
@@ -4505,6 +4525,116 @@ fn labeled(s: SkinTokens, label: &'static str, widget: impl IntoElement) -> gpui
         .child(widget)
 }
 
+/// Detect unenrolled USB-serial adapters on platforms that need
+/// vendor drivers. macOS / Windows have a real implementation in
+/// `data::serial::detect`; Linux relies on kernel-side driver
+/// loading (`pl2303.ko`, `ftdi_sio.ko`, `cp210x.ko`, …) and has no
+/// equivalent missing-driver scenario, so it returns empty.
+fn detect_missing_drivers() -> Vec<crate::data::serial::chipsets::USBSerialCandidate> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        crate::data::serial::detect::detect_suspect_enumerated_ports()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Vec::new()
+    }
+}
+
+/// One driver-not-loaded banner row. Matches the Tauri layout:
+/// yellow `!` icon on the left, chipset + reason / product / serial
+/// in the middle, and an "Install driver…" pill on the right when
+/// the chipset entry carries a vendor URL. Clicking the pill opens
+/// the URL in the user's default browser via `cx.open_url`.
+fn driver_banner_row(
+    s: SkinTokens,
+    candidate: crate::data::serial::chipsets::USBSerialCandidate,
+    cx: &mut Context<AppView>,
+) -> gpui::Div {
+    // Secondary line: prefer real product strings, but skip the
+    // "please install…" / counterfeit placeholders the suspect-
+    // product detector keys off — they're noise once we've already
+    // resolved a chipset name above.
+    let lower = candidate.product.to_lowercase();
+    let product_is_placeholder = lower.contains("please install")
+        || lower.contains("please download")
+        || lower.contains("support windows")
+        || lower.contains("counterfeit")
+        || lower.contains("not support");
+    let mut meta = if !candidate.product.is_empty() && !product_is_placeholder {
+        candidate.product.clone()
+    } else if !candidate.manufacturer.is_empty() {
+        candidate.manufacturer.clone()
+    } else {
+        "USB device".to_string()
+    };
+    if !candidate.serial_number.is_empty() {
+        meta.push_str(" \u{00B7} serial ");
+        meta.push_str(&candidate.serial_number);
+    }
+    let title = format!("{} detected \u{2014} driver not loaded", candidate.chipset);
+
+    let mut text_col = div().flex_1().min_w_0().flex().flex_col().gap_1().child(
+        div()
+            .text_size(px(13.0))
+            .text_color(rgba(s.fg_primary))
+            .child(title),
+    );
+    if !candidate.reason.is_empty() {
+        text_col = text_col.child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgba(s.fg_secondary))
+                .whitespace_normal()
+                .child(candidate.reason.clone()),
+        );
+    }
+    text_col = text_col.child(
+        div()
+            .text_size(px(11.0))
+            .text_color(rgba(s.fg_tertiary))
+            .whitespace_normal()
+            .child(meta),
+    );
+
+    let mut row = div()
+        .w_full()
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .border_1()
+        .border_color(rgba(0xE3A93A55u32))
+        .bg(rgba(0xE3A93A18u32))
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_3()
+        .child(
+            div()
+                .w(px(22.0))
+                .h(px(22.0))
+                .rounded_full()
+                .bg(rgba(0xE3A93AFFu32))
+                .text_color(rgba(0x1A1A1AFFu32))
+                .text_size(px(14.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child("!"),
+        )
+        .child(text_col);
+    if !candidate.driver_url.is_empty() {
+        let url = candidate.driver_url.clone();
+        row = row.child(pill_button(s, "Install driver\u{2026}", false).on_mouse_up(
+            MouseButton::Left,
+            cx.listener(move |_, _: &MouseUpEvent, _, cx| {
+                cx.open_url(&url);
+            }),
+        ));
+    }
+    row
+}
+
 #[allow(clippy::too_many_arguments)]
 fn connection_card(
     name: Entity<InputState>,
@@ -4514,6 +4644,7 @@ fn connection_card(
     parity: Entity<SelectState<Vec<Opt>>>,
     stop_bits: Entity<SelectState<Vec<Opt>>>,
     flow_control: Entity<SelectState<Vec<Opt>>>,
+    missing_drivers: Vec<crate::data::serial::chipsets::USBSerialCandidate>,
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
     let s = *cx.global::<SkinTokens>();
@@ -4549,11 +4680,25 @@ fn connection_card(
                     }),
                 ),
         );
+    // Build a "driver not loaded" banner per detected candidate so
+    // an unenrolled CP210x / FTDI / PL2303 / CH340 shows up RIGHT
+    // ABOVE the Serial Port picker — same shape the Tauri version
+    // uses. Hidden when `Settings::disable_driver_detection` is on
+    // (build_editor passes an empty Vec).
+    let driver_banners: Vec<gpui::Div> = missing_drivers
+        .into_iter()
+        .map(|d| driver_banner_row(s, d, cx))
+        .collect();
     let body = div()
         .flex()
         .flex_col()
         .gap_3()
         .child(labeled(s, "NAME", Input::new(&name).appearance(true)))
+        .when(!driver_banners.is_empty(), |this| {
+            this.child(
+                div().flex().flex_col().gap_2().children(driver_banners),
+            )
+        })
         .child(port_row)
         // Two-column rows of selects.
         .child(

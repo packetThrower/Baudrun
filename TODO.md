@@ -154,11 +154,16 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             "Restored …" toast confirms the action.
 
       Profile Form
-      - [ ] **Missing-driver banner** above the Serial Port field
-            when an unenrolled USB-serial adapter is plugged in.
-            Backend `data::serial::detect` is ready (already used
-            for the Settings toggle); profile editor just needs
-            the banner UI.
+      - [x] **Missing-driver banner.** Done. Profile editor's
+            Connection card renders a yellow banner above the
+            Serial Port picker for each unenrolled USB-serial
+            adapter detected by `data::serial::detect`
+            (macOS/Windows; Linux returns empty since the kernel
+            handles driver loading there). Shows chipset name +
+            optional reason + product/manufacturer/serial, with an
+            "Install driver…" pill that opens the vendor URL via
+            `cx.open_url`. Detection is gated by Settings →
+            Advanced → USB Driver Detection.
       - [ ] **Header buttons when connected.** When the editor is
             open for the connected profile while suspended, the
             form header still shows Connect — Tauri swaps that

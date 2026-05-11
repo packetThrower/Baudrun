@@ -11,7 +11,7 @@ pub mod chipsets;
 // suspect-port helper would be dead code there. Gating the module
 // keeps clippy -D warnings happy.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-mod detect;
+pub mod detect;
 mod direct;
 pub mod ports;
 pub mod session;
