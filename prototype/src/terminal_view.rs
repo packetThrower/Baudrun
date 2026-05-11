@@ -114,6 +114,13 @@ pub struct ProfileSettings {
     /// Applied AFTER `hex_view`, so each hex row gets its own
     /// timestamp when both flags are on.
     pub timestamps: bool,
+    /// When true, every newline-started line is prefixed with a
+    /// dim-grey sequential line number (`   42  `). Applied
+    /// AFTER `timestamps`, so a line with both flags reads
+    /// `   42  [14:30:01.123] content`. Resets to 1 on every
+    /// disconnect / reconnect cycle — line numbers are a
+    /// session-local counter, not a cumulative log line index.
+    pub line_numbers: bool,
 }
 
 /// Computed geometry for the right-edge scroll indicator. Both
@@ -136,6 +143,7 @@ impl Default for ProfileSettings {
             paste_char_delay_ms: 10,
             hex_view: false,
             timestamps: false,
+            line_numbers: false,
         }
     }
 }
@@ -235,6 +243,13 @@ pub struct TerminalView {
     /// calls so a chunk that arrives mid-line doesn't get a
     /// stamp inserted partway through.
     timestamps_state: Option<TimestampInjector>,
+    /// `Some` while the active profile has line numbers on. Same
+    /// at-line-start tracking as the timestamp injector, plus a
+    /// monotonic counter that resets on every reconnect (see
+    /// `apply_profile_settings`). Applied after the timestamp
+    /// injector so the line number is the leftmost column in
+    /// the rendered output.
+    line_numbers_state: Option<LineNumberInjector>,
     /// Idle flush for the hex formatter's partial-line buffer.
     /// Re-armed on every `feed_bytes` call so a streaming run
     /// stays buffered (proper 16-per-row layout); after
@@ -354,6 +369,7 @@ impl TerminalView {
             paste_task: None,
             hex_formatter: None,
             timestamps_state: None,
+            line_numbers_state: None,
             hex_flush_task: None,
             highlight: None,
             highlight_flush_task: None,
@@ -448,10 +464,13 @@ impl TerminalView {
         // new Term reports in `display_iter`, which can be fewer
         // than the previous frame.
         self.grid = TerminalGrid::new(rows, cols, self.palette.fg, self.palette.bg);
-        // Reset transform state so timestamps/hex re-emit from a
-        // clean slate. Highlight is already stateless.
+        // Reset transform state so timestamps / hex / line-numbers
+        // re-emit from a clean slate. Highlight is already stateless.
         if let Some(ts) = self.timestamps_state.as_mut() {
             *ts = TimestampInjector::new();
+        }
+        if let Some(ln) = self.line_numbers_state.as_mut() {
+            *ln = LineNumberInjector::new();
         }
         if let Some(hex) = self.hex_formatter.as_mut() {
             *hex = HexFormatter::new();
@@ -557,6 +576,16 @@ impl TerminalView {
         match (settings.timestamps, self.timestamps_state.is_some()) {
             (true, false) => self.timestamps_state = Some(TimestampInjector::new()),
             (false, true) => self.timestamps_state = None,
+            _ => {}
+        }
+        // Same toggle pattern for the line-number injector. Toggling
+        // ON resets the counter to 1 (a fresh `LineNumberInjector`);
+        // toggling OFF drops the state so re-enabling later restarts
+        // from 1 — matches what the user expects from a session-
+        // local counter.
+        match (settings.line_numbers, self.line_numbers_state.is_some()) {
+            (true, false) => self.line_numbers_state = Some(LineNumberInjector::new()),
+            (false, true) => self.line_numbers_state = None,
             _ => {}
         }
         self.profile_settings = settings;
@@ -770,10 +799,17 @@ impl TerminalView {
         } else {
             hex_bytes
         };
-        let final_bytes = if let Some(ts) = self.timestamps_state.as_mut() {
+        let stamped_bytes = if let Some(ts) = self.timestamps_state.as_mut() {
             ts.feed(&highlighted_bytes)
         } else {
             highlighted_bytes
+        };
+        // Line numbers run AFTER timestamps so a stamped line has
+        // its number on the very left: `   42  [HH:MM:SS] line`.
+        let final_bytes = if let Some(ln) = self.line_numbers_state.as_mut() {
+            ln.feed(&stamped_bytes)
+        } else {
+            stamped_bytes
         };
         drop(hex_str_held);
         self.feed_terminal_raw(&final_bytes, cx);
@@ -807,7 +843,12 @@ impl TerminalView {
                     } else {
                         hex_line.into_bytes()
                     };
-                    this.feed_terminal_raw(&stamped, cx);
+                    let numbered = if let Some(ln) = this.line_numbers_state.as_mut() {
+                        ln.feed(&stamped)
+                    } else {
+                        stamped
+                    };
+                    this.feed_terminal_raw(&numbered, cx);
                 }
                 this.hex_flush_task = None;
             })
@@ -839,7 +880,12 @@ impl TerminalView {
                     } else {
                         partial
                     };
-                    this.feed_terminal_raw(&stamped, cx);
+                    let numbered = if let Some(ln) = this.line_numbers_state.as_mut() {
+                        ln.feed(&stamped)
+                    } else {
+                        stamped
+                    };
+                    this.feed_terminal_raw(&numbered, cx);
                 }
                 this.highlight_flush_task = None;
             })
@@ -1682,6 +1728,53 @@ impl TimestampInjector {
         }
         out
     }
+}
+
+/// Line-number injector. Same line-state machine as
+/// `TimestampInjector` — flips an `at_line_start` flag on `\n` /
+/// `\r` and prepends a dim-grey 5-column-padded number on the next
+/// non-newline byte — but with a counter that bumps per prepended
+/// line. Counter is session-local: `apply_profile_settings` and
+/// `replay_session_into_grid` each construct a fresh instance, so
+/// every reconnect / hex-toggle / highlight-toggle re-numbers
+/// from 1, which matches the "what's the third line in this
+/// session" mental model better than a cumulative counter would.
+pub(crate) struct LineNumberInjector {
+    at_line_start: bool,
+    next_line: u32,
+}
+
+impl LineNumberInjector {
+    pub(crate) fn new() -> Self {
+        Self {
+            at_line_start: true,
+            next_line: 1,
+        }
+    }
+
+    pub(crate) fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(bytes.len() + 16);
+        for &b in bytes {
+            if self.at_line_start && b != b'\n' && b != b'\r' {
+                out.extend_from_slice(format_line_number(self.next_line).as_bytes());
+                self.next_line = self.next_line.saturating_add(1);
+                self.at_line_start = false;
+            }
+            out.push(b);
+            if b == b'\n' || b == b'\r' {
+                self.at_line_start = true;
+            }
+        }
+        out
+    }
+}
+
+/// Format a line number as a dim-grey 5-column-padded prefix with
+/// two trailing spaces. 5 columns handles up to 99999 lines without
+/// jitter — beyond that the column grows but the alignment within
+/// each "decade" stays stable, which matches `less -N`'s behaviour.
+fn format_line_number(n: u32) -> String {
+    format!("\x1b[90m{:>5}\x1b[0m  ", n)
 }
 
 /// Format the current wall-clock time as a dim-grey bracketed

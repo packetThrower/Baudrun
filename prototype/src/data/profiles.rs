@@ -34,6 +34,13 @@ pub struct Profile {
     pub rts_on_disconnect: String,
     pub hex_view: bool,
     pub timestamps: bool,
+    /// Prefix every new line with a sequential line number
+    /// (`   42  `) for cross-referencing scrollback against
+    /// external notes. New since the Tauri version; serialises
+    /// with `#[serde(default)]` so existing profile JSON loads
+    /// without an explicit `false`.
+    #[serde(default)]
+    pub line_numbers: bool,
     pub log_enabled: bool,
     pub auto_reconnect: bool,
     pub backspace_key: String,
@@ -80,6 +87,7 @@ impl Profile {
             rts_on_disconnect: "default".into(),
             hex_view: false,
             timestamps: false,
+            line_numbers: false,
             log_enabled: false,
             auto_reconnect: true,
             backspace_key: "del".into(),

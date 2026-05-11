@@ -275,6 +275,7 @@ struct Editor {
     // -- Advanced / Output bools --
     hex_view: bool,
     timestamps: bool,
+    line_numbers: bool,
     log_enabled: bool,
     auto_reconnect: bool,
 
@@ -977,6 +978,7 @@ impl AppView {
                 .max(0) as u32,
             hex_view: profile.hex_view,
             timestamps: profile.timestamps,
+            line_numbers: profile.line_numbers,
         };
         // Resolve the effective highlight rule set for this
         // profile + push it to the terminal. Master toggle is
@@ -3871,6 +3873,7 @@ fn build_editor(
         ),
         hex_view: profile.hex_view,
         timestamps: profile.timestamps,
+        line_numbers: profile.line_numbers,
         log_enabled: profile.log_enabled,
         auto_reconnect: profile.auto_reconnect,
         theme,
@@ -3925,6 +3928,7 @@ fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<
     profile.rts_on_disconnect = read_select(&editor.rts_on_disconnect, cx);
     profile.hex_view = editor.hex_view;
     profile.timestamps = editor.timestamps;
+    profile.line_numbers = editor.line_numbers;
     profile.log_enabled = editor.log_enabled;
     profile.auto_reconnect = editor.auto_reconnect;
     // Empty id is the explicit "Use global default" pick — store
@@ -4022,6 +4026,7 @@ fn editor_fields_match(a: &Profile, b: &Profile) -> bool {
         && a.rts_on_disconnect == b.rts_on_disconnect
         && a.hex_view == b.hex_view
         && a.timestamps == b.timestamps
+        && a.line_numbers == b.line_numbers
         && a.log_enabled == b.log_enabled
         && a.auto_reconnect == b.auto_reconnect
         && a.paste_warn_multiline == b.paste_warn_multiline
@@ -4297,6 +4302,7 @@ struct EditorRender {
     rts_on_disconnect: Entity<SelectState<Vec<Opt>>>,
     hex_view: bool,
     timestamps: bool,
+    line_numbers: bool,
     log_enabled: bool,
     auto_reconnect: bool,
     paste_warn_multiline: bool,
@@ -4340,6 +4346,7 @@ impl EditorRender {
             rts_on_disconnect: e.rts_on_disconnect.clone(),
             hex_view: e.hex_view,
             timestamps: e.timestamps,
+            line_numbers: e.line_numbers,
             log_enabled: e.log_enabled,
             auto_reconnect: e.auto_reconnect,
             paste_warn_multiline: e.paste_warn_multiline,
@@ -4576,6 +4583,7 @@ fn form_body(
             er.rts_on_disconnect,
             er.hex_view,
             er.timestamps,
+            er.line_numbers,
             er.log_enabled,
             er.auto_reconnect,
             er.paste_warn_multiline,
@@ -5222,6 +5230,7 @@ fn advanced_pane(
     rts_on_disconnect: Entity<SelectState<Vec<Opt>>>,
     hex_view: bool,
     timestamps: bool,
+    line_numbers: bool,
     log_enabled: bool,
     auto_reconnect: bool,
     paste_warn_multiline: bool,
@@ -5266,6 +5275,7 @@ fn advanced_pane(
         .child(output_card(
             hex_view,
             timestamps,
+            line_numbers,
             log_enabled,
             auto_reconnect,
             cx,
@@ -5344,6 +5354,7 @@ fn control_lines_card(
 fn output_card(
     hex_view: bool,
     timestamps: bool,
+    line_numbers: bool,
     log_enabled: bool,
     auto_reconnect: bool,
     cx: &mut Context<AppView>,
@@ -5352,8 +5363,8 @@ fn output_card(
     // Single column. The 2-col grid for Hex view + Line timestamps
     // produced an awkward orphan-feel where the right-hand "Line
     // timestamps" hint wrapped while the others were full-width;
-    // stacking all four reads cleaner and matches the rest of the
-    // card's vertical rhythm.
+    // stacking reads cleaner and matches the rest of the card's
+    // vertical rhythm.
     let body = div()
         .flex()
         .flex_col()
@@ -5365,6 +5376,14 @@ fn output_card(
             timestamps,
             cx,
             |ed, v| ed.timestamps = v,
+        ))
+        .child(bool_field_hinted(
+            "line-numbers",
+            "Line numbers",
+            Some("prefix each line with a session-local counter (resets on reconnect)"),
+            line_numbers,
+            cx,
+            |ed, v| ed.line_numbers = v,
         ))
         .child(bool_field_hinted(
             "hex-view",
