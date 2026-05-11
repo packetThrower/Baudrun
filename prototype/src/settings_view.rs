@@ -45,15 +45,17 @@ pub enum SettingsTab {
     Themes,
     Shortcuts,
     Highlighting,
+    Accessibility,
     Advanced,
 }
 
 impl SettingsTab {
-    const ALL: [SettingsTab; 5] = [
+    const ALL: [SettingsTab; 6] = [
         SettingsTab::Appearance,
         SettingsTab::Themes,
         SettingsTab::Shortcuts,
         SettingsTab::Highlighting,
+        SettingsTab::Accessibility,
         SettingsTab::Advanced,
     ];
 
@@ -63,6 +65,7 @@ impl SettingsTab {
             SettingsTab::Themes => "Themes",
             SettingsTab::Shortcuts => "Shortcuts",
             SettingsTab::Highlighting => "Highlighting",
+            SettingsTab::Accessibility => "Accessibility",
             SettingsTab::Advanced => "Advanced",
         }
     }
@@ -689,6 +692,71 @@ impl SettingsView {
             let mut next = self.settings.clone();
             next.log_dir = String::new();
             self.commit(next, cx);
+        }
+    }
+
+    /// Reset the Settings window's geometry — clears the saved
+    /// `settings_window` from settings.json AND resizes the live
+    /// Settings window (the one this button lives in) back to its
+    /// default centered size. Live resize so the user sees the
+    /// effect immediately rather than having to close + reopen.
+    fn reset_settings_window(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.settings.settings_window.is_some() {
+            let mut next = self.settings.clone();
+            next.settings_window = None;
+            self.commit(next, cx);
+        }
+        // Default size matches `AppView::open_settings`. Resize is
+        // size-only, not position — gpui doesn't expose
+        // `set_window_bounds` directly on Window, and macOS's
+        // resize-without-recenter is the more familiar UX for a
+        // settings sheet ("shrink it back to default size without
+        // moving it") anyway.
+        window.resize(gpui::size(px(560.0), px(520.0)));
+    }
+
+    /// Reset the main window's geometry — clears saved
+    /// `main_window` from settings.json AND resizes every open
+    /// main (AppView-rooted) window to the default centered size.
+    /// Iterates `cx.windows()` instead of taking a single handle
+    /// so that, when the user has multiple terminal windows open,
+    /// the click affects them all in one shot.
+    fn reset_main_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.settings.main_window.is_some() {
+            let mut next = self.settings.clone();
+            next.main_window = None;
+            self.commit(next, cx);
+        }
+        // 1100×720 mirrors `app_view::open_app_window`'s centered
+        // fallback. Each window's own `on_window_should_close`
+        // re-saves on close, so the cleared state only stays clear
+        // until the next close — that's the same trade-off as the
+        // Settings-window button above.
+        for handle in cx.windows() {
+            let _ = handle.update(cx, |_root, window, cx| {
+                let Some(Some(root)) = window.root::<gpui_component::Root>() else {
+                    return;
+                };
+                // Resize only AppView-rooted windows; the Settings
+                // window also has a `Root` root, but its inner view
+                // is SettingsView, not AppView, and we don't want
+                // the main-window button to also resize the
+                // Settings window the user is clicking from.
+                if root
+                    .read(cx)
+                    .view()
+                    .clone()
+                    .downcast::<crate::app_view::AppView>()
+                    .is_err()
+                {
+                    return;
+                }
+                window.resize(gpui::size(px(1100.0), px(720.0)));
+            });
         }
     }
 
@@ -1452,6 +1520,9 @@ impl SettingsView {
             SettingsTab::Themes => self.themes_pane(s, cx).into_any_element(),
             SettingsTab::Shortcuts => self.shortcuts_pane(s, cx).into_any_element(),
             SettingsTab::Highlighting => self.highlighting_pane(s, cx).into_any_element(),
+            SettingsTab::Accessibility => {
+                self.accessibility_pane(s, cx).into_any_element()
+            }
             SettingsTab::Advanced => self.advanced_pane(s, cx).into_any_element(),
         }
     }
@@ -1998,6 +2069,86 @@ impl SettingsView {
             ))
     }
 
+    /// Accessibility tab. Read-only summary of every OS-level
+    /// accessibility preference Baudrun reacts to, with a one-
+    /// line note on where the user changes it. Settings here are
+    /// driven by the host OS rather than persisted in
+    /// `settings.json` — Baudrun honours them automatically; this
+    /// pane just makes that contract visible (and discoverable
+    /// via the filter under "accessibility", "reduce motion",
+    /// "a11y", etc.).
+    fn accessibility_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let reduce_motion = cx.global::<crate::ReduceMotion>().0;
+        let status_label: SharedString = if reduce_motion {
+            "On — Baudrun is skipping the reconnect-dot pulse and \
+             holding the terminal cursor steady."
+                .into()
+        } else {
+            "Off — Baudrun's optional animations (reconnect-dot pulse, \
+             terminal cursor blink) are on."
+                .into()
+        };
+        let os_path: &'static str = if cfg!(target_os = "macos") {
+            "Change at System Settings → Accessibility → Display → \
+             \u{201C}Reduce motion\u{201D}."
+        } else if cfg!(target_os = "windows") {
+            "Change at Settings → Accessibility → Visual effects → \
+             \u{201C}Animation effects\u{201D}."
+        } else {
+            "Change via your desktop environment's accessibility / \
+             animation settings."
+        };
+        let dot_color = if reduce_motion {
+            s.success
+        } else {
+            s.fg_tertiary
+        };
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .w(px(8.0))
+                            .h(px(8.0))
+                            .rounded_full()
+                            .bg(rgba(dot_color)),
+                    )
+                    .child(div().text_sm().child(status_label)),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(rgba(s.fg_secondary))
+                    .child(os_path),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgba(s.fg_tertiary))
+                    .child(
+                        "Detected once at app launch. Relaunch Baudrun \
+                         after flipping the system setting if a value here \
+                         looks stale.",
+                    ),
+            );
+        div().flex().flex_col().gap_3().child(self.filtered_card(
+            s,
+            "Reduce Motion",
+            Some(
+                "Honours the OS preference for reduced motion. Read from \
+                 the system at launch; no per-app override.",
+            ),
+            body,
+        ))
+    }
+
     fn advanced_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
         let cur = &self.settings;
         div()
@@ -2072,15 +2223,47 @@ impl SettingsView {
                 Some(
                     "Reopen Baudrun and Settings windows where you left \
                      them. Turn off to land at the centered default \
-                     size each launch instead.",
+                     size each launch instead. The Reset buttons clear \
+                     the saved geometry and resize the matching live \
+                     windows immediately.",
                 ),
-                bool_field(
-                    "settings-restore-window-state",
-                    "Restore window size and position on launch",
-                    !cur.disable_window_state_restore,
-                    cx,
-                    SettingsView::set_restore_window_state,
-                ),
+                // Two rows: the on/off toggle on top, then a pair of
+                // Reset buttons (Settings window vs main window) below.
+                // The two-button split lets the user fix just the
+                // window that drifted without touching the other.
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(bool_field(
+                        "settings-restore-window-state",
+                        "Restore window size and position on launch",
+                        !cur.disable_window_state_restore,
+                        cx,
+                        SettingsView::set_restore_window_state,
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .child(import_button(
+                                s,
+                                "Reset Settings window",
+                                cx,
+                                |this, window, cx| {
+                                    this.reset_settings_window(window, cx)
+                                },
+                            ))
+                            .child(import_button(
+                                s,
+                                "Reset main window",
+                                cx,
+                                |this, window, cx| {
+                                    this.reset_main_window(window, cx)
+                                },
+                            )),
+                    ),
             ))
             .child(self.filtered_card(
                 s,
@@ -2502,6 +2685,9 @@ const SECTION_KEYWORDS: &[(&str, &str)] = &[
                  changelog new available notification download"),
     ("Config Directory", "config directory folder path location store dropbox icloud \
                           override support portable share xdg appdata application support"),
+    ("Reduce Motion", "reduce motion animation pulse blink cursor reconnect dot \
+                       accessibility a11y wcag prefers prefer system os macos \
+                       windows linux preference disable disabled steady still"),
 ];
 
 const TAB_SECTIONS: &[(SettingsTab, &[&str])] = &[
@@ -2515,6 +2701,7 @@ const TAB_SECTIONS: &[(SettingsTab, &[&str])] = &[
     (SettingsTab::Themes, &["Default Theme", "Installed Themes"]),
     (SettingsTab::Shortcuts, &["Keyboard Shortcuts"]),
     (SettingsTab::Highlighting, &["Highlight Packs"]),
+    (SettingsTab::Accessibility, &["Reduce Motion"]),
     (SettingsTab::Advanced, &[
         "Session Log Directory",
         "USB Driver Detection",

@@ -65,6 +65,7 @@ pub(crate) mod actions {
             Quit,
             NewWindow,
             About,
+            OpenSettings,
             Connect,
             Disconnect,
             Suspend,
@@ -94,8 +95,8 @@ pub(crate) mod actions {
 }
 use actions::{
     About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease,
-    FontIncrease, FontReset, NewProfile, NewWindow, OpenInNewWindow, Quit, Resume,
-    SendBreak, SendFile, Suspend,
+    FontIncrease, FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings,
+    Quit, Resume, SendBreak, SendFile, Suspend,
 };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
@@ -416,6 +417,9 @@ fn install_app_menu(
     cx.on_action(|_: &About, cx| {
         dispatch_to_app_view(cx, |app, window, cx| app.shortcut_about(window, cx));
     });
+    cx.on_action(|_: &OpenSettings, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.open_settings(window, cx));
+    });
     cx.on_action(|action: &ConnectToProfile, cx| {
         let profile_id = action.profile_id.clone();
         dispatch_to_app_view(cx, move |app, window, cx| {
@@ -637,12 +641,14 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
 
     let overrides = settings.shortcuts.clone().unwrap_or_default();
     // Static accelerators that don't appear in Settings → Shortcuts.
-    // Quit and New Window are always-on system bindings — exposing
-    // them to the override UI would let a user accidentally trap
-    // themselves in a window with no way out.
+    // Quit / New Window / Settings are always-on system bindings —
+    // exposing them to the override UI would let a user accidentally
+    // trap themselves in a window with no way to reach Quit or
+    // Settings.
     let mut bindings = vec![
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-n", NewWindow, None),
+        KeyBinding::new("cmd-,", OpenSettings, None),
     ];
     // Walk the same action list Settings → Shortcuts renders so the
     // menubar and the customization UI agree on which IDs are
@@ -704,6 +710,8 @@ fn install_menus(cx: &mut App) {
         // recognises the slot.
         Menu::new("Baudrun").items([
             MenuItem::action("About Baudrun", About),
+            MenuItem::separator(),
+            MenuItem::action("Settings…", OpenSettings),
             MenuItem::separator(),
             MenuItem::action("Quit Baudrun", Quit),
         ]),

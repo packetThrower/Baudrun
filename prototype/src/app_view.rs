@@ -1494,7 +1494,7 @@ impl AppView {
     /// flipping past a modal layer. If a Settings window is already
     /// open we just bring it to the front; otherwise we spawn a
     /// fresh one with `SettingsView` as the root.
-    fn open_settings(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_settings(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         // Reuse the existing window if it's still alive. `update`
         // returns `Err` when the OS window has been closed; that's
         // the signal to drop the stale handle and open a new one.
@@ -1514,11 +1514,16 @@ impl AppView {
         let themes = self.themes_store.clone();
         let current_settings = self.settings_bus.read(cx).current().clone();
         let restore_state = !current_settings.disable_window_state_restore;
+        // First-launch default: smaller window than the cards' max
+        // intrinsic width so the right column doesn't render a sea
+        // of empty space. Saved geometry from a previous session
+        // (when restore-window-state is on) trumps this; the user
+        // can always drag the window bigger and that size sticks.
         let bounds = restore_state
             .then(|| current_settings.settings_window.as_ref().and_then(geometry_to_bounds))
             .flatten()
             .unwrap_or_else(|| {
-                Bounds::centered(None, gpui::size(px(720.0), px(640.0)), cx)
+                Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx)
             });
         let bus_for_close = self.settings_bus.clone();
         let opened = cx.open_window(
