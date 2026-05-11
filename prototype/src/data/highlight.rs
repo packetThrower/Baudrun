@@ -288,6 +288,24 @@ impl Store {
         Ok(())
     }
 
+    /// Re-create a previously-deleted user pack from a snapshot.
+    /// Used by the Settings undo-toast path — the snapshot is the
+    /// pack value that came out of `list()` before the matching
+    /// `delete_user_pack` ran, so the id is already sanitized +
+    /// guaranteed not to collide with bundled / reserved ids.
+    pub fn restore_user_pack(&self, pack: &HighlightPack) -> Result<()> {
+        let safe_id = sanitize_pack_id(&pack.id);
+        if safe_id.is_empty() {
+            return Err(HighlightError::Invalid("pack id required".into()));
+        }
+        let target = self.imports_dir.join(format!("{}.json", safe_id));
+        let body = serde_json::to_vec_pretty(pack)?;
+        let tmp = target.with_extension("json.tmp");
+        fs::write(&tmp, body)?;
+        fs::rename(&tmp, &target)?;
+        Ok(())
+    }
+
     fn load_imports(&self) -> Vec<HighlightPack> {
         let Ok(entries) = fs::read_dir(&self.imports_dir) else {
             return Vec::new();

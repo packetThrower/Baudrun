@@ -11,11 +11,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgba, AppContext, Context, ElementId, Entity, FocusHandle,
-    IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent,
-    PathPromptOptions, Render, SharedString, Subscription, Window,
+    div, prelude::*, px, rgba, AppContext, Context, DismissEvent, ElementId, Entity,
+    FocusHandle, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton,
+    MouseUpEvent, PathPromptOptions, Render, SharedString, Subscription, Window,
 };
 use gpui_component::{
+    button::Button,
     checkbox::Checkbox,
     input::{Input, InputEvent, InputState},
     kbd::Kbd,
@@ -926,6 +927,7 @@ impl SettingsView {
         if skin.source != "user" {
             return;
         }
+        let snapshot = skin.clone();
         let name = skin.name.clone();
         if let Err(err) = self.skins_store.delete(&id) {
             log::error!("delete skin {id}: {err}");
@@ -937,15 +939,77 @@ impl SettingsView {
             );
             return;
         }
-        if self.settings.skin_id == id {
+        let was_active = self.settings.skin_id == id;
+        if was_active {
             let mut next = self.settings.clone();
             next.skin_id = skins::DEFAULT_SKIN_ID.to_string();
             self.commit(next, cx);
         }
         self.rebuild_skin_select(window, cx);
+
+        // Undo toast — captures the snapshot and the entity so the
+        // user can restore the skin within the notification's
+        // autohide window (~5s).
+        let app = cx.entity();
+        let prev_active_id = if was_active {
+            Some(snapshot.id.clone())
+        } else {
+            None
+        };
         window.push_notification(
             Notification::success(SharedString::from(format!(
-                "Deleted skin \u{201C}{name}\u{201D}"
+                "Removed skin \u{201C}{name}\u{201D}"
+            )))
+            .action(move |_, _, ctx| {
+                let app = app.clone();
+                let snapshot = snapshot.clone();
+                let prev_active_id = prev_active_id.clone();
+                let notif = ctx.entity();
+                Button::new("undo-skin-delete")
+                    .label("Undo")
+                    .on_click(move |_, window, cx| {
+                        let app = app.clone();
+                        let snapshot = snapshot.clone();
+                        let prev_active_id = prev_active_id.clone();
+                        let notif = notif.clone();
+                        app.update(cx, |this, view_cx| {
+                            this.restore_skin(snapshot, prev_active_id, window, view_cx);
+                        });
+                        dismiss_notification_after(notif, cx);
+                    })
+            }),
+            cx,
+        );
+    }
+
+    fn restore_skin(
+        &mut self,
+        skin: skins::Skin,
+        prev_active_id: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = skin.name.clone();
+        let id = skin.id.clone();
+        if let Err(err) = self.skins_store.restore(skin) {
+            log::error!("restore skin {id}: {err}");
+            window.push_notification(
+                Notification::error(SharedString::from(format!(
+                    "Couldn't restore skin: {err}"
+                ))),
+                cx,
+            );
+            return;
+        }
+        if let Some(prev) = prev_active_id {
+            let mut next = self.settings.clone();
+            next.skin_id = prev;
+            self.commit(next, cx);
+        }
+        self.rebuild_skin_select(window, cx);
+        window.push_notification(
+            Notification::success(SharedString::from(format!(
+                "Restored skin \u{201C}{name}\u{201D}"
             ))),
             cx,
         );
@@ -965,6 +1029,7 @@ impl SettingsView {
         if theme.source != "user" {
             return;
         }
+        let snapshot = theme.clone();
         let name = theme.name.clone();
         if let Err(err) = self.themes_store.delete(&id) {
             log::error!("delete theme {id}: {err}");
@@ -976,15 +1041,73 @@ impl SettingsView {
             );
             return;
         }
-        if self.settings.default_theme_id == id {
+        let was_active = self.settings.default_theme_id == id;
+        if was_active {
             let mut next = self.settings.clone();
             next.default_theme_id = themes::DEFAULT_THEME_ID.to_string();
             self.commit(next, cx);
         }
         self.rebuild_theme_select(window, cx);
+        let app = cx.entity();
+        let prev_active_id = if was_active {
+            Some(snapshot.id.clone())
+        } else {
+            None
+        };
         window.push_notification(
             Notification::success(SharedString::from(format!(
-                "Deleted theme \u{201C}{name}\u{201D}"
+                "Removed theme \u{201C}{name}\u{201D}"
+            )))
+            .action(move |_, _, ctx| {
+                let app = app.clone();
+                let snapshot = snapshot.clone();
+                let prev_active_id = prev_active_id.clone();
+                let notif = ctx.entity();
+                Button::new("undo-theme-delete")
+                    .label("Undo")
+                    .on_click(move |_, window, cx| {
+                        let app = app.clone();
+                        let snapshot = snapshot.clone();
+                        let prev_active_id = prev_active_id.clone();
+                        let notif = notif.clone();
+                        app.update(cx, |this, view_cx| {
+                            this.restore_theme(snapshot, prev_active_id, window, view_cx);
+                        });
+                        dismiss_notification_after(notif, cx);
+                    })
+            }),
+            cx,
+        );
+    }
+
+    fn restore_theme(
+        &mut self,
+        theme: themes::Theme,
+        prev_active_id: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = theme.name.clone();
+        let id = theme.id.clone();
+        if let Err(err) = self.themes_store.restore(theme) {
+            log::error!("restore theme {id}: {err}");
+            window.push_notification(
+                Notification::error(SharedString::from(format!(
+                    "Couldn't restore theme: {err}"
+                ))),
+                cx,
+            );
+            return;
+        }
+        if let Some(prev) = prev_active_id {
+            let mut next = self.settings.clone();
+            next.default_theme_id = prev;
+            self.commit(next, cx);
+        }
+        self.rebuild_theme_select(window, cx);
+        window.push_notification(
+            Notification::success(SharedString::from(format!(
+                "Restored theme \u{201C}{name}\u{201D}"
             ))),
             cx,
         );
@@ -1042,6 +1165,7 @@ impl SettingsView {
         if pack.source != "user" && pack.source != "import" {
             return;
         }
+        let snapshot = pack.clone();
         let name = pack.name.clone();
         if let Err(err) = self.highlight_store.delete_user_pack(&id) {
             log::error!("delete highlight pack {id}: {err}");
@@ -1053,20 +1177,79 @@ impl SettingsView {
             );
             return;
         }
-        let mut packs = self.enabled_packs();
-        if packs.iter().any(|p| p == &id) {
+        let was_enabled = self.enabled_packs().iter().any(|p| p == &id);
+        if was_enabled {
+            let mut packs = self.enabled_packs();
             packs.retain(|p| p != &id);
             let mut next = self.settings.clone();
             next.enabled_highlight_presets = Some(packs);
             self.commit(next, cx);
         } else {
-            // Pack wasn't enabled — no settings change, just refresh
-            // the rows so the deleted entry disappears.
+            cx.notify();
+        }
+        let app = cx.entity();
+        window.push_notification(
+            Notification::success(SharedString::from(format!(
+                "Removed pack \u{201C}{name}\u{201D}"
+            )))
+            .action(move |_, _, ctx| {
+                let app = app.clone();
+                let snapshot = snapshot.clone();
+                let notif = ctx.entity();
+                Button::new("undo-pack-delete")
+                    .label("Undo")
+                    .on_click(move |_, window, cx| {
+                        let app = app.clone();
+                        let snapshot = snapshot.clone();
+                        let notif = notif.clone();
+                        app.update(cx, |this, view_cx| {
+                            this.restore_highlight_pack(
+                                snapshot,
+                                was_enabled,
+                                window,
+                                view_cx,
+                            );
+                        });
+                        dismiss_notification_after(notif, cx);
+                    })
+            }),
+            cx,
+        );
+    }
+
+    fn restore_highlight_pack(
+        &mut self,
+        pack: highlight::HighlightPack,
+        re_enable: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = pack.name.clone();
+        let id = pack.id.clone();
+        if let Err(err) = self.highlight_store.restore_user_pack(&pack) {
+            log::error!("restore highlight pack {id}: {err}");
+            window.push_notification(
+                Notification::error(SharedString::from(format!(
+                    "Couldn't restore pack: {err}"
+                ))),
+                cx,
+            );
+            return;
+        }
+        if re_enable {
+            let mut packs = self.enabled_packs();
+            if !packs.iter().any(|p| p == &id) {
+                packs.push(id);
+                let mut next = self.settings.clone();
+                next.enabled_highlight_presets = Some(packs);
+                self.commit(next, cx);
+            }
+        } else {
             cx.notify();
         }
         window.push_notification(
             Notification::success(SharedString::from(format!(
-                "Deleted pack \u{201C}{name}\u{201D}"
+                "Restored pack \u{201C}{name}\u{201D}"
             ))),
             cx,
         );
@@ -2341,6 +2524,40 @@ const TAB_SECTIONS: &[(SettingsTab, &[&str])] = &[
         "Config Directory",
     ]),
 ];
+
+/// Schedule a Notification to dismiss itself ~1.5 s after the user
+/// clicks its action button. Without this the toast stays up for
+/// the full autohide window (5 s) even after the user already
+/// acted on it — feels like the click had no effect. The brief
+/// linger gives time to read the follow-up "Restored …" toast
+/// before the original "Removed …" one fades.
+/// Schedule a Notification to dismiss itself ~1.5 s after the user
+/// clicks its action button. Without this the toast stays up for
+/// the full autohide window (5 s) even after the user already
+/// acted on it — feels like the click had no effect. The brief
+/// linger gives time to read the follow-up "Restored …" toast
+/// before the original "Removed …" one fades.
+fn dismiss_notification_after(notif: Entity<Notification>, cx: &mut gpui::App) {
+    // Spawn from the Notification's own Context, not via
+    // `App::spawn`. The latter route gets dropped when the user
+    // switches tabs while the timer is pending — the SettingsView
+    // re-renders, the click-handler closure is rebuilt, and the
+    // detached App-spawn task evidently doesn't survive the
+    // turnover. Entity-scoped spawns stay alive as long as the
+    // notification entity does.
+    notif.update(cx, |_, ctx| {
+        ctx.spawn(async move |weak, cx_async| {
+            cx_async
+                .background_executor()
+                .timer(std::time::Duration::from_millis(1500))
+                .await;
+            let _ = weak.update(cx_async, |_, ctx| {
+                ctx.emit(DismissEvent);
+            });
+        })
+        .detach();
+    });
+}
 
 /// Percent-encode a filesystem path for use in a `file://` URL.
 /// Keeps the RFC 3986 unreserved set plus `/` (path separator)

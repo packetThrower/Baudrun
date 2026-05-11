@@ -142,10 +142,16 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             the input (gpui-component's built-in `cleanable`
             renders an `IconName::CircleX` SVG the prototype
             doesn't bundle, so the icon ends up blank).
-      - [ ] **Undo-delete** for imported skins / themes / packs.
-            Replace the immediate delete with a 10-s "removed,
-            Undo" toast (Tauri uses the status bar; we can use
-            the existing notification layer).
+      - [x] **Undo-delete** for imported skins / themes / packs.
+            Done. Each store grew a `restore` method that re-
+            persists the JSON + re-adds to the in-memory list.
+            Delete handlers snapshot the item before calling
+            store.delete, then push a notification with an Undo
+            action button that hands the snapshot back to the
+            restore method. Notification dismisses ~1.5 s after
+            the Undo click (entity-scoped spawn so the timer
+            survives tab switches mid-wait) and a follow-up
+            "Restored …" toast confirms the action.
 
       Profile Form
       - [ ] **Missing-driver banner** above the Serial Port field

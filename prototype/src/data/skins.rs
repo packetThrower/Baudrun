@@ -138,6 +138,18 @@ impl Store {
         user.remove(idx);
         Ok(())
     }
+
+    /// Re-create a previously-deleted user skin from an in-memory
+    /// snapshot. The undo path on the Installed Skins list captures
+    /// the skin before calling `delete`, then hands it back here
+    /// when the user hits the Undo toast. Writes the JSON file
+    /// the same way `import` would and re-adds the entry to the
+    /// in-memory user list.
+    pub fn restore(&self, skin: Skin) -> Result<()> {
+        persist_user(&self.dir, &skin)?;
+        self.user.write().unwrap().push(skin);
+        Ok(())
+    }
 }
 
 pub fn builtins() -> &'static [Skin] {

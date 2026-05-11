@@ -151,6 +151,16 @@ impl Store {
         user.remove(idx);
         Ok(())
     }
+
+    /// Re-create a previously-deleted user theme from a snapshot.
+    /// Mirrors `skins::Store::restore` and `highlight::Store::restore`
+    /// — the Installed Themes list's undo toast hands the snapshot
+    /// back here when the user clicks Undo.
+    pub fn restore(&self, theme: Theme) -> Result<()> {
+        persist_user(&self.dir, &theme)?;
+        self.user.write().unwrap().push(theme);
+        Ok(())
+    }
 }
 
 /// Slice of embedded built-in themes, parsed once on first access.
