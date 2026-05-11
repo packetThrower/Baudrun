@@ -4004,6 +4004,14 @@ fn pill_button(s: SkinTokens, label: &'static str, danger: bool) -> gpui::Div {
         .bg(rgba(s.bg_input))
         .text_color(fg)
         .text_size(px(13.0))
+        // Flex + items_center centers the glyph line-box within
+        // the pill's padding box. Without this the text sits at
+        // the top of the box because gpui's default line-height
+        // is taller than the glyph itself and the leading
+        // accumulates above rather than around the cap height.
+        .flex()
+        .items_center()
+        .justify_center()
         .rounded_md()
         .cursor_pointer()
         .hover(move |st| st.bg(rgba(hover_bg)))
@@ -4020,6 +4028,9 @@ fn primary_button(s: SkinTokens, label: &'static str) -> gpui::Div {
         .bg(rgba(s.accent))
         .text_color(rgba(s.accent_fg))
         .text_size(px(13.0))
+        .flex()
+        .items_center()
+        .justify_center()
         .rounded_md()
         .cursor_pointer()
         .child(label)
