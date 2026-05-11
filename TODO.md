@@ -301,9 +301,22 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             objc2-app-kit + objc2-foundation deps were added under
             `target.'cfg(target_os = "macos")'` so the small bit
             of ObjC plumbing stays mac-only.
-      - [ ] **macOS Info.plist** — CFBundleIdentifier, version,
-            human-readable copyright, minimum OS, NSHighResolution
-            flag. Required before code signing in Phase 9.
+      - [x] **macOS Info.plist** committed at
+            `prototype/resources/Info.plist`. CFBundleIdentifier
+            (`io.github.packetThrower.Baudrun` — matches the
+            Tauri version so existing keychain entries stay
+            valid), display + executable names, version pair
+            (CFBundleShortVersionString + CFBundleVersion),
+            CFBundleIconFile pointing at the .icns sibling,
+            LSMinimumSystemVersion = 11.0, NSHighResolutionCapable
+            = true, NSPrincipalClass = NSApplication,
+            NSHumanReadableCopyright, LSApplicationCategoryType =
+            developer-tools. Static values for now — Phase 9 will
+            wire build-script generation when CI starts cutting
+            signed release builds. File associations + URL
+            scheme entries are intentionally left out; they'll
+            land with the corresponding Phase 8 sub-items.
+            `plutil -lint` clean.
       - [ ] **Window title + taskbar / dock label** match the
             bundle's display name across platforms (currently
             the prototype shows "Baudrun (prototype)" in some
