@@ -1,6 +1,5 @@
-# Rust build artifacts. `prototype/.gitignore` covers `prototype/target/`;
-# this top-level entry catches any cargo target dir created by tooling
-# that runs from the repo root (e.g. cargo workspace experiments).
+# Rust build artifacts. Single-crate layout at repo root, so cargo
+# puts everything under target/.
 /target/
 
 # Dev-tool binary accidentally built at repo root by `go build ./scripts/...`

@@ -1039,7 +1039,7 @@ fn confirm_quit_then_quit_inner(cx: &mut App) {
 
 fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
     eprintln!("{reason}; using empty in-tmpdir profile store");
-    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    let tmp = std::env::temp_dir().join("baudrun-empty");
     Rc::new(
         data::profiles::Store::new(&tmp)
             .expect("temp profile store should always init"),
@@ -1054,7 +1054,7 @@ fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
 /// crashing.
 fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
     eprintln!("{reason}; using default in-tmpdir settings store");
-    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    let tmp = std::env::temp_dir().join("baudrun-empty");
     Rc::new(
         data::settings::Store::new(&tmp)
             .expect("temp settings store should always init"),
@@ -1068,7 +1068,7 @@ fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
 /// real config dir comes back.
 fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
     eprintln!("{reason}; using empty in-tmpdir skins store");
-    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    let tmp = std::env::temp_dir().join("baudrun-empty");
     Rc::new(
         data::skins::Store::new(&tmp)
             .expect("temp skins store should always init"),
@@ -1080,7 +1080,7 @@ fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
 /// to render; only the user pack + custom imports are lost.
 fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
     eprintln!("{reason}; using empty in-tmpdir highlight store");
-    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    let tmp = std::env::temp_dir().join("baudrun-empty");
     Rc::new(
         data::highlight::Store::new(&tmp)
             .expect("temp highlight store should always init"),
@@ -1092,7 +1092,7 @@ fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
 /// / JSON themes are lost.
 fn fallback_themes_store(reason: String) -> Rc<data::themes::Store> {
     eprintln!("{reason}; using empty in-tmpdir themes store");
-    let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
+    let tmp = std::env::temp_dir().join("baudrun-empty");
     Rc::new(
         data::themes::Store::new(&tmp)
             .expect("temp themes store should always init"),

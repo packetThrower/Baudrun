@@ -1,7 +1,7 @@
 [package]
-name = "baudrun-prototype"
+name = "baudrun"
 version = "0.0.1"
-description = "Research spike: alacritty_terminal + gpui as a replacement for xterm.js + Tauri."
+description = "Serial terminal for network engineers. alacritty_terminal + gpui."
 authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
 edition = "2021"
 publish = false
@@ -9,8 +9,8 @@ publish = false
 # Bin name = the .app's CFBundleExecutable (and the macOS dev-mode
 # dock tooltip / Cmd+Tab label / menu-bar app name for non-bundled
 # `cargo run`). Capitalised so the menu bar shows "Baudrun" rather
-# than "baudrun-prototype" when launched without a .app wrapper.
-# The Cargo package name stays kebab-case as is conventional.
+# than the kebab-case package name when launched without a .app
+# wrapper. The Cargo package name stays kebab-case as is conventional.
 [[bin]]
 name = "Baudrun"
 path = "src/main.rs"
