@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS bundle metadata for Baudrun. Lives at the source of truth
+  here; Phase 9's bundling pipeline (cargo-bundle / cargo-dist /
+  whatever lands) copies this into the .app's Contents/ at build
+  time. CFBundleIdentifier matches the Tauri version's identifier
+  so existing macOS keychain entries (passwords, authorization
+  prompts) keep working across the cutover.
+
+  Values intentionally hard-coded rather than templated — this
+  prototype is a single-version-at-a-time artifact, and Phase 9
+  will introduce build-script generation when we start cutting
+  signed release builds.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>MacOSX</string>
+    </array>
+
+    <key>CFBundleName</key>
+    <string>Baudrun</string>
+    <key>CFBundleDisplayName</key>
+    <string>Baudrun</string>
+    <key>CFBundleExecutable</key>
+    <string>baudrun</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.packetThrower.Baudrun</string>
+
+    <!--
+      Version pair: ShortVersionString is the user-visible marketing
+      version (CFBundleVersion is the build number — same here for
+      now; Phase 9 may bump build number per CI run while keeping
+      the marketing version stable).
+    -->
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.1</string>
+    <key>CFBundleVersion</key>
+    <string>0.0.1</string>
+
+    <key>CFBundleIconFile</key>
+    <string>icon</string>
+
+    <!--
+      11.0 (Big Sur) is the earliest macOS that supports the modern
+      icon "live area" + universal binary slices we rely on. Going
+      back further would mean falling back to legacy NSImage APIs.
+    -->
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.developer-tools</string>
+
+    <!--
+      Standard high-DPI flag — without this macOS would scale the
+      window contents as a 1× bitmap on Retina displays, blurring
+      the terminal cell renderer that's designed for the native
+      pixel grid.
+    -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2025–2026 packetThrower / Baudrun contributors</string>
+
+    <!--
+      File associations + URL schemes (.baudrun-profile.json,
+      baudrun://) are deliberately omitted here; those land with
+      the corresponding Phase 8 sub-items so each one ships its
+      Info.plist additions alongside the runtime handler.
+    -->
+</dict>
+</plist>
