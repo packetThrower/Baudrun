@@ -573,6 +573,7 @@ dependencies = [
  "base64",
  "chrono",
  "dirs",
+ "embed-resource",
  "env_logger",
  "flume",
  "gpui",

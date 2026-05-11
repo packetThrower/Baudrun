@@ -124,6 +124,12 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSWorkspace", "NSAccessibility"] }
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 
+# Build-time embed of Windows icon (resources/icon.rc) into the
+# Baudrun.exe PE resource section. The crate auto-detects target
+# and no-ops on non-Windows, so it builds cleanly everywhere.
+[build-dependencies]
+embed-resource = "3"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

@@ -780,14 +780,11 @@ fn install_macos_dock_icon() {
 }
 
 /// Query the OS "reduce motion" accessibility preference. Wired
-/// to the `ReduceMotion` global at boot. On macOS this reads
-/// `NSWorkspace.accessibilityDisplayShouldReduceMotion`; on other
-/// platforms we return false (animations on) for now — a real
-/// Windows / Linux implementation would call
-/// `SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)` /
-/// `gtk_settings_get_default()->gtk_enable_animations`
-/// respectively, but those land with the corresponding platform's
-/// polish pass.
+/// to the `ReduceMotion` global at boot. macOS reads
+/// `NSWorkspace.accessibilityDisplayShouldReduceMotion`; Windows
+/// reads `SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)`; Linux
+/// returns false until a GTK / freedesktop-portal query is wired
+/// (low priority — gpui's Linux story is least mature anyway).
 #[cfg(target_os = "macos")]
 fn detect_reduce_motion() -> bool {
     use objc2_app_kit::NSWorkspace;
@@ -797,7 +794,48 @@ fn detect_reduce_motion() -> bool {
     NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion()
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn detect_reduce_motion() -> bool {
+    // `SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION)` writes a
+    // BOOL into the supplied buffer: TRUE = client-area animations
+    // are ON, FALSE = the user has flipped the "Show animations
+    // in Windows" toggle off (Settings → Accessibility → Visual
+    // effects → Animation effects). Reduce-motion is therefore
+    // the inverse of the returned BOOL.
+    //
+    // Inline FFI rather than pulling in `windows-sys` for one
+    // call — gpui_windows already brings windows-sys transitively
+    // but adding a direct dep just to skip ~10 lines of `extern`
+    // boilerplate would bloat the dep graph for no gain.
+    const SPI_GETCLIENTAREAANIMATION: u32 = 0x1042;
+    type BOOL = i32;
+    unsafe extern "system" {
+        fn SystemParametersInfoW(
+            uiAction: u32,
+            uiParam: u32,
+            pvParam: *mut core::ffi::c_void,
+            fWinIni: u32,
+        ) -> BOOL;
+    }
+    let mut enabled: BOOL = 1;
+    let ok = unsafe {
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            &mut enabled as *mut _ as *mut _,
+            0,
+        )
+    };
+    if ok == 0 {
+        // Query failed — default to "animations on / reduce motion
+        // off" as the safer fallback (matches every other
+        // platform's no-op default).
+        return false;
+    }
+    enabled == 0
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn detect_reduce_motion() -> bool {
     false
 }
