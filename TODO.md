@@ -218,9 +218,66 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
         `window.open_dialog` directly when that feature lands
         (currently the multi-line warn is just a checkbox in
         the profile editor with no live confirm UI).
-- [ ] **Phase 8 — System integration.** Application menu (macOS),
-      icon, metadata, file associations, single-instance behavior
-      cross-platform, prefers-reduced-motion equivalent.
+- [ ] **Phase 8 — System integration.** The "make it feel like a
+      real shipped app" pass: things you'd notice are missing
+      every time the app launches but that none of the previous
+      phases needed in place. Sub-items are independently
+      shippable; pick whichever's easiest to land first.
+
+      Application menu (macOS-first; Windows / Linux mostly inherit
+      the in-window menus already)
+      - [ ] **Standard macOS menubar** — App / File / Edit / View
+            / Window / Help, with Quit / Hide / Cmd+Q wired to
+            gpui's existing handlers.
+      - [ ] **Wire Settings → Shortcuts bindings to menu items**
+            so the user's keybinding overrides show up next to
+            menu labels (Cmd+K for Clear, Cmd+Shift+S for
+            Suspend, etc.) and pressing the combo from anywhere
+            in the window dispatches the action.
+      - [ ] **About Baudrun panel** — standard macOS "About"
+            sheet showing version, copyright, GitHub link. Tauri
+            shipped one; gpui's panel can be a small modal.
+      - [ ] **Dock menu** (macOS) — right-click on the dock icon
+            offers "New Window" + recent profiles for one-click
+            reconnect.
+
+      Branding + bundle metadata
+      - [ ] **App icon** — design + bundle the `.icns` (macOS),
+            `.ico` (Windows), and `.png` set (Linux). The icon
+            already exists in the Tauri build; copy it over.
+      - [ ] **macOS Info.plist** — CFBundleIdentifier, version,
+            human-readable copyright, minimum OS, NSHighResolution
+            flag. Required before code signing in Phase 9.
+      - [ ] **Window title + taskbar / dock label** match the
+            bundle's display name across platforms (currently
+            the prototype shows "Baudrun (prototype)" in some
+            titlebars).
+
+      Behavior
+      - [ ] **Single-instance launch** — opening Baudrun while an
+            existing instance is running focuses the existing
+            window instead of spawning a second process. Per
+            platform: macOS handles this via the bundle's
+            `LSMultipleInstancesProhibited` + NSApplication
+            delegate; Windows / Linux need a named-mutex or
+            unix-socket dance.
+      - [ ] **Quit confirmation when a session is active.**
+            Prompt before tearing down a live serial connection
+            on Cmd+Q / window-close-all so a stray keystroke
+            doesn't lose a reconnect-in-progress.
+      - [ ] **Prefers-reduced-motion** — query the OS setting
+            (NSWorkspace on macOS, SPI_GETCLIENTAREAANIMATION on
+            Windows, GTK / Qt on Linux) and skip pulse animations
+            (reconnect dot, dialog slide-in) when on.
+
+      File / URL associations (lower priority)
+      - [ ] **`.baudrun-profile.json` file association.** Double-
+            clicking a profile JSON in Finder / Explorer launches
+            Baudrun and imports the profile.
+      - [ ] **`baudrun://` URL scheme.** `baudrun://connect/<port>?baud=9600`
+            deep-links from a browser, docs link, or another app
+            into a one-click connect. **[on request]** — niche
+            feature; revisit if a real use case shows up.
 - [ ] **Phase 9 — Auto-updater + distribution.** `tauri-plugin-updater`
       is gone post-Tauri; investigate `cargo-dist` or the
       `self_update` crate. Code signing per platform. CI build
