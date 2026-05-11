@@ -101,8 +101,16 @@ aho-corasick = "1"      # multi-keyword search for `\b(?:foo|bar|...)\b` style
                         # pack carries dozens of keyword alternations (state
                         # words, STP roles, BGP states, etc.)
 base64 = "0.22"
-rusb = "0.9"            # libusb backend for the CP210x direct driver in
-                        # `data::usbserial`
+# rusb's `vendored` feature compiles libusb statically into the
+# binary instead of dynamic-linking against the system copy.
+# Tradeoffs: ~10–15 s longer first build (one-time C compile of
+# libusb) and ~50 KB binary growth — bought back by (a) zero
+# runtime libusb dependency on user machines, and (b) no
+# install_name_tool dance in the macOS release pipeline to
+# rewrite Homebrew's `/opt/homebrew/lib/libusb-1.0.0.dylib`
+# load command into `@executable_path/../Frameworks/...`. Phase 9's
+# release pipeline ships a self-contained binary as a result.
+rusb = { version = "0.9", features = ["vendored"] }
 
 # macOS-only: set NSApplication's applicationIconImage at startup
 # so the dock icon picks up `resources/icons/icon.png` even when

@@ -38,18 +38,14 @@ jobs:
           - runner: macos-26
             arch: arm64
             target: aarch64-apple-darwin
+            packager-arch: aarch64
           - runner: macos-15-intel
             arch: amd64
             target: x86_64-apple-darwin
+            packager-arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
 
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -58,186 +54,68 @@ jobs:
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
+
+      # pkg-config is needed by serialport's IOKit lookups. libusb
+      # itself is vendored via `rusb` ([dependencies] in Cargo.toml),
+      # so no Homebrew libusb install needed at build time and no
+      # install_name_tool dance after bundling.
+      - name: Install macOS build deps
+        run: brew install pkg-config
+
+      - name: Install cargo-packager
+        uses: taiki-e/install-action@v2
         with:
-          workspaces: src-tauri
-
-      # libusb is needed at link time by rusb (CP210x direct-USB
-      # backend). Each runner ships its native arch Homebrew slice —
-      # amd64 on macos-15-intel, arm64 on macos-26 — so no Rosetta
-      # dance required.
-      - name: Install libusb
-        run: brew install libusb pkg-config
-
-      - name: Install npm dependencies
-        run: npm ci
+          tool: cargo-packager
 
       - name: Patch version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json
-          mv tmp.json src-tauri/tauri.conf.json
-          echo "Using version: $VERSION"
+          # Match the first `version = "..."` line in Cargo.toml,
+          # which lives under [package]. The toml has only one such
+          # line under the top-level [package] section so the
+          # 0,/.../ scoped sed works without needing a real parser.
+          sed -i '' "1,/^version = /{s/^version = .*/version = \"${VERSION}\"/}" Cargo.toml
+          # Mirror to the Info.plist so the bundle's
+          # CFBundleShortVersionString + CFBundleVersion match the
+          # tag rather than the static "0.0.1" sitting in the
+          # file. cargo-packager itself reads these from the plist
+          # we hand it via `info-plist-path`.
+          plutil -replace CFBundleShortVersionString -string "$VERSION" resources/Info.plist
+          plutil -replace CFBundleVersion -string "$VERSION" resources/Info.plist
+          echo "Building version: $VERSION"
 
-      # Updater feed (.app.tar.gz + .sig) is attached to whichever
-      # primary bundle is built when bundle.createUpdaterArtifacts is
-      # true in tauri.conf.json. The custom re-tar/re-sign step
-      # further down overwrites the auto-generated tarball with one
-      # packed AFTER our libusb install_name_tool fixup.
-      - name: Build Tauri bundle
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles app dmg
+      # `-f app -f dmg` produces both bundle types in one cargo-
+      # packager invocation. `before-packaging-command` in
+      # Cargo.toml runs `cargo build --release` once and both
+      # formats reuse the resulting binary.
+      - name: Build .app + .dmg
+        run: cargo packager --release -f app -f dmg --target ${{ matrix.target }}
 
-      # rusb links against Homebrew's libusb via an absolute path;
-      # ship a bundled copy inside .app/Contents/Frameworks so
-      # downloaded builds don't require Homebrew on the user's
-      # machine. Rewrites the load command via install_name_tool and
-      # fails loudly if any /opt/homebrew or /usr/local path remains.
-      - name: Bundle libusb into .app
-        run: |
-          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Baudrun.app"
-          BIN="$APP_DIR/Contents/MacOS/Baudrun"
-          FRAMEWORKS="$APP_DIR/Contents/Frameworks"
-          mkdir -p "$FRAMEWORKS"
-
-          LIBUSB_SRC=$(otool -L "$BIN" | awk '/libusb-1\.0/ {print $1; exit}')
-          if [ -z "$LIBUSB_SRC" ]; then
-            echo "binary has no libusb dependency — unexpected"
-            otool -L "$BIN"
-            exit 1
-          fi
-          cp "$LIBUSB_SRC" "$FRAMEWORKS/libusb-1.0.0.dylib"
-          chmod 644 "$FRAMEWORKS/libusb-1.0.0.dylib"
-
-          install_name_tool -change "$LIBUSB_SRC" \
-            "@executable_path/../Frameworks/libusb-1.0.0.dylib" "$BIN"
-
-          echo "--- otool after bundle ---"
-          otool -L "$BIN"
-          if otool -L "$BIN" | grep -qE '(/opt/homebrew|/usr/local/)'; then
-            echo "binary still references a Homebrew path; bundling failed"
-            exit 1
-          fi
-
-          # install_name_tool rewrites invalidate any signature
-          # tauri-action applied during the build, and Gatekeeper
-          # rejects unsigned-after-modification binaries with the
-          # "damaged" message rather than the milder "unidentified
-          # developer" prompt. Re-sign the bundled dylib + the
-          # binary + the whole .app ad-hoc (`-` codesigning identity)
-          # so the signatures cover the post-rewrite bytes. Users
-          # without paid Apple Developer accounts still need to
-          # right-click → Open or run `xattr -cr Baudrun.app` to
-          # bypass the quarantine prompt, but they don't see
-          # "damaged" anymore.
-          codesign --force --sign - "$FRAMEWORKS/libusb-1.0.0.dylib"
-          codesign --force --sign - "$BIN"
-          codesign --force --deep --sign - "$APP_DIR"
-          codesign --verify --deep --strict --verbose=2 "$APP_DIR"
-
-      # Rebuild the DMG so it contains the libusb-fixed + re-signed
-      # .app. Tauri creates the DMG during `tauri build` (above),
-      # before our install_name_tool + codesign step has run — so
-      # the .app inside that original DMG still references
-      # /opt/homebrew/opt/libusb (won't load on user Macs without
-      # Homebrew) and has the pre-fix signature. The .zip we
-      # package next is built from the post-fix .app, but `brew
-      # install --cask baudrun` consumes the DMG, so without this
-      # step every brew/dmg user gets a broken bundle. Drops
-      # Tauri's custom backdrop / window layout — drag-to-Applications
-      # still works, just without the styled background image.
-      - name: Rebuild DMG with libusb-fixed .app
-        run: |
-          set -euo pipefail
-          APP_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos/Baudrun.app"
-          DMG_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
-
-          OLD_DMG=$(ls "$DMG_DIR"/Baudrun_*.dmg 2>/dev/null | head -1 || true)
-          if [ -z "$OLD_DMG" ]; then
-            echo "no existing DMG to rebuild — bundler output changed?"
-            ls -la "$DMG_DIR" || true
-            exit 1
-          fi
-          DMG_NAME=$(basename "$OLD_DMG")
-          echo "Rebuilding $DMG_NAME with post-fix .app..."
-          rm -f "$OLD_DMG"
-
-          # Stage the DMG contents: the fixed .app + a /Applications
-          # symlink (standard macOS drag-to-install convention).
-          # `ditto` preserves codesign xattrs through the copy, where
-          # `cp -R` may not.
-          STAGING="$(mktemp -d)/dmg-staging"
-          mkdir -p "$STAGING"
-          ditto "$APP_DIR" "$STAGING/Baudrun.app"
-          ln -s /Applications "$STAGING/Applications"
-
-          # UDZO is the same compressed format Tauri's bundler uses.
-          hdiutil create \
-            -volname "Baudrun" \
-            -srcfolder "$STAGING" \
-            -fs HFS+ \
-            -format UDZO \
-            -ov \
-            "$DMG_DIR/$DMG_NAME"
-
-          hdiutil verify "$DMG_DIR/$DMG_NAME"
-
-          # Belt + suspenders: mount the new DMG and verify its .app
-          # codesigns clean. Catches xattr-stripping bugs early.
-          MOUNT=$(hdiutil attach -nobrowse -readonly "$DMG_DIR/$DMG_NAME" | tail -1 | awk '{print $NF}')
-          codesign --verify --deep --strict --verbose=2 "$MOUNT/Baudrun.app"
-          hdiutil detach "$MOUNT"
-
-      # Tauri produces a .dmg already; we additionally zip the .app
-      # so users who prefer "drag to /Applications" don't have to
-      # mount the DMG.
-      #
-      # `ditto -c -k --keepParent`, NOT `zip -r`. macOS code
-      # signatures live in xattrs (com.apple.cs.*), and standard
-      # zip strips them — so a .app round-tripped through plain
-      # zip → unzip launches with EXC_BAD_ACCESS / Code Signature
-      # Invalid at runtime even when the signature was perfectly
-      # valid pre-zip. ditto preserves xattrs + resource forks +
-      # symlinks; macOS Finder + `ditto -x -k` on the receiving end
-      # restore them on unpack.
-      - name: Package .app as zip
+      - name: Stage artifacts
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
           mkdir -p release-artifacts
-          ditto -c -k --keepParent \
-            "$BUNDLE_DIR/macos/Baudrun.app" \
-            "release-artifacts/Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip"
-          cp "$BUNDLE_DIR/dmg"/*.dmg release-artifacts/ 2>/dev/null || true
+          BUNDLE="target/${{ matrix.target }}/release"
 
-      # tauri-action's signing emits Baudrun.app.tar.gz + .sig BEFORE
-      # the install_name_tool fixup above — so its contents reference
-      # /opt/homebrew/lib/libusb. Replace both with a freshly-tarred
-      # copy of the post-fixup .app, then re-sign with the updater
-      # key via `tauri signer sign`. Without this step the auto-update
-      # download would crash on user machines without Homebrew.
-      - name: Re-tar and re-sign .app for updater
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/macos"
-          rm -f "$BUNDLE_DIR/Baudrun.app.tar.gz" "$BUNDLE_DIR/Baudrun.app.tar.gz.sig"
-          # BSD tar on macOS preserves xattrs by default; that's where
-          # the codesign signature we just applied lives.
-          tar -czf "$BUNDLE_DIR/Baudrun.app.tar.gz" -C "$BUNDLE_DIR" Baudrun.app
-          # `signer sign` reads the key + password from
-          # TAURI_SIGNING_PRIVATE_KEY[_PASSWORD] in the environment
-          # (set on the step), so no -k / -p flags are needed.
-          npx @tauri-apps/cli signer sign "$BUNDLE_DIR/Baudrun.app.tar.gz"
-          # Rename to include the arch so updater latest.json can
-          # disambiguate aarch64 vs x86_64 from a single release.
-          VERSION="${GITHUB_REF_NAME#v}"
-          UPDATE_NAME="Baudrun-${VERSION}-${{ matrix.arch }}.app.tar.gz"
-          mv "$BUNDLE_DIR/Baudrun.app.tar.gz" "release-artifacts/$UPDATE_NAME"
-          mv "$BUNDLE_DIR/Baudrun.app.tar.gz.sig" "release-artifacts/$UPDATE_NAME.sig"
+          # .dmg has cargo-packager's own naming
+          # (Baudrun_<version>_<arch>.dmg). Standardise the user-
+          # facing artifact name to match the previous Tauri
+          # release pattern.
+          cp "${BUNDLE}/Baudrun_${VERSION}_${{ matrix.packager-arch }}.dmg" \
+            "release-artifacts/Baudrun_${VERSION}_${{ matrix.arch }}.dmg"
+
+          # Drag-droppable .app zip for users who prefer to skip
+          # the .dmg mount-and-drag dance. `ditto -c -k --keepParent`
+          # preserves resource forks and extended attributes —
+          # matters once Phase 9 #3 (signing) lands; the .app's
+          # code-signing xattrs need to round-trip through the
+          # archive unchanged.
+          ditto -c -k --keepParent \
+            "${BUNDLE}/Baudrun.app" \
+            "release-artifacts/Baudrun-macOS-${{ matrix.arch }}-${VERSION}.zip"
+
+          echo "--- staged ---"
+          ls -la release-artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -261,12 +139,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
-
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -274,72 +146,53 @@ jobs:
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
 
-      - name: Install npm dependencies
-        run: npm ci
+      - name: Install cargo-packager
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-packager
 
       - name: Patch version from tag
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
-          $json = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
-          $json.version = $version
-          $json | ConvertTo-Json -Depth 10 | Set-Content src-tauri/tauri.conf.json
-          Write-Host "Using version: $version"
+          (Get-Content Cargo.toml -Raw) -replace '(?m)^version = .*', "version = `"$version`"" |
+            Set-Content -NoNewline Cargo.toml
+          Write-Host "Building version: $version"
 
-      # WiX (MSI) requires a numeric-only pre-release identifier and
-      # rejects alphanumeric ones like 0.9.0-alpha.3. NSIS has no
-      # such restriction. So pre-release tags ship NSIS only; stable
-      # tags ship both MSI + NSIS for corporate-deploy use cases.
-      # Direct \`tauri build\` — see Linux step. WiX still rejects
-      # alphanumeric pre-release identifiers, so msi is gated to
-      # stable tags only.
-      # cmd shell, NOT pwsh — pwsh's argument splatting expanded the
-      # bundle list at the character level and tauri's CLI saw 'n'
-      # as a bundle value. The expression syntax inlined into the
-      # command string sidesteps splatting entirely.
-      - name: Build Tauri bundle
+      # WiX (MSI) requires a numeric-only pre-release identifier
+      # and rejects alphanumeric ones like 0.9.0-alpha.3. NSIS has
+      # no such restriction. So pre-release tags ship NSIS only;
+      # stable tags ship both NSIS + WiX for corporate-deploy use
+      # cases that prefer .msi.
+      - name: Build .exe (NSIS) + .msi (stable only)
         shell: cmd
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles ${{ contains(github.ref_name, '-') && 'nsis' || 'msi nsis' }}
+        run: cargo packager --release -f nsis ${{ contains(github.ref_name, '-') && '' || '-f wix' }} --target ${{ matrix.target }}
 
-      # Collect the MSI (WiX, stable tags only) + NSIS .exe + a
-      # portable zip of the bare Baudrun.exe for users who don't
-      # want an installer. Updater bundles (.nsis.zip + .sig) come
-      # from the NSIS bundler when signing is enabled — list every
-      # NSIS output file before the targeted copies so a missing
-      # updater bundle is obvious in the log instead of silently
-      # skipped.
-      - name: Package artifacts
+      - name: Stage artifacts
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
           $arch = "${{ matrix.arch }}"
-          $bundle = "src-tauri/target/${{ matrix.target }}/release/bundle"
+          $bundle = "target/${{ matrix.target }}/release"
           New-Item -ItemType Directory -Force release-artifacts | Out-Null
 
           Write-Host "--- contents of $bundle ---"
-          if (Test-Path $bundle) {
-            Get-ChildItem -Path $bundle -Recurse -File | ForEach-Object { $_.FullName }
-          }
+          Get-ChildItem -Path $bundle -File -Recurse | ForEach-Object { $_.FullName }
 
-          if (Test-Path "$bundle/msi") {
-            Copy-Item "$bundle/msi/*.msi" release-artifacts/ -Verbose
-          }
-          if (Test-Path "$bundle/nsis") {
-            Copy-Item "$bundle/nsis/*.exe" release-artifacts/ -Verbose
-            # Updater feed: in Tauri 2 the auto-updater downloads the
-            # NSIS .exe installer directly and verifies with the
-            # *-setup.exe.sig signature next to it. No .nsis.zip
-            # wrapper is involved in the v2 updater path.
-            Get-ChildItem "$bundle/nsis/*-setup.exe.sig" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName release-artifacts/ -Verbose }
-          }
+          # NSIS .exe and (stable-only) WiX .msi pick up directly
+          # from cargo-packager's output dir. cargo-packager names
+          # them `Baudrun_<version>_<arch>-setup.exe` and
+          # `Baudrun_<version>_<arch>.msi`.
+          Get-ChildItem "$bundle/*-setup.exe" -ErrorAction SilentlyContinue |
+            Copy-Item -Destination release-artifacts/
+          Get-ChildItem "$bundle/*.msi" -ErrorAction SilentlyContinue |
+            Copy-Item -Destination release-artifacts/
+
+          # Portable .zip of the bare Baudrun.exe for users who'd
+          # rather not run an installer.
           Compress-Archive `
-            -Path "src-tauri/target/${{ matrix.target }}/release/Baudrun.exe" `
+            -Path "$bundle/Baudrun.exe" `
             -DestinationPath "release-artifacts/Baudrun-Windows-$arch-$version.zip"
 
           Write-Host "--- staged ---"
@@ -360,20 +213,14 @@ jobs:
           - runner: ubuntu-latest
             arch: amd64
             target: x86_64-unknown-linux-gnu
-            appimage_arch: x86_64
+            rpm_arch: x86_64
           - runner: ubuntu-24.04-arm
             arch: arm64
             target: aarch64-unknown-linux-gnu
-            appimage_arch: aarch64
+            rpm_arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
 
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -382,149 +229,102 @@ jobs:
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
 
-      # Tauri's Linux build links against GTK3 + WebKit2GTK 4.1 +
-      # libsoup3. libayatana-appindicator for system-tray (Tauri
-      # dependency even if we don't use it today). librsvg for
-      # .AppImage + .deb icon scaling. libusb for rusb's bulk
-      # transfers. file + fuse3 are needed by appimagetool. fpm
-      # (via ruby-dev) builds the .pkg.tar.zst since Tauri's
-      # bundler doesn't handle pacman packages.
-      # xdg-utils provides /usr/bin/xdg-open which Tauri's AppImage
-      # bundler copies into the AppImage so plugin-opener works on
-      # target systems without xdg-utils installed.
+      # libudev is needed at link time by the serialport crate
+      # (tty/serial enumeration via libudev-sys). libusb is
+      # vendored via rusb so no libusb-1.0-0-dev. gpui_linux's
+      # pkg-config probes need xkbcommon / wayland / x11 / xcb
+      # headers — same set as CI. AppImage tooling needs file +
+      # fuse3 + libfuse2 (AppImage runtime check on AppImageTool
+      # invocation).
       - name: Install Linux build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
-            libayatana-appindicator3-dev librsvg2-dev \
-            libusb-1.0-0-dev libudev-dev pkg-config \
-            xdg-utils \
-            ruby-dev build-essential file libfuse2t64 libarchive-tools
+            libudev-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev \
+            libx11-dev libxcb1-dev libxcb-randr0-dev \
+            libxcb-xkb-dev libxcb-cursor-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxcb-render0-dev \
+            pkg-config \
+            file fuse3 libfuse2 ruby-dev
 
-      - name: Install fpm
+      - name: Install cargo-packager
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-packager
+
+      - name: Install fpm (for .rpm)
         run: sudo gem install --no-document fpm
-
-      - name: Install npm dependencies
-        run: npm ci
 
       - name: Patch version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json
-          mv tmp.json src-tauri/tauri.conf.json
-          echo "Using version: $VERSION"
+          sed -i "0,/^version = /{s/^version = .*/version = \"${VERSION}\"/}" Cargo.toml
+          echo "Building version: $VERSION"
 
-      # Direct \`tauri build\` instead of tauri-apps/tauri-action — the
-      # action's post-build pass filters its "Found artifacts" list
-      # down to primary installers and (per testing on alpha.10) leaves
-      # the .AppImage.tar.gz / .sig updater-feed files orphaned, where
-      # they then disappear from the bundle dir before our collect
-      # step runs. Calling \`tauri build\` directly leaves every file
-      # tauri-bundler produced exactly where it wrote them.
-      - name: Build Tauri bundle
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          npx @tauri-apps/cli build --target ${{ matrix.target }} --bundles deb rpm appimage
+      # cargo-packager covers .deb, .AppImage, and .pacman natively.
+      # .rpm is not in its supported list, so we shell out to fpm
+      # after — same pattern the old Tauri release.yml used for
+      # .pkg.tar.zst, which IS supported here so we don't need
+      # fpm for that any more.
+      - name: Build .deb + .AppImage + .pacman
+        run: cargo packager --release -f deb -f appimage -f pacman --target ${{ matrix.target }}
 
-      # Tauri doesn't generate .pkg.tar.zst — fpm's pacman target
-      # does. Reuse the same binary + desktop file + icon + udev
-      # rule the .deb already bundled, staged into a fresh tree
-      # under pkg/ so fpm sees a clean layout.
-      - name: Stage install tree for pacman
-        run: |
-          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release"
-          mkdir -p pkg/usr/bin
-          mkdir -p pkg/usr/share/applications
-          mkdir -p pkg/usr/share/icons/hicolor/256x256/apps
-          mkdir -p pkg/usr/lib/udev/rules.d
-          install -m 755 "$BUNDLE_DIR/baudrun" pkg/usr/bin/baudrun
-          install -m 644 packaging/linux/baudrun.desktop pkg/usr/share/applications/baudrun.desktop
-          install -m 644 build/appicon.png pkg/usr/share/icons/hicolor/256x256/apps/baudrun.png
-          install -m 644 packaging/linux/60-baudrun-serial.rules pkg/usr/lib/udev/rules.d/60-baudrun-serial.rules
-
-      # Arch pkgver can't contain `-` — Arch uses `-` as the
-      # pkgver/pkgrel separator. Collapse SemVer pre-release
-      # suffixes to `_` so 0.8.0-beta.1 → 0.8.0_beta.1.
-      - name: Build .pkg.tar.zst
+      - name: Build .rpm via fpm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          ARCH_VERSION="${VERSION//-/_}"
-          fpm -s dir -t pacman \
-            --name baudrun \
-            --version "${ARCH_VERSION}" \
-            --iteration "1" \
-            --architecture "${{ matrix.appimage_arch }}" \
-            --depends "gtk3" \
-            --depends "webkit2gtk-4.1" \
-            --depends "libusb" \
-            --description "A serial terminal for network devices" \
-            --url "https://github.com/packetThrower/Baudrun" \
-            --maintainer "Will Lehnertz <6597817+packetThrower@users.noreply.github.com>" \
-            --license "GPL-3.0-or-later" \
-            --after-install packaging/linux/baudrun-postinstall.sh \
-            --after-upgrade packaging/linux/baudrun-postinstall.sh \
-            -C pkg \
-            --package "baudrun-${ARCH_VERSION}-1-${{ matrix.appimage_arch }}.pkg.tar.zst" \
-            .
+          ARCH="${{ matrix.rpm_arch }}"
+          BIN="target/${{ matrix.target }}/release/Baudrun"
 
-      # Collect every artifact into a flat dir for upload. Each cp
-      # is wrapped in a function that prints what's matched (or notes
-      # the dir) so missing files surface in the log instead of being
-      # swallowed by a silent glob non-match. Tauri 2's appimage
-      # bundler emits BOTH `Baudrun_*` (display-name cased) and a
-      # secondary `baudrun_*` (binary-name cased) copy of every file —
-      # the dedupe loop keeps just the display-name copies so the
-      # release page doesn't show duplicates.
-      - name: Collect artifacts
-        run: |
-          set -euo pipefail
-          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+          mkdir -p pkg/usr/bin
+          cp "$BIN" pkg/usr/bin/baudrun
+          chmod +x pkg/usr/bin/baudrun
+
+          mkdir -p pkg/usr/share/applications
+          cp packaging/linux/baudrun.desktop pkg/usr/share/applications/
+
+          mkdir -p pkg/usr/lib/udev/rules.d
+          cp packaging/linux/60-baudrun-serial.rules pkg/usr/lib/udev/rules.d/
+
+          mkdir -p pkg/usr/share/icons/hicolor/512x512/apps
+          cp resources/icons/icon.png pkg/usr/share/icons/hicolor/512x512/apps/baudrun.png
+
           mkdir -p release-artifacts
+          fpm -s dir -t rpm -C pkg \
+            --name baudrun --version "$VERSION" --architecture "$ARCH" \
+            --license GPL-3.0-or-later \
+            --description "Serial terminal for network engineers." \
+            --url "https://packetthrower.github.io/Baudrun/" \
+            --vendor "packetThrower" --maintainer "packetThrower" \
+            --depends libudev.so.1 \
+            --after-install packaging/linux/baudrun-postinstall.sh \
+            --package "release-artifacts/Baudrun-${VERSION}-1.${ARCH}.rpm"
 
-          echo "--- contents of $BUNDLE_DIR ---"
-          find "$BUNDLE_DIR" -maxdepth 3 -type f -printf "%P\n" || true
+      - name: Stage artifacts
+        run: |
+          mkdir -p release-artifacts
+          BUNDLE="target/${{ matrix.target }}/release"
 
-          # Display-cased outputs only — skip the lowercase `baudrun_*`
-          # twins tauri's appimage bundler also writes.
-          collect() {
-            local dir="$1"; local pattern="$2"
-            shopt -s nullglob
-            local files=( "$dir"/$pattern )
-            shopt -u nullglob
-            if [ ${#files[@]} -eq 0 ]; then
-              echo "no match: $dir/$pattern"
-              return 0
-            fi
-            for f in "${files[@]}"; do
-              local name=$(basename "$f")
-              # Skip the lowercase twin pair on Linux AppImage outputs.
-              if [[ "$name" == baudrun_* ]]; then
-                continue
-              fi
-              cp -v "$f" release-artifacts/
-            done
-          }
+          echo "--- cargo-packager outputs ---"
+          ls -la "$BUNDLE" 2>/dev/null || true
 
-          collect "$BUNDLE_DIR/deb" "*.deb"
-          collect "$BUNDLE_DIR/rpm" "*.rpm"
-          collect "$BUNDLE_DIR/appimage" "*.AppImage"
-          collect "." "*.pkg.tar.zst"
-
-          # Updater feed: in Tauri 2 the auto-updater downloads the
-          # primary AppImage directly (no .tar.gz wrapper) and verifies
-          # with the .AppImage.sig minisign signature. .deb / .rpm /
-          # pacman users update via their distro's package manager and
-          # don't go through Tauri's auto-updater.
-          collect "$BUNDLE_DIR/appimage" "*.AppImage.sig"
+          # cargo-packager places its outputs at the same level as
+          # the binary. Filenames are
+          # Baudrun_<version>_<arch>.<format>.
+          cp "$BUNDLE"/*.deb release-artifacts/ 2>/dev/null || true
+          cp "$BUNDLE"/*.AppImage release-artifacts/ 2>/dev/null || true
+          # `.pacman` here is the .tar.gz produced by cargo-packager;
+          # rename to .pkg.tar.zst to match the pacman convention
+          # users expect (`pacman -U baudrun-<version>.pkg.tar.zst`).
+          for f in "$BUNDLE"/*.pacman; do
+            [ -e "$f" ] || continue
+            cp "$f" "release-artifacts/$(basename "$f" .pacman).pkg.tar.zst"
+          done
 
           echo "--- staged ---"
-          ls -la release-artifacts
+          ls -la release-artifacts/
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -593,7 +393,7 @@ jobs:
             echo "> ℹ️ **Platform support — early days.**"
             echo ">"
             echo "> macOS builds (arm64 + amd64) are tested with a real serial connection."
-            echo "> Windows and Linux builds are produced and signed by CI but **not yet routinely tested against real hardware**."
+            echo "> Windows and Linux builds are produced by CI but **not yet routinely tested against real hardware**."
             echo "> If you hit issues on those platforms, please file an issue at <https://github.com/packetThrower/Baudrun/issues>."
             echo
             echo "## What's Changed"
@@ -612,110 +412,6 @@ jobs:
           echo "--- Generated release notes ---"
           cat release-notes.md
 
-      # Updater manifest: served at
-      # https://github.com/packetThrower/Baudrun/releases/latest/download/latest.json
-      # which permalinks to the latest non-prerelease release. So we
-      # only emit / upload it for stable tags — pre-release builds
-      # still ship signed updater bundles, but the manifest stays
-      # pinned to the most recent stable so existing users don't
-      # auto-jump onto an alpha. Pre-release detection in-app stays
-      # via the GitHub Releases API + browser-open path.
-      - name: Generate updater manifest (stable only)
-        if: ${{ !contains(github.ref_name, '-') }}
-        run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          TAG="${GITHUB_REF_NAME}"
-          REPO="${GITHUB_REPOSITORY}"
-          PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-          # Each .sig file is short minisign-format text — embed its
-          # contents inline in the manifest so the updater plugin can
-          # verify without an extra HTTP roundtrip.
-          read_sig() {
-            local f="$1"
-            if [ -f "$f" ]; then
-              cat "$f"
-            else
-              echo ""
-            fi
-          }
-
-          # Match files by basename glob; the artifact step renames
-          # macOS bundles to include the version + arch, but Linux /
-          # Windows keep tauri-bundler's defaults.
-          find_one() {
-            local pattern="$1"
-            find artifacts -type f -name "$pattern" | head -n 1
-          }
-
-          # Tauri 2 updater format per platform:
-          #   macOS:   .app.tar.gz + .sig  (the .app is a directory,
-          #                                 so it has to be tarballed)
-          #   Linux:   .AppImage   + .AppImage.sig  (download directly)
-          #   Windows: -setup.exe  + -setup.exe.sig (NSIS installer)
-          MAC_ARM=$(find_one "Baudrun-${VERSION}-arm64.app.tar.gz")
-          MAC_X64=$(find_one "Baudrun-${VERSION}-amd64.app.tar.gz")
-          LINUX_X64=$(find_one "*amd64.AppImage")
-          LINUX_ARM=$(find_one "*aarch64.AppImage")
-          WIN_X64=$(find_one "*x64-setup.exe")
-          WIN_ARM=$(find_one "*arm64-setup.exe")
-
-          # Release-asset URL pattern that resolves on the rendered
-          # release page. Permalink form ensures GitHub redirects to
-          # the actual blob storage URL the updater plugin then
-          # downloads.
-          asset_url() {
-            local f="$1"
-            if [ -z "$f" ] || [ ! -f "$f" ]; then
-              echo ""
-            else
-              echo "https://github.com/${REPO}/releases/download/${TAG}/$(basename "$f")"
-            fi
-          }
-
-          # macOS .app.tar.gz.sig sits next to its tarball; Linux
-          # .AppImage.sig and Windows -setup.exe.sig follow the same
-          # naming convention next to their primary bundles.
-          MAC_ARM_SIG=$(read_sig "${MAC_ARM}.sig")
-          MAC_X64_SIG=$(read_sig "${MAC_X64}.sig")
-          LINUX_X64_SIG=$(read_sig "${LINUX_X64}.sig")
-          LINUX_ARM_SIG=$(read_sig "${LINUX_ARM}.sig")
-          WIN_X64_SIG=$(read_sig "${WIN_X64}.sig")
-          WIN_ARM_SIG=$(read_sig "${WIN_ARM}.sig")
-
-          # Use jq to build the JSON so quoting / escaping in release
-          # notes / signatures stay safe.
-          NOTES="$(cat release-notes.md)"
-
-          jq -n \
-            --arg version "$VERSION" \
-            --arg notes "$NOTES" \
-            --arg pub_date "$PUB_DATE" \
-            --arg mac_arm_url "$(asset_url "$MAC_ARM")" --arg mac_arm_sig "$MAC_ARM_SIG" \
-            --arg mac_x64_url "$(asset_url "$MAC_X64")" --arg mac_x64_sig "$MAC_X64_SIG" \
-            --arg lin_x64_url "$(asset_url "$LINUX_X64")" --arg lin_x64_sig "$LINUX_X64_SIG" \
-            --arg lin_arm_url "$(asset_url "$LINUX_ARM")" --arg lin_arm_sig "$LINUX_ARM_SIG" \
-            --arg win_x64_url "$(asset_url "$WIN_X64")" --arg win_x64_sig "$WIN_X64_SIG" \
-            --arg win_arm_url "$(asset_url "$WIN_ARM")" --arg win_arm_sig "$WIN_ARM_SIG" \
-            '{
-              version: $version,
-              notes: $notes,
-              pub_date: $pub_date,
-              platforms: (
-                {}
-                + (if $mac_arm_url != "" then { "darwin-aarch64": { url: $mac_arm_url, signature: $mac_arm_sig } } else {} end)
-                + (if $mac_x64_url != "" then { "darwin-x86_64": { url: $mac_x64_url, signature: $mac_x64_sig } } else {} end)
-                + (if $lin_x64_url != "" then { "linux-x86_64": { url: $lin_x64_url, signature: $lin_x64_sig } } else {} end)
-                + (if $lin_arm_url != "" then { "linux-aarch64": { url: $lin_arm_url, signature: $lin_arm_sig } } else {} end)
-                + (if $win_x64_url != "" then { "windows-x86_64": { url: $win_x64_url, signature: $win_x64_sig } } else {} end)
-                + (if $win_arm_url != "" then { "windows-aarch64": { url: $win_arm_url, signature: $win_arm_sig } } else {} end)
-              )
-            }' > latest.json
-
-          echo "--- Generated latest.json ---"
-          cat latest.json
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -727,7 +423,6 @@ jobs:
             artifacts/linux-amd64-package/*
             artifacts/linux-arm64-package/*
             SHA256SUMS
-            ${{ !contains(github.ref_name, '-') && 'latest.json' || '' }}
           body_path: release-notes.md
           draft: false
           # Tags with a hyphen in the SemVer pre-release slot flag
