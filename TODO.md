@@ -424,21 +424,45 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       shippable.
 
       Foundation
-      - [ ] **Wire prototype into CI.** `.github/workflows/ci.yml`
-            currently only runs `cargo check / clippy / test --lib`
-            against `src-tauri/`. Mirror that under
-            `prototype/` so we catch regressions on the active
-            crate. Cheap to set up; everything else in Phase 9
-            depends on the build going green from a clean clone.
+      - [x] **Wire prototype into CI.** `.github/workflows/ci.yml`
+            now runs against the root crate (`baudrun`) — the
+            Tauri / Svelte `frontend` job is gone, Linux deps
+            drop GTK / WebKit / soup / appindicator and add
+            xkbcommon / wayland / x11 / xcb for `gpui_linux`,
+            macOS / Windows installs are unchanged. Triggers
+            on pushes / PRs against both `main` and
+            `experiments/alacritty-gpui` so the workflow keeps
+            running before and after the eventual merge.
+            Cleaned up 20 clippy lints that had accumulated
+            during Phase 2–8 (deprecated NSImage::lockFocus,
+            field-reassign-with-default in terminal_grid, dead
+            code attributes for transfer state held for future
+            use, doc-list-item indentation in settings_view, a
+            duplicated `#[allow(clippy::too_many_arguments)]`
+            on advanced_pane, manual is_multiple_of, an
+            unnecessary unsafe block in detect_reduce_motion,
+            `WindowInit::WithSession` boxed to dodge the
+            variant-size lint) so the `-D warnings` gate
+            mirrors the strictness the Tauri build used to
+            hold. `cargo test` runs the 46 in-binary unit
+            tests (no `--lib` flag — the crate has no library
+            target).
 
       Bundling
-      - [ ] **Pick a bundler.** Three serious options:
-            `cargo-bundle` (simple, makes .app/.dmg, less active),
-            `cargo-dist` (opinionated, generates CI + release
-            workflows, much more "batteries included"), or hand-
-            rolled scripts (max control, more work). Pick one and
-            document the decision before writing any build code so
-            the rest of Phase 9 inherits the choice.
+      - [x] **Pick a bundler — cargo-dist.** Decision factors:
+            (a) generates the entire release workflow (we'd
+            write less GitHub-Actions YAML than rolling cargo-
+            bundle by hand), (b) handles all six platforms in
+            one config (`Cargo.toml`'s `[workspace.metadata.dist]`
+            table), (c) ships a self-update client that the
+            auto-updater sub-item below can lean on instead of
+            re-inventing release-asset parsing, (d) actively
+            maintained by Axo, where cargo-bundle has stalled.
+            Trade-off accepted: cargo-dist's release workflow
+            is opinionated; if we ever need to deviate
+            (custom DMG layout, esoteric signing flow) we'll
+            either eject from it or shell out from the
+            generated workflow.
       - [ ] **Local `.app` build that works.** `cargo bundle
             --release` (or chosen-tool equivalent) produces a
             Baudrun.app that double-clicks open on a fresh macOS
