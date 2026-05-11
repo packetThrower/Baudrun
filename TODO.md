@@ -386,6 +386,37 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             deep-links from a browser, docs link, or another app
             into a one-click connect. **[on request]** — niche
             feature; revisit if a real use case shows up.
+
+            **Security model (decide before implementing).** Once
+            Baudrun registers as the `baudrun://` handler any
+            webpage or app can fire a URL — URL schemes have no
+            origin check, so the threat model is "drive-by from
+            a hostile / phished page". Design guardrails up
+            front, before the first `cx.on_open_urls` line lands:
+
+            * **Profile-only addressing.** URL references a saved
+              profile id / name. No raw port paths, no raw baud /
+              parity in the URL — those have already passed
+              through the user's own config. Stops the "open
+              `/dev/cu.SecureModem` you didn't ask for" path.
+            * **Mandatory confirmation sheet**, default-button =
+              Cancel, showing the resolved profile name + port +
+              baud. No silent connects ever. macOS-style "this
+              page wants to open Baudrun" prompt.
+            * **Hard non-feature: no bytes-to-send payload.** Not
+              even base64. Document explicitly so a future "let's
+              just add a small `?send=` parameter" PR fails review
+              at the doc level. Otherwise a malicious link could
+              write `reload in 1\r` to a Cisco console.
+            * **Rate-limit the handler.** Bin to one accept per
+              ~2s so window-spam / activation-DoS is harmless.
+            * **Always foreground.** Bring Baudrun to front so
+              the user sees what's happening; never silent-open
+              a background session.
+            * **No URL parameter that would change Settings.**
+              The URL is read-only with respect to the user's
+              config — can pick a profile to connect to, can't
+              edit one.
 - [ ] **Phase 9 — Auto-updater + distribution.** `tauri-plugin-updater`
       is gone post-Tauri; investigate `cargo-dist` or the
       `self_update` crate. Code signing per platform. CI build
