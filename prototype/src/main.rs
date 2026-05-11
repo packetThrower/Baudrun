@@ -21,18 +21,52 @@ mod terminal_view;
 
 use std::rc::Rc;
 
-use gpui::{actions, px, App, AppContext, KeyBinding, Menu, MenuItem};
+use gpui::{App, AppContext, KeyBinding, Menu, MenuItem};
 use gpui_component::{scroll::ScrollbarShow, Theme};
 
 use app_view::{open_app_window, WindowInit};
-use settings_bus::SettingsBus;
+use settings_bus::{SettingsBus, SettingsEvent};
 use terminal_view::TerminalView;
 
 // App-level actions wired into the macOS menubar (and one day the
 // Windows / Linux equivalents). The `actions!` macro generates zero-
 // sized structs that implement `gpui::Action`; handlers register via
 // `cx.on_action::<Quit>(...)` and keybindings via `cx.bind_keys(...)`.
-actions!(baudrun, [Quit, NewWindow]);
+//
+// The 12 below the App-level Quit / NewWindow split correspond 1:1
+// with `settings_view::SHORTCUT_ACTIONS` — each is dispatched from
+// the focused window's AppView, which owns the actual handler. The
+// keybinding for each one is registered fresh on every settings
+// change so the user's overrides flow straight into the menubar
+// accelerators (`install_app_menu` reads `effective_shortcut(id)`
+// for the current settings and emits a KeyBinding per action).
+pub(crate) mod actions {
+    use gpui::actions;
+    actions!(
+        baudrun,
+        [
+            Quit,
+            NewWindow,
+            Connect,
+            Disconnect,
+            Suspend,
+            Resume,
+            ClearTerminal,
+            SendBreak,
+            SendFile,
+            NewProfile,
+            OpenInNewWindow,
+            FontIncrease,
+            FontDecrease,
+            FontReset,
+        ]
+    );
+}
+use actions::{
+    ClearTerminal, Connect, Disconnect, FontDecrease, FontIncrease, FontReset,
+    NewProfile, NewWindow, OpenInNewWindow, Quit, Resume, SendBreak, SendFile,
+    Suspend,
+};
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
 /// for the network gear Baudrun targets — Cisco, Juniper, Aruba,
@@ -295,16 +329,15 @@ fn install_app_menu(
     highlight_store: Rc<data::highlight::Store>,
     themes_store: Rc<data::themes::Store>,
 ) {
-    // Accelerators. gpui's macOS backend forwards the keystroke
-    // to the focused element; if no in-window handler claims it,
-    // it bubbles up to the App-level handlers below.
-    cx.bind_keys([
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-n", NewWindow, None),
-    ]);
-
+    // App-level handlers. Quit + NewWindow have no per-window state
+    // so they live here; the other 12 actions are dispatched from
+    // the focused window's AppView::render via `.on_action` because
+    // they need access to the window's local AppView state (current
+    // profile, terminal entity, suspended flag, …). Action structs
+    // are zero-sized so the keybinding alone — registered globally
+    // via `cx.bind_keys` — drives both menu accelerators and
+    // anywhere-in-window dispatch.
     cx.on_action(|_: &Quit, cx| cx.quit());
-
     {
         let profile_store = profile_store.clone();
         let settings_bus = settings_bus.clone();
@@ -337,6 +370,104 @@ fn install_app_menu(
         });
     }
 
+    // First-time bind + menu install using the boot-time settings
+    // snapshot. After this the SettingsBus subscription below
+    // re-runs `apply_shortcut_bindings` on every settings write so
+    // the menubar accelerators stay in sync with the user's
+    // overrides. The snapshot is cloned out of the bus before the
+    // mutable cx borrow because `bus.read(cx)` itself needs cx.
+    let boot_settings = settings_bus.read(cx).current().clone();
+    apply_shortcut_bindings(cx, &boot_settings);
+
+    // Re-bind when the user edits their shortcuts in Settings.
+    // Detached so the subscription lives for the full app lifetime;
+    // SettingsBus is App-scoped so there's no entity to outlive.
+    cx.subscribe(&settings_bus, |_bus, event, cx| {
+        // SettingsEvent::Updated carries the post-save snapshot so
+        // we don't need to read the bus back (which would conflict
+        // with the mutable cx borrow `apply_shortcut_bindings`
+        // needs).
+        let SettingsEvent::Updated(settings) = event;
+        apply_shortcut_bindings(cx, settings);
+    })
+    .detach();
+}
+
+/// Compute the effective binding for each shortcut action from the
+/// current Settings, register all keybindings fresh, and rebuild
+/// the menubar. Called at boot (with the snapshot from disk) and
+/// from the SettingsBus subscription (with the new snapshot after
+/// every Settings save).
+///
+/// `clear_key_bindings` is the simplest correct way to handle the
+/// re-bind path: a user editing one shortcut might also be
+/// flipping another one back to its default, and an additive
+/// approach would leave stale bindings claiming the now-orphaned
+/// key combo.
+fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
+    cx.clear_key_bindings();
+
+    let overrides = settings.shortcuts.clone().unwrap_or_default();
+    // Static accelerators that don't appear in Settings → Shortcuts.
+    // Quit and New Window are always-on system bindings — exposing
+    // them to the override UI would let a user accidentally trap
+    // themselves in a window with no way out.
+    let mut bindings = vec![
+        KeyBinding::new("cmd-q", Quit, None),
+        KeyBinding::new("cmd-n", NewWindow, None),
+    ];
+    // Walk the same action list Settings → Shortcuts renders so the
+    // menubar and the customization UI agree on which IDs are
+    // bindable. Action IDs map 1:1 to the gpui Action structs by
+    // hand; an unknown ID is logged and skipped (means someone
+    // added an entry to `SHORTCUT_ACTIONS` without wiring the
+    // gpui side yet).
+    for &id in settings_view::SHORTCUT_ACTIONS {
+        let spec = settings_view::effective_shortcut(id, &overrides);
+        let Some(gpui_spec) = settings_view::spec_to_gpui_binding(&spec) else {
+            continue;
+        };
+        if let Some(b) = key_binding_for_action(id, &gpui_spec) {
+            bindings.push(b);
+        }
+    }
+    cx.bind_keys(bindings);
+
+    install_menus(cx);
+}
+
+/// Map a Settings shortcut id (`"clear"`, `"font-increase"`, …) to
+/// the corresponding gpui KeyBinding for the supplied binding
+/// string. Returns `None` for unknown ids (logs once at warn level
+/// so the dropped ID is debuggable without spamming on every
+/// rebind).
+fn key_binding_for_action(id: &str, gpui_spec: &str) -> Option<KeyBinding> {
+    let kb = match id {
+        "connect" => KeyBinding::new(gpui_spec, Connect, None),
+        "disconnect" => KeyBinding::new(gpui_spec, Disconnect, None),
+        "suspend" => KeyBinding::new(gpui_spec, Suspend, None),
+        "resume" => KeyBinding::new(gpui_spec, Resume, None),
+        "clear" => KeyBinding::new(gpui_spec, ClearTerminal, None),
+        "break" => KeyBinding::new(gpui_spec, SendBreak, None),
+        "send-file" => KeyBinding::new(gpui_spec, SendFile, None),
+        "new-profile" => KeyBinding::new(gpui_spec, NewProfile, None),
+        "open-window" => KeyBinding::new(gpui_spec, OpenInNewWindow, None),
+        "font-increase" => KeyBinding::new(gpui_spec, FontIncrease, None),
+        "font-decrease" => KeyBinding::new(gpui_spec, FontDecrease, None),
+        "font-reset" => KeyBinding::new(gpui_spec, FontReset, None),
+        unknown => {
+            log::warn!("shortcut: unknown action id {unknown}");
+            return None;
+        }
+    };
+    Some(kb)
+}
+
+/// Install the macOS NSMenuBar (and no-op on other platforms). The
+/// accelerators next to each label come from whatever bindings are
+/// currently registered for the action types via `cx.bind_keys`,
+/// so this needs to be called AFTER `bind_keys` in the rebind path.
+fn install_menus(cx: &mut App) {
     cx.set_menus(vec![
         // The first menu's name is overridden by the bundle's
         // display name on macOS, so "Baudrun" here is mostly for
@@ -344,7 +475,29 @@ fn install_app_menu(
         // are added automatically by AppKit when the platform
         // recognises the slot.
         Menu::new("Baudrun").items([MenuItem::action("Quit Baudrun", Quit)]),
-        Menu::new("File").items([MenuItem::action("New Window", NewWindow)]),
+        Menu::new("File").items([
+            MenuItem::action("New Window", NewWindow),
+            MenuItem::action("New Profile", NewProfile),
+            MenuItem::separator(),
+            MenuItem::action("Send File…", SendFile),
+            MenuItem::action("Open Profile in New Window", OpenInNewWindow),
+        ]),
+        Menu::new("Session").items([
+            MenuItem::action("Connect", Connect),
+            MenuItem::action("Disconnect", Disconnect),
+            MenuItem::separator(),
+            MenuItem::action("Suspend Session", Suspend),
+            MenuItem::action("Resume Session", Resume),
+            MenuItem::separator(),
+            MenuItem::action("Send Break", SendBreak),
+        ]),
+        Menu::new("View").items([
+            MenuItem::action("Clear Terminal", ClearTerminal),
+            MenuItem::separator(),
+            MenuItem::action("Increase Font Size", FontIncrease),
+            MenuItem::action("Decrease Font Size", FontDecrease),
+            MenuItem::action("Reset Font Size", FontReset),
+        ]),
         Menu::new("Window"),
         Menu::new("Help"),
     ]);

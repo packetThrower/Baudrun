@@ -2890,7 +2890,7 @@ fn make_select(
 /// Display order in Settings → Shortcuts. Same grouping as Tauri:
 /// session control first, then transfer / window management, then
 /// view actions.
-const SHORTCUT_ACTIONS: &[&str] = &[
+pub(crate) const SHORTCUT_ACTIONS: &[&str] = &[
     "connect",
     "disconnect",
     "suspend",
@@ -2965,7 +2965,7 @@ fn default_for_action(action: &str) -> &'static str {
 /// platform default. Matches Tauri's `effectiveShortcut`: empty
 /// string in the override map is treated as "unset" so the reset
 /// affordance can clear without having to delete the key.
-fn effective_shortcut(action: &str, overrides: &HashMap<String, String>) -> String {
+pub(crate) fn effective_shortcut(action: &str, overrides: &HashMap<String, String>) -> String {
     if let Some(s) = overrides.get(action) {
         if !s.trim().is_empty() {
             return s.clone();
@@ -3074,6 +3074,63 @@ fn parse_spec(spec: &str) -> Option<Keystroke> {
         key,
         key_char: None,
     })
+}
+
+/// Convert a stored W3C shortcut spec (`"Meta+Shift+K"`) into the
+/// hyphen-joined lowercase form gpui's `KeyBinding::new` parser
+/// expects (`"cmd-shift-k"`). Returns `None` for specs with no key
+/// or only modifiers (gpui would reject those at parse time).
+///
+/// Mirrors `parse_spec` for the modifier-token vocabulary; the
+/// difference is the output encoding — gpui uses `-` between parts
+/// and reserves `cmd` for the platform / meta key, regardless of
+/// host OS (the gpui keymatcher does the platform-translation
+/// internally).
+pub(crate) fn spec_to_gpui_binding(spec: &str) -> Option<String> {
+    if spec.is_empty() {
+        return None;
+    }
+    let mut parts: Vec<&str> = Vec::with_capacity(5);
+    let mut control = false;
+    let mut platform = false;
+    let mut shift = false;
+    let mut alt = false;
+    let mut key: Option<String> = None;
+    for raw in spec.split('+') {
+        let tok = raw.trim();
+        if tok.is_empty() {
+            continue;
+        }
+        match tok.to_ascii_lowercase().as_str() {
+            "control" | "ctrl" => control = true,
+            "meta" | "cmd" | "command" | "super" | "win" => platform = true,
+            "shift" => shift = true,
+            "alt" | "option" => alt = true,
+            _ => key = Some(canonical_key_for_display(tok)),
+        }
+    }
+    let key = key?;
+    // Order matches gpui's parser tolerance but we standardise on
+    // ctrl → cmd → alt → shift → key for round-trip stability with
+    // the rest of the codebase's KeyBinding strings.
+    if control {
+        parts.push("ctrl");
+    }
+    if platform {
+        parts.push("cmd");
+    }
+    if alt {
+        parts.push("alt");
+    }
+    if shift {
+        parts.push("shift");
+    }
+    let mut out = parts.join("-");
+    if !out.is_empty() {
+        out.push('-');
+    }
+    out.push_str(&key);
+    Some(out)
 }
 
 /// W3C → gpui key name. Inverse of `canonical_key_for_storage`.

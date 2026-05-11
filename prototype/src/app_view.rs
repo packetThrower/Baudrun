@@ -44,6 +44,10 @@ use gpui_component::{
 };
 use gpui::SharedString;
 
+use crate::actions::{
+    ClearTerminal, Connect, Disconnect, FontDecrease, FontIncrease, FontReset,
+    NewProfile, OpenInNewWindow, Resume, SendBreak, SendFile, Suspend,
+};
 use crate::data::appdata;
 use crate::data::highlight;
 use crate::data::transfer::{self, ChannelReader, XModemVariant};
@@ -379,6 +383,16 @@ struct TransferState {
 enum TransferResult {
     Ok,
     Err(String),
+}
+
+/// Direction for the font-size shortcuts. `Increase` / `Decrease`
+/// bump by one px (clamped 8..=48); `Reset` snaps back to the
+/// `terminal_grid::FONT_SIZE_PX` boot default.
+#[derive(Debug, Clone, Copy)]
+enum FontBump {
+    Increase,
+    Decrease,
+    Reset,
 }
 
 /// Right-click menu state for sidebar profile rows. Stores the
@@ -2351,6 +2365,101 @@ impl AppView {
         cx.notify();
     }
 
+    // ----- Shortcut-action handlers ---------------------------------
+    // One method per `settings_view::SHORTCUT_ACTIONS` id that
+    // doesn't already have a 1:1 existing entry point. The menubar
+    // (`main::install_app_menu`) registers a global gpui Action +
+    // KeyBinding for each; AppView::render dispatches each Action
+    // to the matching method below via `.on_action(cx.listener(...))`.
+    //
+    // These mirror the on-screen affordances (header buttons, form
+    // Connect button, sidebar New Profile icon) — pressing the
+    // shortcut should behave identically to clicking the equivalent
+    // UI control. Methods are no-ops when the corresponding control
+    // would be disabled (e.g. Disconnect when nothing is connected)
+    // so a stray Cmd-Shift-D doesn't fire a hidden side effect.
+
+    /// Connect via shortcut. Mirrors the form's Connect button when
+    /// an editor is open (save-then-connect) and the sidebar row's
+    /// double-click when only the selection is set. No-op when
+    /// there's neither — keeps a stray keystroke from doing
+    /// something surprising in the empty-state.
+    fn shortcut_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editor.is_some() {
+            self.save_and_connect(window, cx);
+            return;
+        }
+        let Some(id) = self.selected_profile_id.clone() else {
+            return;
+        };
+        // Don't re-connect to the already-live profile — would tear
+        // down the current session for no reason.
+        if self.connected_profile_id.as_deref() == Some(id.as_str()) {
+            return;
+        }
+        let Some(profile) = self.profile_store.get(&id) else {
+            return;
+        };
+        self.connect_to(profile, cx);
+    }
+
+    /// Clear the terminal viewport. Forwards to the TerminalView
+    /// entity; same code path the header's Clear button takes.
+    fn shortcut_clear_terminal(&mut self, cx: &mut Context<Self>) {
+        let terminal = self.terminal.clone();
+        terminal.update(cx, |t, cx| t.clear_screen(cx));
+    }
+
+    /// Open the form for a fresh profile. Same entry point as the
+    /// sidebar's "+" icon (`open_editor`).
+    fn shortcut_new_profile(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_editor(window, cx);
+    }
+
+    /// Open the currently-selected profile in a new window, already
+    /// connected. Falls back to `open_new_window` (empty welcome
+    /// screen) when no profile is selected — mirrors the right-
+    /// click context menu's "Open in new window" but keyed by the
+    /// sidebar selection rather than the row under the cursor.
+    fn shortcut_open_in_new_window(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.selected_profile_id.clone() {
+            Some(id) => self.connect_profile_in_new_window(id, window, cx),
+            None => self.open_new_window(window, cx),
+        }
+    }
+
+    /// Bump the persisted font size by the requested delta (clamped
+    /// to a readable range) and persist via SettingsBus. The
+    /// `Updated` event fires our own subscription which re-applies
+    /// the size to the terminal in `apply_settings` — so we don't
+    /// need to touch the TerminalView directly here.
+    fn shortcut_bump_font(&mut self, op: FontBump, cx: &mut Context<Self>) {
+        let mut next = self.settings_bus.read(cx).current().clone();
+        let current = if next.font_size > 0 {
+            next.font_size
+        } else {
+            crate::terminal_grid::FONT_SIZE_PX as i32
+        };
+        let target = match op {
+            FontBump::Increase => (current + 1).min(48),
+            FontBump::Decrease => (current - 1).max(8),
+            FontBump::Reset => crate::terminal_grid::FONT_SIZE_PX as i32,
+        };
+        if target == current {
+            return;
+        }
+        next.font_size = target;
+        if let Err(err) =
+            self.settings_bus.update(cx, |bus, cx| bus.replace(next, cx))
+        {
+            log::error!("shortcut: font bump persist failed: {err}");
+        }
+    }
+
     /// Move the live serial session out of this window into a freshly
     /// opened one. The source window swaps its terminal for a blank
     /// placeholder and ends up on the welcome screen; the destination
@@ -2944,6 +3053,52 @@ impl Render for AppView {
             // look uniformly dark because their `--bg-main` is
             // translucent white with nothing solid beneath.
             .bg(rgba(s.bg_window))
+            // Menubar shortcut handlers. The matching KeyBindings
+            // are registered globally in `main::install_app_menu`
+            // from the user's effective Settings → Shortcuts; this
+            // div is the per-window root, so attaching them here
+            // means an action dispatched anywhere inside the
+            // window's focus tree (terminal, sidebar, form,
+            // settings overlay) finds a handler. Each lambda
+            // delegates to a `shortcut_*` method or an existing
+            // entry point so the keybinding and the equivalent
+            // on-screen affordance share one implementation.
+            .on_action(cx.listener(
+                |this, _: &Connect, window, cx| this.shortcut_connect(window, cx),
+            ))
+            .on_action(cx.listener(|this, _: &Disconnect, window, cx| {
+                this.disconnect_current(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Suspend, window, cx| {
+                this.suspend_session(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Resume, window, cx| {
+                this.resume_session(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ClearTerminal, _window, cx| {
+                this.shortcut_clear_terminal(cx);
+            }))
+            .on_action(cx.listener(|this, _: &SendBreak, window, cx| {
+                this.send_break_now(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &SendFile, window, cx| {
+                this.start_send_file(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &NewProfile, window, cx| {
+                this.shortcut_new_profile(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenInNewWindow, window, cx| {
+                this.shortcut_open_in_new_window(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FontIncrease, _window, cx| {
+                this.shortcut_bump_font(FontBump::Increase, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FontDecrease, _window, cx| {
+                this.shortcut_bump_font(FontBump::Decrease, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FontReset, _window, cx| {
+                this.shortcut_bump_font(FontBump::Reset, cx);
+            }))
             .child(
                 div()
                     .size_full()
