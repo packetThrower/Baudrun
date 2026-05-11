@@ -360,10 +360,23 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             path on macOS doesn't actually quit (handled by the
             single-instance commit), so the Cmd+Q gate covers the
             real "stray keystroke kills your session" risk.
-      - [ ] **Prefers-reduced-motion** — query the OS setting
-            (NSWorkspace on macOS, SPI_GETCLIENTAREAANIMATION on
-            Windows, GTK / Qt on Linux) and skip pulse animations
-            (reconnect dot, dialog slide-in) when on.
+      - [x] **Prefers-reduced-motion** (macOS). New `ReduceMotion`
+            gpui `Global` initialised at boot from
+            `NSWorkspace.accessibilityDisplayShouldReduceMotion`
+            (objc2-app-kit NSWorkspace + NSAccessibility
+            features). AppView reads it in the two reconnect-dot
+            pulse spots (session header + sidebar row) and skips
+            the `with_animation` wrap; TerminalView's blink task
+            re-reads the global every tick so the terminal
+            cursor goes solid when reduce-motion is on (the
+            task stays alive but its toggle becomes a no-op).
+            Boot-time read for the dot pulses, per-tick read for
+            the cursor blink — runtime toggle of the OS setting
+            stops the cursor immediately but reconnect pulses
+            need a relaunch. Windows / Linux return false until
+            those platforms get their own
+            `SystemParametersInfo` / `gtk-enable-animations`
+            queries.
 
       File / URL associations (lower priority)
       - [ ] **`.baudrun-profile.json` file association.** Double-
