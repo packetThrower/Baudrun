@@ -226,9 +226,15 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
 
       Application menu (macOS-first; Windows / Linux mostly inherit
       the in-window menus already)
-      - [ ] **Standard macOS menubar** — App / File / Edit / View
-            / Window / Help, with Quit / Hide / Cmd+Q wired to
-            gpui's existing handlers.
+      - [x] **Standard macOS menubar** — initial skeleton landed.
+            `install_app_menu` in main.rs registers `Quit` (Cmd+Q
+            → `cx.quit()`) and `NewWindow` (Cmd+N → opens a new
+            top-level window with the shared stores) via
+            `cx.bind_keys` + `cx.on_action`, then calls
+            `cx.set_menus` with Baudrun / File / Window / Help.
+            Edit / View entries + the rest of the standard
+            macOS slots (Services, Hide, Show All) come along
+            with the next sub-items below.
       - [ ] **Wire Settings → Shortcuts bindings to menu items**
             so the user's keybinding overrides show up next to
             menu labels (Cmd+K for Clear, Cmd+Shift+S for
