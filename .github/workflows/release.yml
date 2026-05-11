@@ -303,7 +303,7 @@ jobs:
         with:
           tool: cargo-packager
 
-      - name: Install fpm (for .rpm)
+      - name: Install fpm (for .rpm + .pkg.tar.zst)
         run: sudo gem install --no-document fpm
 
       - name: Patch version from tag
@@ -320,18 +320,20 @@ jobs:
           ' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
           echo "Building version: $VERSION"
 
-      # cargo-packager covers .deb, .AppImage, and .pacman natively.
-      # .rpm is not in its supported list, so we shell out to fpm
-      # after — same pattern the old Tauri release.yml used for
-      # .pkg.tar.zst, which IS supported here so we don't need
-      # fpm for that any more.
+      # cargo-packager covers .deb and .AppImage natively. Its
+      # `pacman` format writes a `.tar.gz` + PKGBUILD intended for
+      # AUR submission, not the directly-installable `.pkg.tar.zst`
+      # users expect from `pacman -U`, so we skip cargo-packager's
+      # pacman target and use fpm for both .rpm and .pkg.tar.zst.
+      # Same `fpm -s dir -t pacman` pattern the old Tauri release.yml
+      # used (Tauri's bundler didn't target pacman either).
       #
       # Same `--target` omission as the macOS / Windows jobs: the
       # runner is native, so the default host target matches and
       # cargo-packager finds the binary at `target/release/`
       # alongside the cargo build it invoked.
-      - name: Build .deb + .AppImage + .pacman
-        run: cargo packager --release -f deb -f appimage -f pacman
+      - name: Build .deb + .AppImage
+        run: cargo packager --release -f deb -f appimage
 
       - name: Build .rpm via fpm
         run: |
@@ -363,6 +365,25 @@ jobs:
             --after-install packaging/linux/baudrun-postinstall.sh \
             --package "release-artifacts/Baudrun-${VERSION}-1.${ARCH}.rpm"
 
+      # Pacman / Arch builds — uses the same staging directory `pkg`
+      # the .rpm step already populated. fpm's pacman target
+      # accepts the same layout and emits a `.pkg.tar.zst` ready
+      # for `pacman -U`. No-deps `--depends` would be cleaner but
+      # libudev's exact pacman package name varies; leaving deps
+      # empty here matches what the old Tauri release.yml shipped.
+      - name: Build .pkg.tar.zst via fpm
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ARCH="${{ matrix.rpm_arch }}"
+          fpm -s dir -t pacman -C pkg \
+            --name baudrun --version "$VERSION" --architecture "$ARCH" \
+            --license GPL-3.0-or-later \
+            --description "Serial terminal for network engineers." \
+            --url "https://packetthrower.github.io/Baudrun/" \
+            --vendor "packetThrower" --maintainer "packetThrower" \
+            --after-install packaging/linux/baudrun-postinstall.sh \
+            --package "release-artifacts/baudrun-${VERSION}-1-${ARCH}.pkg.tar.zst"
+
       - name: Stage artifacts
         run: |
           mkdir -p release-artifacts
@@ -376,13 +397,6 @@ jobs:
           # Baudrun_<version>_<arch>.<format>.
           cp "$BUNDLE"/*.deb release-artifacts/ 2>/dev/null || true
           cp "$BUNDLE"/*.AppImage release-artifacts/ 2>/dev/null || true
-          # `.pacman` here is the .tar.gz produced by cargo-packager;
-          # rename to .pkg.tar.zst to match the pacman convention
-          # users expect (`pacman -U baudrun-<version>.pkg.tar.zst`).
-          for f in "$BUNDLE"/*.pacman; do
-            [ -e "$f" ] || continue
-            cp "$f" "release-artifacts/$(basename "$f" .pacman).pkg.tar.zst"
-          done
 
           echo "--- staged ---"
           ls -la release-artifacts/

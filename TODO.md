@@ -537,11 +537,15 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
               stable tags only (WiX rejects alphanumeric pre-
               release identifiers), portable `.zip` of bare
               `Baudrun.exe`.
-            * Linux: `.deb`, `.AppImage`, `.pkg.tar.zst` (renamed
-              from cargo-packager's `.pacman` output) all from
-              cargo-packager directly. `.rpm` via fpm — same
-              fpm-shellout pattern the old release.yml used for
-              `.pkg.tar.zst` (which IS cargo-packager-native now).
+            * Linux: `.deb` + `.AppImage` from cargo-packager
+              natively. `.rpm` + `.pkg.tar.zst` via fpm because
+              (a) cargo-packager doesn't target rpm, and
+              (b) its pacman format emits a `.tar.gz` + PKGBUILD
+              meant for AUR submission, not a directly-installable
+              `.pkg.tar.zst`. Both fpm targets share the same
+              `pkg/` staging directory the .rpm step already
+              built up (binary, .desktop, udev rule, hicolor
+              icon).
             Version tag (`v0.5.0` → `0.5.0`) gets patched into
             `Cargo.toml`'s `version` field plus
             `resources/Info.plist`'s `CFBundleShortVersionString`
