@@ -70,11 +70,16 @@ jobs:
       - name: Patch version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          # Match the first `version = "..."` line in Cargo.toml,
-          # which lives under [package]. The toml has only one such
-          # line under the top-level [package] section so the
-          # 0,/.../ scoped sed works without needing a real parser.
-          sed -i '' "1,/^version = /{s/^version = .*/version = \"${VERSION}\"/}" Cargo.toml
+          # Awk over sed: BSD sed's `1,/.../{s/.../}` block syntax
+          # bombs on macOS, while GNU sed accepts it. Awk handles
+          # the in-[package]-section scoping portably, so the same
+          # one-liner ports across BSD/macOS and GNU/Linux without
+          # platform-specific branches.
+          awk -v v="$VERSION" '
+            /^\[/ { in_pkg = ($0 == "[package]") }
+            in_pkg && /^version = / && !done { print "version = \"" v "\""; done=1; next }
+            { print }
+          ' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
           # Mirror to the Info.plist so the bundle's
           # CFBundleShortVersionString + CFBundleVersion match the
           # tag rather than the static "0.0.1" sitting in the
@@ -88,14 +93,23 @@ jobs:
       # packager invocation. `before-packaging-command` in
       # Cargo.toml runs `cargo build --release` once and both
       # formats reuse the resulting binary.
+      #
+      # No `--target ${{ matrix.target }}` flag: each runner is
+      # already native for its arch (macos-26 = aarch64-apple-darwin,
+      # macos-15-intel = x86_64-apple-darwin, etc.), so the default
+      # host target matches what we want. Passing --target would
+      # make cargo-packager look under `target/<triple>/release/`
+      # while the inner `cargo build --release` (no --target) puts
+      # the binary at `target/release/` — file-not-found from a
+      # disagreement between bundler and inner build.
       - name: Build .app + .dmg
-        run: cargo packager --release -f app -f dmg --target ${{ matrix.target }}
+        run: cargo packager --release -f app -f dmg
 
       - name: Stage artifacts
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p release-artifacts
-          BUNDLE="target/${{ matrix.target }}/release"
+          BUNDLE="target/release"
 
           # .dmg has cargo-packager's own naming
           # (Baudrun_<version>_<arch>.dmg). Standardise the user-
@@ -165,16 +179,22 @@ jobs:
       # no such restriction. So pre-release tags ship NSIS only;
       # stable tags ship both NSIS + WiX for corporate-deploy use
       # cases that prefer .msi.
+      #
+      # Same `--target` omission as macOS: runner is native, so
+      # the default host target matches; passing --target would
+      # split paths between `target/<triple>/release/` (what
+      # cargo-packager expects) and `target/release/` (what
+      # `cargo build --release` produces without --target).
       - name: Build .exe (NSIS) + .msi (stable only)
         shell: cmd
-        run: cargo packager --release -f nsis ${{ contains(github.ref_name, '-') && '' || '-f wix' }} --target ${{ matrix.target }}
+        run: cargo packager --release -f nsis ${{ contains(github.ref_name, '-') && '' || '-f wix' }}
 
       - name: Stage artifacts
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}" -replace '^v', ''
           $arch = "${{ matrix.arch }}"
-          $bundle = "target/${{ matrix.target }}/release"
+          $bundle = "target/release"
           New-Item -ItemType Directory -Force release-artifacts | Out-Null
 
           Write-Host "--- contents of $bundle ---"
@@ -261,7 +281,15 @@ jobs:
       - name: Patch version from tag
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          sed -i "0,/^version = /{s/^version = .*/version = \"${VERSION}\"/}" Cargo.toml
+          # Awk (over sed) for portability with the macOS job —
+          # see the macOS step's note. On Linux GNU sed would also
+          # work but using the same tool everywhere keeps the
+          # workflow auditable.
+          awk -v v="$VERSION" '
+            /^\[/ { in_pkg = ($0 == "[package]") }
+            in_pkg && /^version = / && !done { print "version = \"" v "\""; done=1; next }
+            { print }
+          ' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
           echo "Building version: $VERSION"
 
       # cargo-packager covers .deb, .AppImage, and .pacman natively.
@@ -269,14 +297,19 @@ jobs:
       # after — same pattern the old Tauri release.yml used for
       # .pkg.tar.zst, which IS supported here so we don't need
       # fpm for that any more.
+      #
+      # Same `--target` omission as the macOS / Windows jobs: the
+      # runner is native, so the default host target matches and
+      # cargo-packager finds the binary at `target/release/`
+      # alongside the cargo build it invoked.
       - name: Build .deb + .AppImage + .pacman
-        run: cargo packager --release -f deb -f appimage -f pacman --target ${{ matrix.target }}
+        run: cargo packager --release -f deb -f appimage -f pacman
 
       - name: Build .rpm via fpm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           ARCH="${{ matrix.rpm_arch }}"
-          BIN="target/${{ matrix.target }}/release/Baudrun"
+          BIN="target/release/Baudrun"
 
           mkdir -p pkg/usr/bin
           cp "$BIN" pkg/usr/bin/baudrun
@@ -305,7 +338,7 @@ jobs:
       - name: Stage artifacts
         run: |
           mkdir -p release-artifacts
-          BUNDLE="target/${{ matrix.target }}/release"
+          BUNDLE="target/release"
 
           echo "--- cargo-packager outputs ---"
           ls -la "$BUNDLE" 2>/dev/null || true
