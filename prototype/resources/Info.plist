@@ -73,6 +73,21 @@
     <string>© 2025–2026 packetThrower / Baudrun contributors</string>
 
     <!--
+      Single-instance launch. Launch Services routes a second
+      launch attempt (double-clicking the dock icon, `open -a
+      Baudrun`, opening a profile JSON via Finder) to the
+      existing process and fires the NSApplication delegate's
+      `applicationShouldHandleReopen:`. gpui surfaces that via
+      `cx.on_reopen`, which we wire in main.rs to focus the most
+      recent window (or spawn a fresh one if all windows are
+      closed). Without this key, Launch Services would happily
+      spawn a second .app process — two competing instances
+      racing on the same profile store and serial port locks.
+    -->
+    <key>LSMultipleInstancesProhibited</key>
+    <true/>
+
+    <!--
       File associations + URL schemes (.baudrun-profile.json,
       baudrun://) are deliberately omitted here; those land with
       the corresponding Phase 8 sub-items so each one ships its

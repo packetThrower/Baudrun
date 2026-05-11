@@ -133,7 +133,21 @@ fn main() {
     // configure besides the path.
     let port_path = std::env::args().nth(1);
 
-    gpui_platform::application().run(move |cx: &mut App| {
+    let app = gpui_platform::application();
+
+    // macOS single-instance handler. With LSMultipleInstancesProhibited
+    // set in Info.plist, Launch Services routes second-launch attempts
+    // (double-click .app, `open -a Baudrun`, profile-JSON associations)
+    // to this process; gpui surfaces that via `Application::on_reopen`.
+    // Registered before `run` because `on_reopen` lives on
+    // `Application`, not on the `App` we get inside the run callback.
+    // The handler reads from the `AppShared` global that `run` installs
+    // at boot — gpui globals are arbitrary `'static` values, so we
+    // stash the stores there once the run-time `App` lets us build the
+    // settings_bus Entity.
+    app.on_reopen(handle_reopen);
+
+    app.run(move |cx: &mut App| {
         // Set the macOS dock / Cmd-Tab icon at runtime so dev-mode
         // launches show the Baudrun icon instead of the default
         // Cargo / Terminal-style binary icon. Production builds
@@ -256,6 +270,20 @@ fn main() {
             themes_store.clone(),
         );
         install_dock_menu(cx, &profile_store);
+
+        // Publish the same store handles the menubar + dock paths
+        // capture so the pre-`run` reopen handler can spawn a fresh
+        // window with the right state. `cx.set_global` accepts any
+        // `'static` value via the `Global` trait, including
+        // non-Send Rcs and gpui Entities — the runtime stays
+        // single-threaded so there's no Send / Sync requirement.
+        cx.set_global(AppShared {
+            profile_store: profile_store.clone(),
+            settings_bus: settings_bus.clone(),
+            skins_store: skins_store.clone(),
+            highlight_store: highlight_store.clone(),
+            themes_store: themes_store.clone(),
+        });
 
         let window = open_app_window(
             cx,
@@ -786,6 +814,85 @@ fn install_dock_menu(cx: &App, profile_store: &Rc<data::profiles::Store>) {
         }
     }
     cx.set_dock_menu(items);
+}
+
+/// App-scoped handles installed as a gpui `Global` so any handler
+/// that runs outside the original `run` closure (notably
+/// `on_reopen`, which is registered on `Application` before `run`
+/// starts) can grab the live store + bus references. Everything in
+/// here is also cloned into the menubar / dock-menu / per-window
+/// paths during boot; this struct is the canonical "what does the
+/// app need to spawn another window" bundle.
+struct AppShared {
+    profile_store: Rc<data::profiles::Store>,
+    settings_bus: gpui::Entity<SettingsBus>,
+    skins_store: Rc<data::skins::Store>,
+    highlight_store: Rc<data::highlight::Store>,
+    themes_store: Rc<data::themes::Store>,
+}
+impl gpui::Global for AppShared {}
+
+/// macOS single-instance support. When `LSMultipleInstancesProhibited`
+/// in Info.plist is set (it is), Launch Services routes any second
+/// launch attempt — double-click on the .app, `open -a Baudrun`,
+/// double-click on a `.baudrun-profile.json` — to the existing
+/// process instead of spawning a duplicate. Inside the existing
+/// process the NSApplication delegate fires
+/// `applicationShouldHandleReopen:`, which gpui surfaces here as
+/// `Application::on_reopen`.
+///
+/// The handler activates the app (brings it to front) and, when
+/// no windows are visible, spawns a fresh welcome window. That
+/// matches the macOS convention: clicking the dock icon on a
+/// running app with no visible windows opens a new one (Finder,
+/// Safari, Mail all behave this way).
+///
+/// Other platforms: Windows / Linux don't have Launch Services'
+/// equivalent free of charge; cross-platform single-instance
+/// would need a named-mutex (Windows) or unix-domain-socket
+/// (Linux) handshake. The Info.plist key only covers macOS for
+/// now.
+fn handle_reopen(cx: &mut App) {
+    // Activating with `ignoring_other_apps = true` is the standard
+    // "give the user focus right now" call. Without it the app
+    // stays backgrounded and the dock click looks like a no-op.
+    cx.activate(true);
+    // No live windows: open a fresh welcome window. `cx.windows()`
+    // is gpui's authoritative list of live entries — more
+    // reliable than `cx.active_window()`, which can point at the
+    // menubar's pseudo-window even when no real windows exist.
+    if !cx.windows().is_empty() {
+        return;
+    }
+    // `set_global` ran at the end of boot, so if reopen fires
+    // before `run`'s closure finishes setting things up we'd miss
+    // it; in practice macOS doesn't fire reopen until after the
+    // app finishes launching, but guard anyway.
+    if !cx.has_global::<AppShared>() {
+        log::warn!("reopen: AppShared not initialised yet");
+        return;
+    }
+    let shared = cx.global::<AppShared>();
+    let scrollback = shared.settings_bus.read(cx).current().effective_scrollback();
+    let profile_store = shared.profile_store.clone();
+    let settings_bus = shared.settings_bus.clone();
+    let skins_store = shared.skins_store.clone();
+    let highlight_store = shared.highlight_store.clone();
+    let themes_store = shared.themes_store.clone();
+    let terminal = cx.new(|cx| {
+        TerminalView::new(24, 80, term_bridge::Palette::baudrun(), scrollback, cx)
+    });
+    if let Err(err) = open_app_window(
+        cx,
+        WindowInit::Fresh(terminal),
+        profile_store,
+        settings_bus,
+        skins_store,
+        highlight_store,
+        themes_store,
+    ) {
+        log::error!("reopen: spawn welcome window: {err}");
+    }
 }
 
 fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
