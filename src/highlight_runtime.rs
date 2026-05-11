@@ -307,11 +307,7 @@ impl HighlightBuffer {
     pub fn feed(&mut self, bytes: &[u8]) -> Vec<u8> {
         self.pending.extend_from_slice(bytes);
         let mut out = Vec::with_capacity(self.pending.len());
-        loop {
-            let Some(nl) = self.pending.iter().position(|&b| b == b'\n')
-            else {
-                break;
-            };
+        while let Some(nl) = self.pending.iter().position(|&b| b == b'\n') {
             let line: Vec<u8> = self.pending.drain(..=nl).collect();
             let body_end = line
                 .len()

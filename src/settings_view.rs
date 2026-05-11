@@ -74,9 +74,9 @@ impl SettingsTab {
 /// Local Select-item shape. Mirrors the same struct in
 /// `app_view.rs` (kept duplicated rather than shared because the
 /// SelectItem trait impl is the entire payload — moving it to a
-/// shared module would just shuffle 30 lines around). Carries an id
-/// + display title; `Value` is the id so selection events return a
-/// matchable string.
+/// shared module would just shuffle 30 lines around). Carries
+/// an id plus a display title; `Value` is the id so selection
+/// events return a matchable string.
 #[derive(Clone)]
 struct Opt {
     id: String,
@@ -110,8 +110,8 @@ impl SelectItem for Opt {
 /// `store.get()` for every widget.
 pub struct SettingsView {
     /// Shared settings entity. Replaces the direct Store handle:
-    /// commit() now goes `bus.replace(next)` so the persistence
-    /// + cross-window emit happen in one place. Read via
+    /// commit() now goes `bus.replace(next)` so persistence and
+    /// the cross-window emit happen in one place. Read via
     /// `bus.read(cx).current()` or — more often — through the
     /// local `self.settings` cache which mirrors the bus.
     settings_bus: Entity<SettingsBus>,
@@ -177,7 +177,7 @@ pub struct SettingsView {
     /// dim-tabs-without-matches behaviour in the left rail.
     filter_text: String,
     /// Cached resolved support-dir path. Read once at construction
-    /// + refreshed after Choose / Reset so the read-only display
+    /// and refreshed after Choose / Reset so the read-only display
     /// reflects what the next launch will use without re-touching
     /// the filesystem on every render.
     config_dir_display: SharedString,
@@ -971,14 +971,6 @@ impl SettingsView {
             }
         })
         .detach();
-    }
-
-    /// Delete the currently-selected skin if it's a user import. Falls
-    /// back to the built-in default skin so the chrome stays sane after
-    /// the row vanishes from the dropdown.
-    fn delete_active_skin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let id = self.settings.skin_id.clone();
-        self.delete_named_skin(id, window, cx);
     }
 
     /// Per-row delete on the Installed Skins list. Refuses non-

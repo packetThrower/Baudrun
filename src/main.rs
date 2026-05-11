@@ -21,7 +21,7 @@ mod terminal_view;
 
 use std::rc::Rc;
 
-use gpui::{App, AppContext, Context, Entity, KeyBinding, Menu, MenuItem, Window};
+use gpui::{App, AppContext, Context, KeyBinding, Menu, MenuItem, Window};
 use gpui_component::{scroll::ScrollbarShow, Root, Theme, WindowExt};
 
 use app_view::{open_app_window, AppView, WindowInit};
@@ -773,6 +773,16 @@ fn install_macos_dock_icon() {
     // ObjC objects we touch (NSApplication.sharedApplication,
     // NSImage, NSGraphicsContext via lockFocus) are all main-
     // thread-only types.
+    //
+    // lockFocus / unlockFocus are deprecated in favour of the
+    // resolution-independent block-based
+    // `imageWithSize:flipped:drawingHandler:` API, but the
+    // block-callback path adds a closure-boxing dance for
+    // marginal benefit on a one-shot dock-icon override that
+    // never re-renders. Keep the simpler form with the deprecation
+    // suppressed; revisit if the icon ever needs to redraw on a
+    // display-mode change.
+    #[allow(deprecated)]
     unsafe {
         let path = NSString::from_str(&icon_path);
         let Some(source) = NSImage::initWithContentsOfFile(NSImage::alloc(), &path)
@@ -818,10 +828,10 @@ fn install_macos_dock_icon() {
 #[cfg(target_os = "macos")]
 fn detect_reduce_motion() -> bool {
     use objc2_app_kit::NSWorkspace;
-    // SAFETY: We're on the main thread at boot — runtime context
-    // is the same as `install_macos_dock_icon`. NSWorkspace is a
-    // main-thread-only type.
-    unsafe { NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion() }
+    // NSWorkspace.sharedWorkspace + the accessibility-display
+    // accessor on the resulting object are both safe in objc2's
+    // bindings (no `unsafe fn` markers); no unsafe block needed.
+    NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion()
 }
 
 #[cfg(not(target_os = "macos"))]

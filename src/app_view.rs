@@ -360,10 +360,15 @@ struct TransferIo {
 struct TransferState {
     filename: SharedString,
     /// Total bytes the protocol thread will push. Set once at start.
+    /// Currently read only by future progress-dialog rewiring; kept
+    /// here so `Options::on_progress` can stay symmetric with the
+    /// renderer-driven version.
+    #[allow(dead_code)]
     total: u64,
     /// Bytes ACKed so far. Updated by the protocol's progress
     /// callback; read on each frame by the dialog renderer. Atomic
     /// (not Mutex) so the renderer doesn't block the protocol thread.
+    #[allow(dead_code)]
     sent: std::sync::Arc<std::sync::atomic::AtomicU64>,
     /// Set by `cancel_transfer`; observed by `send_xmodem`/
     /// `send_ymodem` between blocks. Same Arc the protocol thread
@@ -421,6 +426,7 @@ struct SendFileState {
 }
 
 impl AppView {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         terminal: Entity<TerminalView>,
         profile_store: Rc<profiles::Store>,
@@ -2530,7 +2536,7 @@ impl AppView {
 
         if let Err(err) = open_app_window(
             cx,
-            WindowInit::WithSession(bundle),
+            WindowInit::WithSession(Box::new(bundle)),
             self.profile_store.clone(),
             self.settings_bus.clone(),
             self.skins_store.clone(),
@@ -2650,7 +2656,7 @@ fn parse_hex_string(raw: &str) -> Result<Vec<u8>, &'static str> {
     if cleaned.is_empty() {
         return Ok(Vec::new());
     }
-    if cleaned.len() % 2 != 0 {
+    if !cleaned.len().is_multiple_of(2) {
         return Err("odd number of hex digits");
     }
     if !cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -2818,7 +2824,11 @@ pub struct SessionBundle {
 /// right-click "Connect in New Window" path on the sidebar.
 pub enum WindowInit {
     Fresh(Entity<TerminalView>),
-    WithSession(SessionBundle),
+    // Boxed to keep `WindowInit`'s stack footprint small —
+    // SessionBundle carries the whole live-session state machine
+    // (terminal entity, serial channels, transfer state, …) so
+    // inlining it bloats the other variants too.
+    WithSession(Box<SessionBundle>),
     FreshAutoConnect {
         terminal: Entity<TerminalView>,
         profile_id: String,
@@ -2911,6 +2921,11 @@ pub fn open_app_window(
             let (terminal, session, auto_connect_id) = match init {
                 WindowInit::Fresh(t) => (t, None, None),
                 WindowInit::WithSession(bundle) => {
+                    // Unbox here so downstream `install_session`
+                    // doesn't need to know about the Box; the
+                    // variant's box exists purely to keep
+                    // `WindowInit`'s stack footprint small.
+                    let bundle = *bundle;
                     (bundle.terminal.clone(), Some(bundle), None)
                 }
                 WindowInit::FreshAutoConnect {
@@ -5221,7 +5236,6 @@ fn highlighting_pane(
         .child(packs_card)
 }
 
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn advanced_pane(
     dtr_on_connect: Entity<SelectState<Vec<Opt>>>,

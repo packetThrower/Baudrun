@@ -2,79 +2,71 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - experiments/alacritty-gpui
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
       - ".gitignore"
+      - ".editorconfig"
       - "build/appicon.png"
       - "build/appicon.svg"
       - "build/make-icon.sh"
-      - "mkdocs.yml"
+      - "docs/**"
+      - "docs-next/**"
       - ".github/workflows/docs.yml"
       - ".github/FUNDING.yml"
       - ".github/dependabot.yml"
       - ".github/ISSUE_TEMPLATE/**"
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - experiments/alacritty-gpui
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
       - ".gitignore"
+      - ".editorconfig"
       - "build/appicon.png"
       - "build/appicon.svg"
       - "build/make-icon.sh"
-      - "mkdocs.yml"
+      - "docs/**"
+      - "docs-next/**"
       - ".github/workflows/docs.yml"
       - ".github/FUNDING.yml"
       - ".github/dependabot.yml"
       - ".github/ISSUE_TEMPLATE/**"
+  # Lets release.yml run the same matrix without duplicating the
+  # matrix definition; release.yml gates on a green CI run before
+  # it builds the actual signed/notarized artifacts.
   workflow_call:
 
 jobs:
-  frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: svelte-check
-        run: npm run check
-
-      - name: Build frontend
-        run: npm run build
-
-      # tauri::generate_context! embeds dist/ at compile time, so the
-      # Rust matrix below needs this output. Uploading once instead
-      # of rebuilding per-platform cuts ~15s × 6 runners.
-      - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: dist
-
   rust:
-    needs: [frontend]
+    name: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
+          # macOS — arm64 (M-series) and amd64 (Intel) on Sequoia.
+          # macos-26 is GitHub's Apple-Silicon-only runner; macos-15-intel
+          # replaced the retired macos-13 image and stays available
+          # through 2027 while Apple's Intel transition wraps up.
           - runner: macos-26
             arch: arm64
           - runner: macos-15-intel
             arch: amd64
+          # Windows — x64 + arm64. windows-11-arm landed in 2025 and
+          # gives us a native runner; no Prism cross-compile dance.
           - runner: windows-latest
             arch: amd64
           - runner: windows-11-arm
             arch: arm64
+          # Linux — amd64 + arm64. ubuntu-24.04-arm uses Cobalt 100
+          # silicon. Both ship Ubuntu 24.04 which has libxkbcommon
+          # 1.6 and libwayland 1.22 — current enough for gpui_linux
+          # to compile from a clean checkout.
           - runner: ubuntu-latest
             arch: amd64
           - runner: ubuntu-24.04-arm
@@ -83,35 +75,33 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Download frontend dist
-        uses: actions/download-artifact@v8
-        with:
-          name: frontend-dist
-          path: dist
-
-      - name: Setup Rust (stable)
+      - name: Setup Rust (stable + clippy)
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
 
-      # Linux: Tauri needs GTK + WebKit2 for wry to link. libusb is
-      # linked by rusb (usbserial CP210x backend). libsoup3-dev
-      # became a transitive requirement on WebKit2GTK 4.1+.
-      # libudev-dev is a transitive dep of the serialport crate
-      # (via libudev-sys) for tty/serial enumeration.
+      # Linux: libusb (rusb / CP210x direct backend) + libudev
+      # (serialport's tty enumerator). xkbcommon / wayland / x11 /
+      # xcb are gpui_linux's compile-time pkg-config deps.
+      # No GTK / WebKit / soup / appindicator — gpui owns the
+      # window + renderer end-to-end. Vulkan loads at runtime via
+      # ash's dlopen so no SDK install needed for `cargo check`
+      # / `cargo test --lib`.
       - name: Install Linux deps
         if: startsWith(matrix.runner, 'ubuntu-')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
-            libayatana-appindicator3-dev librsvg2-dev \
-            libusb-1.0-0-dev libudev-dev pkg-config
+            libusb-1.0-0-dev libudev-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev \
+            libx11-dev libxcb1-dev libxcb-randr0-dev \
+            libxcb-xkb-dev libxcb-cursor-dev libxcb-shape0-dev \
+            libxcb-xfixes0-dev libxcb-render0-dev \
+            pkg-config
 
       # macOS: libusb for rusb's bulk transfers. pkg-config so the
       # build script can locate it via Homebrew's prefix.
@@ -119,14 +109,19 @@ jobs:
         if: startsWith(matrix.runner, 'macos-')
         run: brew install libusb pkg-config
 
+      # Windows: nothing extra. The gpui DirectX backend, serialport,
+      # and rusb (via libusb1-sys's bundled fallback) all link
+      # against libraries that ship with the Windows SDK image.
+
       - name: cargo check
-        working-directory: src-tauri
         run: cargo check
 
       - name: cargo clippy
-        working-directory: src-tauri
         run: cargo clippy -- -D warnings
 
+      # Single `[[bin]]` crate, no library target, so `cargo test`
+      # runs the in-binary unit tests (under `mod tests` in each
+      # data/ module + serial/ + usbserial/ + transfer.rs). Don't
+      # pass `--lib` — that errors with "no library targets found".
       - name: cargo test
-        working-directory: src-tauri
-        run: cargo test --lib
+        run: cargo test

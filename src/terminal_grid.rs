@@ -197,22 +197,6 @@ impl TerminalGrid {
         self.grid_bg = grid_bg;
     }
 
-    /// Write `s` starting at `(row, col)`, with a single fg/bg
-    /// applied to every cell. Truncates at the right edge of the
-    /// row — does NOT wrap, since wrap is the VT parser's job.
-    pub fn write_str(&mut self, row: usize, col: usize, s: &str, fg: Rgb, bg: Rgb) {
-        if row >= self.rows {
-            return;
-        }
-        for (i, ch) in s.chars().enumerate() {
-            let c = col + i;
-            if c >= self.cols {
-                break;
-            }
-            self.cells[row][c] = Cell { ch, fg, bg, flags: CellFlags::default() };
-        }
-    }
-
     /// Reshape the grid to `rows × cols`. Cells in the overlap
     /// region are kept verbatim; new cells (when growing) are
     /// blanks; existing cells outside the new bounds (when
@@ -458,10 +442,12 @@ impl Element for GridElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let mut style = Style::default();
-        style.size = Size {
-            width: px(self.cols as f32 * self.cell_w_px).into(),
-            height: px(self.rows as f32 * self.cell_h_px).into(),
+        let style = Style {
+            size: Size {
+                width: px(self.cols as f32 * self.cell_w_px).into(),
+                height: px(self.rows as f32 * self.cell_h_px).into(),
+            },
+            ..Style::default()
         };
         let layout_id = window.request_layout(style, [], cx);
         (layout_id, ())

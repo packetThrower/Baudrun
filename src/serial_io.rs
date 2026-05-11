@@ -102,12 +102,19 @@ impl SerialChannels {
     /// Install a transfer sink. Callers swap one in for the duration
     /// of an XMODEM/YMODEM transfer; the read loop forwards every
     /// inbound chunk to it instead of `read_rx`.
+    ///
+    /// Currently unused — the in-tree transfer pipeline still uses
+    /// the legacy direct-read path. Kept here because the sink
+    /// scaffolding is half of the eventual unified read-routing
+    /// rewrite; ripping it out now would mean re-adding it later.
+    #[allow(dead_code)]
     pub fn set_transfer_sink(&self, sink: TransferSink) {
         *self.transfer_sink.lock().unwrap() = Some(sink);
     }
 
     /// Remove any installed transfer sink. After this returns,
     /// inbound bytes flow back to `read_rx` and the terminal pane.
+    #[allow(dead_code)]
     pub fn clear_transfer_sink(&self) {
         *self.transfer_sink.lock().unwrap() = None;
     }
@@ -152,7 +159,13 @@ impl io::Write for ChannelWriter {
 /// the UI.
 pub struct Disconnect {
     shutdown: Arc<AtomicBool>,
+    // Kept around to (a) hold the threads alive for the lifetime
+    // of the `Disconnect`, and (b) leave the option open to call
+    // `join` later. We deliberately don't read them today; see
+    // the struct doc comment.
+    #[allow(dead_code)]
     read_thread: std::thread::JoinHandle<()>,
+    #[allow(dead_code)]
     write_thread: std::thread::JoinHandle<()>,
 }
 
