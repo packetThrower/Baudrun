@@ -285,9 +285,22 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             doesn't emit change events; a relaunch refreshes it.
 
       Branding + bundle metadata
-      - [ ] **App icon** — design + bundle the `.icns` (macOS),
-            `.ico` (Windows), and `.png` set (Linux). The icon
-            already exists in the Tauri build; copy it over.
+      - [x] **App icon.** Icons copied from `src-tauri/icons/`
+            into `prototype/resources/icons/` (icon.icns, icon.ico,
+            icon.png + the 32 / 64 / 128 / 128@2x size variants).
+            macOS dev mode picks up a runtime override —
+            `install_macos_dock_icon` loads icon.icns, composites
+            it onto a 1024×1024 canvas with a ~10% transparent
+            margin (Apple's "live area" inset; the Tauri-generated
+            source fills its canvas edge-to-edge so a raw
+            `setApplicationIconImage` looked oversized next to
+            other dock apps), then calls
+            `NSApplication.applicationIconImage`. Production
+            builds (Phase 9) pick the .icns up from the .app
+            bundle's Resources via Info.plist. Direct objc2 +
+            objc2-app-kit + objc2-foundation deps were added under
+            `target.'cfg(target_os = "macos")'` so the small bit
+            of ObjC plumbing stays mac-only.
       - [ ] **macOS Info.plist** — CFBundleIdentifier, version,
             human-readable copyright, minimum OS, NSHighResolution
             flag. Required before code signing in Phase 9.
