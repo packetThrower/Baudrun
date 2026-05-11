@@ -676,6 +676,16 @@ impl AppView {
         // highlighting.
         theme.accent = rgba(tokens.bg_active).into();
         theme.accent_foreground = rgba(tokens.option_fg).into();
+        // gpui-component's Checkbox paints both border + filled box
+        // from `theme.primary` when checked, and the inner check
+        // glyph from `theme.primary_foreground`. Pinning both to the
+        // skin's saturated accent (the same colour the Connect pill
+        // button uses) keeps the toggled-on checkboxes visually
+        // consistent with the rest of the primary affordances.
+        theme.primary = rgba(tokens.accent).into();
+        theme.primary_foreground = rgba(tokens.accent_fg).into();
+        theme.primary_hover = rgba(tokens.accent).into();
+        theme.primary_active = rgba(tokens.accent).into();
         theme.danger = rgba(tokens.danger).into();
         theme.border = rgba(tokens.border_subtle).into();
         theme.radius = px(tokens.radius_md);
