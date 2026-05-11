@@ -21,12 +21,18 @@ mod terminal_view;
 
 use std::rc::Rc;
 
-use gpui::{px, App, AppContext};
+use gpui::{actions, px, App, AppContext, KeyBinding, Menu, MenuItem};
 use gpui_component::{scroll::ScrollbarShow, Theme};
 
 use app_view::{open_app_window, WindowInit};
 use settings_bus::SettingsBus;
 use terminal_view::TerminalView;
+
+// App-level actions wired into the macOS menubar (and one day the
+// Windows / Linux equivalents). The `actions!` macro generates zero-
+// sized structs that implement `gpui::Action`; handlers register via
+// `cx.on_action::<Quit>(...)` and keybindings via `cx.bind_keys(...)`.
+actions!(baudrun, [Quit, NewWindow]);
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
 /// for the network gear Baudrun targets — Cisco, Juniper, Aruba,
@@ -180,6 +186,20 @@ fn main() {
             )
         });
 
+        // Install the macOS application menu (and the keybindings
+        // that drive its accelerators) before the first window
+        // opens. Both call paths read from the shared stores +
+        // settings_bus we just built, so capture clones into the
+        // handler closures.
+        install_app_menu(
+            cx,
+            profile_store.clone(),
+            settings_bus.clone(),
+            skins_store.clone(),
+            highlight_store.clone(),
+            themes_store.clone(),
+        );
+
         let window = open_app_window(
             cx,
             WindowInit::Fresh(terminal.clone()),
@@ -261,6 +281,75 @@ fn main() {
 /// fallback so the UI can still render a (blank) sidebar even when
 /// the user's real config dir is unreachable. Logs why we fell
 /// back so the user can fix the underlying problem.
+/// Wire up the macOS application menu (NSMenuBar) — App / File /
+/// Window / Help — plus the Cmd-key accelerators that drive them.
+/// macOS uses the menubar globally; Windows + Linux don't (Baudrun
+/// would render its own in-window menus there, which Phase 8 hasn't
+/// addressed yet), but `cx.set_menus` is safe to call on any
+/// platform — gpui's non-macOS backends no-op it.
+fn install_app_menu(
+    cx: &mut App,
+    profile_store: Rc<data::profiles::Store>,
+    settings_bus: gpui::Entity<SettingsBus>,
+    skins_store: Rc<data::skins::Store>,
+    highlight_store: Rc<data::highlight::Store>,
+    themes_store: Rc<data::themes::Store>,
+) {
+    // Accelerators. gpui's macOS backend forwards the keystroke
+    // to the focused element; if no in-window handler claims it,
+    // it bubbles up to the App-level handlers below.
+    cx.bind_keys([
+        KeyBinding::new("cmd-q", Quit, None),
+        KeyBinding::new("cmd-n", NewWindow, None),
+    ]);
+
+    cx.on_action(|_: &Quit, cx| cx.quit());
+
+    {
+        let profile_store = profile_store.clone();
+        let settings_bus = settings_bus.clone();
+        let skins_store = skins_store.clone();
+        let highlight_store = highlight_store.clone();
+        let themes_store = themes_store.clone();
+        cx.on_action(move |_: &NewWindow, cx| {
+            let scrollback =
+                settings_bus.read(cx).current().effective_scrollback();
+            let terminal = cx.new(|cx| {
+                TerminalView::new(
+                    24,
+                    80,
+                    term_bridge::Palette::baudrun(),
+                    scrollback,
+                    cx,
+                )
+            });
+            if let Err(err) = open_app_window(
+                cx,
+                WindowInit::Fresh(terminal),
+                profile_store.clone(),
+                settings_bus.clone(),
+                skins_store.clone(),
+                highlight_store.clone(),
+                themes_store.clone(),
+            ) {
+                log::error!("menu: new window: {err}");
+            }
+        });
+    }
+
+    cx.set_menus(vec![
+        // The first menu's name is overridden by the bundle's
+        // display name on macOS, so "Baudrun" here is mostly for
+        // hint purposes. Services / Hide / Hide Others / Show All
+        // are added automatically by AppKit when the platform
+        // recognises the slot.
+        Menu::new("Baudrun").items([MenuItem::action("Quit Baudrun", Quit)]),
+        Menu::new("File").items([MenuItem::action("New Window", NewWindow)]),
+        Menu::new("Window"),
+        Menu::new("Help"),
+    ]);
+}
+
 fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
     eprintln!("{reason}; using empty in-tmpdir profile store");
     let tmp = std::env::temp_dir().join("baudrun-prototype-empty");
