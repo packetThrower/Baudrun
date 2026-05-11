@@ -1398,8 +1398,47 @@ impl AppView {
                 if let Some(ed) = self.editor.as_mut() {
                     ed.profile_id = Some(id.clone());
                     ed.error = None;
-                    if let Some(b) = fresh_baseline {
+                    if let Some(b) = fresh_baseline.clone() {
                         ed.baseline = b;
+                    }
+                }
+                // Push live-applicable settings into the
+                // TerminalView if this Save is editing the
+                // currently-connected profile. Without this, a
+                // mid-session toggle of Line numbers / Line
+                // timestamps / Hex view / Local echo / paste
+                // safety / line-ending / backspace key sits in
+                // settings.json and doesn't take effect until the
+                // user disconnects and reconnects. Highlight
+                // rules + theme have their own apply paths
+                // (SettingsBus subscription + reconnect-on-theme-
+                // pick respectively), so this only covers
+                // ProfileSettings.
+                //
+                // Connection parameters (port, baud, data bits,
+                // parity, stop bits, flow control, DTR/RTS
+                // policies) deliberately stay reconnect-gated —
+                // the serial port has to be reopened with the new
+                // framing, which is what users expect from
+                // edits to those fields.
+                if self.connected_profile_id.as_deref() == Some(id.as_str()) {
+                    if let Some(profile) = fresh_baseline {
+                        let live = ProfileSettings {
+                            line_ending: profile.line_ending.clone(),
+                            backspace_key: profile.backspace_key.clone(),
+                            local_echo: profile.local_echo,
+                            paste_warn_multiline: profile.paste_warn_multiline,
+                            paste_slow: profile.paste_slow,
+                            paste_char_delay_ms: profile
+                                .paste_char_delay_ms
+                                .unwrap_or(10)
+                                .max(0) as u32,
+                            hex_view: profile.hex_view,
+                            timestamps: profile.timestamps,
+                            line_numbers: profile.line_numbers,
+                        };
+                        let terminal = self.terminal.clone();
+                        terminal.update(cx, |t, _| t.set_profile_settings(live));
                     }
                 }
                 cx.notify();

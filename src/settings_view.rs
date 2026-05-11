@@ -1190,6 +1190,14 @@ impl SettingsView {
             "Built-in theme \u{00B7} sample network-gear output"
         });
         window.open_dialog(cx, move |dlg, _, _| {
+            // `close_button(true)` adds the `×` glyph in the title
+            // bar (close affordance for users who don't think to
+            // press Esc); `keyboard(true)` is the AlertDialog
+            // default but on the plain Dialog path it's off by
+            // default — set explicitly so Esc dismisses too.
+            // `overlay_closable(true)` also lets a click outside
+            // the dialog dismiss it, same as native macOS
+            // settings-style sheets.
             dlg.title(
                 div()
                     .flex()
@@ -1203,6 +1211,9 @@ impl SettingsView {
                             .child(subtitle.clone()),
                     ),
             )
+            .close_button(true)
+            .keyboard(true)
+            .overlay_closable(true)
             .w(px(720.0))
             .child(theme_preview_block(&theme))
         });

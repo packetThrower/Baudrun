@@ -28,6 +28,11 @@ DESIGN.json
 PRODUCT.md
 OPENSOURCE_PREP.md
 
+# Local scratch / fixture dir for manual JSON import tests
+# (highlight packs, skins, …). Kept out of the repo since the
+# contents are throwaway and the schema lives in docs/examples/.
+/test/
+
 # Logs & temp
 *.log
 *.tmp

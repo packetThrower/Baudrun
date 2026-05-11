@@ -594,13 +594,30 @@ where
 /// from the SettingsBus subscription (with the new snapshot after
 /// every Settings save).
 ///
-/// `clear_key_bindings` is the simplest correct way to handle the
-/// re-bind path: a user editing one shortcut might also be
-/// flipping another one back to its default, and an additive
-/// approach would leave stale bindings claiming the now-orphaned
-/// key combo.
+/// We deliberately don't call `cx.clear_key_bindings()` here even
+/// though it'd give us the cleanest "drop the old shortcut combo
+/// when the user reassigns it" semantics. The trade-off was
+/// discovered after the Windows build smoke-test: clearing nukes
+/// gpui-component's Input-context keybindings (`backspace`,
+/// `delete`, arrow keys, undo/redo, paste, …) that
+/// `gpui_component::init` installs at boot, leaving every Input
+/// widget unable to handle plain text editing. Re-installing them
+/// ourselves means hand-rolling 30+ bindings across half a dozen
+/// gpui-component modules and keeping that list in sync with
+/// every gpui-component bump — fragile.
+///
+/// Trade-off accepted: a user who reassigns the same chord
+/// (e.g. Cmd+K Clear → Cmd+J Clear) gets BOTH the old and new
+/// chord firing the action — Cmd+K still works because the stale
+/// binding is still in the keymap. The first time the user
+/// reassigns the SAME chord to a different action, gpui's keymap
+/// lookup picks the most-recently-added binding, so the new
+/// action fires and the old doesn't. The known sharp edge: an
+/// orphaned binding (old chord → action that was later moved) is
+/// still active. Probably worth a "shortcut snapshot at boot,
+/// emit NoAction unbinds on diff" follow-up if it actually
+/// surfaces.
 fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
-    cx.clear_key_bindings();
 
     let overrides = settings.shortcuts.clone().unwrap_or_default();
     // Static accelerators that don't appear in Settings → Shortcuts.
