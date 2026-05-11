@@ -523,15 +523,46 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             doesn't need an entitlement.
 
       Release pipeline
-      - [ ] **New release workflow for prototype.** Fork
-            `.github/workflows/release.yml`, swap the `tauri
-            build` step for the bundler choice, keep the macOS
-            arm64 + amd64 matrix the Tauri version already uses
-            (`macos-26` for arm64, `macos-15-intel` for amd64),
-            and upload the signed `.dmg` / `.zip` to the
-            tag-triggered GitHub Release. Tauri's pre-release
-            handling (semver tag with hyphen → `prerelease=true`)
-            ports cleanly.
+      - [x] **New release workflow for prototype.** Replaced the
+            736-line Tauri-flavoured `.github/workflows/release.yml`
+            with a 431-line cargo-packager-driven workflow. Same
+            six-platform matrix (`macos-26` arm64, `macos-15-intel`
+            amd64, `windows-latest` x64, `windows-11-arm` arm64,
+            `ubuntu-latest` amd64, `ubuntu-24.04-arm` arm64). Per
+            platform:
+            * macOS: `.dmg` + drag-droppable `.app.zip` (via
+              `ditto -c -k --keepParent` to preserve resource
+              forks for future signing).
+            * Windows: NSIS `-setup.exe` always, WiX `.msi` on
+              stable tags only (WiX rejects alphanumeric pre-
+              release identifiers), portable `.zip` of bare
+              `Baudrun.exe`.
+            * Linux: `.deb`, `.AppImage`, `.pkg.tar.zst` (renamed
+              from cargo-packager's `.pacman` output) all from
+              cargo-packager directly. `.rpm` via fpm — same
+              fpm-shellout pattern the old release.yml used for
+              `.pkg.tar.zst` (which IS cargo-packager-native now).
+            Version tag (`v0.5.0` → `0.5.0`) gets patched into
+            `Cargo.toml`'s `version` field plus
+            `resources/Info.plist`'s `CFBundleShortVersionString`
+            + `CFBundleVersion` before bundling. SHA256SUMS +
+            generated release notes (with the same prev-tag
+            walk + pre-release flagging the Tauri version
+            had) keep working. Pre-release detection still
+            via hyphen-in-tag.
+
+            Also enabled `rusb`'s `vendored` feature — libusb
+            compiles statically into the binary, so the old
+            release.yml's `install_name_tool` dance to rewrite
+            `/opt/homebrew/lib/libusb-1.0.0.dylib` load commands
+            inside the .app is gone. `otool -L` on the resulting
+            binary shows zero Homebrew references; user machines
+            need no libusb install.
+
+            Still pending in subsequent sub-items: code signing
+            (`secrets.APPLE_SIGNING_*` not wired through yet),
+            notarization, hardened-runtime entitlements,
+            Windows code signing.
       - [ ] **CI build coverage.** Compile the prototype's
             release-mode bundle on every PR (no signing, no
             upload) so a broken bundle catches before it merges.
