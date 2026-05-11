@@ -2860,7 +2860,7 @@ impl Render for AppView {
                     && editor.profile_id.is_some()
                     && editor.profile_id.as_deref()
                         == self.connected_profile_id.as_deref();
-                let form = form_pane(render, packs, global_enabled, cx);
+                let form = form_pane(render, packs, global_enabled, show_resume, cx);
                 if show_resume {
                     // Wrap so the banner stacks above the form.
                     // `min_w_0` mirrors form_pane's own shrink
@@ -4141,6 +4141,7 @@ fn form_pane(
     er: EditorRender,
     packs: Vec<crate::data::highlight::HighlightPack>,
     global_enabled: Vec<String>,
+    connected_session: bool,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
@@ -4167,7 +4168,13 @@ fn form_pane(
         .text_size(px(13.0))
         .flex()
         .flex_col()
-        .child(form_header(er.is_edit, er.is_dirty, er.name.clone(), cx))
+        .child(form_header(
+            er.is_edit,
+            er.is_dirty,
+            er.name.clone(),
+            connected_session,
+            cx,
+        ))
         .child(form_body(er, packs, global_enabled, cx))
 }
 
@@ -4179,6 +4186,7 @@ fn form_header(
     is_edit: bool,
     is_dirty: bool,
     name: Entity<InputState>,
+    connected_session: bool,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
@@ -4265,12 +4273,35 @@ fn form_header(
                         this.cancel_editor(cx);
                     }),
                 ))
-                .child(primary_button(s, "Connect").on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.save_and_connect(window, cx);
-                    }),
-                )),
+                .when(connected_session, |row| {
+                    // Suspended on the connected profile — swap the
+                    // Connect button for the Disconnect + Resume
+                    // pair Tauri shows in the same state. Connect on
+                    // an already-connected profile would either
+                    // race for its own port or re-open a session
+                    // the user already has, neither of which is
+                    // what they're after.
+                    row.child(pill_button(s, "Disconnect", false).on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.disconnect_current(window, cx);
+                        }),
+                    ))
+                    .child(primary_button(s, "Resume").on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.resume_session(window, cx);
+                        }),
+                    ))
+                })
+                .when(!connected_session, |row| {
+                    row.child(primary_button(s, "Connect").on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.save_and_connect(window, cx);
+                        }),
+                    ))
+                }),
         )
 }
 

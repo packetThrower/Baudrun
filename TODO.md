@@ -87,9 +87,9 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       the write thread), Send Hex (modal with the same parser the
       Tauri version uses — `0x` / spaces / commas all strip),
       and Send File alongside Move-to-New-Window.
-- [ ] **Phase 7.5 — Settings + Profile Form parity.** Items that
-      exist in the Tauri build but are still missing or only
-      partially wired in the gpui prototype. Diffed against
+- [x] **Phase 7.5 — Settings + Profile Form parity.** Done. Every
+      sub-item below either landed or was reclassified into Phase
+      7.6 (deliberate drops). Diffed against
       `src/lib/Settings.svelte` + `src/lib/ProfileForm.svelte`.
 
       Settings — Appearance tab
@@ -164,12 +164,13 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             "Install driver…" pill that opens the vendor URL via
             `cx.open_url`. Detection is gated by Settings →
             Advanced → USB Driver Detection.
-      - [ ] **Header buttons when connected.** When the editor is
-            open for the connected profile while suspended, the
-            form header still shows Connect — Tauri swaps that
-            for Disconnect + Resume. We have a Resume banner
-            above the form already; this would move both
-            affordances into the header for visual parity.
+      - [x] **Header buttons when connected.** Done. The form
+            header swaps Connect for Disconnect + Resume when the
+            editor is open on the connected profile while suspended
+            (the existing `show_resume` signal threads down to
+            `form_pane` → `form_header` as a `connected_session`
+            flag). The Resume banner above the form stays for the
+            "port still open, bytes still flowing" context line.
 
       Cosmetic / non-blocking
       - Welcome pane wording differs slightly from Tauri; not
