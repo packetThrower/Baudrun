@@ -95,6 +95,18 @@ base64 = "0.22"
 rusb = "0.9"            # libusb backend for the CP210x direct driver in
                         # `data::usbserial`
 
+# macOS-only: set NSApplication's applicationIconImage at startup
+# so the dock icon picks up `resources/icons/icon.png` even when
+# running via `cargo run` (no .app bundle). Production builds will
+# get the icon from the bundle's Info.plist + Resources/icon.icns,
+# so this runtime override is dev-mode polish only. Versions match
+# the transitive ones gpui_macos already pulls in to avoid bloating
+# the dep graph.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage"] }
+objc2-foundation = { version = "0.3", features = ["NSString"] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1
