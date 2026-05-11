@@ -10,12 +10,26 @@
 [![Rust](https://img.shields.io/badge/Rust-stable-CE422B?style=flat-square&logo=rust&logoColor=white)](Cargo.toml)
 [![License: GPL v3+](https://img.shields.io/badge/license-GPLv3%2B-blue?style=flat-square)](LICENSE)
 
-**Minimum OS Versions** &nbsp;
+**Shipping Tauri build — minimum OS versions** &nbsp;
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Intel](https://img.shields.io/badge/Intel-x86__64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Windows 10 21H2+](https://img.shields.io/badge/Windows%2010%2021H2%2B-x64%20%2F%20arm64-0078D4?style=flat-square&logo=windows&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
-[![Linux](https://img.shields.io/badge/Linux-amd64%20%2F%20arm64-FCC624?style=flat-square&logo=linux&logoColor=black)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+
+[![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?style=flat-square&logo=ubuntu&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![Debian 13+](https://img.shields.io/badge/Debian-13%2B-A81D33?style=flat-square&logo=debian&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![Fedora 40+](https://img.shields.io/badge/Fedora-40%2B-294172?style=flat-square&logo=fedora&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![Arch](https://img.shields.io/badge/Arch-1793D1?style=flat-square&logo=archlinux&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![openSUSE Tumbleweed](https://img.shields.io/badge/openSUSE-Tumbleweed-73BA25?style=flat-square&logo=opensuse&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+
+Linux minimums above are gated by Tauri v2's `libwebkit2gtk-4.1` requirement
+(GTK4-era WebKit, first widely available on Ubuntu 24.04 / Debian 13 / Fedora
+40). The in-progress gpui rewrite removes the webview entirely and replaces it
+with a Vulkan + xkbcommon stack — its real floor is **Ubuntu 22.04 / Debian 12
+/ Fedora 38 / Arch (rolling) / openSUSE Tumbleweed**, plus a Vulkan-capable
+GPU with current Mesa (the same floor Zed itself runs on). The README's
+distro badges will drop to the lower line once the rewrite ships as the
+default build.
 
 A cross-platform serial terminal for network devices. Built for switch consoles,
 router CLIs, and other serial-attached gear. Profile-based: each device gets a
