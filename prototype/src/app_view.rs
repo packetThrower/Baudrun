@@ -3546,13 +3546,16 @@ fn session_header(
                         .h(px(STATUS_DOT_PX))
                         .rounded_full()
                         .bg(rgba(dot_color));
-                    if reconnecting {
+                    if reconnecting && !cx.global::<crate::ReduceMotion>().0 {
                         // Match the Tauri `.dot.reconnecting`
                         // pulse: 1s ease-in-out, opacity bounces
                         // between roughly 0.35 and 1.0. gpui's
                         // `pulsating_between` returns the easing
                         // curve; the per-frame closure applies the
-                        // current alpha.
+                        // current alpha. Skipped under prefers-
+                        // reduced-motion — the orange dot's colour
+                        // alone is enough signal that we're in
+                        // the reconnecting state.
                         dot.with_animation(
                             "session-header-reconnect-pulse",
                             Animation::new(Duration::from_secs(1))
@@ -5510,11 +5513,15 @@ fn profile_row(
                 .h(px(STATUS_DOT_PX))
                 .rounded_full()
                 .bg(rgba(st.color(tokens)));
-            if st == RowStatus::Reconnecting {
+            if st == RowStatus::Reconnecting
+                && !cx.global::<crate::ReduceMotion>().0
+            {
                 // Same 1s pulse as the session header so the two
                 // indicators feel like one signal. Animation name
                 // is per-row-instance to avoid gpui de-duping
-                // animations across distinct dots.
+                // animations across distinct dots. Skipped under
+                // prefers-reduced-motion — the orange dot's
+                // colour already communicates the reconnect state.
                 dot.with_animation(
                     SharedString::from(format!("sidebar-reconnect-pulse-{}", id)),
                     Animation::new(Duration::from_secs(1))

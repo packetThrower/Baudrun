@@ -40,6 +40,23 @@ use terminal_view::TerminalView;
 // change so the user's overrides flow straight into the menubar
 // accelerators (`install_app_menu` reads `effective_shortcut(id)`
 // for the current settings and emits a KeyBinding per action).
+/// OS "reduce motion" preference, captured once at boot. Read by
+/// AppView via `cx.global::<ReduceMotion>()` to gate optional
+/// animations (the reconnect-dot pulse, etc.). True = animations
+/// should be skipped.
+///
+/// Live updates: macOS posts
+/// `NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification`
+/// when the user flips the toggle, but the prototype reads the
+/// value once at app launch and doesn't observe changes —
+/// matches what `prefers-reduced-motion: reduce` does in most
+/// production web apps and avoids wiring an objc notification
+/// observer for a setting users rarely toggle while an app is
+/// running. A relaunch picks up the new value.
+#[derive(Debug, Clone, Copy)]
+pub struct ReduceMotion(pub bool);
+impl gpui::Global for ReduceMotion {}
+
 pub(crate) mod actions {
     use gpui::{actions, Action};
     actions!(
@@ -156,6 +173,13 @@ fn main() {
         // dev workflow. No-op on non-mac platforms.
         #[cfg(target_os = "macos")]
         install_macos_dock_icon();
+
+        // Detect the OS "reduce motion" accessibility preference
+        // once at boot and stash as a gpui global. Read by AppView
+        // to skip optional pulses (reconnect dot, ...). Defaults
+        // to false (animations on) on platforms that don't have
+        // a query implemented yet (Windows / Linux).
+        cx.set_global(ReduceMotion(detect_reduce_motion()));
 
         // gpui-component widgets (Input, Form, Dialog, …) need a
         // global theme + tooltip/notification manager installed
@@ -772,6 +796,29 @@ fn install_macos_dock_icon() {
         let app = NSApplication::sharedApplication(mtm);
         app.setApplicationIconImage(Some(&canvas));
     }
+}
+
+/// Query the OS "reduce motion" accessibility preference. Wired
+/// to the `ReduceMotion` global at boot. On macOS this reads
+/// `NSWorkspace.accessibilityDisplayShouldReduceMotion`; on other
+/// platforms we return false (animations on) for now — a real
+/// Windows / Linux implementation would call
+/// `SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)` /
+/// `gtk_settings_get_default()->gtk_enable_animations`
+/// respectively, but those land with the corresponding platform's
+/// polish pass.
+#[cfg(target_os = "macos")]
+fn detect_reduce_motion() -> bool {
+    use objc2_app_kit::NSWorkspace;
+    // SAFETY: We're on the main thread at boot — runtime context
+    // is the same as `install_macos_dock_icon`. NSWorkspace is a
+    // main-thread-only type.
+    unsafe { NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion() }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn detect_reduce_motion() -> bool {
+    false
 }
 
 /// Right-click menu on the macOS dock icon (no-op on other

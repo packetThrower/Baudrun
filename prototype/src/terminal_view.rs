@@ -290,11 +290,27 @@ impl TerminalView {
         // re-paints. Detached doesn't apply here — we hold the
         // task in `_blink_task` so it lives exactly as long as
         // the view, no longer.
+        //
+        // Under prefers-reduced-motion the toggle inside the
+        // update closure becomes a no-op — `cursor_blink_phase`
+        // stays at its initial `true`, the grid keeps painting
+        // the cursor solid, and the task ticks as a cheap timer
+        // that re-checks the global on every interval. That lets
+        // a runtime toggle of the reduce-motion preference start
+        // / stop the blink without restarting the app (relaunch
+        // still updates the `ReduceMotion` global, but the task
+        // itself doesn't require it).
         let blink_task = cx.spawn(async move |weak, cx| {
             loop {
                 cx.background_executor().timer(BLINK_INTERVAL).await;
                 if weak
                     .update(cx, |this, cx| {
+                        if cx.global::<crate::ReduceMotion>().0 {
+                            // Keep cursor solid + leave phase
+                            // alone; renderer keeps showing the
+                            // cursor.
+                            return;
+                        }
                         this.cursor_blink_phase = !this.cursor_blink_phase;
                         // Re-mirror so the cursor cell's fg/bg
                         // swap (or absence of it) actually shows
