@@ -6,15 +6,27 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 charset = utf-8
 
+# Rust — 4-space indent matches `rustfmt` defaults. The prototype is
+# the only Rust code in the repo today; this rule also covers any
+# future workspace crates.
+[*.rs]
+indent_style = space
+indent_size = 4
+
+# Go — `gofmt` requires tabs (scripts/virtual-serial/).
 [*.go]
 indent_style = tab
 
 [Makefile]
 indent_style = tab
 
-[*.{ts,tsx,js,jsx,svelte,json,yml,yaml,css,html,md}]
+# Config + docs + JSON examples. Astro docs site has its own toolchain
+# under `docs-next/` that respects this same setting.
+[*.{toml,json,jsonc,yml,yaml,md}]
 indent_style = space
 indent_size = 2
 
+# Markdown often relies on trailing two-space "soft break" syntax;
+# preserve whatever the author typed.
 [*.md]
 trim_trailing_whitespace = false
