@@ -44,10 +44,6 @@ use gpui_component::{
 };
 use gpui::SharedString;
 
-use crate::actions::{
-    ClearTerminal, Connect, Disconnect, FontDecrease, FontIncrease, FontReset,
-    NewProfile, OpenInNewWindow, Resume, SendBreak, SendFile, Suspend,
-};
 use crate::data::appdata;
 use crate::data::highlight;
 use crate::data::transfer::{self, ChannelReader, XModemVariant};
@@ -1227,7 +1223,7 @@ impl AppView {
     /// channel ends first, then `wait` on the thread join so the
     /// port file descriptor is fully released before any future
     /// reopen.
-    fn disconnect_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn disconnect_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(id) = self.connected_profile_id.take() else {
             return;
         };
@@ -1582,7 +1578,7 @@ impl AppView {
     /// Fire a serial break (`set_break` / sleep / `clear_break`)
     /// down the live write channel. Surfaces success / failure via
     /// toast since there's no inline UI affordance for it.
-    fn send_break_now(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn send_break_now(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.session_overflow_open = false;
         let Some(io) = self.transfer_io.as_ref() else {
             return;
@@ -1758,7 +1754,7 @@ impl AppView {
     /// opens the modal. The dialog itself is rendered from
     /// `Render::render` reading `self.send_file` so the live state
     /// (chosen path, protocol) updates as the user picks them.
-    fn start_send_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn start_send_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.transfer.is_some() || self.send_file.is_some() {
             return;
         }
@@ -2322,7 +2318,7 @@ impl AppView {
     /// the right pane swaps from the terminal viewport to the
     /// editor for the connected profile, so the user can browse
     /// other UI without losing their session.
-    fn suspend_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn suspend_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Only meaningful when actually connected. Reconnecting
         // counts: the user might want to suspend during a flap.
         if self.connected_profile_id.is_none()
@@ -2354,7 +2350,7 @@ impl AppView {
     /// Tauri's "Resume snaps you back to terminal" UX) and re-grabs
     /// focus for the viewport so typing lands in the grid without
     /// an extra click.
-    fn resume_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn resume_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.suspended {
             return;
         }
@@ -2384,7 +2380,7 @@ impl AppView {
     /// double-click when only the selection is set. No-op when
     /// there's neither — keeps a stray keystroke from doing
     /// something surprising in the empty-state.
-    fn shortcut_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn shortcut_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.editor.is_some() {
             self.save_and_connect(window, cx);
             return;
@@ -2405,14 +2401,14 @@ impl AppView {
 
     /// Clear the terminal viewport. Forwards to the TerminalView
     /// entity; same code path the header's Clear button takes.
-    fn shortcut_clear_terminal(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn shortcut_clear_terminal(&mut self, cx: &mut Context<Self>) {
         let terminal = self.terminal.clone();
         terminal.update(cx, |t, cx| t.clear_screen(cx));
     }
 
     /// Open the form for a fresh profile. Same entry point as the
     /// sidebar's "+" icon (`open_editor`).
-    fn shortcut_new_profile(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn shortcut_new_profile(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.open_editor(window, cx);
     }
 
@@ -2421,7 +2417,7 @@ impl AppView {
     /// screen) when no profile is selected — mirrors the right-
     /// click context menu's "Open in new window" but keyed by the
     /// sidebar selection rather than the row under the cursor.
-    fn shortcut_open_in_new_window(
+    pub(crate) fn shortcut_open_in_new_window(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -2430,6 +2426,19 @@ impl AppView {
             Some(id) => self.connect_profile_in_new_window(id, window, cx),
             None => self.open_new_window(window, cx),
         }
+    }
+
+    /// Thin wrappers around `shortcut_bump_font` so main.rs's
+    /// App-level handlers don't need to import the private
+    /// `FontBump` enum.
+    pub(crate) fn shortcut_bump_font_increase(&mut self, cx: &mut Context<Self>) {
+        self.shortcut_bump_font(FontBump::Increase, cx);
+    }
+    pub(crate) fn shortcut_bump_font_decrease(&mut self, cx: &mut Context<Self>) {
+        self.shortcut_bump_font(FontBump::Decrease, cx);
+    }
+    pub(crate) fn shortcut_bump_font_reset(&mut self, cx: &mut Context<Self>) {
+        self.shortcut_bump_font(FontBump::Reset, cx);
     }
 
     /// Bump the persisted font size by the requested delta (clamped
@@ -3053,52 +3062,17 @@ impl Render for AppView {
             // look uniformly dark because their `--bg-main` is
             // translucent white with nothing solid beneath.
             .bg(rgba(s.bg_window))
-            // Menubar shortcut handlers. The matching KeyBindings
-            // are registered globally in `main::install_app_menu`
-            // from the user's effective Settings → Shortcuts; this
-            // div is the per-window root, so attaching them here
-            // means an action dispatched anywhere inside the
-            // window's focus tree (terminal, sidebar, form,
-            // settings overlay) finds a handler. Each lambda
-            // delegates to a `shortcut_*` method or an existing
-            // entry point so the keybinding and the equivalent
-            // on-screen affordance share one implementation.
-            .on_action(cx.listener(
-                |this, _: &Connect, window, cx| this.shortcut_connect(window, cx),
-            ))
-            .on_action(cx.listener(|this, _: &Disconnect, window, cx| {
-                this.disconnect_current(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &Suspend, window, cx| {
-                this.suspend_session(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &Resume, window, cx| {
-                this.resume_session(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &ClearTerminal, _window, cx| {
-                this.shortcut_clear_terminal(cx);
-            }))
-            .on_action(cx.listener(|this, _: &SendBreak, window, cx| {
-                this.send_break_now(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &SendFile, window, cx| {
-                this.start_send_file(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &NewProfile, window, cx| {
-                this.shortcut_new_profile(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &OpenInNewWindow, window, cx| {
-                this.shortcut_open_in_new_window(window, cx);
-            }))
-            .on_action(cx.listener(|this, _: &FontIncrease, _window, cx| {
-                this.shortcut_bump_font(FontBump::Increase, cx);
-            }))
-            .on_action(cx.listener(|this, _: &FontDecrease, _window, cx| {
-                this.shortcut_bump_font(FontBump::Decrease, cx);
-            }))
-            .on_action(cx.listener(|this, _: &FontReset, _window, cx| {
-                this.shortcut_bump_font(FontBump::Reset, cx);
-            }))
+            // (Shortcut actions are handled at the App level —
+            // `main::install_app_menu` registers global on_action
+            // listeners that route via `dispatch_to_app_view` into
+            // the active window's AppView. Per-window `.on_action`
+            // handlers on this div would also fire — global
+            // capture and window capture both dispatch the same
+            // action — and we'd hit every action twice per
+            // keystroke. The global path covers both menu clicks
+            // (where focus isn't in the AppView tree) and
+            // keystrokes (where it is) by deferring into the
+            // active window's AppView entity directly.)
             .child(
                 div()
                     .size_full()

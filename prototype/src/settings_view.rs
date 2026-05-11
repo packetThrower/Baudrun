@@ -2923,6 +2923,15 @@ fn shortcut_label(action: &'static str) -> &'static str {
     }
 }
 
+// Defaults differ from the Tauri shipping app in one spot:
+// "new-profile" was Meta+N there because Tauri ran single-window,
+// so Cmd+N had no conflicting "New Window" candidate. Now that
+// every menubar gets a real File → New Window (statically bound to
+// Cmd+N to match macOS convention), New Profile shifts to
+// Cmd+Shift+P so the bindings don't collide. Users who imported a
+// settings.json with the old Meta+N override still get their
+// preference — `effective_shortcut` honours the override before
+// falling back here.
 #[cfg(target_os = "macos")]
 fn default_for_action(action: &str) -> &'static str {
     match action {
@@ -2933,7 +2942,7 @@ fn default_for_action(action: &str) -> &'static str {
         "clear" => "Meta+K",
         "break" => "Meta+Shift+B",
         "send-file" => "Meta+Shift+T",
-        "new-profile" => "Meta+N",
+        "new-profile" => "Meta+Shift+P",
         "open-window" => "Meta+Shift+Enter",
         "font-increase" => "Meta+=",
         "font-decrease" => "Meta+-",
@@ -2952,7 +2961,7 @@ fn default_for_action(action: &str) -> &'static str {
         "clear" => "Control+Shift+K",
         "break" => "Control+Shift+B",
         "send-file" => "Control+Shift+T",
-        "new-profile" => "Control+N",
+        "new-profile" => "Control+Shift+P",
         "open-window" => "Control+Shift+Enter",
         "font-increase" => "Control+=",
         "font-decrease" => "Control+-",

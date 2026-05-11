@@ -21,10 +21,10 @@ mod terminal_view;
 
 use std::rc::Rc;
 
-use gpui::{App, AppContext, KeyBinding, Menu, MenuItem};
-use gpui_component::{scroll::ScrollbarShow, Theme};
+use gpui::{App, AppContext, Context, Entity, KeyBinding, Menu, MenuItem, Window};
+use gpui_component::{scroll::ScrollbarShow, Root, Theme};
 
-use app_view::{open_app_window, WindowInit};
+use app_view::{open_app_window, AppView, WindowInit};
 use settings_bus::{SettingsBus, SettingsEvent};
 use terminal_view::TerminalView;
 
@@ -338,6 +338,75 @@ fn install_app_menu(
     // via `cx.bind_keys` — drives both menu accelerators and
     // anywhere-in-window dispatch.
     cx.on_action(|_: &Quit, cx| cx.quit());
+
+    // App-level handlers for every shortcut action. There are two
+    // problems an App-level handler solves at once on macOS:
+    //
+    //  1. Menu validation: AppKit asks `is_action_available` before
+    //     opening a menu to decide which items to enable. gpui only
+    //     reports an action as available if a handler exists either
+    //     globally (here) or along the focused element's dispatch
+    //     path. A handler attached to AppView's outer div is below
+    //     the dispatch-tree root, so when nothing is focused (which
+    //     is briefly true while the menubar is open), validation
+    //     can't see it and AppKit greys the menu item out.
+    //
+    //  2. Click dispatch: when the user clicks a menu item, gpui
+    //     dispatches from the currently-focused element. Same focus-
+    //     drift problem — the per-window `.on_action` handlers on
+    //     AppView's div never see the action.
+    //
+    // The fix is to do the actual work here, in global handlers
+    // that grab the active window's root Root, downcast its inner
+    // `view` to `Entity<AppView>`, and call the AppView's
+    // `shortcut_*` method directly. The per-window handlers in
+    // `AppView::render` still exist for the case where the action
+    // is dispatched from inside the AppView focus tree (e.g. a
+    // keystroke caught while the terminal is focused) — both paths
+    // converge on the same `shortcut_*` method.
+    cx.on_action(|_: &Connect, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.shortcut_connect(window, cx));
+    });
+    cx.on_action(|_: &Disconnect, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.disconnect_current(window, cx));
+    });
+    cx.on_action(|_: &Suspend, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.suspend_session(window, cx));
+    });
+    cx.on_action(|_: &Resume, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.resume_session(window, cx));
+    });
+    cx.on_action(|_: &ClearTerminal, cx| {
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_clear_terminal(cx));
+    });
+    cx.on_action(|_: &SendBreak, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.send_break_now(window, cx));
+    });
+    cx.on_action(|_: &SendFile, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.start_send_file(window, cx));
+    });
+    cx.on_action(|_: &NewProfile, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.shortcut_new_profile(window, cx));
+    });
+    cx.on_action(|_: &OpenInNewWindow, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| {
+            app.shortcut_open_in_new_window(window, cx)
+        });
+    });
+    cx.on_action(|_: &FontIncrease, cx| {
+        dispatch_to_app_view(cx, |app, _window, cx| {
+            app.shortcut_bump_font_increase(cx)
+        });
+    });
+    cx.on_action(|_: &FontDecrease, cx| {
+        dispatch_to_app_view(cx, |app, _window, cx| {
+            app.shortcut_bump_font_decrease(cx)
+        });
+    });
+    cx.on_action(|_: &FontReset, cx| {
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_reset(cx));
+    });
+
     {
         let profile_store = profile_store.clone();
         let settings_bus = settings_bus.clone();
@@ -391,6 +460,81 @@ fn install_app_menu(
         apply_shortcut_bindings(cx, settings);
     })
     .detach();
+}
+
+/// Find the active window's `AppView` entity and run `f` against
+/// it. Used by the App-level shortcut handlers so menu clicks (and
+/// keystrokes that arrive while focus has drifted off the AppView
+/// subtree) still reach the right method.
+///
+/// Window root is a `gpui_component::Root`; its inner `view`
+/// `AnyView` is the `Entity<AppView>` we built in `open_app_window`.
+/// The downcast can fail in principle (someone else's window
+/// type), but in practice every window we open is rooted in
+/// AppView — a missed downcast logs and no-ops so a stray action
+/// can't bring the app down.
+fn dispatch_to_app_view<F>(cx: &mut App, f: F)
+where
+    F: FnOnce(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+{
+    // Defer so the window update doesn't re-enter the same window
+    // we're already inside. The menu click dispatch chain enters
+    // `active_window.update(...)` to fire global handlers; trying
+    // to call `handle.update(cx, ...)` on that same window from
+    // within the handler hits gpui's "window not found" because
+    // the window is currently `.take()`d out of the windows map.
+    // `cx.defer` queues us until the outer update completes and
+    // the window is back in the map.
+    cx.defer(move |cx| dispatch_to_app_view_now(cx, f));
+}
+
+fn dispatch_to_app_view_now<F>(cx: &mut App, f: F)
+where
+    F: FnOnce(&mut AppView, &mut Window, &mut Context<AppView>) + 'static,
+{
+    // Prefer the platform's idea of the active window — picks the
+    // right one when multiple AppView windows are open. That handle
+    // can be stale (e.g. when the macOS menubar has focus the
+    // returned handle fails to look up against gpui's window
+    // table); fall back to scanning `cx.windows()`, which is gpui's
+    // authoritative list of live windows. Order is insertion, not
+    // z-order, but a stale active_window mostly happens during the
+    // menu-open window where active_window won't dispatch correctly
+    // anyway — the deferred dispatch runs after the menu closes
+    // and the window is active again.
+    let mut candidates: Vec<gpui::AnyWindowHandle> = Vec::with_capacity(4);
+    if let Some(active) = cx.active_window() {
+        candidates.push(active);
+    }
+    for handle in cx.windows() {
+        if !candidates.contains(&handle) {
+            candidates.push(handle);
+        }
+    }
+    let f_cell = std::cell::RefCell::new(Some(f));
+    for handle in candidates {
+        let did_dispatch = std::rc::Rc::new(std::cell::Cell::new(false));
+        let did_dispatch_clone = did_dispatch.clone();
+        let result = handle.update(cx, |_root, window, cx| {
+            let Some(Some(root)) = window.root::<Root>() else {
+                return;
+            };
+            let view = root.read(cx).view().clone();
+            let Ok(app_view) = view.downcast::<AppView>() else {
+                return;
+            };
+            if let Some(f) = f_cell.borrow_mut().take() {
+                app_view.update(cx, |app, cx| f(app, window, cx));
+                did_dispatch_clone.set(true);
+            }
+        });
+        if result.is_err() {
+            continue;
+        }
+        if did_dispatch.get() {
+            return;
+        }
+    }
 }
 
 /// Compute the effective binding for each shortcut action from the
