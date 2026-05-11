@@ -2416,6 +2416,19 @@ impl AppView {
     /// a gpui-component Dialog over the active window with name,
     /// version, copyright, and a clickable GitHub link. Triggered
     /// by the Baudrun → About menu item.
+    /// Whether this window has a serial session whose teardown
+    /// the user would notice — a live connection, an in-flight
+    /// X/YMODEM transfer, or an auto-reconnect retry that's
+    /// actively polling the OS for the port to come back. Used
+    /// by the Quit-confirmation prompt; false for windows that
+    /// are sitting on the welcome screen or staring at a closed
+    /// editor.
+    pub(crate) fn has_live_session(&self) -> bool {
+        self.connected_profile_id.is_some()
+            || self.transfer.is_some()
+            || self.auto_reconnect_for.is_some()
+    }
+
     pub(crate) fn shortcut_about(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.open_dialog(cx, |dialog, _window, _cx| {
             // No accelerator on this one — About is menu-only,

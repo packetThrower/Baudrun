@@ -22,7 +22,7 @@ mod terminal_view;
 use std::rc::Rc;
 
 use gpui::{App, AppContext, Context, Entity, KeyBinding, Menu, MenuItem, Window};
-use gpui_component::{scroll::ScrollbarShow, Root, Theme};
+use gpui_component::{scroll::ScrollbarShow, Root, Theme, WindowExt};
 
 use app_view::{open_app_window, AppView, WindowInit};
 use settings_bus::{SettingsBus, SettingsEvent};
@@ -388,7 +388,7 @@ fn install_app_menu(
     // are zero-sized so the keybinding alone — registered globally
     // via `cx.bind_keys` — drives both menu accelerators and
     // anywhere-in-window dispatch.
-    cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &Quit, cx| confirm_quit_then_quit(cx));
     cx.on_action(|_: &About, cx| {
         dispatch_to_app_view(cx, |app, window, cx| app.shortcut_about(window, cx));
     });
@@ -893,6 +893,93 @@ fn handle_reopen(cx: &mut App) {
     ) {
         log::error!("reopen: spawn welcome window: {err}");
     }
+}
+
+/// Quit gate: if any window has a live serial session, show a
+/// confirmation dialog in that window before tearing the whole
+/// app down. Otherwise quit immediately. Wired to the `Quit`
+/// action (Cmd+Q in the menubar) so stray keystrokes don't lose
+/// an active connection or an in-flight X/YMODEM transfer.
+///
+/// Counts these as "live":
+///   * a connected profile (real bytes on the wire)
+///   * an in-flight X/YMODEM transfer (cancelling tears down
+///     the send / receive task immediately)
+///   * an active auto-reconnect retry loop — the user explicitly
+///     left a profile selected expecting Baudrun to reattach
+///     when the port comes back.
+///
+/// "Welcome screen" and "editor open with nothing connected"
+/// don't count: closing the app from there doesn't lose state
+/// the user would care about — the profile store is already
+/// persisted to disk.
+fn confirm_quit_then_quit(cx: &mut App) {
+    // Defer out of the current window-update so the per-window
+    // `handle.update` calls below don't try to re-enter the same
+    // window we're already inside (same gotcha as
+    // `dispatch_to_app_view`: when the Quit action is dispatched
+    // from the menubar, gpui wraps the global handler in
+    // `active_window.update(...)`, and a second update for the
+    // same handle hits "window not found").
+    cx.defer(confirm_quit_then_quit_inner);
+}
+
+fn confirm_quit_then_quit_inner(cx: &mut App) {
+    // Find the first window with a live session. We don't need
+    // to enumerate them all — the dialog goes in front of one
+    // window, and quit affects every window equally.
+    let live_window: Option<gpui::AnyWindowHandle> =
+        cx.windows().into_iter().find(|handle| {
+            handle
+                .update(cx, |_root, window, cx| {
+                    let Some(Some(root)) = window.root::<Root>() else {
+                        return false;
+                    };
+                    let Ok(app_view) = root.read(cx).view().clone().downcast::<AppView>()
+                    else {
+                        return false;
+                    };
+                    app_view.read(cx).has_live_session()
+                })
+                .unwrap_or(false)
+        });
+    let Some(handle) = live_window else {
+        cx.quit();
+        return;
+    };
+    // Dialog in the window that owns the live session, so the
+    // confirmation is anchored to the work that's about to be
+    // lost. `open_alert_dialog` plus `show_cancel(true)` gives
+    // the canonical macOS "Quit / Cancel" pair. `on_ok` fires
+    // when the user clicks Quit; that's where we actually call
+    // `cx.quit()`.
+    let _ = handle.update(cx, |_root, window, cx| {
+        window.open_alert_dialog(cx, |alert, _, _| {
+            // `show_cancel` writes through to `button_props.show_cancel`,
+            // and `button_props(...)` replaces the whole struct — so
+            // call show_cancel ON DialogButtonProps directly to avoid
+            // the chain order silently dropping it. `keyboard(true)`
+            // is already the AlertDialog default but we set it
+            // explicitly so the contract is visible in source.
+            alert
+                .title("Quit Baudrun?")
+                .description(
+                    "A serial session is still active. Quitting will \
+                     disconnect it and cancel any in-flight transfers.",
+                )
+                .button_props(
+                    gpui_component::dialog::DialogButtonProps::default()
+                        .show_cancel(true)
+                        .ok_text("Quit")
+                        .cancel_text("Cancel"),
+                )
+                .keyboard(true)
+                .on_ok(|_, _window, cx| {
+                    cx.quit();
+                    true
+                })
+        });
+    });
 }
 
 fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
