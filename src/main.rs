@@ -1,12 +1,16 @@
-//! Baudrun · alacritty + gpui prototype.
+//! Baudrun binary entry point.
 //!
-//! Checkpoint #5: real serial input. `cargo run -- <port>` opens a
-//! serial port at 9600 8N1, spawns a blocking read thread that ships
-//! bytes into a flume channel, and drains that channel from a gpui
-//! foreground task into `TerminalView::feed_bytes`. A second thread
-//! pumps typed bytes the other direction. With no `<port>` arg the
-//! prototype runs in checkpoint-#4 loopback mode so it stays usable
-//! without hardware on the dev machine.
+//! Wires the data stores (profiles / settings / skins / themes /
+//! highlight packs) under `gpui_platform::application().run(...)`,
+//! installs the macOS menubar + dock menu + reduce-motion global,
+//! and opens the first window. The window root is `app_view::AppView`;
+//! everything past boot is window-driven.
+//!
+//! Optional CLI: `cargo run -- <port>` opens that serial port at
+//! 9600 8N1 before the window opens (power-user sanity check that
+//! bypasses the profile picker). Without an arg, the window boots
+//! to the welcome pane and the user picks a profile from the
+//! sidebar.
 
 mod app_view;
 mod data;
@@ -104,44 +108,6 @@ use actions::{
 /// Mikrotik all default to it. A real settings panel will eventually
 /// parameterize this; for the spike a constant is fine.
 const DEFAULT_BAUD: u32 = 9600;
-
-/// Sample byte stream — what a Cisco IOS session might emit if
-/// you ran `show running-config` on a session with `terminal
-/// monitor` colorization enabled. Mixes:
-///   * default-fg plain text
-///   * SGR named colors (`\x1b[31m` red, `\x1b[36m` cyan, etc.)
-///   * SGR bright colors (`\x1b[91m` bright red etc.)
-///   * SGR reset (`\x1b[0m`) between runs
-///   * Multiple lines + a final cursor-positioning prompt
-///
-/// Only fed at boot when running in loopback mode; with a real
-/// device attached, the device provides its own output.
-const SAMPLE_BYTES: &[u8] = b"\
-\x1b[0m\
-Router> \x1b[36mshow running-config\x1b[0m\r\n\
-\r\n\
-\x1b[90mBuilding configuration...\x1b[0m\r\n\
-\r\n\
-\x1b[90m!\x1b[0m\r\n\
-\x1b[90mversion 15.4\x1b[0m\r\n\
-\x1b[90mservice timestamps debug datetime msec\x1b[0m\r\n\
-\x1b[90mservice password-encryption\x1b[0m\r\n\
-\x1b[90m!\x1b[0m\r\n\
-\r\n\
-\x1b[34minterface GigabitEthernet0/1\x1b[0m\r\n\
-  ip address \x1b[32m10.10.10.1\x1b[0m \x1b[32m255.255.255.0\x1b[0m\r\n\
-  no ip redirects\r\n\
-  duplex full\r\n\
-  speed 1000\r\n\
-\r\n\
-\x1b[34minterface GigabitEthernet0/2\x1b[0m\r\n\
-  \x1b[31mshutdown\x1b[0m\r\n\
-  description \x1b[33mTO-CORE-SW1\x1b[0m\r\n\
-\r\n\
-\x1b[1mbold\x1b[0m \x1b[3mitalic\x1b[0m \x1b[4munderline\x1b[0m \
-\x1b[9mstrike\x1b[0m \x1b[2mdim\x1b[0m \x1b[7minverse\x1b[0m\r\n\
-\r\n\
-\x1b[35mRouter#\x1b[0m ";
 
 fn main() {
     env_logger::init();
@@ -325,11 +291,16 @@ fn main() {
         // wiring still operates on the TerminalView directly).
         let view = terminal;
 
-        match port_path.as_deref() {
-            // CLI fallback path predates the profile system, so it
-            // can't carry per-profile DTR/RTS policies — pass the
-            // default (leave-as-is) policies on every line.
-            Some(path) => match serial_io::open(path, DEFAULT_BAUD, Default::default()) {
+        // CLI port arg: a power-user sanity-check path that bypasses
+        // the profile picker. Useful for "does my port even work"
+        // before fiddling with the editor. No port means "boot
+        // straight into the welcome pane and pick a profile in the
+        // sidebar" — there's no loopback fake-bytes seed anymore;
+        // that scaffolding predates the welcome state.
+        if let Some(path) = port_path.as_deref() {
+            // CLI bypass can't carry per-profile DTR/RTS policies —
+            // pass the default (leave-as-is) policies on every line.
+            match serial_io::open(path, DEFAULT_BAUD, Default::default()) {
                 Ok(channels) => {
                     log::info!("opened serial port {path} at {DEFAULT_BAUD} 8N1");
                     // Hand the write half to the view so its key
@@ -357,18 +328,10 @@ fn main() {
                 Err(e) => {
                     eprintln!(
                         "failed to open serial port {path}: {e}\n\
-                         falling back to loopback mode."
+                         continuing without a connection — open one via \
+                         the sidebar instead."
                     );
-                    seed_loopback(&view, cx);
                 }
-            },
-            None => {
-                eprintln!(
-                    "no serial port specified — running in loopback mode.\n\
-                     usage: cargo run -- <port>      \
-                     (macOS: /dev/tty.usbserial-XXX, Windows: COM3, Linux: /dev/ttyUSB0)"
-                );
-                seed_loopback(&view, cx);
             }
         }
 
@@ -1109,26 +1072,3 @@ fn fallback_themes_store(reason: String) -> Rc<data::themes::Store> {
     )
 }
 
-/// In loopback mode (no device), feed the boot-time sample so the
-/// window opens with colored content rather than a blank grid. Real
-/// serial sessions skip this — the device's own output drives the
-/// screen instead. Repeated `SEED_REPEATS` times so the prototype
-/// has enough content to push earlier lines into alacritty's
-/// scrollback — otherwise the wheel-scroll path can't be exercised
-/// without a chatty device on the wire.
-const SEED_REPEATS: usize = 3;
-fn seed_loopback(view: &gpui::Entity<TerminalView>, cx: &mut App) {
-    view.update(cx, |v, cx| {
-        for i in 0..SEED_REPEATS {
-            // SAMPLE_BYTES doesn't end with a newline, so without
-            // a separator each repeat would land on the trailing
-            // `Router# ` of the previous one. CRLF between them
-            // makes the loopback test view actually look like
-            // three discrete sessions.
-            if i > 0 {
-                v.feed_bytes(b"\r\n", cx);
-            }
-            v.feed_bytes(SAMPLE_BYTES, cx);
-        }
-    });
-}
