@@ -2207,7 +2207,7 @@ impl AppView {
 
     /// Open a fresh window and immediately connect it to the named
     /// profile. Used by the right-click context menu on profile rows.
-    fn connect_profile_in_new_window(
+    pub(crate) fn connect_profile_in_new_window(
         &mut self,
         profile_id: String,
         _window: &mut Window,

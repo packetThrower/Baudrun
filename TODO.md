@@ -270,9 +270,19 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             GitHub" link that calls `cx.open_url` to launch the
             repo in the user's default browser. No accelerator —
             About is menu-only, so no Settings → Shortcuts entry.
-      - [ ] **Dock menu** (macOS) — right-click on the dock icon
-            offers "New Window" + recent profiles for one-click
-            reconnect.
+      - [x] **Dock menu** (macOS). `install_dock_menu` registers
+            a `cx.set_dock_menu` with `New Window` + a separator +
+            up to 10 profiles by stable creation order; clicking a
+            profile dispatches a new `ConnectToProfile { profile_id }`
+            action (hand-derived `Action` with payload, `no_json`
+            since it's never serialized in a keymap). The global
+            handler routes via `dispatch_to_app_view` into the
+            active window's AppView and calls
+            `connect_profile_in_new_window`, mirroring the
+            sidebar right-click → "Open in New Window" flow.
+            Built once at boot — doesn't live-update on profile
+            create/rename/delete because the profile store
+            doesn't emit change events; a relaunch refreshes it.
 
       Branding + bundle metadata
       - [ ] **App icon** — design + bundle the `.icns` (macOS),

@@ -41,7 +41,7 @@ use terminal_view::TerminalView;
 // accelerators (`install_app_menu` reads `effective_shortcut(id)`
 // for the current settings and emits a KeyBinding per action).
 pub(crate) mod actions {
-    use gpui::actions;
+    use gpui::{actions, Action};
     actions!(
         baudrun,
         [
@@ -62,11 +62,23 @@ pub(crate) mod actions {
             FontReset,
         ]
     );
+
+    /// Dock-menu item that opens a new window pre-connected to a
+    /// specific profile id. Carries the profile id as a payload —
+    /// the standard zero-sized `actions!` macro doesn't support
+    /// per-instance data, so this one is hand-derived. `no_json`
+    /// because this action is dispatched from menu clicks only,
+    /// never serialized in a keymap file.
+    #[derive(Clone, PartialEq, Debug, Action)]
+    #[action(namespace = baudrun, no_json)]
+    pub struct ConnectToProfile {
+        pub profile_id: String,
+    }
 }
 use actions::{
-    About, ClearTerminal, Connect, Disconnect, FontDecrease, FontIncrease, FontReset,
-    NewProfile, NewWindow, OpenInNewWindow, Quit, Resume, SendBreak, SendFile,
-    Suspend,
+    About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease,
+    FontIncrease, FontReset, NewProfile, NewWindow, OpenInNewWindow, Quit, Resume,
+    SendBreak, SendFile, Suspend,
 };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
@@ -234,6 +246,7 @@ fn main() {
             highlight_store.clone(),
             themes_store.clone(),
         );
+        install_dock_menu(cx, &profile_store);
 
         let window = open_app_window(
             cx,
@@ -341,6 +354,12 @@ fn install_app_menu(
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.on_action(|_: &About, cx| {
         dispatch_to_app_view(cx, |app, window, cx| app.shortcut_about(window, cx));
+    });
+    cx.on_action(|action: &ConnectToProfile, cx| {
+        let profile_id = action.profile_id.clone();
+        dispatch_to_app_view(cx, move |app, window, cx| {
+            app.connect_profile_in_new_window(profile_id, window, cx);
+        });
     });
 
     // App-level handlers for every shortcut action. There are two
@@ -653,6 +672,48 @@ fn install_menus(cx: &mut App) {
         Menu::new("Window"),
         Menu::new("Help"),
     ]);
+}
+
+/// Right-click menu on the macOS dock icon (no-op on other
+/// platforms — gpui's `set_dock_menu` swallows non-mac calls).
+/// Shows "New Window" plus a recent-profile shortlist: clicking
+/// a profile opens a fresh window already connected to that
+/// profile, mirroring the sidebar's right-click "Open in New
+/// Window" entry.
+///
+/// Built once at boot from the current profile store. Doesn't
+/// live-update when the user creates / renames / deletes a
+/// profile — the profile store doesn't emit change events, and
+/// the dock menu is a discovery affordance rather than a precise
+/// real-time UI. A relaunch refreshes it; the dock UX expectation
+/// is "menu shows what was true when the app started," same
+/// pattern as Recent Files on most other macOS apps.
+///
+/// The profile list is capped at `MAX_DOCK_PROFILES` so the
+/// right-click menu doesn't sprout 50 rows for a user with a
+/// large profile collection — anything past the cap stays
+/// reachable through the sidebar.
+fn install_dock_menu(cx: &App, profile_store: &Rc<data::profiles::Store>) {
+    const MAX_DOCK_PROFILES: usize = 10;
+    let mut items = vec![MenuItem::action("New Window", NewWindow)];
+    // Profile order matches `Store::list` (creation order on
+    // disk). Picking by stable order means the same dock click
+    // always opens the same profile session-to-session, even when
+    // the user is mid-rename — a frequency-sorted list would
+    // jitter and confuse muscle memory.
+    let profiles = profile_store.list();
+    if !profiles.is_empty() {
+        items.push(MenuItem::separator());
+        for profile in profiles.into_iter().take(MAX_DOCK_PROFILES) {
+            items.push(MenuItem::action(
+                profile.name.clone(),
+                ConnectToProfile {
+                    profile_id: profile.id.clone(),
+                },
+            ));
+        }
+    }
+    cx.set_dock_menu(items);
 }
 
 fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
