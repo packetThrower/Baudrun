@@ -449,20 +449,32 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             target).
 
       Bundling
-      - [x] **Pick a bundler — cargo-dist.** Decision factors:
-            (a) generates the entire release workflow (we'd
-            write less GitHub-Actions YAML than rolling cargo-
-            bundle by hand), (b) handles all six platforms in
-            one config (`Cargo.toml`'s `[workspace.metadata.dist]`
-            table), (c) ships a self-update client that the
-            auto-updater sub-item below can lean on instead of
-            re-inventing release-asset parsing, (d) actively
-            maintained by Axo, where cargo-bundle has stalled.
-            Trade-off accepted: cargo-dist's release workflow
-            is opinionated; if we ever need to deviate
-            (custom DMG layout, esoteric signing flow) we'll
-            either eject from it or shell out from the
-            generated workflow.
+      - [x] **Pick a bundler — cargo-packager** (revised from an
+            earlier `cargo-dist` decision). The original
+            cargo-dist pick was based on its workflow generator
+            + axoupdater self-update integration, but a `dist
+            plan` run against the actual crate showed
+            cargo-dist's macOS output is `.tar.xz` of the bare
+            binary — no `.app`, no `.dmg`. Same gap on Linux
+            (no `.deb`/`.rpm`/`.AppImage`) and Windows (no
+            `.msi`/NSIS). cargo-dist is built for CLI tools
+            (ripgrep, bat, eza) shipped via curl-pipe / brew /
+            scoop wrappers, not desktop apps.
+
+            cargo-packager (the Tauri team's spin-off, last
+            release Nov 2025) is the direct replacement for
+            `tauri-action` in our old release.yml. Native
+            support for `.dmg` on macOS, `.msi` + NSIS on
+            Windows, `.deb` + `.AppImage` on Linux. We'll add
+            an `fpm` step for `.rpm` and `.pkg.tar.zst` —
+            same pattern the old Tauri release.yml used for
+            `.pkg.tar.zst` since Tauri's bundler didn't target
+            pacman. Coverage matrix matches what Tauri shipped.
+
+            For the auto-updater sub-item below: axoupdater is
+            usable standalone outside cargo-dist if we want it,
+            otherwise cargo-packager has its own updater plugin
+            in the Tauri ecosystem we can lift.
       - [ ] **Local `.app` build that works.** `cargo bundle
             --release` (or chosen-tool equivalent) produces a
             Baudrun.app that double-clicks open on a fresh macOS
