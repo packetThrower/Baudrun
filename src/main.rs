@@ -814,27 +814,30 @@ fn detect_reduce_motion() -> bool {
 #[cfg(target_os = "windows")]
 fn detect_reduce_motion() -> bool {
     // `SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION)` writes a
-    // BOOL into the supplied buffer: TRUE = client-area animations
-    // are ON, FALSE = the user has flipped the "Show animations
-    // in Windows" toggle off (Settings → Accessibility → Visual
-    // effects → Animation effects). Reduce-motion is therefore
-    // the inverse of the returned BOOL.
+    // Win32 `BOOL` (`i32` in Rust FFI terms) into the supplied
+    // buffer: nonzero = client-area animations are ON, zero = the
+    // user has flipped the "Show animations in Windows" toggle off
+    // (Settings → Accessibility → Visual effects → Animation
+    // effects). Reduce-motion is therefore the inverse of the
+    // returned value.
     //
-    // Inline FFI rather than pulling in `windows-sys` for one
-    // call — gpui_windows already brings windows-sys transitively
-    // but adding a direct dep just to skip ~10 lines of `extern`
-    // boilerplate would bloat the dep graph for no gain.
+    // Inline FFI rather than pulling `windows-sys` in as a direct
+    // dep for one constant + one function — gpui_windows already
+    // brings windows-sys transitively but pinning a direct version
+    // would risk conflicts on every gpui bump. `i32` used directly
+    // instead of a `BOOL` typedef so clippy's
+    // `upper_case_acronyms` lint stays happy on the Windows CI
+    // job.
     const SPI_GETCLIENTAREAANIMATION: u32 = 0x1042;
-    type BOOL = i32;
     unsafe extern "system" {
         fn SystemParametersInfoW(
             uiAction: u32,
             uiParam: u32,
             pvParam: *mut core::ffi::c_void,
             fWinIni: u32,
-        ) -> BOOL;
+        ) -> i32;
     }
-    let mut enabled: BOOL = 1;
+    let mut enabled: i32 = 1;
     let ok = unsafe {
         SystemParametersInfoW(
             SPI_GETCLIENTAREAANIMATION,
