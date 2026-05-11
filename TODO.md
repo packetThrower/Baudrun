@@ -330,13 +330,22 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             .app wrapper. Cargo package name stays kebab-case.
 
       Behavior
-      - [ ] **Single-instance launch** — opening Baudrun while an
-            existing instance is running focuses the existing
-            window instead of spawning a second process. Per
-            platform: macOS handles this via the bundle's
-            `LSMultipleInstancesProhibited` + NSApplication
-            delegate; Windows / Linux need a named-mutex or
-            unix-socket dance.
+      - [x] **Single-instance launch** (macOS). Adds
+            `LSMultipleInstancesProhibited=true` to Info.plist so
+            Launch Services routes any second launch attempt
+            (double-click .app, `open -a Baudrun`, profile-JSON
+            associations) to the existing process. The matching
+            runtime `handle_reopen` (registered via
+            `Application::on_reopen` before `run`) calls
+            `cx.activate(true)` and — when no windows are open —
+            spawns a fresh welcome window via the same
+            `open_app_window` path the menubar uses. Stores are
+            shared with the pre-`run` callback through a new
+            `AppShared` gpui `Global` that `run` populates after
+            it builds the settings_bus Entity. Windows / Linux
+            still need a named-mutex / unix-socket equivalent —
+            tracked separately when those platforms become a
+            primary target.
       - [ ] **Quit confirmation when a session is active.**
             Prompt before tearing down a live serial connection
             on Cmd+Q / window-close-all so a stray keystroke
