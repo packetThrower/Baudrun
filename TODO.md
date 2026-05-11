@@ -317,10 +317,17 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             scheme entries are intentionally left out; they'll
             land with the corresponding Phase 8 sub-items.
             `plutil -lint` clean.
-      - [ ] **Window title + taskbar / dock label** match the
-            bundle's display name across platforms (currently
-            the prototype shows "Baudrun (prototype)" in some
-            titlebars).
+      - [x] **Window title + taskbar / dock label** match the
+            bundle name. Window titles were already "Baudrun" /
+            "Settings · Baudrun" (no `(prototype)` suffix
+            remaining), but `cargo run` dev mode showed
+            "baudrun-prototype" in the macOS menu-bar app slot,
+            Cmd+Tab label, and dock tooltip because non-bundled
+            apps fall back to the binary file name. Added a
+            `[[bin]] name = "Baudrun"` to `prototype/Cargo.toml`
+            so the built executable is `target/debug/Baudrun`
+            and macOS picks "Baudrun" everywhere even without a
+            .app wrapper. Cargo package name stays kebab-case.
 
       Behavior
       - [ ] **Single-instance launch** — opening Baudrun while an

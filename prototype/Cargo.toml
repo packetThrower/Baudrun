@@ -6,6 +6,15 @@ authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
 edition = "2021"
 publish = false
 
+# Bin name = the .app's CFBundleExecutable (and the macOS dev-mode
+# dock tooltip / Cmd+Tab label / menu-bar app name for non-bundled
+# `cargo run`). Capitalised so the menu bar shows "Baudrun" rather
+# than "baudrun-prototype" when launched without a .app wrapper.
+# The Cargo package name stays kebab-case as is conventional.
+[[bin]]
+name = "Baudrun"
+path = "src/main.rs"
+
 [dependencies]
 # Zed's GPU-accelerated UI framework. Pinned to a specific
 # zed-industries/zed commit (the gpui crate is a workspace member
