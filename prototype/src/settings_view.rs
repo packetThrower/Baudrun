@@ -679,6 +679,19 @@ impl SettingsView {
     /// the row vanishes from the dropdown.
     fn delete_active_skin(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let id = self.settings.skin_id.clone();
+        self.delete_named_skin(id, window, cx);
+    }
+
+    /// Per-row delete on the Installed Skins list. Refuses non-
+    /// custom skins. If the skin being deleted is the currently-
+    /// selected one, resets `skin_id` to the built-in default so
+    /// the live UI doesn't keep pointing at a dead id.
+    fn delete_named_skin(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(skin) = self.skins_store.get(&id) else { return };
         if skin.source != "user" {
             return;
@@ -694,9 +707,11 @@ impl SettingsView {
             );
             return;
         }
-        let mut next = self.settings.clone();
-        next.skin_id = skins::DEFAULT_SKIN_ID.to_string();
-        self.commit(next, cx);
+        if self.settings.skin_id == id {
+            let mut next = self.settings.clone();
+            next.skin_id = skins::DEFAULT_SKIN_ID.to_string();
+            self.commit(next, cx);
+        }
         self.rebuild_skin_select(window, cx);
         window.push_notification(
             Notification::success(SharedString::from(format!(
@@ -1389,48 +1404,78 @@ impl SettingsView {
     }
 
     fn appearance_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_is_custom = self
-            .skins_store
-            .get(&self.settings.skin_id)
-            .map(|sk| sk.source == "user")
-            .unwrap_or(false);
-        let mut button_row = div().flex().flex_row().gap_2().child(import_button(
+        // -- App Skin: just the picker now. Import + per-skin
+        // delete moved into the Installed Skins card below to
+        // match the Tauri layout.
+        let app_skin_card = section_card_with_desc(
             s,
-            "Import skin\u{2026}",
-            cx,
-            |this, window, cx| this.start_skin_import(window, cx),
-        ));
-        if active_is_custom {
-            button_row = button_row.child(trash_button(
-                s,
-                "trash-skin",
-                "Delete imported skin",
-                cx,
-                |this, window, cx| this.delete_active_skin(window, cx),
-            ));
-        }
-        let skin_body = div()
+            "App Skin",
+            Some(
+                "How the app chrome (sidebar, panes, buttons) looks. \
+                 Doesn't affect the terminal palette — that's the \
+                 Themes tab.",
+            ),
+            Select::new(&self.skin_select),
+        );
+
+        // -- Installed Skins: import button + list of custom skins
+        // with per-row Remove. Built-ins live in the picker only.
+        let custom_skins: Vec<skins::Skin> = self
+            .skins_store
+            .list()
+            .into_iter()
+            .filter(|sk| sk.source == "user")
+            .collect();
+        let installed_body: gpui::Div = if custom_skins.is_empty() {
+            div().text_size(px(12.0)).text_color(rgba(s.fg_secondary)).child(
+                "No custom skins installed. Use Import to add a skin \
+                 JSON file.",
+            )
+        } else {
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .children(custom_skins.into_iter().map(|sk| self.skin_row(&sk, s, cx)))
+        };
+        let installed_card = div()
+            .w_full()
+            .bg(rgba(s.bg_panel))
+            .border_1()
+            .border_color(rgba(s.border_subtle))
+            .rounded(px(s.radius_lg))
+            .shadow_sm()
+            .px_4()
+            .py_3()
             .flex()
             .flex_col()
-            .gap_2()
-            .child(Select::new(&self.skin_select))
-            .child(button_row);
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .text_size(px(15.0))
+                            .text_color(rgba(s.fg_primary))
+                            .child("Installed Skins"),
+                    )
+                    .child(import_button(
+                        s,
+                        "Import skin\u{2026}",
+                        cx,
+                        |this, window, cx| this.start_skin_import(window, cx),
+                    )),
+            )
+            .child(installed_body);
+
         div()
             .flex()
             .flex_col()
             .gap_3()
-            .child(section_card_with_desc(
-                s,
-                "App Skin",
-                Some(
-                    "How the app chrome (sidebar, panes, buttons) looks. \
-                     Doesn't affect the terminal palette — that's the \
-                     Themes tab. Use Import to add a hand-authored skin \
-                     JSON; it'll appear at the bottom of the picker as \
-                     `(custom)`.",
-                ),
-                skin_body,
-            ))
+            .child(app_skin_card)
             .child(section_card_with_desc(
                 s,
                 "Appearance",
@@ -1441,6 +1486,7 @@ impl SettingsView {
                 ),
                 Select::new(&self.appearance_select),
             ))
+            .child(installed_card)
             .child(section_card_with_desc(
                 s,
                 "Terminal Font Size",
@@ -1461,6 +1507,68 @@ impl SettingsView {
                      Leave blank to use the default (10000).",
                 ),
                 Input::new(&self.scrollback).small().appearance(true),
+            ))
+    }
+
+    /// One row inside the Installed Skins card. Mirrors `theme_row`
+    /// in shape: name + "Custom" tag (with "· dark-only" when the
+    /// skin pinned dark) on the left, trash button on the right.
+    /// Built-ins never reach this builder — the caller filters them
+    /// out before iterating.
+    fn skin_row(
+        &self,
+        skin: &skins::Skin,
+        s: SkinTokens,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let skin_id = skin.id.clone();
+        let trash_id = ElementId::Name(SharedString::from(format!(
+            "trash-skin-{}",
+            skin.id
+        )));
+        let tag = if !skin.supports_light {
+            "Custom \u{00B7} dark-only".to_string()
+        } else {
+            "Custom".to_string()
+        };
+        div()
+            .w_full()
+            .bg(rgba(s.bg_input))
+            .border_1()
+            .border_color(rgba(s.border_subtle))
+            .rounded(px(s.radius_md))
+            .px_3()
+            .py_2()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_3()
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .text_color(rgba(s.fg_primary))
+                            .child(SharedString::from(skin.name.clone())),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(rgba(s.fg_secondary))
+                            .child(tag),
+                    ),
+            )
+            .child(trash_button(
+                s,
+                trash_id,
+                "Remove imported skin",
+                cx,
+                move |this, window, cx| {
+                    this.delete_named_skin(skin_id.clone(), window, cx);
+                },
             ))
     }
 

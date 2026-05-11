@@ -93,10 +93,13 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
       `src/lib/Settings.svelte` + `src/lib/ProfileForm.svelte`.
 
       Settings — Appearance tab
-      - [ ] **Scrollback lines** input (Tauri:
-            `settings.scrollbackLines`, default 10000). Data field
-            exists on `Settings`; UI control + plumb to the
-            TerminalView's `display_offset`-driven scrollback.
+      - [x] **Scrollback lines** input. Done. Appearance tab grew
+            a Scrollback Input matching the Font Size slot.
+            `Settings::scrollback_lines` flows into
+            `TerminalView::new` on boot and `set_scrollback_lines`
+            (which pushes a fresh `term::Config` through
+            `Term::set_options`) on live edits. Status bar shows
+            `<filled>/<max>` on the right.
       - [ ] **Installed Skins list.** Currently only the picker
             select + a trash button when the active selection is
             custom. Tauri renders a full list with per-row delete
