@@ -38,11 +38,9 @@ jobs:
           - runner: macos-26
             arch: arm64
             target: aarch64-apple-darwin
-            packager-arch: aarch64
           - runner: macos-15-intel
             arch: amd64
             target: x86_64-apple-darwin
-            packager-arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
@@ -52,8 +50,17 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # `shared-key: release` makes successive release-tag runs
+      # share the release-mode `target/` cache across tags — `v0.0.2`
+      # inherits `v0.0.1`'s compiled object files for the same
+      # Cargo.lock hash, dropping the 10+ min cold compile to
+      # ~minutes. CI uses the default (no shared-key) so its
+      # debug-mode cache stays separate from these release-mode
+      # artifacts.
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
 
       # pkg-config is needed by serialport's IOKit lookups. libusb
       # itself is vendored via `rusb` ([dependencies] in Cargo.toml),
@@ -111,12 +118,20 @@ jobs:
           mkdir -p release-artifacts
           BUNDLE="target/release"
 
-          # .dmg has cargo-packager's own naming
-          # (Baudrun_<version>_<arch>.dmg). Standardise the user-
-          # facing artifact name to match the previous Tauri
-          # release pattern.
-          cp "${BUNDLE}/Baudrun_${VERSION}_${{ matrix.packager-arch }}.dmg" \
-            "release-artifacts/Baudrun_${VERSION}_${{ matrix.arch }}.dmg"
+          # cargo-packager's .dmg naming uses its own arch labels
+          # (`aarch64` for arm64, `x64` for amd64) — inconsistent
+          # between platforms, and out of step with the
+          # `arm64`/`amd64` matrix labels we expose in the user-
+          # facing filenames. Glob whatever cargo-packager
+          # produced and rename to our convention. There's only
+          # one .dmg per build so the glob is unambiguous.
+          DMG=$(ls "${BUNDLE}"/Baudrun_*.dmg | head -1)
+          if [ -z "$DMG" ]; then
+            echo "no .dmg produced by cargo-packager"
+            ls -la "$BUNDLE"
+            exit 1
+          fi
+          mv "$DMG" "release-artifacts/Baudrun_${VERSION}_${{ matrix.arch }}.dmg"
 
           # Drag-droppable .app zip for users who prefer to skip
           # the .dmg mount-and-drag dance. `ditto -c -k --keepParent`
@@ -158,8 +173,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # See the macOS job's note on `shared-key: release`.
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
 
       - name: Install cargo-packager
         uses: taiki-e/install-action@v2
@@ -180,6 +198,13 @@ jobs:
       # stable tags ship both NSIS + WiX for corporate-deploy use
       # cases that prefer .msi.
       #
+      # The GH Actions ternary `cond && X || Y` returns Y when X
+      # is falsy — and the empty string is falsy. The earlier
+      # form (`contains && '' || '-f wix'`) therefore returned
+      # `'-f wix'` for both branches. Invert the condition (use
+      # `!contains`) so the empty-string fallback is only taken
+      # on the actual pre-release path.
+      #
       # Same `--target` omission as macOS: runner is native, so
       # the default host target matches; passing --target would
       # split paths between `target/<triple>/release/` (what
@@ -187,7 +212,7 @@ jobs:
       # `cargo build --release` produces without --target).
       - name: Build .exe (NSIS) + .msi (stable only)
         shell: cmd
-        run: cargo packager --release -f nsis ${{ contains(github.ref_name, '-') && '' || '-f wix' }}
+        run: cargo packager --release -f nsis ${{ !contains(github.ref_name, '-') && '-f wix' || '' }}
 
       - name: Stage artifacts
         shell: pwsh
@@ -247,8 +272,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # See the macOS job's note on `shared-key: release`.
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
 
       # libudev is needed at link time by the serialport crate
       # (tty/serial enumeration via libudev-sys). libusb is
