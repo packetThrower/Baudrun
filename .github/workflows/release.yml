@@ -284,7 +284,9 @@ jobs:
       # pkg-config probes need xkbcommon / wayland / x11 / xcb
       # headers — same set as CI. AppImage tooling needs file +
       # fuse3 + libfuse2 (AppImage runtime check on AppImageTool
-      # invocation).
+      # invocation). libarchive-tools brings in `bsdtar`, which
+      # `fpm -t pacman` shells out to for the .pkg.tar.zst
+      # mtree pass.
       - name: Install Linux build deps
         run: |
           sudo apt-get update
@@ -296,7 +298,8 @@ jobs:
             libxcb-xkb-dev libxcb-cursor-dev libxcb-shape0-dev \
             libxcb-xfixes0-dev libxcb-render0-dev \
             pkg-config \
-            file fuse3 libfuse2 ruby-dev
+            file fuse3 libfuse2 ruby-dev \
+            libarchive-tools
 
       - name: Install cargo-packager
         uses: taiki-e/install-action@v2
