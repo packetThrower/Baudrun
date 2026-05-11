@@ -122,3 +122,44 @@ codegen-units = 1
 lto = true
 opt-level = 3
 strip = true
+
+# cargo-packager bundler config. `cargo packager --release` reads
+# this table, builds the release binary via `before-packaging-command`,
+# wraps it into Baudrun.app using our hand-curated Info.plist + .icns,
+# and (per `formats`) optionally produces a .dmg, .msi/.exe, .deb,
+# .AppImage, or .pacman archive depending on host OS. The `--formats`
+# CLI flag overrides this list for one-off local builds.
+#
+# Resources baked into the binary via `include_str!` (builtin_skins.json,
+# builtin_themes.json, resources/highlight/*) deliberately aren't
+# listed here — they ship inside the .text section of Baudrun, so
+# copying them into Resources/ would be dead weight.
+[package.metadata.packager]
+product-name = "Baudrun"
+identifier = "io.github.packetThrower.Baudrun"
+category = "DeveloperTool"
+copyright = "© 2025–2026 packetThrower / Baudrun contributors"
+homepage = "https://packetthrower.github.io/Baudrun/"
+authors = ["Will Lehnertz"]
+publisher = "packetThrower"
+description = "Serial terminal for network engineers. alacritty_terminal + gpui."
+long-description = """
+Baudrun is a cross-platform (macOS + Windows + Linux) serial terminal \
+for network devices. Built for switch consoles, router CLIs, and other \
+serial-attached gear. Profile-based: each device gets a named profile \
+storing port, baud rate, framing, flow control, line ending, and \
+optional send-on-connect sequences. One-click connect; no \
+`screen /dev/cu.usbserial-...` from memory.\
+"""
+before-packaging-command = "cargo build --release"
+icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
+
+[package.metadata.packager.macos]
+# Reuse the hand-curated Info.plist from Phase 8 #6 instead of
+# letting cargo-packager generate one from the table above —
+# the existing plist carries LSMultipleInstancesProhibited (single-
+# instance launch), NSHighResolutionCapable, and a stable
+# CFBundleIdentifier the user's keychain already trusts from the
+# Tauri build.
+info-plist-path = "resources/Info.plist"
+minimum-system-version = "11.0"

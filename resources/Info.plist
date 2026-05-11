@@ -2,16 +2,19 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   macOS bundle metadata for Baudrun. Lives at the source of truth
-  here; Phase 9's bundling pipeline (cargo-bundle / cargo-dist /
-  whatever lands) copies this into the .app's Contents/ at build
-  time. CFBundleIdentifier matches the Tauri version's identifier
-  so existing macOS keychain entries (passwords, authorization
-  prompts) keep working across the cutover.
+  here; cargo-packager's `info-plist-path` config reads from here
+  and writes the result into Baudrun.app/Contents/Info.plist at
+  bundle time. cargo-packager merges these keys with its own
+  defaults — anything we don't specify (CSResourcesFileMapped,
+  CFBundleDevelopmentRegion, ...) gets a sensible value injected
+  by the bundler. CFBundleIdentifier matches the Tauri version's
+  identifier so existing macOS keychain entries (passwords,
+  authorization prompts) keep working across the cutover.
 
-  Values intentionally hard-coded rather than templated — this
-  prototype is a single-version-at-a-time artifact, and Phase 9
-  will introduce build-script generation when we start cutting
-  signed release builds.
+  Values intentionally hard-coded rather than templated — Phase 9
+  may introduce build-script generation when we start cutting
+  signed release builds, but the prototype is a single-version-
+  at-a-time artifact today.
 -->
 <plist version="1.0">
 <dict>
@@ -28,8 +31,15 @@
     <string>Baudrun</string>
     <key>CFBundleDisplayName</key>
     <string>Baudrun</string>
+    <!--
+      Must match the file name of the binary inside
+      Contents/MacOS/. The Cargo `[[bin]] name = "Baudrun"`
+      (capitalised) is what cargo-packager writes there;
+      LaunchServices uses this key to identify which binary to
+      spawn when the bundle is activated.
+    -->
     <key>CFBundleExecutable</key>
-    <string>baudrun</string>
+    <string>Baudrun</string>
     <key>CFBundleIdentifier</key>
     <string>io.github.packetThrower.Baudrun</string>
 

@@ -475,13 +475,26 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             usable standalone outside cargo-dist if we want it,
             otherwise cargo-packager has its own updater plugin
             in the Tauri ecosystem we can lift.
-      - [ ] **Local `.app` build that works.** `cargo bundle
-            --release` (or chosen-tool equivalent) produces a
-            Baudrun.app that double-clicks open on a fresh macOS
-            user. Picks up our `prototype/resources/Info.plist`
-            + `resources/icons/icon.icns` (and overrides Cargo's
-            default Info.plist with our hand-curated one). No
-            signing yet — just a working .app.
+      - [x] **Local `.app` build that works.** `cargo packager
+            --release -f app -f dmg` produces a usable Baudrun.app
+            (binary at `Contents/MacOS/Baudrun` matching our
+            `[[bin]] name`, the hand-curated `resources/Info.plist`
+            copied to `Contents/Info.plist`,
+            `resources/icons/icon.icns` copied to
+            `Contents/Resources/icon.icns`) plus a 5.5 MB
+            `Baudrun_0.0.1_aarch64.dmg` with the standard
+            `Baudrun.app` + `/Applications` symlink layout for
+            drag-to-install. Launch verified — process appears
+            under `Baudrun.app/Contents/MacOS/Baudrun` and the
+            dock icon picks up correctly (no need for the
+            dev-mode `install_macos_dock_icon` override in this
+            path because the .icns is at the bundle's standard
+            location). `[package.metadata.packager]` config lives
+            in Cargo.toml; merges with cargo-packager's defaults
+            for the values we don't specify. CFBundleExecutable
+            in `resources/Info.plist` corrected from `baudrun`
+            (lowercase, mismatch with binary file name) to
+            `Baudrun`. No signing yet.
       - [ ] **Windows + Linux smoke builds.** `cargo build
             --release` succeeds on both; .msi / .deb / AppImage
             output once the bundler choice settles. Lower
