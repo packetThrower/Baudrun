@@ -44,7 +44,20 @@ gpui = { git = "https://github.com/zed-industries/zed" }
 # the convenience `application()` constructor (uses
 # `MacPlatform`/`WindowsPlatform`/etc. under cfg gates) that
 # replaces the old `Application::new()`.
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
+# `wayland` / `x11` aren't in `gpui_platform`'s default features, and
+# Zed's workspace pins `gpui_linux = { ..., default-features = false }`
+# so the Linux backend's Wayland + X11 arms get cfg'd out unless we
+# opt in explicitly. Without them, `gpui::guess_compositor()`
+# (which is gated on gpui's own wayland/x11 features that ARE on
+# by default) returns "Wayland" inside any Wayland session, but the
+# matching `Some("Wayland") =>` arm in `gpui_linux/src/linux.rs`
+# isn't compiled — the match falls through to `unreachable!()` and
+# Baudrun panics before the window opens. Crash signature was
+# `internal error: entered unreachable code` at
+# `gpui_linux/src/linux.rs:55:14`. Enabling both features here
+# matches the macOS / Windows feature surface gpui already gives
+# us by default, no behaviour change on those platforms.
 
 # alacritty's VT escape parser + grid state. Not the renderer — the
 # renderer is alacritty's own OpenGL code, which we deliberately do
