@@ -181,6 +181,49 @@ optional send-on-connect sequences. One-click connect; no \
 before-packaging-command = "cargo build --release"
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
 
+[package.metadata.packager.deb]
+# Runtime dependencies for the .deb. dpkg/apt uses this list to
+# auto-install missing libs at `apt install ./baudrun.deb`. The
+# wayland/x11 surface gpui_linux pulls in needs all of these
+# present at runtime — without an explicit `depends`, a fresh
+# Ubuntu install errors out with
+# `error while loading shared libraries: libxkbcommon-x11.so.0`
+# the first time the user double-clicks Baudrun. Package names
+# are the apt runtime names (so libxkbcommon-x11-0, not
+# libxkbcommon-x11-dev). Versions left unpinned — apt picks the
+# distro's current shipping version, matching whatever
+# user-space's already running.
+depends = [
+  "libxkbcommon0",
+  "libxkbcommon-x11-0",
+  "libwayland-client0",
+  "libwayland-cursor0",
+  "libx11-6",
+  "libxcb1",
+  "libxcb-cursor0",
+  "libxcb-randr0",
+  "libxcb-render0",
+  "libxcb-shape0",
+  "libxcb-xfixes0",
+  "libxcb-xkb1",
+  "libfontconfig1",
+  "libfreetype6",
+  "libudev1",
+]
+
+# Extra files installed alongside the binary. cargo-packager's
+# .deb already lays down the binary at /usr/bin/Baudrun and the
+# icon at /usr/share/icons/...; this `files` table adds the udev
+# rule (so /dev/ttyUSB* is accessible without a dialout-group
+# dance) and the freedesktop .desktop entry (so the app shows up
+# in the Activities overview / app launcher).
+#
+# The udev rule won't take effect until a reload + USB replug —
+# .deb postinst hooks aren't exposed by cargo-packager 0.11, so
+# users hit the EACCES path first and our `friendly_open_error`
+# message in `app_view.rs` walks them through the recovery steps.
+files = { "packaging/linux/60-baudrun-serial.rules" = "/usr/lib/udev/rules.d/60-baudrun-serial.rules", "packaging/linux/baudrun.desktop" = "/usr/share/applications/baudrun.desktop", "resources/icons/icon.png" = "/usr/share/icons/hicolor/512x512/apps/baudrun.png" }
+
 [package.metadata.packager.macos]
 # Reuse the hand-curated Info.plist from Phase 8 #6 instead of
 # letting cargo-packager generate one from the table above —

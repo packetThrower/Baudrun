@@ -359,12 +359,32 @@ jobs:
           cp resources/icons/icon.png pkg/usr/share/icons/hicolor/512x512/apps/baudrun.png
 
           mkdir -p release-artifacts
+          # Runtime libs matching the wayland+x11+font-kit surface
+          # gpui_linux pulls in. The Cargo.toml deb metadata
+          # carries the equivalent list for apt — keep these two
+          # lists in lockstep when bumping. fpm `--depends` takes
+          # one flag per dep; rpm's resolver matches them against
+          # SONAMEs the system provides.
           fpm -s dir -t rpm -C pkg \
             --name baudrun --version "$VERSION" --architecture "$ARCH" \
             --license GPL-3.0-or-later \
             --description "Serial terminal for network engineers." \
             --url "https://packetthrower.github.io/Baudrun/" \
             --vendor "packetThrower" --maintainer "packetThrower" \
+            --depends libxkbcommon.so.0 \
+            --depends libxkbcommon-x11.so.0 \
+            --depends libwayland-client.so.0 \
+            --depends libwayland-cursor.so.0 \
+            --depends libX11.so.6 \
+            --depends libxcb.so.1 \
+            --depends libxcb-cursor.so.0 \
+            --depends libxcb-randr.so.0 \
+            --depends libxcb-render.so.0 \
+            --depends libxcb-shape.so.0 \
+            --depends libxcb-xfixes.so.0 \
+            --depends libxcb-xkb.so.1 \
+            --depends libfontconfig.so.1 \
+            --depends libfreetype.so.6 \
             --depends libudev.so.1 \
             --after-install packaging/linux/baudrun-postinstall.sh \
             --package "release-artifacts/Baudrun-${VERSION}-1.${ARCH}.rpm"

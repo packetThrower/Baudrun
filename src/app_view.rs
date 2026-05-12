@@ -949,9 +949,9 @@ impl AppView {
                 Some(c) => c,
                 None => {
                     let msg = last_err
-                        .map(|e| e.to_string())
-                        .unwrap_or_else(|| "unknown".into());
-                    self.connect_error = Some(format!("open {port}: {msg}"));
+                        .map(|e| friendly_open_error(&port, &e))
+                        .unwrap_or_else(|| format!("open {port}: unknown"));
+                    self.connect_error = Some(msg);
                     return;
                 }
             }
@@ -1580,6 +1580,12 @@ impl AppView {
                     title: Some("Settings · Baudrun".into()),
                     ..Default::default()
                 }),
+                // Same app_id as the main window so GNOME / KDE
+                // group the Settings window under the same dock
+                // / taskbar icon — otherwise the WM treats it as
+                // an unrelated app and shows a generic icon next
+                // to the real one.
+                app_id: Some("Baudrun".into()),
                 ..Default::default()
             },
             move |window, cx| {
@@ -2931,6 +2937,13 @@ pub fn open_app_window(
                 title: Some("Baudrun".into()),
                 ..Default::default()
             }),
+            // app_id matches `StartupWMClass=Baudrun` in
+            // packaging/linux/baudrun.desktop so GNOME / KDE can
+            // associate the live window with the installed
+            // .desktop entry and show the Baudrun dock / taskbar
+            // icon. No-op on macOS (CFBundleIdentifier handles
+            // this) and on Windows (PE resource icon).
+            app_id: Some("Baudrun".into()),
             ..Default::default()
         },
         move |window, cx| {
@@ -3515,6 +3528,35 @@ fn about_dialog_body() -> impl IntoElement {
                 .on_click(|_evt, _window, cx| cx.open_url(GITHUB_URL))
                 .child("View on GitHub"),
         )
+}
+
+/// Turn a `serialport::Error` from the open path into a string the
+/// UI can render directly. On Linux a permission-denied error is
+/// almost always a missing-udev-rule / dialout-group situation,
+/// so we append a concrete fix-up hint there rather than just
+/// showing the bare "Permission denied" text — the same enrich
+/// the legacy `data::serial::session::enrich_open_error` did,
+/// but at the right call site for the live serial-io path.
+fn friendly_open_error(port: &str, err: &serialport::Error) -> String {
+    let base = err.to_string();
+    #[cfg(target_os = "linux")]
+    {
+        let is_perm = matches!(err.kind(), serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied))
+            || base.to_ascii_lowercase().contains("permission denied");
+        if is_perm {
+            return format!(
+                "open {port}: {base} — your user can't access this serial port. \
+                 Fix: install Baudrun's udev rule (already done if you used the \
+                 .deb / .rpm / .pkg.tar.zst installer; rerun the installer if it \
+                 didn't take), then unplug + replug the USB adapter. \
+                 As a one-off workaround: `sudo chmod 666 {port}` opens it for \
+                 the current plug-in. The legacy dialout-group flow \
+                 (`sudo usermod -aG dialout $USER` + log out + log in) also \
+                 works."
+            );
+        }
+    }
+    format!("open {port}: {base}")
 }
 
 fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
