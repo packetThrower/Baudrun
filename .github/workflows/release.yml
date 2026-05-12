@@ -406,30 +406,41 @@ jobs:
           # Runtime libs matching the wayland+x11+font-kit surface
           # gpui_linux pulls in. The Cargo.toml deb metadata
           # carries the equivalent list for apt — keep these two
-          # lists in lockstep when bumping. fpm `--depends` takes
-          # one flag per dep; rpm's resolver matches them against
-          # SONAMEs the system provides.
+          # lists in lockstep when bumping.
+          #
+          # `()(64bit)` arch qualifier on every SONAME: RPM-based
+          # distros (Fedora / openSUSE / RHEL / Mageia / …)
+          # auto-generate library `Provides:` entries as
+          # `libfoo.so.N()(64bit)` on 64-bit arches — both
+          # aarch64 and x86_64 use the same 64bit token. Without
+          # the suffix, dnf / zypper see our bare `libfoo.so.N`
+          # Requires and refuse to match against
+          # `libfoo.so.N()(64bit)` Provides, surfacing as
+          # "nothing provides libX11.so.6" at install time. If
+          # we ever add an i686 arch the suffix becomes
+          # `()(32bit)` — gate per-ARCH then. Until then, both
+          # the architectures we ship are 64-bit.
           fpm -s dir -t rpm -C pkg \
             --name baudrun --version "$VERSION" --architecture "$ARCH" \
             --license GPL-3.0-or-later \
             --description "Serial terminal for network engineers." \
             --url "https://packetthrower.github.io/Baudrun/" \
             --vendor "packetThrower" --maintainer "packetThrower" \
-            --depends libxkbcommon.so.0 \
-            --depends libxkbcommon-x11.so.0 \
-            --depends libwayland-client.so.0 \
-            --depends libwayland-cursor.so.0 \
-            --depends libX11.so.6 \
-            --depends libxcb.so.1 \
-            --depends libxcb-cursor.so.0 \
-            --depends libxcb-randr.so.0 \
-            --depends libxcb-render.so.0 \
-            --depends libxcb-shape.so.0 \
-            --depends libxcb-xfixes.so.0 \
-            --depends libxcb-xkb.so.1 \
-            --depends libfontconfig.so.1 \
-            --depends libfreetype.so.6 \
-            --depends libudev.so.1 \
+            --depends 'libxkbcommon.so.0()(64bit)' \
+            --depends 'libxkbcommon-x11.so.0()(64bit)' \
+            --depends 'libwayland-client.so.0()(64bit)' \
+            --depends 'libwayland-cursor.so.0()(64bit)' \
+            --depends 'libX11.so.6()(64bit)' \
+            --depends 'libxcb.so.1()(64bit)' \
+            --depends 'libxcb-cursor.so.0()(64bit)' \
+            --depends 'libxcb-randr.so.0()(64bit)' \
+            --depends 'libxcb-render.so.0()(64bit)' \
+            --depends 'libxcb-shape.so.0()(64bit)' \
+            --depends 'libxcb-xfixes.so.0()(64bit)' \
+            --depends 'libxcb-xkb.so.1()(64bit)' \
+            --depends 'libfontconfig.so.1()(64bit)' \
+            --depends 'libfreetype.so.6()(64bit)' \
+            --depends 'libudev.so.1()(64bit)' \
             --after-install packaging/linux/baudrun-postinstall.sh \
             --package "release-artifacts/Baudrun-${VERSION}-1.${ARCH}.rpm"
 
