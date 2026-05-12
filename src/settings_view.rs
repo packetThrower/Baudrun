@@ -23,7 +23,7 @@ use gpui_component::{
     notification::Notification,
     select::{Select, SelectEvent, SelectItem, SelectState},
     tooltip::Tooltip,
-    IndexPath, Root, Sizable, WindowExt,
+    IndexPath, Root, Sizable, TitleBar, WindowExt,
 };
 
 use crate::data::appdata;
@@ -1489,6 +1489,26 @@ impl Render for SettingsView {
                     .size_full()
                     .flex()
                     .flex_col()
+                    // Custom title bar — see the matching
+                    // comment on the main window's render in
+                    // `app_view.rs`. Label is "Settings" (not
+                    // "Settings · Baudrun") so the two open
+                    // windows stay visually distinct without
+                    // duplicating the parent app name; the OS
+                    // taskbar still gets the full title from
+                    // `WindowOptions.titlebar.title`.
+                    .child(
+                        TitleBar::new().child(
+                            div()
+                                .size_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(12.0))
+                                .text_color(rgba(s.fg_secondary))
+                                .child("Settings"),
+                        ),
+                    )
                     .child(window_header(
                         s,
                         &self.filter_input,

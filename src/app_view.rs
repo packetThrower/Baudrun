@@ -40,7 +40,7 @@ use gpui_component::{
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
     tooltip::Tooltip,
-    Disableable, IndexPath, Root, Sizable, Theme, ThemeMode, WindowExt,
+    Disableable, IndexPath, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
 };
 use gpui::SharedString;
 
@@ -1576,9 +1576,22 @@ impl AppView {
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                // `appears_transparent` + `traffic_light_position`
+                // come from `TitleBar::title_bar_options()`; we
+                // preserve `title` so the OS taskbar / dock /
+                // window-list still labels the window. On macOS
+                // the native title bar paints transparently and
+                // the traffic lights float over our custom
+                // `TitleBar` widget (added at the top of the
+                // SettingsView render); on Windows / Linux the
+                // native chrome is hidden entirely and the
+                // widget draws its own min/max/close controls.
+                // Without this swap GNOME-Wayland (which refuses
+                // xdg-decoration) renders no title bar at all,
+                // leaving the window unmovable.
                 titlebar: Some(TitlebarOptions {
                     title: Some("Settings · Baudrun".into()),
-                    ..Default::default()
+                    ..TitleBar::title_bar_options()
                 }),
                 // Same app_id as the main window so GNOME / KDE
                 // group the Settings window under the same dock
@@ -2933,9 +2946,22 @@ pub fn open_app_window(
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
+            // `appears_transparent` + `traffic_light_position`
+            // come from `TitleBar::title_bar_options()`; we
+            // preserve `title` so the OS taskbar / dock /
+            // window-list still labels the window. The custom
+            // `TitleBar` widget (added at the top of the AppView
+            // render) draws the visible chrome — on macOS the
+            // native title bar paints transparently so the
+            // traffic lights float over the widget; on
+            // Windows / Linux the native chrome is hidden and
+            // the widget draws its own min/max/close controls.
+            // Required for GNOME-Wayland, where the compositor
+            // refuses xdg-decoration and a server-side title bar
+            // is never rendered.
             titlebar: Some(TitlebarOptions {
                 title: Some("Baudrun".into()),
-                ..Default::default()
+                ..TitleBar::title_bar_options()
             }),
             // app_id matches `StartupWMClass=Baudrun` in
             // packaging/linux/baudrun.desktop so GNOME / KDE can
@@ -3184,6 +3210,28 @@ impl Render for AppView {
                     .size_full()
                     .flex()
                     .flex_col()
+                    // Custom title bar — paired with
+                    // `TitleBar::title_bar_options()` on the
+                    // WindowOptions side, this draws the visible
+                    // chrome (drag area + min/max/close on
+                    // Win/Linux, or transparent area behind the
+                    // macOS traffic lights). Single source of
+                    // truth for the title bar UI across all
+                    // platforms so GNOME-Wayland (where the
+                    // server refuses xdg-decoration) gets the
+                    // same chrome users see on macOS / Windows.
+                    .child(
+                        TitleBar::new().child(
+                            div()
+                                .size_full()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(12.0))
+                                .text_color(rgba(s.fg_secondary))
+                                .child("Baudrun"),
+                        ),
+                    )
                     .child(
                         div()
                             .flex_1()
