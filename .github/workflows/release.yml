@@ -297,6 +297,7 @@ jobs:
             libx11-dev libxcb1-dev libxcb-randr0-dev \
             libxcb-xkb-dev libxcb-cursor-dev libxcb-shape0-dev \
             libxcb-xfixes0-dev libxcb-render0-dev \
+            libfontconfig1-dev libfreetype-dev \
             pkg-config \
             file fuse3 libfuse2 ruby-dev \
             libarchive-tools
