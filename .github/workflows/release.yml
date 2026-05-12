@@ -339,6 +339,50 @@ jobs:
       - name: Build .deb + .AppImage
         run: cargo packager --release -f deb -f appimage
 
+      # cargo-packager 0.11 doesn't expose .deb postinst hooks, so
+      # we patch the freshly-built .deb to inject one that reloads
+      # udev rules + retriggers attached tty/usb devices. Matches
+      # what the old Tauri release.yml shipped via
+      # `tauri.conf.json`'s `postInstallScript`. Without this,
+      # users install the .deb, get `/dev/ttyUSB0: Permission
+      # denied`, and have to manually unplug-replug or shell
+      # `udevadm control --reload` themselves before the udev
+      # rule we ship at /usr/lib/udev/rules.d/60-baudrun-serial.rules
+      # takes effect.
+      - name: Inject .deb postinst (udev reload)
+        run: |
+          set -e
+          DEB=$(ls target/release/*.deb | head -1)
+          if [ -z "$DEB" ]; then
+            echo "no .deb produced by cargo-packager — nothing to patch"
+            exit 0
+          fi
+          echo "Patching $DEB with postinst hook"
+
+          WORK=$(mktemp -d)
+          dpkg-deb -R "$DEB" "$WORK"
+          mkdir -p "$WORK/DEBIAN"
+
+          # Copy the same script the .rpm + .pacman builds use via
+          # fpm's --after-install, so all three formats activate
+          # the udev rule the same way. `-x` lets dpkg recognise
+          # the maintainer script.
+          cp packaging/linux/baudrun-postinstall.sh "$WORK/DEBIAN/postinst"
+          chmod 0755 "$WORK/DEBIAN/postinst"
+
+          # postrm fires the same reload on uninstall so the rule
+          # going away (or being replaced on upgrade) re-triggers
+          # tty/usb permission resolution. Same script handles
+          # both — its check for /run/udev no-ops in chroots.
+          cp packaging/linux/baudrun-postinstall.sh "$WORK/DEBIAN/postrm"
+          chmod 0755 "$WORK/DEBIAN/postrm"
+
+          # Rebuild in place. xz is what cargo-packager itself uses;
+          # specifying it explicitly avoids dpkg-deb's default
+          # which may differ between Ubuntu releases.
+          dpkg-deb -Z xz -b "$WORK" "$DEB"
+          rm -rf "$WORK"
+
       - name: Build .rpm via fpm
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
