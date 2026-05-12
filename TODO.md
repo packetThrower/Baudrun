@@ -2,16 +2,19 @@
 
 ## Migration: alacritty + gpui
 
-Active multi-phase rewrite on the `experiments/alacritty-gpui`
-branch. The xterm.js + Tauri stack had unfixable per-keystroke
-typing latency on Windows; the alacritty_terminal + gpui prototype
-matches PuTTY/screen on the same hardware after the read-side
-polling fix landed in `b076aec`. All migration work stays on this
-branch until full feature parity with `main`, then we cut over.
+The alacritty_terminal + gpui rewrite is now `main`. The pre-rewrite
+xterm.js + Tauri code (which had unfixable per-keystroke typing
+latency on Windows) lives on `tauri-archive` for back-port reference.
+The cutover happened as a branch rename — the experiments work moved
+to `main` and the Tauri history moved to `tauri-archive` — rather
+than as a merge, so the gpui history is linear and the Tauri history
+stays untouched. Releases up to `v0.9.5` (the last stable Tauri
+build) and the `v0.9.6-beta.*` line came from `tauri-archive`; the
+`v0.9.7-alpha.*` line and forward come from the gpui `main`.
 
-macOS is the primary dev/test target during migration. Windows +
-Linux are kept in mind in code, verified periodically — Linux less
-often since gpui's Linux backend is the least-mature of the three.
+macOS is the primary dev / test target. Windows + Linux are kept in
+mind in code, verified periodically — Linux less often since gpui's
+Linux backend is the least-mature of the three.
 
 Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
 
@@ -430,9 +433,9 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             drop GTK / WebKit / soup / appindicator and add
             xkbcommon / wayland / x11 / xcb for `gpui_linux`,
             macOS / Windows installs are unchanged. Triggers
-            on pushes / PRs against both `main` and
-            `experiments/alacritty-gpui` so the workflow keeps
-            running before and after the eventual merge.
+            on pushes / PRs against `main` only — the
+            `experiments/alacritty-gpui` trigger was dropped
+            when the rewrite branch was renamed to `main`.
             Cleaned up 20 clippy lints that had accumulated
             during Phase 2–8 (deprecated NSImage::lockFocus,
             field-reassign-with-default in terminal_grid, dead
@@ -598,8 +601,12 @@ Phases 0–1 are foundation; 2–6 are mostly parallelizable after that.
             helper.
 - [ ] **Phase 10 — Polish & cutover.** Cross-platform perf passes.
       Migration of existing user data (profiles, themes) from old
-      app's config dir. Beta on the experiments branch. `git merge
-      experiments/alacritty-gpui → main`. Cut a `1.0.0-rc`.
+      app's config dir. Alpha + beta runs (`v0.9.7-alpha.*` /
+      `v0.9.7-beta.*`) shake out cross-platform regressions on the
+      now-`main` branch. Once Phase 9 (signing + auto-updater) ships
+      stable, cut a `1.0.0-rc`. (The branch cutover from
+      `experiments/alacritty-gpui` → `main` already happened as a
+      rename — old `main` is now `tauri-archive`.)
 
 Risks tracked alongside the plan:
 - gpui-component bridge crate stalling on crates.io, leaving us on

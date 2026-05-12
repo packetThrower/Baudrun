@@ -49,15 +49,16 @@ Developed in close collaboration with Claude (Anthropic). See
   </picture>
 </p>
 
-> **Status — active rewrite.** The `main` branch and all shipping
-> Releases use a Tauri v2 + Svelte 5 + xterm.js stack. The
-> [`experiments/alacritty-gpui`](https://github.com/packetThrower/Baudrun/tree/experiments/alacritty-gpui)
-> branch is replacing the entire stack with `alacritty_terminal` for VT
-> parsing and Zed's [`gpui`](https://www.gpui.rs/) for rendering — same
-> features, native window, no embedded browser. The Tauri version stays
-> the shipping artifact until the rewrite ships. Install instructions
-> below still produce the Tauri build; the "Building from source"
-> section covers the gpui rewrite.
+> **Status — mainline rewrite.** `main` is now the
+> `alacritty_terminal` + [`gpui`](https://www.gpui.rs/) build — same
+> features as the Tauri version, native window, no embedded browser.
+> The last shipping Tauri release (**v0.9.5**) and earlier are still on
+> the [Releases page](https://github.com/packetThrower/Baudrun/releases),
+> and their source lives on the
+> [`tauri-archive`](https://github.com/packetThrower/Baudrun/tree/tauri-archive)
+> branch. Alpha builds of the gpui rewrite ship as `v0.9.x-alpha.N`
+> pre-releases; the next stable will be cut once Phase 9 (signing /
+> notarization / auto-updater) lands.
 
 ## Documentation
 
@@ -148,31 +149,12 @@ are planned — see [TODO.md](TODO.md).
 
 ## Building from source
 
-Two build paths depending on the branch you're on.
-
-### `main` — Tauri v2 + Svelte 5 build
-
-Prerequisites: Rust stable, Node 20+, and the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
-platform.
-
-```bash
-git clone git@github.com:packetThrower/Baudrun.git
-cd Baudrun
-npm install                              # pulls Tauri CLI + frontend deps
-npm run tauri dev                        # hot-reload dev (Rust + Vite)
-npm run tauri build                      # production bundle for host arch
-```
-
-System libraries on Linux: `gtk3-dev`, `webkit2gtk-4.1-dev`, `libsoup-3.0-dev`,
-`libayatana-appindicator3-dev`, `librsvg2-dev`, `libusb-1.0-0-dev`, `libudev-dev`.
-
-### `experiments/alacritty-gpui` — alacritty + gpui rewrite
+### `main` — alacritty + gpui build
 
 Single-crate Rust project at the repo root. No Node, no webview.
 
 ```bash
-git clone -b experiments/alacritty-gpui git@github.com:packetThrower/Baudrun.git
+git clone git@github.com:packetThrower/Baudrun.git
 cd Baudrun
 cargo run                                # dev launch (loopback mode if no port)
 cargo run -- /dev/cu.usbserial-XXX       # dev launch attached to a port
@@ -187,9 +169,30 @@ System libraries:
 - **Arch**: `sudo pacman -S libusb pkgconf`
 - **Windows**: nothing extra; the gpui DirectX backend ships with Windows 10+.
 
-The rewrite is on the
-[Phase 8 / Phase 9 punch list in TODO.md](TODO.md); not yet shipping. Drivers
-for code-signing, notarization, and an auto-updater land with Phase 9.
+Outstanding work tracked in the
+[Phase 9 punch list in TODO.md](TODO.md); macOS signing / notarization, the
+Windows code-signing pipeline, and the auto-updater are the gating items
+before the next stable Release.
+
+### `tauri-archive` — Tauri v2 + Svelte 5 build (legacy)
+
+The pre-rewrite stack that built every Release up to `v0.9.5`. Kept buildable
+for back-porting fixes only; new feature work happens on `main`.
+
+Prerequisites: Rust stable, Node 20+, and the
+[Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
+platform.
+
+```bash
+git clone -b tauri-archive git@github.com:packetThrower/Baudrun.git
+cd Baudrun
+npm install                              # pulls Tauri CLI + frontend deps
+npm run tauri dev                        # hot-reload dev (Rust + Vite)
+npm run tauri build                      # production bundle for host arch
+```
+
+System libraries on Linux: `gtk3-dev`, `webkit2gtk-4.1-dev`, `libsoup-3.0-dev`,
+`libayatana-appindicator3-dev`, `librsvg2-dev`, `libusb-1.0-0-dev`, `libudev-dev`.
 
 ## Project layout
 

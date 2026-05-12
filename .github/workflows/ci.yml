@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - experiments/alacritty-gpui
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
@@ -22,7 +21,6 @@ on:
   pull_request:
     branches:
       - main
-      - experiments/alacritty-gpui
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
