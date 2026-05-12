@@ -2618,46 +2618,58 @@ fn session_overflow_button(
     let panel: Option<gpui::AnyElement> = if open {
         Some(
             deferred(
+                // Two-layer paint: opaque `bg_window` base + the
+                // translucent skin overlay on top. See the matching
+                // comment in `profile_context_menu_overlay` — same
+                // see-through issue when a popup floats over the
+                // terminal viewport instead of sitting inside the
+                // layered chrome.
                 div()
                     .absolute()
                     .top_full()
                     .right_0()
                     .mt_1()
                     .min_w(px(180.0))
-                    .bg(rgba(s.bg_panel))
+                    .bg(rgba(s.bg_window))
                     .border_1()
                     .border_color(rgba(s.border_subtle))
                     .rounded(px(s.radius_md))
                     .shadow_md()
-                    .py_1()
-                    .child(profile_menu_item(
-                        s,
-                        "Send Break",
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.send_break_now(window, cx);
-                        }),
-                    ))
-                    .child(profile_menu_item(
-                        s,
-                        "Send Hex\u{2026}",
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.open_send_hex(window, cx);
-                        }),
-                    ))
-                    .child(profile_menu_item(
-                        s,
-                        "Send File\u{2026}",
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.start_send_file(window, cx);
-                        }),
-                    ))
-                    .child(profile_menu_item(
-                        s,
-                        "Move to New Window",
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.move_session_to_new_window(window, cx);
-                        }),
-                    )),
+                    .child(
+                        div()
+                            .w_full()
+                            .bg(rgba(s.bg_panel))
+                            .rounded(px(s.radius_md))
+                            .py_1()
+                            .child(profile_menu_item(
+                                s,
+                                "Send Break",
+                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                    this.send_break_now(window, cx);
+                                }),
+                            ))
+                            .child(profile_menu_item(
+                                s,
+                                "Send Hex\u{2026}",
+                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                    this.open_send_hex(window, cx);
+                                }),
+                            ))
+                            .child(profile_menu_item(
+                                s,
+                                "Send File\u{2026}",
+                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                    this.start_send_file(window, cx);
+                                }),
+                            ))
+                            .child(profile_menu_item(
+                                s,
+                                "Move to New Window",
+                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                    this.move_session_to_new_window(window, cx);
+                                }),
+                            )),
+                    ),
             )
             .into_any_element(),
         )
@@ -3385,15 +3397,30 @@ fn profile_context_menu_overlay(
         )
     };
 
+    // Two-layer paint: opaque `bg_window` base, then the
+    // translucent `bg_panel` skin overlay on top — same frosted
+    // look the sidebar / main pane use, except this popup floats
+    // in `deferred(anchored(...))` so there's no opaque chrome
+    // beneath it. Without the base layer the menu sees right
+    // through to whatever's anchored under (terminal grid, editor
+    // pane, sidebar) and the text bleeds into the content
+    // behind. Border + shadow stay on the outer wrapper so they
+    // hug the popup outline.
     let panel = div()
         .min_w(px(220.0))
-        .bg(rgba(s.bg_panel))
+        .bg(rgba(s.bg_window))
         .border_1()
         .border_color(rgba(s.border_subtle))
         .rounded(px(s.radius_md))
         .shadow_md()
-        .py_1()
-        .child(item);
+        .child(
+            div()
+                .w_full()
+                .bg(rgba(s.bg_panel))
+                .rounded(px(s.radius_md))
+                .py_1()
+                .child(item),
+        );
     Some(deferred(anchored().position(pos).child(panel)).into_any_element())
 }
 
