@@ -117,7 +117,13 @@ fn main() {
     // configure besides the path.
     let port_path = std::env::args().nth(1);
 
-    let app = gpui_platform::application();
+    // `.with_assets(...)` registers gpui-component's bundled icon
+    // SVGs as the app's asset source so every `IconName::*` the
+    // widget tree references (most visibly the min/max/close
+    // controls drawn by `gpui_component::TitleBar` on Windows and
+    // Linux) resolves to a real glyph. Without it the title bar
+    // hover targets render blank — see the Cargo.toml dep comment.
+    let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
 
     // macOS single-instance handler. With LSMultipleInstancesProhibited
     // set in Info.plist, Launch Services routes second-launch attempts

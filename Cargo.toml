@@ -93,6 +93,21 @@ flume = "0.11"
 # rev so the resolution stays consistent.
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "2d2524d89efc47270e9a0ee18f10fa72cd573eff" }
 
+# gpui-component's icon SVGs (Lucide set) — has to be registered as
+# the app's asset source via `.with_assets(Assets)` at startup,
+# otherwise every `IconName::*` referenced by a gpui-component widget
+# resolves to an empty rect. On macOS the title-bar window controls
+# are drawn by the OS (native traffic lights, see `appears_transparent`
+# in `WindowOptions`) so blank icons are invisible there — but on
+# Windows / Linux `gpui_component::TitleBar` renders its own
+# min/max/close from `IconName::Minimize` / `Maximize` / `Restore` /
+# `Close`, and without this crate the user sees a draggable bar with
+# invisible hover targets on the right. Pinned to the same git rev as
+# `gpui-component` so the icon set stays in sync with the widgets'
+# `IconName` enum (Lucide additions / renames in the asset crate must
+# match what the widget code asks for).
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "2d2524d89efc47270e9a0ee18f10fa72cd573eff" }
+
 # --- Phase 1: data-layer dependencies ---
 # These power the modules ported from src-tauri/src/ into
 # prototype/src/data/. Versions match the main app's Cargo.toml
