@@ -1602,6 +1602,18 @@ impl AppView {
                 ..Default::default()
             },
             move |window, cx| {
+                // Resize hit-test margin for the WM/compositor.
+                // No-op on macOS / Windows (the platform trait's
+                // default `set_client_inset` is empty there); on
+                // Linux Wayland under client-side decorations —
+                // which is the only mode GNOME-Wayland gives us —
+                // this reserves a 10px ring around the window
+                // surface for grab-and-resize hit-testing. Without
+                // it the corner-resize cursor only shows on a
+                // single-pixel hairline at the edge and users can't
+                // grab it on a small laptop screen. Same value Zed
+                // ships (`theme::CLIENT_SIDE_DECORATION_SHADOW`).
+                window.set_client_inset(px(10.0));
                 window.on_window_should_close(cx, move |window, cx| {
                     let geom = bounds_to_geometry(window.bounds());
                     bus_for_close.update(cx, |bus, cx| {
@@ -2985,6 +2997,12 @@ pub fn open_app_window(
             ..Default::default()
         },
         move |window, cx| {
+            // Resize hit-test margin for the WM/compositor. See the
+            // matching comment in `AppView::open_settings_window`
+            // — fixes the unreachably-thin diagonal resize zone on
+            // Linux Wayland client-side decorations. No-op on
+            // macOS / Windows.
+            window.set_client_inset(px(10.0));
             // Snapshot bounds when the OS asks the window to close.
             // Reads the live `disable_window_state_restore` flag so a
             // user who turned the feature off after open doesn't get
