@@ -176,6 +176,15 @@ pub struct AppView {
     /// up listener), or any other path that calls
     /// `dismiss_session_overflow`.
     session_overflow_open: bool,
+    /// Scroll position of the sidebar profile list. Held on the
+    /// AppView so the position persists across re-renders (every
+    /// settings/profile change triggers a full sidebar rebuild;
+    /// without a persistent handle the scrollbar would snap back
+    /// to the top each time). Drives the `track_scroll(...)` on
+    /// the profile-row container and the
+    /// `vertical_scrollbar(...)` sibling that paints the visible
+    /// thumb.
+    sidebar_scroll: ScrollHandle,
     /// `Some(_)` while a profile-row right-click menu is showing.
     /// Carries the right-clicked profile id + the click position so
     /// the popup can render anchored at the cursor. Cleared by any
@@ -474,6 +483,7 @@ impl AppView {
             send_file: None,
             send_hex: None,
             session_overflow_open: false,
+            sidebar_scroll: ScrollHandle::new(),
             profile_context_menu: None,
             auto_reconnect_task: None,
             auto_reconnect_for: None,
@@ -3431,6 +3441,23 @@ impl Render for AppView {
                             .pt(px(s.shell_padding_px))
                             .pb(px(s.shell_padding_px))
             // -- sidebar --
+            //
+            // Two-section layout:
+            //   1. Fixed `sidebar_header` at the top (PROFILES
+            //      label + + / ⊟ / ⚙ icons). Stays put when the
+            //      profile list scrolls.
+            //   2. Scrollable profile list below. When the list
+            //      overflows the viewport, a gpui-component
+            //      `vertical_scrollbar` paints a thumb on the
+            //      right edge wired to `self.sidebar_scroll`.
+            //
+            // Padding moved from the outer sidebar div into each
+            // section so the visible scroll track + thumb sit
+            // flush against the sidebar's right edge. Without
+            // that split the scrollbar would inherit the outer
+            // `px_2` and inset 8px from the edge, which reads
+            // as a stray vertical seam in the middle of the
+            // sidebar rather than chrome at the boundary.
             .child(
                 div()
                     .w(px(SIDEBAR_WIDTH_PX))
@@ -3468,26 +3495,8 @@ impl Render for AppView {
                     .when(!shadow_panel.is_empty(), |this| {
                         this.shadow(shadow_panel.clone())
                     })
-                    .px_2()
-                    .py_3()
-                    // Extra top inset (`--titlebar-content-inset`
-                    // in the skin) so the sidebar's "PROFILES"
-                    // header + + / ⊟ / ⚙ icon strip sit BELOW
-                    // the macOS traffic lights when panes extend
-                    // up under a transparent title bar. macOS-26
-                    // ships 24px; flush-edged skins ship 0 since
-                    // their visible title bar already separates
-                    // lights from sidebar content. `pt` overrides
-                    // the top half of the `py_3` above. Custom
-                    // skins can tune this independently from
-                    // `--panel-radius` (e.g. floating cards with
-                    // a different traffic-light layout).
-                    .when(s.titlebar_content_inset_px > 0.0, |this| {
-                        this.pt(px(s.titlebar_content_inset_px))
-                    })
                     .flex()
                     .flex_col()
-                    .gap_1()
                     .text_color(rgba(s.fg_primary))
                     .text_size(px(13.0))
                     // Inherits the theme's font_family, which the
@@ -3497,49 +3506,107 @@ impl Render for AppView {
                     // chrome should look like chrome. Terminal pane
                     // sets its own font internally so it stays
                     // monospaced.
-                    .child(sidebar_header(cx))
-                    .children(profiles.into_iter().map(|profile| {
-                        let is_selected = selected.as_deref() == Some(profile.id.as_str());
-                        let is_connected = connected.as_deref() == Some(profile.id.as_str());
-                        // Treat the row as still "in-session" while
-                        // we're auto-reconnecting to it. Otherwise
-                        // the per-tick `open … No such file` error
-                        // from connect_to flashes a red dot + the
-                        // inline error under the row, even though
-                        // the header is already communicating the
-                        // retry — the duplicate signal is noisy and
-                        // implies the session is broken when it's
-                        // actually mid-recovery. Tauri does the
-                        // same: sidebar stays green, only the
-                        // session header swaps to the amber pulse.
-                        let is_reconnecting = self
-                            .auto_reconnect_for
-                            .as_deref()
-                            == Some(profile.id.as_str());
-                        let row_error = if is_selected && !is_reconnecting {
-                            self.connect_error.clone()
-                        } else {
-                            None
-                        };
-                        // Connected wins over Failed when both apply
-                        // (shouldn't happen — connect_to clears the
-                        // error before setting connected — but
-                        // defining the precedence keeps the
-                        // indicator stable if that invariant ever
-                        // drifts). Reconnecting takes its own slot
-                        // so the sidebar dot can pulse amber in
-                        // lockstep with the session header.
-                        let status = if is_connected {
-                            Some(RowStatus::Connected)
-                        } else if is_reconnecting {
-                            Some(RowStatus::Reconnecting)
-                        } else if is_selected && row_error.is_some() {
-                            Some(RowStatus::Failed)
-                        } else {
-                            None
-                        };
-                        profile_row(profile, is_selected, status, row_error, cx)
-                    })),
+                    //
+                    // -- fixed header --
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .px_2()
+                            // Top padding combines the standard
+                            // `py_3` (12px) baseline with the
+                            // `--titlebar-content-inset` override
+                            // for traffic-light clearance (macOS-
+                            // 26 ships 24px). Falls back to 12px
+                            // on flush-edged skins where the
+                            // visible title bar already gives the
+                            // header room to breathe.
+                            .pt(if s.titlebar_content_inset_px > 0.0 {
+                                px(s.titlebar_content_inset_px)
+                            } else {
+                                px(12.0)
+                            })
+                            .pb_1()
+                            .child(sidebar_header(cx)),
+                    )
+                    // -- scrollable profile list --
+                    //
+                    // `relative` so `vertical_scrollbar` (which
+                    // positions itself absolutely) anchors to
+                    // this container. `flex_1 + min_h_0` lets it
+                    // shrink to whatever space is left after the
+                    // fixed header.
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .min_h_0()
+                            .child(
+                                div()
+                                    .id("sidebar-profiles-scroll")
+                                    .size_full()
+                                    .track_scroll(&self.sidebar_scroll)
+                                    .overflow_y_scroll()
+                                    .child(
+                                        div()
+                                            .px_2()
+                                            .pb_3()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_1()
+                                            .children(profiles.into_iter().map(|profile| {
+                                                let is_selected = selected.as_deref()
+                                                    == Some(profile.id.as_str());
+                                                let is_connected = connected.as_deref()
+                                                    == Some(profile.id.as_str());
+                                                // Treat the row as still "in-session" while
+                                                // we're auto-reconnecting to it. Otherwise
+                                                // the per-tick `open … No such file` error
+                                                // from connect_to flashes a red dot + the
+                                                // inline error under the row, even though
+                                                // the header is already communicating the
+                                                // retry — the duplicate signal is noisy and
+                                                // implies the session is broken when it's
+                                                // actually mid-recovery. Tauri does the
+                                                // same: sidebar stays green, only the
+                                                // session header swaps to the amber pulse.
+                                                let is_reconnecting = self
+                                                    .auto_reconnect_for
+                                                    .as_deref()
+                                                    == Some(profile.id.as_str());
+                                                let row_error = if is_selected && !is_reconnecting {
+                                                    self.connect_error.clone()
+                                                } else {
+                                                    None
+                                                };
+                                                // Connected wins over Failed when both apply
+                                                // (shouldn't happen — connect_to clears the
+                                                // error before setting connected — but
+                                                // defining the precedence keeps the
+                                                // indicator stable if that invariant ever
+                                                // drifts). Reconnecting takes its own slot
+                                                // so the sidebar dot can pulse amber in
+                                                // lockstep with the session header.
+                                                let status = if is_connected {
+                                                    Some(RowStatus::Connected)
+                                                } else if is_reconnecting {
+                                                    Some(RowStatus::Reconnecting)
+                                                } else if is_selected && row_error.is_some() {
+                                                    Some(RowStatus::Failed)
+                                                } else {
+                                                    None
+                                                };
+                                                profile_row(
+                                                    profile,
+                                                    is_selected,
+                                                    status,
+                                                    row_error,
+                                                    cx,
+                                                )
+                                            })),
+                                    ),
+                            )
+                            .vertical_scrollbar(&self.sidebar_scroll),
+                    ),
             )
                             // -- right pane: form OR terminal --
                             //
