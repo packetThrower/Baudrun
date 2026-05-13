@@ -1,6 +1,6 @@
 [package]
 name = "baudrun"
-version = "0.0.1"
+version = "0.9.7-alpha.4"
 description = "Serial terminal for network engineers. alacritty_terminal + gpui."
 authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
 edition = "2021"
@@ -129,6 +129,18 @@ aho-corasick = "1"      # multi-keyword search for `\b(?:foo|bar|...)\b` style
                         # pack carries dozens of keyword alternations (state
                         # words, STP roles, BGP states, etc.)
 base64 = "0.22"
+# Synchronous HTTP client for the on-launch GitHub-Releases
+# update check (`src/updater.rs`). `ureq` is the minimal-deps
+# sync flavour — uses rustls (already transitive via gpui's
+# `zed-reqwest` so no extra crypto footprint) and skips the
+# tokio async machinery `reqwest` would drag in. The check
+# runs once per launch on a background gpui task, so blocking
+# the worker thread for the request is fine.
+ureq = { version = "2", features = ["json", "tls"] }
+# Tag comparison for the update check. Already transitive
+# through gpui's dep graph; pinning here makes the direct
+# usage in `updater::compare_versions` explicit.
+semver = "1"
 # rusb's `vendored` feature compiles libusb statically into the
 # binary instead of dynamic-linking against the system copy.
 # Tradeoffs: ~10–15 s longer first build (one-time C compile of

@@ -32,6 +32,7 @@ mod skin_tokens;
 mod term_bridge;
 mod terminal_grid;
 mod terminal_view;
+mod updater;
 
 use std::rc::Rc;
 
@@ -213,6 +214,13 @@ fn main() {
         // `Theme` mode + per-skin chrome overrides (font, radius,
         // input/popover colours), so no static setup needed here.
         cx.set_global(skin_tokens::SkinTokens::baudrun_default());
+        // Empty starter state for the boot-time update check.
+        // Filled in below by a background task that queries the
+        // GitHub Releases API; AppView + SettingsView read this
+        // global on render to paint the amber indicator chain
+        // (sidebar gear → Settings → Updates row) when a newer
+        // release is available.
+        cx.set_global(updater::UpdateState::default());
 
         // Force scrollbars to always paint. The default
         // (`Hover` on macOS unless system "always show scrollbars"
@@ -343,6 +351,47 @@ fn main() {
             themes_store.clone(),
         )
         .expect("open window");
+
+        // Boot-time update check — fire-and-forget. Respects the
+        // user's `disable_update_check` opt-out from Settings →
+        // Updates. The blocking HTTP call runs on the background
+        // pool so it can't stall the render thread; once it
+        // resolves we update the `UpdateState` global and ask
+        // gpui to refresh all open windows so the amber
+        // indicators paint on the next frame. Settings →
+        // Updates → "Check now" reruns the same path.
+        {
+            let current = settings_bus.read(cx).current();
+            if !current.disable_update_check {
+                let include_prerelease = current.include_prerelease_updates;
+                cx.spawn(async move |cx_async| {
+                    let result = cx_async
+                        .background_executor()
+                        .spawn(async move {
+                            updater::check_for_update(
+                                env!("CARGO_PKG_VERSION"),
+                                include_prerelease,
+                            )
+                        })
+                        .await;
+                    let available = match result {
+                        Ok(Some(a)) => a,
+                        Ok(None) => return,
+                        Err(err) => {
+                            log::info!("update check: semver: {err}");
+                            return;
+                        }
+                    };
+                    cx_async.update(|cx| {
+                        cx.set_global(updater::UpdateState {
+                            available: Some(available),
+                        });
+                        cx.refresh_windows();
+                    });
+                })
+                .detach();
+            }
+        }
 
         // Re-bind for the rest of the function (serial / focus
         // wiring still operates on the TerminalView directly).

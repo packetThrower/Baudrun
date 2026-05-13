@@ -3352,6 +3352,27 @@ impl Render for AppView {
         // re-borrowing `cx`. Empty Vec (skin sets `"none"` or
         // doesn't declare) → no shadow painted.
         let shadow_panel = cx.global::<skin_tokens::SkinShadows>().panel_overlay.clone();
+        // Amber-dot trigger for the sidebar gear icon. `true` when
+        // the boot-time update check (`crate::updater`) found a
+        // newer release AND the user hasn't already dismissed
+        // that exact version. Mirrors the computation in
+        // `SettingsView::render` so the gear-icon dot and the
+        // Settings rail's Updates-row dot light up together.
+        let update_pending = {
+            let available = cx.global::<crate::updater::UpdateState>().available.clone();
+            match available {
+                Some(a) => {
+                    let dismissed = self
+                        .settings_bus
+                        .read(cx)
+                        .current()
+                        .dismissed_update_version
+                        .clone();
+                    dismissed.as_deref() != Some(a.version.as_str())
+                }
+                None => false,
+            }
+        };
         let profiles = self.profile_store.list();
         let selected = self.selected_profile_id.clone();
         let connected = self.connected_profile_id.clone();
@@ -3675,7 +3696,7 @@ impl Render for AppView {
                                 px(12.0)
                             })
                             .pb_1()
-                            .child(sidebar_header(cx)),
+                            .child(sidebar_header(update_pending, cx)),
                     )
                     // -- scrollable profile list --
                     //
@@ -4500,7 +4521,13 @@ fn status_bar(
 /// "+" is a div-with-click rather than a real button widget — same
 /// reasoning as the rest of the sidebar (less surface area than
 /// adopting `gpui_component::button` for one element).
-fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
+///
+/// `update_pending` is `true` when the boot-time update check
+/// (`crate::updater`) found a newer release the user hasn't
+/// dismissed yet. The gear icon gets a small amber dot in the
+/// top-right corner — mirrors the dot painted on the Settings
+/// rail's "Updates" row so both surfaces feel like one signal.
+fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
     let hover_bg = s.bg_hover;
     // Shared chrome for the inline icon-buttons. Each button needs
@@ -4579,16 +4606,43 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
                 // arrive. Sized one px smaller than the `+` so the
                 // two glyphs visually balance — `+` is a thin stroke,
                 // the gear is a denser shape.
+                //
+                // When the boot-time update check has a newer
+                // release pending (`update_pending`) we paint a
+                // small amber dot in the gear's top-right corner.
+                // Wrapping in a `.relative()` div anchors the
+                // `.absolute()` dot to the button rather than to
+                // the sidebar — the dot rides the gear glyph and
+                // disappears with it if the row ever re-flows.
+                // Same colour (`s.warn`) + same 8px diameter as
+                // the Settings rail's Updates-row dot so both
+                // indicators feel like one signal.
                 .child(
-                    icon_btn("nav-settings", "Settings")
-                        .text_size(px(15.0))
-                        .child("\u{2699}")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.open_settings(window, cx);
-                            }),
-                        ),
+                    div()
+                        .relative()
+                        .child(
+                            icon_btn("nav-settings", "Settings")
+                                .text_size(px(15.0))
+                                .child("\u{2699}")
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                        this.open_settings(window, cx);
+                                    }),
+                                ),
+                        )
+                        .when(update_pending, |this| {
+                            this.child(
+                                div()
+                                    .absolute()
+                                    .top(px(-1.0))
+                                    .right(px(-1.0))
+                                    .w(px(8.0))
+                                    .h(px(8.0))
+                                    .rounded_full()
+                                    .bg(rgba(s.warn)),
+                            )
+                        }),
                 ),
         )
 }

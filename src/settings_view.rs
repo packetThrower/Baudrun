@@ -46,16 +46,18 @@ pub enum SettingsTab {
     Shortcuts,
     Highlighting,
     Accessibility,
+    Updates,
     Advanced,
 }
 
 impl SettingsTab {
-    const ALL: [SettingsTab; 6] = [
+    const ALL: [SettingsTab; 7] = [
         SettingsTab::Appearance,
         SettingsTab::Themes,
         SettingsTab::Shortcuts,
         SettingsTab::Highlighting,
         SettingsTab::Accessibility,
+        SettingsTab::Updates,
         SettingsTab::Advanced,
     ];
 
@@ -66,6 +68,7 @@ impl SettingsTab {
             SettingsTab::Shortcuts => "Shortcuts",
             SettingsTab::Highlighting => "Highlighting",
             SettingsTab::Accessibility => "Accessibility",
+            SettingsTab::Updates => "Updates",
             SettingsTab::Advanced => "Advanced",
         }
     }
@@ -555,6 +558,17 @@ impl SettingsView {
     fn set_include_prerelease(&mut self, enabled: bool, cx: &mut Context<Self>) {
         let mut next = self.settings.clone();
         next.include_prerelease_updates = enabled;
+        self.commit(next, cx);
+    }
+
+    /// Persist a dismissal of the currently-advertised update so
+    /// the amber-indicator chain stops painting until a NEWER
+    /// release shows up. Stored on `Settings.dismissed_update_version`
+    /// so the next launch's check can compare against it before
+    /// surfacing anything.
+    fn dismiss_update(&mut self, version: String, cx: &mut Context<Self>) {
+        let mut next = self.settings.clone();
+        next.dismissed_update_version = Some(version);
         self.commit(next, cx);
     }
 
@@ -1537,7 +1551,26 @@ impl Render for SettingsView {
                                     .iter()
                                     .map(|&t| (t, self.tab_has_filter_matches(t)))
                                     .collect();
-                                rail(s, self.tab, &matches, cx)
+                                // Amber-dot trigger for the
+                                // Updates rail item.
+                                // `update_pending` mirrors what
+                                // `updates_pane` uses to gate
+                                // its status-card amber dot:
+                                // there's an available release
+                                // AND the user hasn't dismissed
+                                // it for this exact version.
+                                let update_pending = cx
+                                    .global::<crate::updater::UpdateState>()
+                                    .available
+                                    .as_ref()
+                                    .map(|a| {
+                                        self.settings
+                                            .dismissed_update_version
+                                            .as_deref()
+                                            != Some(a.version.as_str())
+                                    })
+                                    .unwrap_or(false);
+                                rail(s, self.tab, &matches, update_pending, cx)
                             })
                             .child(scrollable_pane(self.pane_content(s, cx))),
                     ),
@@ -1557,6 +1590,7 @@ impl SettingsView {
             SettingsTab::Accessibility => {
                 self.accessibility_pane(s, cx).into_any_element()
             }
+            SettingsTab::Updates => self.updates_pane(s, cx).into_any_element(),
             SettingsTab::Advanced => self.advanced_pane(s, cx).into_any_element(),
         }
     }
@@ -2183,6 +2217,188 @@ impl SettingsView {
         ))
     }
 
+    /// Updates tab — current version, latest-from-GitHub status,
+    /// and the user-facing knobs that gate the boot-time check.
+    /// Mirrors the structure of `accessibility_pane`: a single
+    /// status card up top + a settings card below.
+    fn updates_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
+        let cur = &self.settings;
+        let current_version = env!("CARGO_PKG_VERSION");
+        // Clone the global out so it stops borrowing `cx` for the
+        // duration of the render — every `import_button` /
+        // `bool_field` call below grabs `cx` for its own listener,
+        // which would conflict with a live borrow of the global.
+        let available = cx
+            .global::<crate::updater::UpdateState>()
+            .available
+            .clone();
+        let dismissed_match = available
+            .as_ref()
+            .and_then(|a| {
+                cur.dismissed_update_version
+                    .as_deref()
+                    .map(|d| d == a.version)
+            })
+            .unwrap_or(false);
+
+        // -- status card --
+        // Three states:
+        //   1. Check disabled → grey dot + "checks off" message.
+        //   2. No newer release / not yet checked → green dot +
+        //      "up to date" message.
+        //   3. Newer release found → amber dot + version pill +
+        //      View Release / Dismiss buttons (or "Dismissed"
+        //      label when the user has already clicked Dismiss).
+        let (dot_color, status_label): (u32, SharedString) =
+            if cur.disable_update_check {
+                (s.fg_tertiary, "Update checks are disabled.".into())
+            } else if let Some(a) = available.as_ref() {
+                if dismissed_match {
+                    (
+                        s.fg_tertiary,
+                        format!(
+                            "v{} is available — you've dismissed this version.",
+                            a.version
+                        )
+                        .into(),
+                    )
+                } else {
+                    (
+                        s.warn,
+                        format!("v{} is available.", a.version).into(),
+                    )
+                }
+            } else {
+                (s.success, "Baudrun is up to date.".into())
+            };
+
+        let current_line: SharedString =
+            format!("Currently running v{current_version}.").into();
+
+        let action_row = available.clone().and_then(|a| {
+            if dismissed_match || cur.disable_update_check {
+                None
+            } else {
+                Some(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap_2()
+                        .items_center()
+                        .child(import_button(
+                            s,
+                            "View release",
+                            cx,
+                            {
+                                let url = a.html_url.clone();
+                                move |_, _, cx| cx.open_url(&url)
+                            },
+                        ))
+                        .child(import_button(s, "Dismiss this version", cx, {
+                            let version = a.version.clone();
+                            move |this, _, cx| {
+                                this.dismiss_update(version.clone(), cx);
+                            }
+                        })),
+                )
+            }
+        });
+
+        let notes = available
+            .as_ref()
+            .filter(|_| !dismissed_match)
+            .map(|a| {
+                // First ~600 chars of the release notes — enough
+                // for the headline, not the whole changelog.
+                let raw = a.notes.trim();
+                let truncated: String = raw.chars().take(600).collect();
+                let display = if raw.chars().count() > 600 {
+                    format!("{truncated}…")
+                } else {
+                    truncated
+                };
+                div()
+                    .text_sm()
+                    .text_color(rgba(s.fg_secondary))
+                    .whitespace_normal()
+                    .child(SharedString::from(display))
+            });
+
+        let status_body = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .w(px(8.0))
+                            .h(px(8.0))
+                            .rounded_full()
+                            .bg(rgba(dot_color)),
+                    )
+                    .child(div().text_sm().child(status_label)),
+            )
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgba(s.fg_tertiary))
+                    .child(current_line),
+            )
+            .children(notes)
+            .children(action_row);
+
+        // -- preferences card --
+        let prefs_body = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(bool_field(
+                "settings-check-updates",
+                "Check for updates on launch",
+                !cur.disable_update_check,
+                cx,
+                SettingsView::set_check_updates,
+            ))
+            .child(bool_field(
+                "settings-prerelease-updates",
+                "Include pre-releases (alpha / beta / rc)",
+                cur.include_prerelease_updates,
+                cx,
+                SettingsView::set_include_prerelease,
+            ));
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(self.filtered_card(
+                s,
+                "Updates",
+                Some(
+                    "Baudrun queries GitHub Releases once at app launch \
+                     for a newer version. No automatic download — when \
+                     an update is available the sidebar's gear icon \
+                     gets an amber dot and this pane shows the new \
+                     version with a button to open the Releases page.",
+                ),
+                status_body,
+            ))
+            .child(self.filtered_card(
+                s,
+                "Update Preferences",
+                Some(
+                    "Disable the check entirely, or opt into seeing \
+                     pre-release tags (`-alpha.*` / `-beta.*` / `-rc.*`).",
+                ),
+                prefs_body,
+            ))
+    }
+
     fn advanced_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
         let cur = &self.settings;
         div()
@@ -2299,29 +2515,8 @@ impl SettingsView {
                             )),
                     ),
             ))
-            .child(self.filtered_card(
-                s,
-                "Updates",
-                Some("Check GitHub on app launch for a newer Baudrun release."),
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(bool_field(
-                        "settings-check-updates",
-                        "Check for updates on launch",
-                        !cur.disable_update_check,
-                        cx,
-                        SettingsView::set_check_updates,
-                    ))
-                    .child(bool_field(
-                        "settings-prerelease-updates",
-                        "Include pre-releases (alpha / beta / rc)",
-                        cur.include_prerelease_updates,
-                        cx,
-                        SettingsView::set_include_prerelease,
-                    )),
-            ))
+            // (Updates moved to its own `SettingsTab::Updates`
+            // pane — see `updates_pane`.)
             .child(
                 // Custom card layout — section_card_with_desc puts
                 // description directly under the title and a single
@@ -2578,10 +2773,15 @@ fn window_header(
 /// current filter render at 0.35 opacity so the user can see at a
 /// glance where their hits are; they stay clickable so a typo in
 /// the filter doesn't lock the user out of the rest of the panel.
+///
+/// `update_pending` is `true` when the boot-time update check
+/// found a newer release the user hasn't dismissed yet — drives
+/// the amber dot painted next to the "Updates" tab label.
 fn rail(
     s: SkinTokens,
     active: SettingsTab,
     has_matches: &[(SettingsTab, bool)],
+    update_pending: bool,
     cx: &mut Context<SettingsView>,
 ) -> impl IntoElement {
     let lookup_match = |tab: SettingsTab| -> bool {
@@ -2605,6 +2805,7 @@ fn rail(
         };
         let hover_bg = s.bg_input;
         let opacity = if dimmed { 0.35 } else { 1.0 };
+        let show_dot = update_pending && tab == SettingsTab::Updates;
         div()
             .w_full()
             .px_3()
@@ -2623,7 +2824,31 @@ fn rail(
             .when(!is_active, |this| {
                 this.hover(move |st| st.bg(rgba(hover_bg)))
             })
-            .child(label)
+            .child(
+                // Flex-row so the label + the optional amber dot
+                // sit on the same baseline. The label gets
+                // `flex_1` to push the dot to the right edge of
+                // the rail item.
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(div().flex_1().child(label))
+                    .when(show_dot, |this| {
+                        // Same amber dot as `app_view::sidebar_header`'s
+                        // gear-icon indicator — same colour token
+                        // (`s.warn`) + same 8px diameter, so the
+                        // two surfaces feel like one signal.
+                        this.child(
+                            div()
+                                .w(px(8.0))
+                                .h(px(8.0))
+                                .rounded_full()
+                                .bg(rgba(s.warn)),
+                        )
+                    }),
+            )
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseUpEvent, _, cx| {
@@ -2798,12 +3023,12 @@ const TAB_SECTIONS: &[(SettingsTab, &[&str])] = &[
     (SettingsTab::Shortcuts, &["Keyboard Shortcuts"]),
     (SettingsTab::Highlighting, &["Highlight Packs"]),
     (SettingsTab::Accessibility, &["Reduce Motion"]),
+    (SettingsTab::Updates, &["Updates", "Check for updates", "Pre-releases"]),
     (SettingsTab::Advanced, &[
         "Session Log Directory",
         "USB Driver Detection",
         "Copy on Select",
         "Window State",
-        "Updates",
         "Config Directory",
     ]),
 ];
