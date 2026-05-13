@@ -56,7 +56,7 @@ use crate::data::skins;
 use crate::data::themes;
 use crate::settings_bus::{SettingsBus, SettingsEvent};
 use crate::settings_view::SettingsView;
-use crate::skin_tokens::{SkinFonts, SkinTokens};
+use crate::skin_tokens::{self, SkinFonts, SkinTokens};
 use crate::term_bridge::Palette;
 use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
@@ -719,10 +719,34 @@ impl AppView {
         // consistent with the rest of the primary affordances.
         theme.primary = rgba(tokens.accent).into();
         theme.primary_foreground = rgba(tokens.accent_fg).into();
-        theme.primary_hover = rgba(tokens.accent).into();
+        // `--accent-hover` from the skin (defaults to `accent`).
+        // Drives the brighter hover state on the primary Connect
+        // button + any other widget that reads `primary_hover`.
+        theme.primary_hover = rgba(tokens.accent_hover).into();
         theme.primary_active = rgba(tokens.accent).into();
         theme.danger = rgba(tokens.danger).into();
         theme.border = rgba(tokens.border_subtle).into();
+        // `--input-border-idle` — unfocused input border. Skins
+        // with `transparent` here (Baudrun, macOS-26) get a
+        // borderless idle look; gpui-component falls back to
+        // `theme.input` (= `border_strong`) when input gets
+        // focus so the focused state stays visible.
+        theme.input = rgba(tokens.input_border_idle).into();
+        // `--scrollbar-thumb` / `--scrollbar-thumb-hover` — drive
+        // the scrollbar thumb colour across every scrollable
+        // gpui-component widget (Settings cards, terminal
+        // scrollback, dropdowns).
+        theme.scrollbar_thumb = rgba(tokens.scrollbar_thumb).into();
+        theme.scrollbar_thumb_hover = rgba(tokens.scrollbar_thumb_hover).into();
+        // `--overlay` — modal scrim painted behind Dialog
+        // (gpui-component's overlay layer dims the window when
+        // a dialog is open).
+        theme.overlay = rgba(tokens.overlay).into();
+        // `--option-group-fg` — colour for dropdown group
+        // headers (e.g. "Built-in" / "Custom" sections in the
+        // theme picker). gpui-component reads this from
+        // `theme.muted_foreground`.
+        theme.muted_foreground = rgba(tokens.option_group_fg).into();
         theme.radius = px(tokens.radius_md);
         theme.radius_lg = px(tokens.radius_lg);
         if !fonts.font_ui.is_empty() {
@@ -3385,13 +3409,21 @@ impl Render for AppView {
                     .w(px(SIDEBAR_WIDTH_PX))
                     .h_full()
                     .bg(rgba(s.bg_sidebar))
-                    // 1px right separator only when the panes
-                    // touch (flush-edged skins). With a gap +
-                    // rounded corners, the separator turns into a
-                    // visible line cutting through the gap area —
-                    // drop it on floating-card skins.
-                    .when(s.shell_gap_px == 0.0, |this| {
-                        this.border_r_1().border_color(rgba(s.border_subtle))
+                    // 1px right separator driven by the skin's
+                    // `--sidebar-divider` token. Skins ship
+                    // `"none"` to hide it (macOS-26's floating
+                    // cards rely on the shell-gap instead), or
+                    // `"1px solid <colour>"` for a flush
+                    // separator. Custom skins can authored
+                    // either; we don't gate on shell_gap_px
+                    // any more so an author who wants a divider
+                    // *and* a gap (unusual but legal) can have
+                    // both.
+                    .map(|this| match s.sidebar_divider {
+                        skin_tokens::SidebarDivider::None => this,
+                        skin_tokens::SidebarDivider::Solid(colour) => {
+                            this.border_r_1().border_color(rgba(colour))
+                        }
                     })
                     .when(s.panel_radius_px > 0.0, |this| {
                         // `overflow_hidden` so the gap + radius
@@ -3902,8 +3934,10 @@ fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
         .justify_center()
         .gap_3()
         .child(
+            // `--font-size-h1` from the active skin (default
+            // 24, macOS-26 ships 26).
             div()
-                .text_size(px(28.0))
+                .text_size(px(s.font_size_h1_px))
                 .text_color(rgba(s.fg_primary))
                 .child("Baudrun"),
         )
@@ -4144,10 +4178,18 @@ fn sidebar_header(cx: &mut Context<AppView>) -> impl IntoElement {
         .justify_between()
         .py_1()
         .child(
+            // PROFILES header. Font size + weight + text
+            // transform come from the skin so authors can
+            // tune the label aesthetic without code changes:
+            //   - macOS-26 sets `--label-transform: none` for
+            //     sentence-case ("Profiles");
+            //   - High Contrast / Cyberpunk bump
+            //     `--label-weight` to 600 for chunkier UI.
             div()
-                .text_size(px(11.0))
+                .text_size(px(s.font_size_label_px))
                 .text_color(rgba(s.fg_tertiary))
-                .child("PROFILES"),
+                .font_weight(gpui::FontWeight(s.label_weight as f32))
+                .child(s.label_transform.apply("PROFILES")),
         )
         .child(
             div()

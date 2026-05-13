@@ -198,6 +198,116 @@ pub struct SkinTokens {
     /// macOS-26 ships 24px; every other bundled skin ships 0.
     /// `--titlebar-content-inset` in the skin vars.
     pub titlebar_content_inset_px: f32,
+
+    // -- Colour tokens added in the second skin-coverage pass ----
+    /// Accent hover state — `--accent-hover` in the skin vars.
+    /// Drives the brighter accent used on hovered buttons / pills.
+    /// Currently pushed into gpui-component's `theme.primary_hover`
+    /// so the primary Connect button picks it up. Falls back to
+    /// `accent` when the skin doesn't declare it.
+    pub accent_hover: u32,
+    /// Terminal viewport background — `--bg-terminal` in the
+    /// skins. Applied to the terminal grid's frame so the
+    /// chrome can paint a different shade than the active
+    /// terminal theme's `background` (typical pattern: dark
+    /// chrome shell wraps a near-black terminal viewport).
+    /// Falls back to `bg_window` when the skin doesn't declare
+    /// it.
+    pub bg_terminal: u32,
+    /// Input border colour in the idle (non-focused) state —
+    /// `--input-border-idle` in the skin vars. Default is
+    /// `border_subtle`; some skins ship `"transparent"` for a
+    /// borderless look.
+    pub input_border_idle: u32,
+    /// Foreground colour for group labels inside a dropdown
+    /// popover — `--option-group-fg` in the skin vars. Drives
+    /// gpui-component's `theme.muted_foreground` slot.
+    pub option_group_fg: u32,
+    /// Scrollbar thumb colour — `--scrollbar-thumb` in the skin
+    /// vars. Pushed into gpui-component's
+    /// `theme.scrollbar_thumb`.
+    pub scrollbar_thumb: u32,
+    /// Scrollbar thumb hover state — `--scrollbar-thumb-hover`.
+    /// Pushed into `theme.scrollbar_thumb_hover`.
+    pub scrollbar_thumb_hover: u32,
+    /// Modal scrim colour — `--overlay` in the skin vars.
+    /// Pushed into gpui-component's `theme.overlay` so dialogs
+    /// dim the window behind them in the skin's preferred tint.
+    pub overlay: u32,
+
+    // -- Typography tokens ---------------------------------------
+    /// `--font-size-h1` — large heading (Settings page header,
+    /// welcome pane title). Default 24px.
+    pub font_size_h1_px: f32,
+    /// `--font-size-section` — section headings inside forms /
+    /// Settings cards. Default 15px.
+    pub font_size_section_px: f32,
+    /// `--font-size-label` — UPPERCASE-style small field labels
+    /// (e.g. "TERMINAL FONT SIZE" in Settings, "PROFILES" in the
+    /// sidebar header). Default 11px.
+    pub font_size_label_px: f32,
+    /// `--label-letter-spacing` (in `em`) — letter-spacing on
+    /// the small UPPERCASE labels. Default 0.04em ≈ 0.44px on a
+    /// 11px label. We store as em so the value scales with the
+    /// applied font size at render time.
+    pub label_letter_spacing_em: f32,
+    /// `--label-weight` — font weight on the small labels.
+    /// Default 500 (Medium); skins with chunkier UI typography
+    /// (High Contrast, Cyberpunk) ship 600 (SemiBold).
+    pub label_weight: u16,
+    /// `--label-transform` — text transform applied to small
+    /// labels. Default `Uppercase`. macOS-26's Liquid Glass
+    /// design language ships `None` (sentence case).
+    pub label_transform: LabelTransform,
+    /// `--sidebar-divider` — controls the 1px right-edge
+    /// separator on the sidebar (between sidebar and main pane
+    /// on flush-edged skins). `None` hides it entirely (macOS-26
+    /// uses the shell-gap instead); `Solid` paints a 1px line
+    /// in the declared colour. The CSS shorthand
+    /// `"1px solid var(--border-subtle)"` resolves to the
+    /// `border_subtle` colour at parse time; bare colour names
+    /// `"none"` short-circuit to the `None` variant.
+    pub sidebar_divider: SidebarDivider,
+}
+
+/// Skin's `--label-transform` declaration. Drives whether
+/// UPPERCASE / lowercase / sentence-case labels in the chrome
+/// (sidebar PROFILES header, settings field labels) get
+/// text-transformed at render time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelTransform {
+    /// CSS `text-transform: uppercase` — convert label strings
+    /// to `to_uppercase()` at render.
+    Uppercase,
+    /// CSS `text-transform: lowercase`.
+    Lowercase,
+    /// CSS `text-transform: none` — render the original string.
+    /// Used by macOS-26 / Liquid Glass for sentence-case labels.
+    None,
+}
+
+impl LabelTransform {
+    /// Apply the transform to a label string. Helper so render
+    /// sites can chain `.child(s.label_transform.apply("PROFILES"))`
+    /// instead of branching on the enum at every call.
+    pub fn apply(self, s: &str) -> SharedString {
+        match self {
+            LabelTransform::Uppercase => s.to_uppercase().into(),
+            LabelTransform::Lowercase => s.to_lowercase().into(),
+            LabelTransform::None => s.to_string().into(),
+        }
+    }
+}
+
+/// Resolved `--sidebar-divider` value. Either `None` (no
+/// separator drawn) or `Solid` with the line colour. We always
+/// render at 1px wide; per-skin width tuning isn't a pattern
+/// any bundled skin uses (the Tauri version had a few skins
+/// declaring `1px solid X` and the rest declaring `none`).
+#[derive(Debug, Clone, Copy)]
+pub enum SidebarDivider {
+    None,
+    Solid(u32),
 }
 
 impl Global for SkinTokens {}
@@ -279,6 +389,33 @@ impl SkinTokens {
             // visible title bar already separates traffic
             // lights from sidebar content. macOS-26 overrides.
             titlebar_content_inset_px: 0.0,
+
+            // Fallback chrome tokens — used when the active
+            // skin doesn't declare these vars. Most fall back
+            // to one of the colour slots above so a
+            // partially-authored custom skin still reads
+            // cohesive (e.g. `accent_hover` reuses `accent`,
+            // `bg_terminal` reuses `bg_window`).
+            accent_hover: 0x0A84FFFF,
+            bg_terminal: 0x18181AFF,
+            input_border_idle: 0xFFFFFF14,
+            option_group_fg: 0x9AA0A6FF,
+            scrollbar_thumb: 0xFFFFFF2E,
+            scrollbar_thumb_hover: 0xFFFFFF47,
+            overlay: 0x000000A0,
+
+            // Typography defaults.
+            font_size_h1_px: 24.0,
+            font_size_section_px: 15.0,
+            font_size_label_px: 11.0,
+            label_letter_spacing_em: 0.04,
+            label_weight: 500,
+            label_transform: LabelTransform::Uppercase,
+
+            // Default flush-edged skins draw a 1px right-edge
+            // line on the sidebar; floating-card skins
+            // (macOS-26) override to `None`.
+            sidebar_divider: SidebarDivider::Solid(0xFFFFFF14),
         }
     }
 
@@ -366,6 +503,49 @@ impl SkinTokens {
                 "--titlebar-content-inset",
                 fb.titlebar_content_inset_px,
             ),
+
+            // -- new colour tokens ---------------------------
+            accent_hover: pick("--accent-hover", pick("--accent", fb.accent_hover)),
+            // No `--bg-terminal` → fall back through `bg_window`
+            // so the chrome shell colour does double duty.
+            bg_terminal: raw_var("--bg-terminal")
+                .and_then(|s| parse_color(s))
+                .unwrap_or_else(|| {
+                    raw_var("--bg-window")
+                        .and_then(|s| parse_color(s))
+                        .unwrap_or(fb.bg_terminal)
+                }),
+            input_border_idle: pick(
+                "--input-border-idle",
+                pick("--border-subtle", fb.input_border_idle),
+            ),
+            option_group_fg: pick("--option-group-fg", fb.option_group_fg),
+            scrollbar_thumb: pick("--scrollbar-thumb", fb.scrollbar_thumb),
+            scrollbar_thumb_hover: pick(
+                "--scrollbar-thumb-hover",
+                fb.scrollbar_thumb_hover,
+            ),
+            overlay: pick("--overlay", fb.overlay),
+
+            // -- typography tokens ----------------------------
+            font_size_h1_px: pick_px("--font-size-h1", fb.font_size_h1_px),
+            font_size_section_px: pick_px(
+                "--font-size-section",
+                fb.font_size_section_px,
+            ),
+            font_size_label_px: pick_px("--font-size-label", fb.font_size_label_px),
+            label_letter_spacing_em: raw_var("--label-letter-spacing")
+                .and_then(|s| parse_em(s))
+                .unwrap_or(fb.label_letter_spacing_em),
+            label_weight: raw_var("--label-weight")
+                .and_then(|s| s.trim().parse::<u16>().ok())
+                .unwrap_or(fb.label_weight),
+            label_transform: raw_var("--label-transform")
+                .map(|s| parse_label_transform(s))
+                .unwrap_or(fb.label_transform),
+            sidebar_divider: raw_var("--sidebar-divider")
+                .map(|s| parse_sidebar_divider(s, fb.sidebar_divider))
+                .unwrap_or(fb.sidebar_divider),
         }
     }
 }
@@ -538,6 +718,66 @@ fn parse_px(raw: &str) -> Option<f32> {
         return num.trim().parse().ok();
     }
     s.parse().ok()
+}
+
+/// Parse a CSS `em` value (e.g. `"0.04em"`) into the bare f32
+/// multiplier. Returns `None` for non-em strings so the caller
+/// falls back to the baseline. We store the multiplier rather
+/// than computing px at parse time so the value scales with the
+/// label's applied font size at render.
+fn parse_em(raw: &str) -> Option<f32> {
+    let s = raw.trim();
+    if let Some(num) = s.strip_suffix("em") {
+        return num.trim().parse().ok();
+    }
+    // Bare number is treated as em (CSS `letter-spacing: 0.04`
+    // is unit-less and inherits-from-font-size, same effect).
+    s.parse().ok()
+}
+
+/// Parse a CSS `text-transform` value into our `LabelTransform`
+/// enum. Unknown values fall through to `Uppercase` (the
+/// Baudrun + every-other-flush-skin default) since that's the
+/// historical behaviour for vars that fail to parse.
+fn parse_label_transform(raw: &str) -> LabelTransform {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "uppercase" => LabelTransform::Uppercase,
+        "lowercase" => LabelTransform::Lowercase,
+        "none" | "" => LabelTransform::None,
+        _ => LabelTransform::Uppercase,
+    }
+}
+
+/// Parse a `--sidebar-divider` declaration into the
+/// `SidebarDivider` enum. Accepts:
+///   - `"none"` → `None` (no separator drawn)
+///   - `"1px solid <colour>"` → `Solid(<colour>)`. We pin the
+///     width at 1px for every skin since that's the only width
+///     any bundled skin authored; per-skin width tuning is a
+///     YAGNI extension if it ever comes up.
+///   - `"1px solid var(--border-subtle)"` is the most common
+///     authored form. The CSS `var(...)` reference isn't resolved
+///     here — the parser strips it and falls back to the
+///     baseline (passed as `default`), which is itself sourced
+///     from `border_subtle`. So the effective colour is correct
+///     even though the `var(...)` chain isn't traversed.
+fn parse_sidebar_divider(raw: &str, default: SidebarDivider) -> SidebarDivider {
+    let s = raw.trim().to_ascii_lowercase();
+    if s == "none" {
+        return SidebarDivider::None;
+    }
+    // Try to extract a colour from the shorthand. Split on
+    // whitespace; the last token is typically the colour.
+    let last = s.split_whitespace().last().unwrap_or(&s);
+    if last.starts_with("var(") {
+        // `var(--border-subtle)` — caller's default already
+        // resolves to the right colour, so keep it.
+        return default;
+    }
+    if let Some(packed) = parse_color(last) {
+        return SidebarDivider::Solid(packed);
+    }
+    default
 }
 
 /// Return the first font family from a CSS font stack, with quotes

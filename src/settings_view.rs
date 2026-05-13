@@ -2464,8 +2464,11 @@ fn window_header(
                         .items_baseline()
                         .gap_2()
                         .child(
+                            // `--font-size-h1` from the active
+                            // skin (default 24, macOS-26 ships
+                            // 26 for the Liquid Glass look).
                             div()
-                                .text_size(px(24.0))
+                                .text_size(px(s.font_size_h1_px))
                                 .text_color(rgba(s.fg_primary))
                                 .child("Settings"),
                         )
@@ -2501,10 +2504,14 @@ fn window_header(
                         ),
                 )
                 .child(
+                    // `--font-size-label` + `--label-weight` +
+                    // `--label-transform` from the active skin
+                    // so authors can fully restyle small labels.
                     div()
-                        .text_size(px(10.0))
+                        .text_size(px(s.font_size_label_px))
                         .text_color(rgba(s.fg_tertiary))
-                        .child("GLOBAL DEFAULTS"),
+                        .font_weight(gpui::FontWeight(s.label_weight as f32))
+                        .child(s.label_transform.apply("GLOBAL DEFAULTS")),
                 ),
         )
         .child(
