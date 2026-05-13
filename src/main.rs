@@ -936,6 +936,11 @@ fn detect_reduce_motion() -> bool {
 /// right-click menu doesn't sprout 50 rows for a user with a
 /// large profile collection — anything past the cap stays
 /// reachable through the sidebar.
+///
+/// cfg-gated to macOS only — the call site already is, and
+/// without this gate Windows / Linux clippy flags the function
+/// as dead code (it's never reachable on those platforms).
+#[cfg(target_os = "macos")]
 fn install_dock_menu(cx: &App, profile_store: &Rc<data::profiles::Store>) {
     const MAX_DOCK_PROFILES: usize = 10;
     let mut items = vec![MenuItem::action("New Window", NewWindow)];
