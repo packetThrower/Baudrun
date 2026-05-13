@@ -101,6 +101,16 @@ impl Store {
     /// Read a user skin JSON from disk and persist it as a user
     /// import. Collisions with existing IDs get a `-2`, `-3`, ...
     /// suffix.
+    ///
+    /// The skin's declared `id` is **always** slugified before it
+    /// becomes a filename. Without that step a malicious skin JSON
+    /// could declare `"id": "../../foo"` and `persist_user` would
+    /// happily write the resolved path two levels above `$SUPPORT/
+    /// skins/`. `slugify` keeps only `[a-z0-9-]`, so `..` collapses
+    /// to the empty string and falls back to `"skin"` — every
+    /// imported skin lands inside the user skins directory, full
+    /// stop. (See the matching `sanitize_pack_id` defense in
+    /// `highlight.rs`.)
     pub fn import(&self, path: &Path) -> Result<Skin> {
         let data = fs::read(path)?;
         let mut skin: Skin = serde_json::from_slice(&data)?;
@@ -108,13 +118,16 @@ impl Store {
         skin.source = "user".into();
 
         let mut user = self.user.write().unwrap();
-        let base = if skin.id.is_empty() {
-            let slug = crate::data::themes::slugify(&skin.name, "skin");
-            skin.id = slug.clone();
-            slug
-        } else {
-            skin.id.clone()
-        };
+        // Path-safe id: slugify whatever the JSON declared (falling
+        // through to the skin's name if the slug ends up empty, and
+        // to the hardcoded `"skin"` fallback if both are unusable).
+        // This branch handled the empty-id case before; we now also
+        // run it on declared ids so they can't traverse out of
+        // `self.dir`.
+        let source = if skin.id.is_empty() { &skin.name } else { &skin.id };
+        let slug = crate::data::themes::slugify(source, "skin");
+        skin.id = slug.clone();
+        let base = slug;
         let mut suffix = 2;
         while id_exists(&user, &skin.id) {
             skin.id = format!("{}-{}", base, suffix);
@@ -145,7 +158,15 @@ impl Store {
     /// when the user hits the Undo toast. Writes the JSON file
     /// the same way `import` would and re-adds the entry to the
     /// in-memory user list.
-    pub fn restore(&self, skin: Skin) -> Result<()> {
+    ///
+    /// Defense-in-depth: re-slugify the id before persisting. The
+    /// snapshot's id ought to be path-safe already (it came from a
+    /// previous `import` that ran the same slug), but a future bug
+    /// that bypasses `import` shouldn't be allowed to write a
+    /// traversing path through `restore`.
+    pub fn restore(&self, mut skin: Skin) -> Result<()> {
+        let source = if skin.id.is_empty() { &skin.name } else { &skin.id };
+        skin.id = crate::data::themes::slugify(source, "skin");
         persist_user(&self.dir, &skin)?;
         self.user.write().unwrap().push(skin);
         Ok(())
@@ -238,6 +259,21 @@ fn validate(sk: &Skin) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    /// Per-test directory under `$TMPDIR` so parallel runs don't
+    /// collide. Mirrors the helper in `highlight.rs::tests`.
+    fn temp_support_dir(suffix: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!(
+            "baudrun-skins-test-{}-{}",
+            suffix,
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&p);
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
 
     #[test]
     fn builtins_parse() {
@@ -255,5 +291,65 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A malicious skin JSON declaring `"id": "../../foo"` must NOT
+    /// be allowed to write through `Store::import` to a path two
+    /// levels above the skins directory. The `slugify` step on the
+    /// import path strips the `/` + `.` chars; the resulting id
+    /// should land inside `<dir>/<safe>.json` only.
+    #[test]
+    fn import_rejects_path_traversal_in_id() {
+        let root = temp_support_dir("traversal");
+        let skins_dir = root.join("skins");
+        std::fs::create_dir_all(&skins_dir).unwrap();
+
+        // Hand-craft a skin JSON with a path-traversing id. Needs
+        // at least one var to pass `validate`.
+        let mut vars = HashMap::new();
+        vars.insert("--accent".to_string(), "#ff0000".to_string());
+        let malicious = Skin {
+            id: "../../pwned".into(),
+            name: "Innocent Looking Skin".into(),
+            source: "user".into(),
+            description: String::new(),
+            vars,
+            dark_vars: HashMap::new(),
+            light_vars: HashMap::new(),
+            supports_light: true,
+        };
+        let src = root.join("malicious.json");
+        std::fs::write(&src, serde_json::to_vec(&malicious).unwrap()).unwrap();
+
+        // Build a Store rooted at the temp skins dir + import.
+        let store = Store {
+            dir: skins_dir.clone(),
+            user: std::sync::RwLock::new(Vec::new()),
+        };
+        let imported = store.import(&src).expect("import succeeds");
+
+        // The persisted id must be path-safe — `..` stripped, `/`
+        // stripped, falls through to the skin's name slug.
+        assert!(
+            !imported.id.contains("..") && !imported.id.contains('/'),
+            "imported id must be path-safe, got {:?}",
+            imported.id
+        );
+        // And the file must live inside the skins dir, not anywhere
+        // above it.
+        let escape_target = root.join("pwned.json");
+        assert!(
+            !escape_target.exists(),
+            "import wrote outside the skins dir at {:?}",
+            escape_target
+        );
+        let safe_target = skins_dir.join(format!("{}.json", imported.id));
+        assert!(
+            safe_target.exists(),
+            "expected import to write inside the skins dir at {:?}",
+            safe_target
+        );
+
+        let _ = fs::remove_dir_all(&root);
     }
 }
