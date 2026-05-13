@@ -651,14 +651,24 @@ impl AppView {
             Some(skin) => user_dark || !skin.supports_light,
             None => fallback_dark || user_dark,
         };
-        let (tokens, fonts) = match &skin_opt {
+        let (tokens, fonts, shadows) = match &skin_opt {
             Some(skin) => (
                 SkinTokens::from_skin(skin, dark),
                 SkinFonts::from_skin(skin, dark),
+                skin_tokens::SkinShadows::from_skin(skin, dark),
             ),
-            None => (SkinTokens::baudrun_default(), SkinFonts::defaults()),
+            None => (
+                SkinTokens::baudrun_default(),
+                SkinFonts::defaults(),
+                skin_tokens::SkinShadows::default(),
+            ),
         };
         cx.set_global(tokens);
+        // SkinShadows live as a parallel non-Copy global since
+        // their `Vec<BoxShadow>` can't ride along on the Copy
+        // `SkinTokens`. Render sites grab their slice via
+        // `cx.global::<SkinShadows>().panel.as_slice()` etc.
+        cx.set_global(shadows);
 
         // Drive gpui-component's Theme off the same appearance
         // signal so Select dropdowns / Inputs / Checkboxes pick the
@@ -2690,6 +2700,11 @@ fn session_overflow_button(
     open: bool,
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
+    // `--shadow-floating` from the active skin for the popup
+    // panel below. Empty (skin sets `"none"` or doesn't declare)
+    // falls through to the hardcoded `shadow_md()` so flush-
+    // edged skins keep their existing soft drop shadow.
+    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
     let panel: Option<gpui::AnyElement> = if open {
         Some(
             deferred(
@@ -2709,7 +2724,13 @@ fn session_overflow_button(
                     .border_1()
                     .border_color(rgba(s.border_subtle))
                     .rounded(px(s.radius_md))
-                    .shadow_md()
+                    .map(|this| {
+                        if shadow_floating.is_empty() {
+                            this.shadow_md()
+                        } else {
+                            this.shadow(shadow_floating.clone())
+                        }
+                    })
                     .child(
                         div()
                             .w_full()
@@ -3169,6 +3190,12 @@ pub fn open_app_window(
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *cx.global::<SkinTokens>();
+        // `--shadow-panel` from the active skin. Cloned out of
+        // the global once per render so both the sidebar + the
+        // right-pane wrapper can call `.shadow(...)` without
+        // re-borrowing `cx`. Empty Vec (skin sets `"none"` or
+        // doesn't declare) → no shadow painted.
+        let shadow_panel = cx.global::<skin_tokens::SkinShadows>().panel_overlay.clone();
         let profiles = self.profile_store.list();
         let selected = self.selected_profile_id.clone();
         let connected = self.connected_profile_id.clone();
@@ -3433,6 +3460,14 @@ impl Render for AppView {
                         // corner.
                         this.rounded(px(s.panel_radius_px)).overflow_hidden()
                     })
+                    // `--shadow-panel` from the skin. Visible
+                    // only on floating-card skins where the
+                    // sidebar reads as a card; flush-edged
+                    // skins meet the window edge with no
+                    // shadow real estate to draw on.
+                    .when(!shadow_panel.is_empty(), |this| {
+                        this.shadow(shadow_panel.clone())
+                    })
                     .px_2()
                     .py_3()
                     // Extra top inset (`--titlebar-content-inset`
@@ -3577,6 +3612,13 @@ impl Render for AppView {
                                             .overflow_hidden()
                                             .bg(rgba(s.bg_main))
                                     })
+                                    // `--shadow-panel` matches the
+                                    // sidebar's; skins author one
+                                    // value that applies to both
+                                    // floating cards.
+                                    .when(!shadow_panel.is_empty(), |this| {
+                                        this.shadow(shadow_panel.clone())
+                                    })
                                     .child(right_pane),
                             ),
                     )
@@ -3678,14 +3720,22 @@ fn profile_context_menu_overlay(
     // through to whatever's anchored under (terminal grid, editor
     // pane, sidebar) and the text bleeds into the content
     // behind. Border + shadow stay on the outer wrapper so they
-    // hug the popup outline.
+    // hug the popup outline. `--shadow-floating` from the active
+    // skin overrides `shadow_md()` when present.
+    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
     let panel = div()
         .min_w(px(220.0))
         .bg(rgba(s.bg_window))
         .border_1()
         .border_color(rgba(s.border_subtle))
         .rounded(px(s.radius_md))
-        .shadow_md()
+        .map(|this| {
+            if shadow_floating.is_empty() {
+                this.shadow_md()
+            } else {
+                this.shadow(shadow_floating.clone())
+            }
+        })
         .child(
             div()
                 .w_full()
@@ -5198,7 +5248,7 @@ fn section_card_with_desc(
         .gap_1()
         .child(
             div()
-                .text_size(px(15.0))
+                .text_size(px(s.font_size_section_px))
                 .text_color(rgba(s.fg_primary))
                 .child(title),
         );
@@ -5218,13 +5268,28 @@ fn section_card_with_desc(
     div()
         .w_full()
         .bg(rgba(s.bg_panel))
-        .border_1()
-        .border_color(rgba(s.border_subtle))
+        // `--panel-border` from the skin. `Solid(w, c)` paints a
+        // border; `None` paints nothing. Default (when the skin
+        // doesn't declare the var) is `Solid(1, border_subtle)`
+        // so legacy / partially-authored skins keep their outline.
+        .map(|this| match s.panel_border {
+            skin_tokens::PanelBorder::None => this,
+            skin_tokens::PanelBorder::Solid(w, colour) => {
+                this.border(px(w)).border_color(rgba(colour))
+            }
+        })
         .rounded(px(s.radius_lg))
         // macOS 26 / Tahoe-style raised card. Matches the same
         // shadow_sm used by `settings_view::section_card_with_desc`
-        // so the profile editor and the Settings window read at the
-        // same elevation.
+        // so the profile editor and the Settings window read at
+        // the same elevation. `--panel-shadow` from the skin is
+        // parsed into `SkinShadows.panel` but not yet threaded
+        // through each card site — most skins ship
+        // `--panel-shadow: none` anyway, and macOS-26's inset
+        // entries can't render in gpui, so the visible delta
+        // would be tiny vs the signature surface needed. Future
+        // pass can replace `shadow_sm()` here once the wiring
+        // is worth the cost.
         .shadow_sm()
         .px_4()
         .py_3()

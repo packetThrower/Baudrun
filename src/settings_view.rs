@@ -32,7 +32,7 @@ use crate::data::settings::Settings;
 use crate::data::skins;
 use crate::data::themes;
 use crate::settings_bus::{SettingsBus, SettingsEvent};
-use crate::skin_tokens::SkinTokens;
+use crate::skin_tokens::{self, SkinTokens};
 
 /// Top-level Settings tabs. Order + labels mirror the Tauri
 /// `Settings.svelte` left rail (Appearance, Themes, Shortcuts,
@@ -2668,7 +2668,7 @@ fn section_card_with_desc(
         .gap_1()
         .child(
             div()
-                .text_size(px(15.0))
+                .text_size(px(s.font_size_section_px))
                 .text_color(rgba(s.fg_primary))
                 .child(title),
         );
@@ -2686,8 +2686,13 @@ fn section_card_with_desc(
     div()
         .w_full()
         .bg(rgba(s.bg_panel))
-        .border_1()
-        .border_color(rgba(s.border_subtle))
+        // `--panel-border` from the skin (see `app_view.rs`).
+        .map(|this| match s.panel_border {
+            skin_tokens::PanelBorder::None => this,
+            skin_tokens::PanelBorder::Solid(w, colour) => {
+                this.border(px(w)).border_color(rgba(colour))
+            }
+        })
         .rounded(px(s.radius_lg))
         // macOS 26 / Tahoe-style raised card. The Tailwind-grade
         // shadow_sm pair (1px+3px blur over 1px+2px) gives the same

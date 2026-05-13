@@ -65,6 +65,32 @@ impl SkinFonts {
     }
 }
 
+impl SkinShadows {
+    /// Resolve the active skin into the three shadow lists.
+    /// `parse_box_shadow_list` skips inset entries silently —
+    /// gpui has no inset-shadow primitive.
+    pub fn from_skin(skin: &Skin, dark: bool) -> Self {
+        let raw_var = |key: &str| -> Option<&String> {
+            if dark {
+                skin.dark_vars.get(key).or_else(|| skin.vars.get(key))
+            } else {
+                skin.light_vars.get(key).or_else(|| skin.vars.get(key))
+            }
+        };
+        Self {
+            panel: raw_var("--panel-shadow")
+                .map(|s| parse_box_shadow_list(s))
+                .unwrap_or_default(),
+            floating: raw_var("--shadow-floating")
+                .map(|s| parse_box_shadow_list(s))
+                .unwrap_or_default(),
+            panel_overlay: raw_var("--shadow-panel")
+                .map(|s| parse_box_shadow_list(s))
+                .unwrap_or_default(),
+        }
+    }
+}
+
 /// Packed-RGBA chrome tokens. Layout matches `gpui::rgba`'s
 /// expected format (MSB → R, then G, B, A in the LSB) so callers
 /// can always do `rgba(tokens.fg_secondary)` without conversion.
@@ -268,7 +294,73 @@ pub struct SkinTokens {
     /// `border_subtle` colour at parse time; bare colour names
     /// `"none"` short-circuit to the `None` variant.
     pub sidebar_divider: SidebarDivider,
+
+    /// `--panel-border` — CSS-style border shorthand applied to
+    /// raised cards inside the chrome (form cards, Settings
+    /// section cards). `None` paints no border; `Solid` paints
+    /// a `w`-wide border in colour `c`. Parsed from strings like
+    /// `"1px solid rgba(0, 0, 0, 0.14)"` or `"none"`;
+    /// `var(--border-subtle)` references fall back to
+    /// `border_subtle`. Default is `Solid(1.0, border_subtle)`
+    /// so skins that don't declare a `--panel-border` (notably
+    /// macOS-26) still get an outline on their cards — Tauri
+    /// drew that line via `--panel-shadow`'s inset entry which
+    /// gpui can't render.
+    pub panel_border: PanelBorder,
 }
+
+/// Card border resolution. `None` = `--panel-border: none` or a
+/// skin that explicitly disables borders; `Solid(width, colour)`
+/// = a 1px (or whatever the skin declares) line. We don't bother
+/// with a separate `Inherit` variant — the parser returns the
+/// skin's declared value or falls back to the `Solid` default,
+/// so by the time render touches it the choice is concrete.
+#[derive(Debug, Clone, Copy)]
+pub enum PanelBorder {
+    None,
+    Solid(f32, u32),
+}
+
+/// Parsed `box-shadow` lists pulled from a skin's `--panel-shadow`,
+/// `--shadow-floating`, and `--shadow-panel` vars. Lives separately
+/// from `SkinTokens` because `Vec<BoxShadow>` isn't `Copy` — but the
+/// render path needs the chrome tokens on every paint, so we keep
+/// `SkinTokens` `Copy` and store shadows here as a parallel non-Copy
+/// gpui `Global`.
+///
+/// **Inset shadows dropped at parse time.** gpui's `BoxShadow` is
+/// outer-shadow only; CSS `inset` entries in the source string are
+/// silently skipped. The most visible loss is macOS-26's
+/// `--panel-shadow` which stacks an outer drop + two inset
+/// highlights (1px top "glass shine" + 1px inset border); the
+/// drop survives, the shines don't.
+#[derive(Debug, Clone, Default)]
+pub struct SkinShadows {
+    /// `--panel-shadow` — drop shadow on raised cards
+    /// (Settings sections, form rule cards, the highlight-pack
+    /// list rows). Parsed + populated but not yet threaded
+    /// through the card render path — most bundled skins ship
+    /// `"none"` here and macOS-26's value is dominated by inset
+    /// entries gpui can't render, so the visible payoff vs the
+    /// ~8 caller signatures we'd need to change isn't there
+    /// yet. Reserved for a future pass.
+    #[allow(dead_code)]
+    pub panel: Vec<gpui::BoxShadow>,
+    /// `--shadow-floating` — drop shadow on floating popups
+    /// (right-click profile menu, session-overflow `⋯` menu).
+    /// gpui-component dialogs paint their own internal shadow
+    /// via `.shadow_md()`; this one only reaches our hand-rolled
+    /// popups in `app_view.rs`.
+    pub floating: Vec<gpui::BoxShadow>,
+    /// `--shadow-panel` — drop shadow on the main shell panes
+    /// (sidebar wrapper + right-pane wrapper on floating-card
+    /// skins). On flush-edged skins these wrappers don't have a
+    /// distinct shape so the shadow has nowhere to draw and the
+    /// var is effectively no-op.
+    pub panel_overlay: Vec<gpui::BoxShadow>,
+}
+
+impl gpui::Global for SkinShadows {}
 
 /// Skin's `--label-transform` declaration. Drives whether
 /// UPPERCASE / lowercase / sentence-case labels in the chrome
@@ -416,6 +508,11 @@ impl SkinTokens {
             // line on the sidebar; floating-card skins
             // (macOS-26) override to `None`.
             sidebar_divider: SidebarDivider::Solid(0xFFFFFF14),
+            // 1px subtle outline by default on every card.
+            // Skins overriding to `"none"` (Baudrun, Adwaita,
+            // Elementary, macOS-26 implicitly) get no border;
+            // skins declaring an explicit colour get that.
+            panel_border: PanelBorder::Solid(1.0, 0xFFFFFF14),
         }
     }
 
@@ -546,6 +643,14 @@ impl SkinTokens {
             sidebar_divider: raw_var("--sidebar-divider")
                 .map(|s| parse_sidebar_divider(s, fb.sidebar_divider))
                 .unwrap_or(fb.sidebar_divider),
+            panel_border: raw_var("--panel-border")
+                .map(|s| parse_border_shorthand(s, fb.border_subtle))
+                // No declaration → keep the default from
+                // `baudrun_default()` (Solid border_subtle); the
+                // parser only fires when the skin explicitly
+                // declares the var, which lets us distinguish
+                // "not set" (preserve default) from "set to none".
+                .unwrap_or(PanelBorder::Solid(1.0, fb.border_subtle)),
         }
     }
 }
@@ -746,6 +851,150 @@ fn parse_label_transform(raw: &str) -> LabelTransform {
         "none" | "" => LabelTransform::None,
         _ => LabelTransform::Uppercase,
     }
+}
+
+/// Parse a CSS border shorthand into `(width_px, color)`. Accepts
+/// `"none"` (returns `None`) and `"<width> solid <colour>"`. The
+/// `solid` style is the only one any bundled skin uses; other
+/// styles (`dashed`, `dotted`, `double`) parse the same way (we
+/// just ignore the style keyword) which means custom skins can't
+/// get a dashed border but at least won't fail-fall-back to the
+/// default. `var(--token)` references fall back to the caller's
+/// `default_colour` (`border_subtle` in practice).
+fn parse_border_shorthand(raw: &str, default_colour: u32) -> PanelBorder {
+    let s = raw.trim();
+    if s.eq_ignore_ascii_case("none") || s.is_empty() {
+        return PanelBorder::None;
+    }
+    // Tokenize while respecting parentheses (rgba(r, g, b, a) is
+    // one token, not four).
+    let tokens = split_top_level(s, ' ');
+    let width = tokens
+        .first()
+        .and_then(|t| parse_px(t))
+        .unwrap_or(1.0);
+    // Find the colour token: the last one that isn't a recognised
+    // style keyword.
+    let colour = tokens
+        .iter()
+        .rev()
+        .find(|t| {
+            let lower = t.to_ascii_lowercase();
+            !matches!(
+                lower.as_str(),
+                "solid" | "dashed" | "dotted" | "double" | "groove" | "ridge"
+            ) && !t.is_empty()
+        })
+        .and_then(|t| {
+            if t.starts_with("var(") {
+                Some(default_colour)
+            } else {
+                parse_color(t)
+            }
+        })
+        .unwrap_or(default_colour);
+    PanelBorder::Solid(width, colour)
+}
+
+/// Parse a CSS `box-shadow` list (one or more comma-separated
+/// shadows) into a `Vec<BoxShadow>`. Each shadow is
+/// `<x> <y> <blur> [<spread>] <colour> [inset]`. Entries flagged
+/// `inset` are dropped — gpui has no inset-shadow primitive.
+/// `"none"` returns an empty `Vec`.
+///
+/// The top-level comma split respects parentheses so the commas
+/// inside `rgba(r, g, b, a)` don't get treated as shadow
+/// separators.
+fn parse_box_shadow_list(raw: &str) -> Vec<gpui::BoxShadow> {
+    let s = raw.trim();
+    if s.eq_ignore_ascii_case("none") || s.is_empty() {
+        return Vec::new();
+    }
+    split_top_level(s, ',')
+        .into_iter()
+        .filter_map(|entry| parse_single_box_shadow(&entry))
+        .collect()
+}
+
+/// Parse one shadow declaration from a `box-shadow` list. Returns
+/// `None` on `inset` shadows (dropped — gpui limitation) or on
+/// values we can't make sense of (logged once in dev builds,
+/// silent in release).
+fn parse_single_box_shadow(raw: &str) -> Option<gpui::BoxShadow> {
+    let s = raw.trim();
+    let tokens = split_top_level(s, ' ');
+    // Look for the `inset` keyword and skip the whole shadow.
+    if tokens.iter().any(|t| t.eq_ignore_ascii_case("inset")) {
+        return None;
+    }
+
+    // Walk tokens; the FIRST 3-4 length tokens are the offsets +
+    // blur (+ optional spread), the LAST non-length token is the
+    // colour. Two-pass parse keeps the colour token (which may
+    // contain `rgba(...)` with internal spaces — already handled
+    // by `split_top_level`) easy to identify.
+    let mut lengths: Vec<f32> = Vec::with_capacity(4);
+    let mut colour: Option<u32> = None;
+    for t in &tokens {
+        if let Some(px) = parse_px(t) {
+            lengths.push(px);
+        } else if colour.is_none() {
+            if let Some(packed) = parse_color(t) {
+                colour = Some(packed);
+            }
+        }
+    }
+    if lengths.len() < 2 || colour.is_none() {
+        return None;
+    }
+    let x = lengths.first().copied().unwrap_or(0.0);
+    let y = lengths.get(1).copied().unwrap_or(0.0);
+    let blur = lengths.get(2).copied().unwrap_or(0.0);
+    let spread = lengths.get(3).copied().unwrap_or(0.0);
+    // gpui's `Rgba::from(packed_u32) → Hsla` conversion is what
+    // every other site in this file uses for colour into shadow.
+    let colour_hsla: gpui::Hsla = gpui::rgba(colour?).into();
+    Some(gpui::BoxShadow {
+        color: colour_hsla,
+        offset: gpui::point(gpui::px(x), gpui::px(y)),
+        blur_radius: gpui::px(blur),
+        spread_radius: gpui::px(spread),
+    })
+}
+
+/// Split `s` on the separator `sep` at top level only — commas
+/// or spaces inside `(...)` groups stay attached to their token.
+/// Used by the border + box-shadow parsers so `rgba(0, 0, 0, 0.3)`
+/// doesn't shred into four pieces. Empty fragments are skipped.
+fn split_top_level(s: &str, sep: char) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut depth: i32 = 0;
+    for c in s.chars() {
+        match c {
+            '(' => {
+                depth += 1;
+                cur.push(c);
+            }
+            ')' => {
+                depth -= 1;
+                cur.push(c);
+            }
+            ch if ch == sep && depth == 0 => {
+                let trimmed = cur.trim();
+                if !trimmed.is_empty() {
+                    out.push(trimmed.to_string());
+                }
+                cur.clear();
+            }
+            _ => cur.push(c),
+        }
+    }
+    let trimmed = cur.trim();
+    if !trimmed.is_empty() {
+        out.push(trimmed.to_string());
+    }
+    out
 }
 
 /// Parse a `--sidebar-divider` declaration into the
