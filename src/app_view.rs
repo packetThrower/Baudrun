@@ -3293,17 +3293,29 @@ impl Render for AppView {
                     // platforms so GNOME-Wayland (where the
                     // server refuses xdg-decoration) gets the
                     // same chrome users see on macOS / Windows.
+                    //
+                    // `.bg(...)` overrides gpui-component's
+                    // default `cx.theme().title_bar` colour so
+                    // the bar reads as part of the window shell
+                    // — on macOS-26 the window gradient shows
+                    // through; on flush-edged skins the panel
+                    // overlay shows. No inline title label
+                    // either: the OS window title carries the
+                    // app name in the taskbar / dock / Cmd-Tab,
+                    // so an extra "Baudrun" string in the bar
+                    // was duplicate signal that clashed with the
+                    // floating-card aesthetic.
                     .child(
-                        TitleBar::new().child(
-                            div()
-                                .size_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_size(px(12.0))
-                                .text_color(rgba(s.fg_secondary))
-                                .child("Baudrun"),
-                        ),
+                        // `.border_color(...)` zeroes the 1px
+                        // bottom separator gpui-component's
+                        // TitleBar draws with
+                        // `cx.theme().title_bar_border` — that's
+                        // the visible hairline between the
+                        // title bar strip and the pane row even
+                        // when the bg is transparent.
+                        TitleBar::new()
+                            .bg(gpui::transparent_black())
+                            .border_color(gpui::transparent_black()),
                     )
                     .child(
                         div()

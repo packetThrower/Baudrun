@@ -1505,25 +1505,20 @@ impl Render for SettingsView {
                     .size_full()
                     .flex()
                     .flex_col()
-                    // Custom title bar — see the matching
-                    // comment on the main window's render in
-                    // `app_view.rs`. Label is "Settings" (not
-                    // "Settings · Baudrun") so the two open
-                    // windows stay visually distinct without
-                    // duplicating the parent app name; the OS
-                    // taskbar still gets the full title from
-                    // `WindowOptions.titlebar.title`.
+                    // Custom title bar — transparent so the
+                    // shell gradient shows through; no inline
+                    // label since the OS title carries
+                    // "Settings · Baudrun" for the taskbar /
+                    // dock. See the matching comment on the
+                    // main window's render in `app_view.rs`.
                     .child(
-                        TitleBar::new().child(
-                            div()
-                                .size_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_size(px(12.0))
-                                .text_color(rgba(s.fg_secondary))
-                                .child("Settings"),
-                        ),
+                        // See the matching comment in
+                        // `app_view.rs` — zero the bottom
+                        // border so the title bar visually
+                        // merges with the content beneath.
+                        TitleBar::new()
+                            .bg(gpui::transparent_black())
+                            .border_color(gpui::transparent_black()),
                     )
                     .child(window_header(
                         s,
