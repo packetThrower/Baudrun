@@ -2456,10 +2456,52 @@ fn window_header(
                 .flex_col()
                 .gap_1()
                 .child(
+                    // h1 row: "Settings" + version badge inline,
+                    // matching the Tauri Settings layout. The
+                    // version pill is a small pilltext tooltipped
+                    // with its provenance so a user inspecting it
+                    // knows what the string represents.
                     div()
-                        .text_size(px(24.0))
-                        .text_color(rgba(s.fg_primary))
-                        .child("Settings"),
+                        .flex()
+                        .flex_row()
+                        .items_baseline()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_size(px(24.0))
+                                .text_color(rgba(s.fg_primary))
+                                .child("Settings"),
+                        )
+                        .child(
+                            div()
+                                .id("settings-version-badge")
+                                .px(px(6.0))
+                                .py(px(1.0))
+                                .rounded_md()
+                                .border_1()
+                                .border_color(rgba(s.border_subtle))
+                                .bg(rgba(s.bg_input))
+                                .text_size(px(11.0))
+                                .text_color(rgba(s.fg_tertiary))
+                                // `env!("CARGO_PKG_VERSION")`
+                                // resolves at compile time. Our
+                                // `release.yml` awk-patches the
+                                // `version = "..."` line in
+                                // `Cargo.toml` to the tag string
+                                // before `cargo build` runs, so
+                                // shipped binaries embed e.g.
+                                // "0.9.7-alpha.1" here. Dev
+                                // `cargo run` shows whatever the
+                                // working-copy Cargo.toml says
+                                // (currently "0.0.1").
+                                .child(format!("v{}", env!("CARGO_PKG_VERSION")))
+                                .tooltip(|window, cx| {
+                                    Tooltip::new(SharedString::from(
+                                        "Baudrun version (from Cargo.toml at build time)",
+                                    ))
+                                    .build(window, cx)
+                                }),
+                        ),
                 )
                 .child(
                     div()
