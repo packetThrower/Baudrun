@@ -48,12 +48,22 @@ use gpui::{
 ///
 /// `pub` so `terminal_view::cell_width` can use the same family
 /// string for layout-line measurement.
+///
+/// macOS / Windows pick a system-shipped monospace (Menlo,
+/// Cascadia Mono) so the app feels native. Linux can't safely
+/// rely on a system font — Debian-family ships DejaVu Sans
+/// Mono by default, RHEL-family ships Liberation Mono, Arch
+/// ships nothing in particular — so we bundle JetBrains Mono
+/// Regular at build time (see `main::run`) and ask the gpui
+/// text system for it by name. The bundled font wins over any
+/// system copy because `add_fonts` registers it in fontdb
+/// before the first lookup.
 #[cfg(target_os = "macos")]
 pub const FONT_FAMILY: &str = "Menlo";
 #[cfg(target_os = "windows")]
 pub const FONT_FAMILY: &str = "Cascadia Mono";
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-pub const FONT_FAMILY: &str = "DejaVu Sans Mono";
+pub const FONT_FAMILY: &str = "JetBrains Mono";
 
 /// Default glyph point size at boot. The active value lives on
 /// `TerminalGrid::font_size_px` and gets swapped via

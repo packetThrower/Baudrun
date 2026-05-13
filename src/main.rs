@@ -172,6 +172,38 @@ fn main() {
         // Phase 2.4 (plain divs only) didn't need this; the moment
         // an Input appears, this is mandatory.
         gpui_component::init(cx);
+
+        // Linux: register a bundled monospace font so the terminal
+        // grid doesn't depend on what the user's distro happens to
+        // ship. Debian / Ubuntu carry `fonts-dejavu` by default but
+        // Fedora (especially server / minimal / ARM) often doesn't —
+        // when our `font("DejaVu Sans Mono")` lookup misses, gpui's
+        // Linux text system (cosmic-text → fontdb) substitutes
+        // whatever proportional font fontconfig picks as the closest
+        // match. `apply_force_width_to_layout` in gpui then
+        // misclassifies narrow proportional glyphs (i / l / t) as
+        // combining marks, the cell-column counter desyncs, and the
+        // user sees terminal text where spaces drift by one cell
+        // (Fedora-43-ARM bug report: `voice vlan oui-table add`
+        // rendering as `voice vlan oui-t ableadd`).
+        //
+        // JetBrains Mono Regular (~270 KB, SIL OFL 1.1, see
+        // `LICENSE-JetBrainsMono.txt` next to the .ttf). Only
+        // bundled on Linux — macOS keeps Menlo and Windows keeps
+        // Cascadia Mono, both of which ship with the OS and don't
+        // benefit from the embedded copy.
+        #[cfg(target_os = "linux")]
+        {
+            const JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!(
+                "../resources/fonts/JetBrainsMono-Regular.ttf"
+            );
+            if let Err(err) = cx.text_system().add_fonts(vec![
+                std::borrow::Cow::Borrowed(JETBRAINS_MONO_REGULAR),
+            ]) {
+                log::error!("register bundled JetBrains Mono: {err}");
+            }
+        }
+
         // Install the chrome-token global with the boot-time
         // baudrun defaults. AppView refreshes it from the active
         // skin in `apply_settings` once the stores are wired, so
