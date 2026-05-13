@@ -1505,21 +1505,21 @@ impl Render for SettingsView {
                     .size_full()
                     .flex()
                     .flex_col()
-                    // Custom title bar — transparent so the
-                    // shell gradient shows through; no inline
-                    // label since the OS title carries
-                    // "Settings · Baudrun" for the taskbar /
-                    // dock. See the matching comment on the
-                    // main window's render in `app_view.rs`.
-                    .child(
-                        // See the matching comment in
-                        // `app_view.rs` — zero the bottom
-                        // border so the title bar visually
-                        // merges with the content beneath.
+                    // Title bar — flush-edged skins get gpui-
+                    // component's default with its theme bg +
+                    // bottom border (visible strip at the top
+                    // of the Settings window). Floating-card
+                    // skins override to transparent + no border
+                    // so the shell colour reads continuously
+                    // from the top edge. See the matching
+                    // branch in `app_view.rs`.
+                    .child(if s.panel_radius_px > 0.0 {
                         TitleBar::new()
                             .bg(gpui::transparent_black())
-                            .border_color(gpui::transparent_black()),
-                    )
+                            .border_color(gpui::transparent_black())
+                    } else {
+                        TitleBar::new()
+                    })
                     .child(window_header(
                         s,
                         &self.filter_input,

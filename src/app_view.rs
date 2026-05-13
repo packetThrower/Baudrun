@@ -1596,6 +1596,14 @@ impl AppView {
         // `settings_window` field, which would otherwise hold the
         // AppView alive transitively through itself.
         let app_view_for_close = cx.entity().downgrade();
+        // Resolve traffic-light position BEFORE `cx.open_window`
+        // grabs a mutable borrow of `cx` — the helper reads
+        // `settings_bus` + `skins_store` via the immutable `&cx`.
+        let traffic_light_pos = traffic_light_position_for_active_skin(
+            cx,
+            &self.settings_bus,
+            &self.skins_store,
+        );
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -1614,6 +1622,7 @@ impl AppView {
                 // leaving the window unmovable.
                 titlebar: Some(TitlebarOptions {
                     title: Some("Settings · Baudrun".into()),
+                    traffic_light_position: Some(traffic_light_pos),
                     ..TitleBar::title_bar_options()
                 }),
                 // Same app_id as the main window so GNOME / KDE
@@ -2984,6 +2993,45 @@ fn bounds_to_geometry(b: Bounds<Pixels>) -> settings::WindowGeometry {
     }
 }
 
+/// Pick the macOS traffic-light position for a window we're about
+/// to open. Floating-card skins (`--panel-radius > 0`) inset the
+/// lights to `(16, 16)` so they sit visibly within the sidebar
+/// card's top-left rather than hugging the very window corner;
+/// every other skin keeps gpui-component's `(9, 9)` default.
+///
+/// `WindowOptions.titlebar.traffic_light_position` is set once at
+/// window creation, so this reads the active skin via
+/// `settings_bus` + `skins_store` rather than from the live
+/// `SkinTokens` global (which isn't installed until inside
+/// `AppView::apply_skin` after the window opens). If the user
+/// switches skins later, the lights stay put — close + reopen the
+/// window to re-resolve.
+fn traffic_light_position_for_active_skin(
+    cx: &gpui::App,
+    settings_bus: &Entity<SettingsBus>,
+    skins_store: &skins::Store,
+) -> gpui::Point<Pixels> {
+    let current = settings_bus.read(cx).current();
+    let skin_id = if current.skin_id.is_empty() {
+        skins::DEFAULT_SKIN_ID
+    } else {
+        current.skin_id.as_str()
+    };
+    let floating = skins_store
+        .get(skin_id)
+        // `dark = false` is fine — the shell-padding / panel-
+        // radius vars aren't declared under `dark_vars` /
+        // `light_vars` in any bundled skin, so the resolved
+        // value is identical in both modes.
+        .map(|skin| SkinTokens::from_skin(&skin, false).panel_radius_px > 0.0)
+        .unwrap_or(false);
+    if floating {
+        gpui::point(px(16.0), px(16.0))
+    } else {
+        gpui::point(px(9.0), px(9.0))
+    }
+}
+
 pub fn open_app_window(
     cx: &mut gpui::App,
     init: WindowInit,
@@ -3002,6 +3050,12 @@ pub fn open_app_window(
             Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx)
         });
     let settings_bus_for_close = settings_bus.clone();
+    // Resolve before `cx.open_window` takes its mutable borrow.
+    let traffic_light_pos = traffic_light_position_for_active_skin(
+        cx,
+        &settings_bus,
+        &skins_store,
+    );
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -3020,6 +3074,11 @@ pub fn open_app_window(
             // is never rendered.
             titlebar: Some(TitlebarOptions {
                 title: Some("Baudrun".into()),
+                // Floating-card skins inset the macOS traffic
+                // lights into the sidebar card; flush-edged
+                // skins keep the default. See
+                // `traffic_light_position_for_active_skin`.
+                traffic_light_position: Some(traffic_light_pos),
                 ..TitleBar::title_bar_options()
             }),
             // app_id matches `StartupWMClass=Baudrun` in
@@ -3283,40 +3342,19 @@ impl Render for AppView {
                     .size_full()
                     .flex()
                     .flex_col()
-                    // Custom title bar — paired with
-                    // `TitleBar::title_bar_options()` on the
-                    // WindowOptions side, this draws the visible
-                    // chrome (drag area + min/max/close on
-                    // Win/Linux, or transparent area behind the
-                    // macOS traffic lights). Single source of
-                    // truth for the title bar UI across all
-                    // platforms so GNOME-Wayland (where the
-                    // server refuses xdg-decoration) gets the
-                    // same chrome users see on macOS / Windows.
-                    //
-                    // `.bg(...)` overrides gpui-component's
-                    // default `cx.theme().title_bar` colour so
-                    // the bar reads as part of the window shell
-                    // — on macOS-26 the window gradient shows
-                    // through; on flush-edged skins the panel
-                    // overlay shows. No inline title label
-                    // either: the OS window title carries the
-                    // app name in the taskbar / dock / Cmd-Tab,
-                    // so an extra "Baudrun" string in the bar
-                    // was duplicate signal that clashed with the
-                    // floating-card aesthetic.
-                    .child(
-                        // `.border_color(...)` zeroes the 1px
-                        // bottom separator gpui-component's
-                        // TitleBar draws with
-                        // `cx.theme().title_bar_border` — that's
-                        // the visible hairline between the
-                        // title bar strip and the pane row even
-                        // when the bg is transparent.
-                        TitleBar::new()
-                            .bg(gpui::transparent_black())
-                            .border_color(gpui::transparent_black()),
-                    )
+                    // Flush-edged skins keep the gpui-component
+                    // `TitleBar` as a flex_col sibling at the
+                    // top, with its default theme bg + border
+                    // — that's the visible title bar strip the
+                    // Baudrun / classic / etc. skins expect.
+                    // Floating-card skins (panel_radius_px > 0)
+                    // move the title bar to an absolute overlay
+                    // (added at the outermost div below) so the
+                    // panes can claim the full window height and
+                    // traffic lights float over the sidebar.
+                    .when(s.panel_radius_px == 0.0, |this| {
+                        this.child(TitleBar::new())
+                    })
                     .child(
                         div()
                             .flex_1()
@@ -3346,6 +3384,19 @@ impl Render for AppView {
                             // the window flush with their old
                             // `border_r_1` separator drawing the
                             // sidebar boundary.
+                            //
+                            // `pt`:
+                            //   - floating-card mode: respect
+                            //     `shell_padding_px` so the cards
+                            //     visually float `shell_padding`
+                            //     below the top window edge;
+                            //     traffic lights overlap the
+                            //     sidebar's top-left.
+                            //   - flush mode: 0 — the in-flex
+                            //     TitleBar above already claims
+                            //     its 34px height in the flex_col,
+                            //     so the pane row sits directly
+                            //     beneath it.
                             .gap(px(s.shell_gap_px))
                             .px(px(s.shell_padding_px))
                             .pt(px(s.shell_padding_px))
@@ -3374,6 +3425,20 @@ impl Render for AppView {
                     })
                     .px_2()
                     .py_3()
+                    // Floating-card mode: extra top inset so the
+                    // sidebar's "PROFILES" header + + / ⊟ / ⚙
+                    // icon strip sit BELOW the macOS traffic
+                    // lights instead of behind them. Traffic
+                    // lights live at (9, 9) with ~12px height,
+                    // so we need content to start at y >= ~24
+                    // local to the sidebar (sidebar itself is
+                    // at y = shell_padding_px from window top,
+                    // so 24 + 10 = 34 from window top — safely
+                    // below the lights). `pt` overrides the top
+                    // half of the `py_3` above.
+                    .when(s.panel_radius_px > 0.0, |this| {
+                        this.pt(px(24.0))
+                    })
                     .flex()
                     .flex_col()
                     .gap_1()
@@ -3513,6 +3578,27 @@ impl Render for AppView {
                         Some(self.terminal.read(cx).scrollback_state()),
                     )),
             )
+            // Floating-card-only: absolute-positioned title bar
+            // overlay at y=0, transparent + no border. Lets the
+            // panes underneath extend up to within
+            // `shell_padding_px` of the top edge while gpui-
+            // component's `TitleBar` widget still provides the
+            // drag area + macOS traffic-light slot. Flush-edged
+            // skins use the in-flex sibling above instead.
+            .when(s.panel_radius_px > 0.0, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .w_full()
+                        .child(
+                            TitleBar::new()
+                                .bg(gpui::transparent_black())
+                                .border_color(gpui::transparent_black()),
+                        ),
+                )
+            })
             // -- gpui-component overlay layers (dialogs, toasts) --
             .children(dialog_layer)
             .children(notification_layer)
@@ -3885,11 +3971,19 @@ fn session_header(
     }
     let s = *cx.global::<SkinTokens>();
     let dot_color = if reconnecting { s.warn } else { s.success };
+    // Skip `bg_main` when the floating-card right-pane wrapper
+    // already paints it. gpui's `overflow_hidden` only clips to
+    // the bounding box, not the rounded shape, so this header's
+    // sharp top-left corner pokes past the wrapper's rounded
+    // curve as a visible "square inside the round" on macOS-26.
+    // The `border_b_1` still draws the divider line between
+    // header and terminal area in both modes.
+    let paint_bg = s.panel_radius_px == 0.0;
     div()
         .w_full()
         .px_4()
         .py_2()
-        .bg(rgba(s.bg_main))
+        .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
         .border_b_1()
         .border_color(rgba(s.border_subtle))
         .text_size(px(13.0))
