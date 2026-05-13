@@ -1037,7 +1037,17 @@ impl SettingsView {
                         });
                         dismiss_notification_after(notif, cx);
                     })
-            }),
+            })
+            // `.action(...)` hardcodes `autohide = false` so the
+            // user has time to read "Undo"; the trade-off is the
+            // toast sits forever until they hover-and-X out of it
+            // (the close button is `.invisible()` + group-hover
+            // reveal — easy to miss on a non-touchscreen). Override
+            // back to true so the toast self-dismisses after gpui-
+            // component's default 5s timeout. The Undo click handler
+            // still fires fine if the user catches the toast before
+            // it fades.
+            .autohide(true),
             cx,
         );
     }
@@ -1135,7 +1145,9 @@ impl SettingsView {
                         });
                         dismiss_notification_after(notif, cx);
                     })
-            }),
+            })
+            // See the matching comment on the skin-delete toast.
+            .autohide(true),
             cx,
         );
     }
@@ -1283,7 +1295,9 @@ impl SettingsView {
                         });
                         dismiss_notification_after(notif, cx);
                     })
-            }),
+            })
+            // See the matching comment on the skin-delete toast.
+            .autohide(true),
             cx,
         );
     }
