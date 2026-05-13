@@ -1495,7 +1495,9 @@ impl Render for SettingsView {
             // Opaque shell base, then translucent main pane on
             // top — same layering AppView uses, so the Settings
             // window's frosted look matches the main one.
-            .bg(rgba(s.bg_window))
+            // `window_background()` picks up the skin's
+            // `--shell-bg` linear gradient when present.
+            .bg(s.window_background())
             .text_color(rgba(s.fg_primary))
             .text_size(px(13.0))
             .child(

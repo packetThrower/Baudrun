@@ -3258,7 +3258,15 @@ impl Render for AppView {
             // of this — without it the macOS-26 / Baudrun skins
             // look uniformly dark because their `--bg-main` is
             // translucent white with nothing solid beneath.
-            .bg(rgba(s.bg_window))
+            //
+            // `window_background()` returns a 2-stop linear
+            // gradient when the skin's `--shell-bg` declares one
+            // (macOS 26 + Baudrun); otherwise falls back to the
+            // solid `bg_window` colour. Lifts the dark shell off
+            // the flat-color look the gpui port had before — gpui
+            // can't backdrop-blur but a gradient at least gives
+            // the macOS 26 skin some of the Tauri shimmer.
+            .bg(s.window_background())
             // (Shortcut actions are handled at the App level —
             // `main::install_app_menu` registers global on_action
             // listeners that route via `dispatch_to_app_view` into
@@ -3312,14 +3320,46 @@ impl Render for AppView {
                             // an extra `bg_main` here would stack
                             // alpha and brighten everything inside
                             // beyond what the skin specifies.
+                            //
+                            // macOS-26 floats the sidebar + main
+                            // pane as rounded cards inside the
+                            // shell: `--shell-padding: 10px`
+                            // (`shell_padding_px`) lifts them off
+                            // the window edge, `--shell-gap: 10px`
+                            // (`shell_gap_px`) separates the two,
+                            // and `--panel-radius: 18px`
+                            // (`panel_radius_px`) rounds their
+                            // corners. Every other skin ships
+                            // those vars at 0, so the panes meet
+                            // the window flush with their old
+                            // `border_r_1` separator drawing the
+                            // sidebar boundary.
+                            .gap(px(s.shell_gap_px))
+                            .px(px(s.shell_padding_px))
+                            .pt(px(s.shell_padding_px))
+                            .pb(px(s.shell_padding_px))
             // -- sidebar --
             .child(
                 div()
                     .w(px(SIDEBAR_WIDTH_PX))
                     .h_full()
                     .bg(rgba(s.bg_sidebar))
-                    .border_r_1()
-                    .border_color(rgba(s.border_subtle))
+                    // 1px right separator only when the panes
+                    // touch (flush-edged skins). With a gap +
+                    // rounded corners, the separator turns into a
+                    // visible line cutting through the gap area —
+                    // drop it on floating-card skins.
+                    .when(s.shell_gap_px == 0.0, |this| {
+                        this.border_r_1().border_color(rgba(s.border_subtle))
+                    })
+                    .when(s.panel_radius_px > 0.0, |this| {
+                        // `overflow_hidden` so the gap + radius
+                        // clip the profile rows cleanly — without
+                        // it a long row's hover/selection
+                        // background bleeds past the rounded
+                        // corner.
+                        this.rounded(px(s.panel_radius_px)).overflow_hidden()
+                    })
                     .px_2()
                     .py_3()
                     .flex()
@@ -3379,7 +3419,78 @@ impl Render for AppView {
                     })),
             )
                             // -- right pane: form OR terminal --
-                            .child(right_pane),
+                            //
+                            // Wrap so floating-card skins can round
+                            // the corners + clip the terminal grid
+                            // / form to the rounded shape. Inner
+                            // `right_pane` already declares
+                            // `flex_1` + `min_w_0`; this wrapper
+                            // mirrors them so layout doesn't
+                            // change on flush-edged skins
+                            // (panel_radius_px == 0).
+                            //
+                            // `bg(bg_main)` so the rounded clip
+                            // actually paints something — without
+                            // a fill the rounded shape is
+                            // transparent and disappears against
+                            // the window background. On flush-
+                            // edged skins this matches Tauri's
+                            // translucent `--bg-main` overlay; on
+                            // macOS-26 it picks up the frosted
+                            // tint over the shell gradient.
+                            .child(
+                                // `flex` + `flex_col` so the inner
+                                // `right_pane`'s own `flex_1` +
+                                // `h_full` actually expands inside
+                                // this wrapper — without a flex
+                                // parent, `flex_1` is inert and
+                                // the inner pane shrinks to its
+                                // content width.
+                                //
+                                // `bg(bg_main)` is on the wrapper
+                                // unconditionally so it stays the
+                                // canonical owner of the "main
+                                // pane translucent overlay" — the
+                                // inner branches (welcome /
+                                // session / form / suspended)
+                                // don't paint their own bg, which
+                                // avoids the stacked-translucent-
+                                // overlay artifact that was making
+                                // an inner rounded rectangle
+                                // visible on macOS-26.
+                                // `rounded` + `overflow_hidden`
+                                // stay gated on `panel_radius_px`
+                                // so flush-edged skins see no
+                                // shape change.
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .h_full()
+                                    .flex()
+                                    .flex_col()
+                                    // Floating-card mode: the
+                                    // wrapper paints `bg_main` so
+                                    // the rounded clip has a
+                                    // visible fill. Inner panes
+                                    // that previously painted
+                                    // their own `bg_main`
+                                    // (welcome / suspended)
+                                    // drop it when this wrapper
+                                    // is active so the alpha
+                                    // doesn't stack. The session
+                                    // header keeps its own
+                                    // `bg_main` because the
+                                    // doubled overlay there is
+                                    // the intentional visual
+                                    // distinction between header
+                                    // and terminal grid.
+                                    .when(s.panel_radius_px > 0.0, |this| {
+                                        this.rounded(px(s.panel_radius_px))
+                                            .overflow_hidden()
+                                            .bg(rgba(s.bg_main))
+                                    })
+                                    .child(right_pane),
+                            ),
                     )
                     // -- bottom status bar (sits under both panes) --
                     .child(status_bar(
@@ -3567,10 +3678,14 @@ fn suspended_pane(
     } else {
         format!("{} @ {}", profile.port_name, profile.baud_rate)
     };
+    // See the matching comment in `welcome_pane`: skip the bg
+    // when the floating-card wrapper is painting it.
+    let paint_bg = s.panel_radius_px == 0.0;
     div()
         .flex_1()
+        .w_full()
         .h_full()
-        .bg(rgba(s.bg_main))
+        .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
         .flex()
         .flex_col()
         .items_center()
@@ -3693,10 +3808,17 @@ fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
     } else {
         "Click the + above the profile list to create one."
     };
+    // Paint `bg_main` here only when the AppView right-pane
+    // wrapper isn't already doing so. Floating-card skins
+    // (panel_radius_px > 0) get the bg from the wrapper which
+    // also handles the rounded clip; flush-edged skins still
+    // need the welcome pane itself to lay down the overlay.
+    let paint_bg = s.panel_radius_px == 0.0;
     div()
         .flex_1()
+        .w_full()
         .h_full()
-        .bg(rgba(s.bg_main))
+        .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
         .flex()
         .flex_col()
         .items_center()

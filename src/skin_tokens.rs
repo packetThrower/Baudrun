@@ -11,7 +11,7 @@
 //! to `SkinTokens::baudrun_default()` so a partially-bad skin
 //! still renders most of the chrome instead of nothing.
 
-use gpui::{Global, SharedString};
+use gpui::{linear_color_stop, linear_gradient, rgba, Background, Global, SharedString};
 
 use crate::data::skins::Skin;
 
@@ -82,7 +82,25 @@ pub struct SkinTokens {
     /// Resolves from the skin's `--bg-window`, falling back to
     /// `--shell-bg` (gradients are flattened to their first solid
     /// stop), then to a hardcoded opaque value.
+    ///
+    /// Pair with `bg_window_gradient` when the skin ships a multi-
+    /// stop `--shell-bg`: the solid value here is the safe fallback
+    /// (for popup / dialog bg layering) and the gradient applies to
+    /// the outermost shell div only via `window_background()`.
     pub bg_window: u32,
+
+    /// Optional 2-stop linear gradient sourced from a skin's
+    /// `--shell-bg`. `Some((from, to, angle_deg))` paints a
+    /// gradient on the outermost shell div via
+    /// `window_background()`; `None` falls back to the solid
+    /// `bg_window` colour. CSS multi-stop gradients are flattened
+    /// to first + last; the middle stops disappear (gpui's
+    /// `linear_gradient` only takes two stops). On macOS 26 dark
+    /// the source `linear-gradient(135deg, #1d1d1d, #292929 45%,
+    /// #1f1f1f)` becomes a subtle `#1d1d1d → #1f1f1f` diagonal —
+    /// less visual punch than the Tauri 3-stop bow-tie but enough
+    /// to lift the shell off a totally-flat dark plane.
+    pub bg_window_gradient: Option<(u32, u32, f32)>,
     /// Translucent main pane bg. Layered ON TOP of `bg_window`.
     pub bg_main: u32,
     pub bg_sidebar: u32,
@@ -140,11 +158,50 @@ pub struct SkinTokens {
     pub radius_lg: f32,
     pub radius_md: f32,
     pub radius_sm: f32,
+
+    /// Padding from the window edge to the sidebar + main pane
+    /// pair. macOS-26 Liquid Glass ships 10px to float both panes
+    /// as rounded cards inside the shell; every other skin ships
+    /// 0 to leave the panes flush with the window. AppView applies
+    /// this as horizontal + bottom padding on the pane-row
+    /// container; the title bar and status bar stay flush.
+    /// `--shell-padding` in the skin vars.
+    pub shell_padding_px: f32,
+    /// Gap between the sidebar and the main pane. macOS-26 ships
+    /// 10px so the two rounded cards have visible breathing room;
+    /// every other skin ships 0 (the sidebar's right border draws
+    /// the separator instead). `--shell-gap` in the skin vars.
+    pub shell_gap_px: f32,
+    /// Corner radius for the sidebar + main pane when they render
+    /// as floating cards. macOS-26 ships 18px; flush-edged skins
+    /// ship 0. AppView uses this to round the panes whenever
+    /// `shell_padding_px` is non-zero. `--panel-radius` in the
+    /// skin vars.
+    pub panel_radius_px: f32,
 }
 
 impl Global for SkinTokens {}
 
 impl SkinTokens {
+    /// Background for the outermost shell div on AppView and
+    /// SettingsView. Returns a 2-stop linear gradient when the
+    /// active skin shipped one in `--shell-bg`; falls back to the
+    /// solid `bg_window` colour otherwise. Popups / dialogs /
+    /// session-overflow panels keep using `rgba(s.bg_window)`
+    /// directly — the gradient would look out of place on a
+    /// 220px floating panel.
+    pub fn window_background(&self) -> Background {
+        if let Some((from, to, angle)) = self.bg_window_gradient {
+            linear_gradient(
+                angle,
+                linear_color_stop(rgba(from), 0.0),
+                linear_color_stop(rgba(to), 1.0),
+            )
+        } else {
+            rgba(self.bg_window).into()
+        }
+    }
+
     /// Hardcoded values matching the previously-inline constants
     /// in `app_view.rs` / `settings_view.rs` — keeps the chrome
     /// looking the same when no skin is loaded (boot-time
@@ -152,6 +209,7 @@ impl SkinTokens {
     pub const fn baudrun_default() -> Self {
         Self {
             bg_window: 0x18181AFF,
+            bg_window_gradient: None,
             // Opaque base for the window. Translucent overlays
             // (panel / sidebar) composite onto this.
             bg_main: 0x18181AFF,
@@ -186,6 +244,11 @@ impl SkinTokens {
             radius_lg: 10.0,
             radius_md: 6.0,
             radius_sm: 4.0,
+            // Default Baudrun shell is flush-edged (panes meet the
+            // window directly). macOS-26 overrides via from_skin.
+            shell_padding_px: 0.0,
+            shell_gap_px: 0.0,
+            panel_radius_px: 0.0,
         }
     }
 
@@ -211,6 +274,15 @@ impl SkinTokens {
         let pick_px = |key: &str, default: f32| {
             raw_var(key).and_then(|s| parse_px(s)).unwrap_or(default)
         };
+        // `--shell-bg` may declare a CSS `linear-gradient(…)` —
+        // capture both the solid fallback (first stop) and the
+        // optional gradient (first + last stops with the declared
+        // angle). The solid feeds `bg_window`; the gradient feeds
+        // `bg_window_gradient`, painted on the outermost shell
+        // div only via `window_background()`.
+        let shell_bg_raw = raw_var("--shell-bg");
+        let shell_solid = shell_bg_raw.and_then(|s| parse_shell_color(s));
+        let shell_gradient = shell_bg_raw.and_then(|s| parse_shell_gradient(s));
         Self {
             // `--bg-window` first (most skins ship a solid here),
             // then fall back to `--shell-bg` (macOS-26 + Baudrun
@@ -219,10 +291,9 @@ impl SkinTokens {
             // baudrun_default opaque dark.
             bg_window: raw_var("--bg-window")
                 .and_then(|s| parse_color(s))
-                .or_else(|| {
-                    raw_var("--shell-bg").and_then(|s| parse_shell_color(s))
-                })
+                .or(shell_solid)
                 .unwrap_or(fb.bg_window),
+            bg_window_gradient: shell_gradient,
             bg_main: pick("--bg-main", fb.bg_main),
             bg_sidebar: pick("--bg-sidebar", fb.bg_sidebar),
             bg_panel: pick("--bg-panel", fb.bg_panel),
@@ -257,6 +328,9 @@ impl SkinTokens {
             radius_lg: pick_px("--radius-lg", fb.radius_lg),
             radius_md: pick_px("--radius-md", fb.radius_md),
             radius_sm: pick_px("--radius-sm", fb.radius_sm),
+            shell_padding_px: pick_px("--shell-padding", fb.shell_padding_px),
+            shell_gap_px: pick_px("--shell-gap", fb.shell_gap_px),
+            panel_radius_px: pick_px("--panel-radius", fb.panel_radius_px),
         }
     }
 }
@@ -315,10 +389,9 @@ fn parse_rgba_args(inner: &str) -> Option<u32> {
 /// Parse `--shell-bg` values that may carry a CSS `linear-gradient`
 /// wrapper. Extracts the first colour stop and returns it; for
 /// non-gradient values (`#1d1d1e` for the Baudrun shell) falls
-/// back to the regular `parse_color`. gpui can't render multi-stop
-/// gradients on a div bg, so the visual loses the gradient
-/// shading — the first stop is a close-enough opaque base for the
-/// translucent panels above to composite against.
+/// back to the regular `parse_color`. Single-value fallback so
+/// `bg_window` always has SOMETHING to compose against when the
+/// gradient parse fails or the skin ships a flat shell.
 fn parse_shell_color(raw: &str) -> Option<u32> {
     let s = raw.trim();
     let inner = s
@@ -340,6 +413,53 @@ fn parse_shell_color(raw: &str) -> Option<u32> {
         return None;
     }
     parse_color(s)
+}
+
+/// Parse `--shell-bg` for the 2-stop approximation gpui's
+/// `linear_gradient` API accepts: `(from_color, to_color, angle_deg)`.
+/// CSS may declare 2+ stops (macOS-26 dark is 3); we keep the
+/// first and last colour stops and pass the angle through unchanged
+/// (CSS and gpui both use degrees-clockwise-from-top so no
+/// conversion is needed).
+///
+/// Returns `None` when the value isn't a `linear-gradient(...)` or
+/// when we can't extract at least two valid colour stops — in that
+/// case the caller falls back to the solid `bg_window` colour.
+/// The middle stops of a CSS multi-stop gradient are discarded;
+/// for the macOS-26 bow-tie pattern (`dark → light → dark`) this
+/// flattens to a near-imperceptible `dark → dark` since the first
+/// and last stops are nearly identical. Acceptable for the alpha;
+/// the lift comes from `--bg-main` translucency picking up the
+/// gradient anyway.
+fn parse_shell_gradient(raw: &str) -> Option<(u32, u32, f32)> {
+    let s = raw.trim();
+    let inner = s
+        .strip_prefix("linear-gradient(")
+        .and_then(|t| t.strip_suffix(')'))?;
+    let mut parts = inner.split(',').map(str::trim);
+    // First arg is the angle (e.g. "135deg"). Strip the unit and
+    // parse as f32. `to top` / `to right` / etc. directional
+    // keywords aren't supported — fall through and let the caller
+    // use the solid fallback.
+    let angle_raw = parts.next()?;
+    let angle = angle_raw
+        .strip_suffix("deg")
+        .and_then(|t| t.trim().parse::<f32>().ok())?;
+    // Subsequent args are colour stops; collect their colours
+    // (drop any trailing `<position>` token).
+    let mut stop_colours: Vec<u32> = Vec::new();
+    for stop in parts {
+        let colour_token = stop.split_whitespace().next().unwrap_or(stop);
+        if let Some(parsed) = parse_color(colour_token) {
+            stop_colours.push(parsed);
+        }
+    }
+    if stop_colours.len() < 2 {
+        return None;
+    }
+    let from = *stop_colours.first()?;
+    let to = *stop_colours.last()?;
+    Some((from, to, angle))
 }
 
 fn parse_rgb_args(inner: &str) -> Option<u32> {
