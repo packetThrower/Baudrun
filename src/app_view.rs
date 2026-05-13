@@ -559,6 +559,20 @@ impl AppView {
         self.apply_highlight(cx);
         self.apply_font_size(settings, cx);
         self.apply_scrollback(settings, cx);
+        self.apply_copy_on_select(settings, cx);
+    }
+
+    /// Mirror the global `copy_on_select` flag into the live
+    /// terminal so PuTTY-style auto-copy on selection release
+    /// follows the user's preference immediately — no relaunch,
+    /// no reconnect.
+    fn apply_copy_on_select(
+        &mut self,
+        settings: &settings::Settings,
+        cx: &mut Context<Self>,
+    ) {
+        let flag = settings.copy_on_select;
+        self.terminal.update(cx, |t, _| t.set_copy_on_select(flag));
     }
 
     fn apply_scrollback(
@@ -2718,6 +2732,35 @@ impl AppView {
         terminal.update(cx, |t, cx| t.clear_screen(cx));
     }
 
+    /// Copy the terminal's current selection to the system
+    /// clipboard. Routed from the global `TerminalCopy` action
+    /// (Cmd+C / Ctrl+C / Ctrl+Shift+C — see `apply_shortcut_bindings`)
+    /// and from the terminal's right-click context menu.
+    pub(crate) fn shortcut_terminal_copy(&mut self, cx: &mut Context<Self>) {
+        let terminal = self.terminal.clone();
+        terminal.update(cx, |t, cx| t.copy_selection(cx));
+    }
+
+    /// Paste the system clipboard into the terminal. Routed from
+    /// the global `TerminalPaste` action (Cmd+V / Ctrl+V /
+    /// Ctrl+Shift+V) and from the right-click menu.
+    pub(crate) fn shortcut_terminal_paste(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let terminal = self.terminal.clone();
+        terminal.update(cx, |t, cx| t.paste_clipboard(window, cx));
+    }
+
+    /// Select the entire visible viewport + scrollback. Routed
+    /// from the global `TerminalSelectAll` action (Cmd+A / Ctrl+A)
+    /// and from the right-click menu.
+    pub(crate) fn shortcut_terminal_select_all(&mut self, cx: &mut Context<Self>) {
+        let terminal = self.terminal.clone();
+        terminal.update(cx, |t, cx| t.select_all(cx));
+    }
+
     /// Open the form for a fresh profile. Same entry point as the
     /// sidebar's "+" icon (`open_editor`).
     pub(crate) fn shortcut_new_profile(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -3923,6 +3966,13 @@ impl Render for AppView {
                 cx.listener(|this, _: &MouseUpEvent, _, cx| {
                     this.dismiss_profile_context_menu(cx);
                     this.dismiss_session_overflow(cx);
+                    // Also dismiss the terminal's right-click
+                    // context menu so clicking outside the popup
+                    // closes it. The terminal owns the menu state
+                    // itself (see `TerminalView::context_menu_pos`),
+                    // so we just forward through the entity.
+                    let terminal = this.terminal.clone();
+                    terminal.update(cx, |t, cx| t.close_context_menu(cx));
                 }),
             )
     }

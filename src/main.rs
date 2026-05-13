@@ -93,6 +93,15 @@ pub(crate) mod actions {
             FontIncrease,
             FontDecrease,
             FontReset,
+            // Terminal-pane clipboard actions. Bound with
+            // `Some("Terminal")` context (see `apply_shortcut_bindings`)
+            // so they fire only when the terminal pane has focus —
+            // typing Cmd+C in a profile-form Input keeps firing
+            // gpui-component's own Input Copy binding instead, no
+            // conflict.
+            TerminalCopy,
+            TerminalPaste,
+            TerminalSelectAll,
         ]
     );
 
@@ -111,7 +120,8 @@ pub(crate) mod actions {
 use actions::{
     About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease,
     FontIncrease, FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings,
-    Quit, Resume, SendBreak, SendFile, Suspend,
+    Quit, Resume, SendBreak, SendFile, Suspend, TerminalCopy, TerminalPaste,
+    TerminalSelectAll,
 };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
@@ -563,6 +573,23 @@ fn install_app_menu(
     cx.on_action(|_: &FontReset, cx| {
         dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_reset(cx));
     });
+    // Terminal-pane clipboard actions. KeyBindings for these live
+    // with `Some("Terminal")` context (see `apply_shortcut_bindings`)
+    // so the keystroke only matches when the terminal div is in
+    // the focus chain — typing Cmd+C in a profile-form input falls
+    // through to gpui-component's Input Copy binding instead.
+    // The action handlers themselves are global; once the keystroke
+    // dispatches the action, route into the active window's
+    // TerminalView through the existing app-view bridge.
+    cx.on_action(|_: &TerminalCopy, cx| {
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_terminal_copy(cx));
+    });
+    cx.on_action(|_: &TerminalPaste, cx| {
+        dispatch_to_app_view(cx, |app, window, cx| app.shortcut_terminal_paste(window, cx));
+    });
+    cx.on_action(|_: &TerminalSelectAll, cx| {
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_terminal_select_all(cx));
+    });
 
     {
         let profile_store = profile_store.clone();
@@ -745,6 +772,25 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-n", NewWindow, None),
         KeyBinding::new("secondary-,", OpenSettings, None),
+        // Terminal-pane clipboard actions. Context-scoped to
+        // `Terminal` so they fire only when the terminal div is
+        // in the focus chain (the div sets `.key_context("Terminal")`
+        // in `TerminalView::render`). On macOS `secondary-` resolves
+        // to Cmd; on Windows / Linux it resolves to Ctrl. Hijacking
+        // bare Ctrl+C on non-Mac means the wire's traditional
+        // 0x03 (ETX / SIGINT) can no longer be typed — a deliberate
+        // choice the user opted into. A "Ctrl+C sends interrupt
+        // instead of copying" setting is on the follow-up list.
+        KeyBinding::new("secondary-c", TerminalCopy, Some("Terminal")),
+        KeyBinding::new("secondary-v", TerminalPaste, Some("Terminal")),
+        KeyBinding::new("secondary-a", TerminalSelectAll, Some("Terminal")),
+        // Cross-platform alternative for users who prefer the
+        // GNOME / KDE / Windows-Terminal convention of
+        // Ctrl+Shift+C / Ctrl+Shift+V for clipboard. Mac users
+        // already have Cmd; this row is just non-Mac belt-and-
+        // braces and harmless to register on Mac too.
+        KeyBinding::new("ctrl-shift-c", TerminalCopy, Some("Terminal")),
+        KeyBinding::new("ctrl-shift-v", TerminalPaste, Some("Terminal")),
     ];
     // Walk the same action list Settings → Shortcuts renders so the
     // menubar and the customization UI agree on which IDs are
@@ -817,6 +863,20 @@ fn install_menus(cx: &mut App) {
             MenuItem::separator(),
             MenuItem::action("Send File…", SendFile),
             MenuItem::action("Open Profile in New Window", OpenInNewWindow),
+        ]),
+        // Standard macOS Edit menu — accelerator labels come from
+        // the registered KeyBindings (Cmd+C / Cmd+V / Cmd+A in
+        // `apply_shortcut_bindings`). The actions themselves are
+        // context-scoped to "Terminal", so picking them from the
+        // menu while no terminal is in focus is a no-op rather
+        // than a crash — gpui's keymap dispatcher refuses to
+        // route the action when the active focus chain doesn't
+        // carry the matching context.
+        Menu::new("Edit").items([
+            MenuItem::action("Copy", TerminalCopy),
+            MenuItem::action("Paste", TerminalPaste),
+            MenuItem::separator(),
+            MenuItem::action("Select All", TerminalSelectAll),
         ]),
         Menu::new("Session").items([
             MenuItem::action("Connect", Connect),

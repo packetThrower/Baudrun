@@ -35,10 +35,11 @@ use alacritty_terminal::{
     vte::ansi::Processor,
 };
 use gpui::{
-    black, div, font, prelude::*, px, rgb, rgba, relative, App, Bounds, ClipboardItem, Context,
-    FocusHandle, Focusable, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta,
-    ScrollWheelEvent, Task, TextRun, Window,
+    anchored, black, deferred, div, font, prelude::*, px, rgb, rgba, relative, App,
+    AnyElement, Bounds, ClipboardItem, Context, FocusHandle, Focusable, IntoElement,
+    KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, SharedString,
+    Task, TextRun, Window,
 };
 use gpui_component::WindowExt;
 
@@ -214,6 +215,21 @@ pub struct TerminalView {
     /// on mouse_up. Without this gate, mouse_move events while the
     /// button is up would still extend selection.
     is_dragging: bool,
+    /// PuTTY-style auto-copy on mouse-selection release. Reads
+    /// the global `Settings::copy_on_select` flag, mirrored here
+    /// by `AppView::apply_copy_on_select` so each settings change
+    /// reflects on every live terminal without threading the bus
+    /// in. Honoured by `handle_mouse_up` — on release with a
+    /// non-empty selection, writes the text to the clipboard.
+    copy_on_select: bool,
+    /// Window-coords anchor for the right-click context menu.
+    /// `Some(pos)` while the menu is open, `None` otherwise.
+    /// The menu offers Copy / Paste / Select All / Clear — same
+    /// rows the keybindings cover, surfaced for users who prefer
+    /// mousing. Dismissed by clicking an item, clicking outside
+    /// (AppView's root catch-all calls our `close_context_menu`),
+    /// or pressing Escape.
+    context_menu_pos: Option<PixelPoint<Pixels>>,
     /// `Some(grab_offset_within_thumb)` while the user is dragging
     /// the scrollback thumb. The grab offset (Y distance from the
     /// thumb's top to the initial click) is preserved across the
@@ -372,6 +388,8 @@ impl TerminalView {
             grid_bounds: Rc::new(Cell::new(None)),
             scroll_accum: 0.0,
             is_dragging: false,
+            copy_on_select: false,
+            context_menu_pos: None,
             scrollbar_drag: None,
             cursor_blink_phase: true,
             bell_flash_until: None,
@@ -575,6 +593,14 @@ impl TerminalView {
         };
         self.term.set_options(cfg);
         cx.notify();
+    }
+
+    /// Mirror the global `Settings::copy_on_select` flag into the
+    /// view. `AppView::apply_copy_on_select` calls this on settings
+    /// changes (and on construction) so each live terminal in any
+    /// window matches the latest toggle without restart.
+    pub fn set_copy_on_select(&mut self, flag: bool) {
+        self.copy_on_select = flag;
     }
 
     pub fn set_profile_settings(&mut self, settings: ProfileSettings) {
@@ -1127,21 +1153,214 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Right-mouse-down handler. Opens the terminal context menu
+    /// anchored at the cursor. Selection state is preserved — a
+    /// right-click that lands inside an active drag-selection keeps
+    /// the selection alive so the user can right-click → Copy. The
+    /// `stop_propagation` keeps the AppView root's mouse-up
+    /// catch-all (which dismisses any open popup) from firing on
+    /// the same gesture and immediately closing the menu we just
+    /// opened.
+    fn handle_right_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button != MouseButton::Right {
+            return;
+        }
+        cx.stop_propagation();
+        self.context_menu_pos = Some(event.position);
+        cx.notify();
+    }
+
+    /// Tear down the right-click context menu. Called by the menu
+    /// rows themselves after running their action, and by
+    /// `AppView`'s outer click-outside catch-all (via
+    /// `shortcut_dismiss_terminal_context_menu`). Safe to call
+    /// when the menu is already closed.
+    pub fn close_context_menu(&mut self, cx: &mut Context<Self>) {
+        if self.context_menu_pos.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Build the right-click context menu overlay. Returns `None`
+    /// when the menu isn't open. The panel renders as a
+    /// `deferred(anchored(pos))` overlay so it sits above the
+    /// terminal grid + scrollbar thumb and pins to the cursor
+    /// coordinate captured by `handle_right_mouse_down`.
+    fn render_context_menu(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let pos = self.context_menu_pos?;
+        let s = *cx.global::<crate::skin_tokens::SkinTokens>();
+        // Disable Copy when there's nothing selected — the action
+        // would no-op but a greyed entry communicates "you'd need
+        // to drag-select first" without the user having to click.
+        let has_selection = self
+            .term
+            .selection_to_string()
+            .filter(|t| !t.is_empty())
+            .is_some();
+        // Rows are uniform — single label, single click handler,
+        // optional dim state. The closure shape matches what
+        // `gpui::div().child(...)` expects, so each row is a
+        // standalone Div.
+        type ClickHandler =
+            Box<dyn Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static>;
+        let row = move |label: &'static str,
+                        enabled: bool,
+                        on_click: ClickHandler|
+              -> AnyElement {
+            let hover_bg = s.bg_hover;
+            let d = div()
+                .id(SharedString::from(label))
+                .px_3()
+                .py(px(6.0))
+                .text_color(rgba(s.fg_primary))
+                .text_size(px(13.0))
+                .child(label);
+            if enabled {
+                d.cursor_pointer()
+                    .hover(move |st| st.bg(rgba(hover_bg)))
+                    .on_mouse_up(MouseButton::Left, on_click)
+                    .into_any_element()
+            } else {
+                d.opacity(0.45).into_any_element()
+            }
+        };
+        // Each row: stop_propagation to keep the AppView root
+        // catch-all from re-firing dismiss after we've already
+        // run the action; then dispatch through the same path
+        // the keybindings use (entity.update on the terminal)
+        // so the action + menu surfaces stay equivalent.
+        let copy_row = {
+            let entity = cx.entity();
+            row(
+                "Copy",
+                has_selection,
+                Box::new(move |_, _window, app| {
+                    entity.update(app, |this, cx| {
+                        cx.stop_propagation();
+                        this.copy_selection(cx);
+                        this.close_context_menu(cx);
+                    });
+                }),
+            )
+        };
+        let paste_row = {
+            let entity = cx.entity();
+            row(
+                "Paste",
+                true,
+                Box::new(move |_, window, app| {
+                    entity.update(app, |this, cx| {
+                        cx.stop_propagation();
+                        this.paste_clipboard(window, cx);
+                        this.close_context_menu(cx);
+                    });
+                }),
+            )
+        };
+        let select_all_row = {
+            let entity = cx.entity();
+            row(
+                "Select All",
+                true,
+                Box::new(move |_, _window, app| {
+                    entity.update(app, |this, cx| {
+                        cx.stop_propagation();
+                        this.select_all(cx);
+                        this.close_context_menu(cx);
+                    });
+                }),
+            )
+        };
+        let clear_row = {
+            let entity = cx.entity();
+            row(
+                "Clear",
+                true,
+                Box::new(move |_, _window, app| {
+                    entity.update(app, |this, cx| {
+                        cx.stop_propagation();
+                        this.clear_screen(cx);
+                        this.close_context_menu(cx);
+                    });
+                }),
+            )
+        };
+        // Match `app_view::profile_context_menu_overlay`'s
+        // two-layer paint: opaque `bg_window` base for legibility
+        // over whatever sits behind, then the translucent
+        // `bg_panel` skin overlay on top to match the rest of the
+        // chrome's frosted look. `--shadow-floating` from the skin
+        // wins over the default `shadow_md` when authored.
+        let shadow_floating = cx
+            .global::<crate::skin_tokens::SkinShadows>()
+            .floating
+            .clone();
+        let panel = div()
+            .min_w(px(160.0))
+            .bg(rgba(s.bg_window))
+            .border_1()
+            .border_color(rgba(s.border_subtle))
+            .rounded(px(s.radius_md))
+            .map(|this| {
+                if shadow_floating.is_empty() {
+                    this.shadow_md()
+                } else {
+                    this.shadow(shadow_floating.clone())
+                }
+            })
+            .child(
+                div()
+                    .w_full()
+                    .bg(rgba(s.bg_panel))
+                    .rounded(px(s.radius_md))
+                    .py_1()
+                    .child(copy_row)
+                    .child(paste_row)
+                    .child(select_all_row)
+                    .child(clear_row),
+            );
+        Some(deferred(anchored().position(pos).child(panel)).into_any_element())
+    }
+
     fn handle_mouse_up(
         &mut self,
         event: &MouseUpEvent,
         _window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         if event.button != MouseButton::Left {
             return;
         }
+        // Did this release end a selection drag (vs. just a stray
+        // mouse-up on the scrollbar)? Capture before clearing so
+        // the copy-on-select branch below knows whether to fire.
+        let drag_ended = self.is_dragging;
         // Clear scrollbar drag first (no-op if it wasn't set).
         // Selection state survives the release so the user can
         // copy it with Cmd-C / Ctrl-Shift-C; cleared on the next
         // mouse_down (a fresh click drops the prior selection).
         self.scrollbar_drag = None;
         self.is_dragging = false;
+        // PuTTY-style copy-on-select. When the global setting is
+        // on, releasing the mouse after a drag copies the new
+        // selection straight to the clipboard — no Cmd+C needed.
+        // Skipped when the release wasn't ending a drag (e.g. a
+        // stray button-up without a matching button-down on the
+        // grid). `copy_selection` itself no-ops when the selection
+        // is empty (single-click without drag), so the check
+        // collapses to "did the user just finish dragging some
+        // text?" without us having to inspect selection extents.
+        if drag_ended && self.copy_on_select {
+            self.copy_selection(cx);
+        }
     }
 
     /// Translate a window-coords pixel position into an alacritty
@@ -1184,13 +1403,50 @@ impl TerminalView {
         Some(GridPoint::new(Line(line), Column(col)))
     }
 
-    fn copy_selection(&mut self, cx: &mut App) {
+    /// Copy the current alacritty selection to the system
+    /// clipboard. No-op when no selection is active or the
+    /// selection text is empty. Called from:
+    ///   * the `TerminalCopy` action handler in `app_view`
+    ///     (dispatched by Cmd+C / Ctrl+C / Ctrl+Shift+C);
+    ///   * the right-click context menu's Copy row; and
+    ///   * `handle_mouse_up` when copy-on-select is enabled.
+    pub fn copy_selection(&mut self, cx: &mut App) {
         if let Some(text) = self.term.selection_to_string().filter(|s| !s.is_empty()) {
             cx.write_to_clipboard(ClipboardItem::new_string(text));
         }
     }
 
-    fn paste_clipboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Build a selection that spans every cell from the top of
+    /// the scrollback buffer to the bottom-right of the visible
+    /// viewport. Mirrors the standard "Select All" semantics in
+    /// xterm / iTerm2 / Windows Terminal: a single Cmd+A / Ctrl+A
+    /// is meant to capture the entire scrollback session, not just
+    /// what fits on screen.
+    pub fn select_all(&mut self, cx: &mut Context<Self>) {
+        let cols = self.term.columns();
+        let total_lines = self.term.screen_lines();
+        let history = self.term.grid().history_size() as i32;
+        if cols == 0 || total_lines == 0 {
+            return;
+        }
+        let start = GridPoint::new(Line(-history), Column(0));
+        let end = GridPoint::new(
+            Line(total_lines as i32 - 1),
+            Column(cols.saturating_sub(1)),
+        );
+        let mut sel = Selection::new(SelectionType::Simple, start, Side::Left);
+        sel.update(end, Side::Right);
+        self.term.selection = Some(sel);
+        mirror_to_grid(
+            &self.term,
+            &mut self.grid,
+            &self.palette,
+            self.cursor_blink_phase,
+        );
+        cx.notify();
+    }
+
+    pub fn paste_clipboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(text) = cx
             .read_from_clipboard()
             .as_ref()
@@ -1373,31 +1629,22 @@ impl TerminalView {
     fn handle_key_down(
         &mut self,
         event: &KeyDownEvent,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        // Clipboard shortcuts come before the wire encoder. macOS
-        // uses Cmd-C / Cmd-V (which the encoder already drops to
-        // None because of `m.platform`). Linux / Windows use
-        // Ctrl-Shift-C / Ctrl-Shift-V — the bare Ctrl-C / Ctrl-V
-        // on those platforms keeps its terminal-control meaning
-        // (XOFF... actually 0x03 SIGINT and 0x16 SYN — both real
-        // serial-device codes), which is why network terminals
-        // moved to the Shift-modified variants.
-        let m = &event.keystroke.modifiers;
-        let key = event.keystroke.key.as_str();
-        let copy_combo = (m.platform && !m.control && !m.alt && key == "c")
-            || (m.control && m.shift && !m.platform && !m.alt && key == "c");
-        let paste_combo = (m.platform && !m.control && !m.alt && key == "v")
-            || (m.control && m.shift && !m.platform && !m.alt && key == "v");
-        if copy_combo {
-            self.copy_selection(cx);
-            return;
-        }
-        if paste_combo {
-            self.paste_clipboard(window, cx);
-            return;
-        }
+        // Clipboard + select-all shortcuts no longer live here.
+        // They're registered as gpui actions (TerminalCopy /
+        // TerminalPaste / TerminalSelectAll) with `Some("Terminal")`
+        // context in `apply_shortcut_bindings`, and the terminal
+        // div sets `.key_context("Terminal")` so gpui's keymap
+        // dispatches the action before this raw key handler ever
+        // runs. The earlier inline `m.platform && key == "c"`
+        // check worked on macOS when the focus chain held its
+        // ground, but it was fragile — any change to focus
+        // routing or event ordering could silently drop the
+        // shortcut. Action dispatch is the idiomatic path and is
+        // shared with the right-click context menu so both UX
+        // surfaces invoke exactly the same code.
 
         let Some(serial_bytes) = encode_for_serial(&event.keystroke, &self.profile_settings)
         else {
@@ -1488,10 +1735,25 @@ impl Render for TerminalView {
             .relative()
             .bg(rgb(pack(self.palette.bg)))
             .p(px(GRID_PADDING_PX))
+            // Key context — gates the `TerminalCopy`, `TerminalPaste`,
+            // and `TerminalSelectAll` KeyBindings (registered with
+            // `Some("Terminal")` in `apply_shortcut_bindings`) so
+            // they fire only when this div is in the focus chain.
+            // Stops Cmd+C from grabbing a profile-form Input's text
+            // when the user happens to have the terminal pane open
+            // in a different window.
+            .key_context("Terminal")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))
             .on_scroll_wheel(cx.listener(Self::handle_scroll))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
+            // Right-click opens the Copy / Paste / Select All /
+            // Clear context menu anchored at the cursor — see
+            // `handle_right_mouse_down` for why this lives on
+            // mouse_down rather than mouse_up (matches the macOS
+            // / Windows / Linux convention of "menu appears on
+            // press, not release").
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::handle_right_mouse_down))
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
             .child(self.grid.element(
@@ -1499,6 +1761,11 @@ impl Render for TerminalView {
                 self.bell_flash_active(),
                 self.grid_bounds.clone(),
             ))
+            // Right-click context menu overlay. Painted only when
+            // `context_menu_pos` is `Some`; `deferred` so it draws
+            // above sibling chrome (scrollbar thumb, etc.) and
+            // `anchored` so it pins to the cursor coordinate.
+            .children(self.render_context_menu(cx))
             // Scroll-indicator overlay on the right edge. Mirrors
             // alacritty's display_offset / history_size so the
             // thumb position reflects the user's place in the
