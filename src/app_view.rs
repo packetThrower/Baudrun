@@ -1596,14 +1596,6 @@ impl AppView {
         // `settings_window` field, which would otherwise hold the
         // AppView alive transitively through itself.
         let app_view_for_close = cx.entity().downgrade();
-        // Resolve traffic-light position BEFORE `cx.open_window`
-        // grabs a mutable borrow of `cx` — the helper reads
-        // `settings_bus` + `skins_store` via the immutable `&cx`.
-        let traffic_light_pos = traffic_light_position_for_active_skin(
-            cx,
-            &self.settings_bus,
-            &self.skins_store,
-        );
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -1622,7 +1614,10 @@ impl AppView {
                 // leaving the window unmovable.
                 titlebar: Some(TitlebarOptions {
                     title: Some("Settings · Baudrun".into()),
-                    traffic_light_position: Some(traffic_light_pos),
+                    traffic_light_position: Some(gpui::point(
+                        px(TRAFFIC_LIGHT_POSITION_PX),
+                        px(TRAFFIC_LIGHT_POSITION_PX),
+                    )),
                     ..TitleBar::title_bar_options()
                 }),
                 // Same app_id as the main window so GNOME / KDE
@@ -2993,44 +2988,25 @@ fn bounds_to_geometry(b: Bounds<Pixels>) -> settings::WindowGeometry {
     }
 }
 
-/// Pick the macOS traffic-light position for a window we're about
-/// to open. Floating-card skins (`--panel-radius > 0`) inset the
-/// lights to `(16, 16)` so they sit visibly within the sidebar
-/// card's top-left rather than hugging the very window corner;
-/// every other skin keeps gpui-component's `(9, 9)` default.
+/// Universal macOS traffic-light position used for every window
+/// we open. `(16, 16)` is a compromise between the two layouts:
 ///
-/// `WindowOptions.titlebar.traffic_light_position` is set once at
-/// window creation, so this reads the active skin via
-/// `settings_bus` + `skins_store` rather than from the live
-/// `SkinTokens` global (which isn't installed until inside
-/// `AppView::apply_skin` after the window opens). If the user
-/// switches skins later, the lights stay put — close + reopen the
-/// window to re-resolve.
-fn traffic_light_position_for_active_skin(
-    cx: &gpui::App,
-    settings_bus: &Entity<SettingsBus>,
-    skins_store: &skins::Store,
-) -> gpui::Point<Pixels> {
-    let current = settings_bus.read(cx).current();
-    let skin_id = if current.skin_id.is_empty() {
-        skins::DEFAULT_SKIN_ID
-    } else {
-        current.skin_id.as_str()
-    };
-    let floating = skins_store
-        .get(skin_id)
-        // `dark = false` is fine — the shell-padding / panel-
-        // radius vars aren't declared under `dark_vars` /
-        // `light_vars` in any bundled skin, so the resolved
-        // value is identical in both modes.
-        .map(|skin| SkinTokens::from_skin(&skin, false).panel_radius_px > 0.0)
-        .unwrap_or(false);
-    if floating {
-        gpui::point(px(16.0), px(16.0))
-    } else {
-        gpui::point(px(9.0), px(9.0))
-    }
-}
+///   - Floating-card skins (macOS-26): the lights sit visibly
+///     inset into the sidebar card's top-left rather than hugging
+///     the very window corner. (16, 16) clears the 18px sidebar
+///     `panel_radius` curve.
+///   - Flush-edged skins (every other built-in): the lights sit
+///     within the 34px in-flex title-bar strip — at y=16 they're
+///     roughly centered vertically (lights are ~12px tall, so
+///     they span y=16-28 within the strip).
+///
+/// We don't resolve per-skin because gpui's macOS backend only
+/// reads `WindowOptions.titlebar.traffic_light_position` at window
+/// creation — there's no runtime setter to react to a live skin
+/// swap. One fixed position keeps the lights from getting stuck in
+/// the wrong spot when a user switches between flush and floating-
+/// card skins without restarting.
+const TRAFFIC_LIGHT_POSITION_PX: f32 = 16.0;
 
 pub fn open_app_window(
     cx: &mut gpui::App,
@@ -3050,12 +3026,6 @@ pub fn open_app_window(
             Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx)
         });
     let settings_bus_for_close = settings_bus.clone();
-    // Resolve before `cx.open_window` takes its mutable borrow.
-    let traffic_light_pos = traffic_light_position_for_active_skin(
-        cx,
-        &settings_bus,
-        &skins_store,
-    );
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -3074,11 +3044,16 @@ pub fn open_app_window(
             // is never rendered.
             titlebar: Some(TitlebarOptions {
                 title: Some("Baudrun".into()),
-                // Floating-card skins inset the macOS traffic
-                // lights into the sidebar card; flush-edged
-                // skins keep the default. See
-                // `traffic_light_position_for_active_skin`.
-                traffic_light_position: Some(traffic_light_pos),
+                // Fixed (16, 16) for every skin — see
+                // `TRAFFIC_LIGHT_POSITION_PX`. macOS doesn't let
+                // gpui re-position the lights at runtime, so we
+                // can't track skin swaps live; one universal
+                // position avoids stuck-in-the-wrong-place lights
+                // when the user changes skins without restarting.
+                traffic_light_position: Some(gpui::point(
+                    px(TRAFFIC_LIGHT_POSITION_PX),
+                    px(TRAFFIC_LIGHT_POSITION_PX),
+                )),
                 ..TitleBar::title_bar_options()
             }),
             // app_id matches `StartupWMClass=Baudrun` in
