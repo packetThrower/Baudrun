@@ -957,7 +957,30 @@ impl AppView {
                 return;
             }
         }
-        self.open_editor_for(id, window, cx);
+        // Paint the new selection (bg flips to `bg_active`)
+        // BEFORE running the heavy `build_editor`. Without this
+        // defer, the click handler stays on the stack until ~20
+        // widget entities (Input / Select / Checkbox) finish
+        // initialising, and gpui doesn't paint until the handler
+        // returns — so the selected-row blue would seem to take
+        // about a second to appear. Yielding with a 0-duration
+        // timer lets the current render cycle complete first.
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx_async| {
+            cx_async
+                .background_executor()
+                .timer(Duration::ZERO)
+                .await;
+            let _ = this.update_in(cx_async, |this, window, cx| {
+                // Skip if the user clicked a different row in the
+                // interim — chasing a stale selection would blow
+                // away whatever the new click already populated.
+                if this.selected_profile_id.as_deref() == Some(id.as_str()) {
+                    this.open_editor_for(id, window, cx);
+                }
+            });
+        })
+        .detach();
     }
 
     /// Disconnect the current session (if any) and open the new
@@ -5477,7 +5500,11 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
             .bg(bg)
             .text_color(fg)
             .cursor_pointer()
-            .hover(move |st| st.bg(rgba(hover_bg)))
+            // Hover bg only when NOT active — see the matching
+            // comment in `profile_row`.
+            .when(!is_active, |this| {
+                this.hover(move |st| st.bg(rgba(hover_bg)))
+            })
             .child(label)
             .on_mouse_up(
                 MouseButton::Left,
@@ -6323,10 +6350,20 @@ fn profile_row(
         profile.port_name.clone()
     };
 
+    // Profile-row bg follows the same pattern as the Settings
+    // rail items (`settings_view::rail`): `bg_active` — the
+    // accent-tinted blue — when selected, fully transparent
+    // otherwise. The transparent unselected state lets the
+    // sidebar's own `bg_sidebar` show through; on macOS-26's
+    // translucent skin in particular this prevents the rows
+    // from reading as distinct cards stacked on top of the
+    // sidebar card (which they were when we used `bg_sidebar`
+    // for unselected — that doubled the 50% white alpha against
+    // the parent and lightened each row visibly).
     let bg = if is_selected {
-        rgba(tokens.bg_hover)
+        rgba(tokens.bg_active)
     } else {
-        rgba(tokens.bg_sidebar)
+        rgba(0x00000000)
     };
     let hover_bg = tokens.bg_hover;
 
@@ -6398,7 +6435,14 @@ fn profile_row(
         // every skin's authored intent.
         .rounded(px(tokens.radius_md))
         .bg(bg)
-        .hover(move |st| st.bg(rgba(hover_bg)))
+        // Hover bg only when NOT selected. Otherwise the
+        // grey hover overlay paints over the blue `bg_active`
+        // and the user sees an apparent "flicker" when their
+        // mouse stays on a row they just clicked — the row
+        // looks selected only after the mouse leaves it.
+        .when(!is_selected, |this| {
+            this.hover(move |st| st.bg(rgba(hover_bg)))
+        })
         .cursor_pointer()
         .flex()
         .flex_col()

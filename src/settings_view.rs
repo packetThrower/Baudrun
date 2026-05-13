@@ -2614,7 +2614,15 @@ fn rail(
             .text_color(fg)
             .opacity(opacity)
             .cursor_pointer()
-            .hover(move |st| st.bg(rgba(hover_bg)))
+            // Hover bg only when NOT the active tab — see the
+            // matching comment in `profile_row` in `app_view.rs`.
+            // Without this gate the grey hover overlay paints
+            // over the blue `bg_active` while the user's cursor
+            // sits on the row they just clicked, and the tab
+            // looks active only after the mouse leaves.
+            .when(!is_active, |this| {
+                this.hover(move |st| st.bg(rgba(hover_bg)))
+            })
             .child(label)
             .on_mouse_up(
                 MouseButton::Left,
