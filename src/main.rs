@@ -12,6 +12,16 @@
 //! to the welcome pane and the user picks a profile from the
 //! sidebar.
 
+// `windows` subsystem suppresses the console window that Rust's
+// default `console` subsystem pops up alongside the GUI when a user
+// double-clicks `Baudrun.exe` from File Explorer. No-op on non-
+// Windows targets. Debug builds keep the console attached only when
+// launched from a terminal (the standard subsystem doesn't allocate
+// a fresh one) — `cargo run` on Windows still sees stdout/stderr in
+// the terminal it was launched from. The user-visible regression is
+// only on installed Win + double-click launches, which this fixes.
+#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app_view;
 mod data;
 mod highlight_runtime;
@@ -266,6 +276,15 @@ fn main() {
             highlight_store.clone(),
             themes_store.clone(),
         );
+        // Dock menu is a macOS-only concept (Cmd+click app icon →
+        // jump list). gpui's `set_dock_menu` no-ops on Windows /
+        // Linux but `gpui_windows::platform` still validates the
+        // items vec at build time and logs an ERROR for our
+        // `MenuItem::separator()` row (it only accepts
+        // `MenuItem::Action` in the dock-menu shape on Windows).
+        // Skip the whole setup on non-mac to keep the boot log
+        // clean.
+        #[cfg(target_os = "macos")]
         install_dock_menu(cx, &profile_store);
 
         // Publish the same store handles the menubar + dock paths

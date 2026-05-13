@@ -1543,8 +1543,23 @@ impl AppView {
     /// fresh one with `SettingsView` as the root.
     pub(crate) fn open_settings(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         // Reuse the existing window if it's still alive. `update`
-        // returns `Err` when the OS window has been closed; that's
-        // the signal to drop the stale handle and open a new one.
+        // returns `Err` when the OS window has been closed.
+        //
+        // We MUST clear `self.settings_window` from the close
+        // handler below (rather than only here on the next open
+        // attempt) — otherwise this `.update` call walks into a
+        // destroyed window handle, and gpui logs three errors
+        // every time:
+        //
+        //   ERROR gpui::window]         window not found
+        //   ERROR gpui_windows::window] Invalid window handle (0x80040102)
+        //   ERROR gpui_windows::window] Invalid window handle. (0x80070578)
+        //
+        // The `is_ok()` check swallows the *return* value but not
+        // the side-effect logging from the failed HWND ops. With
+        // the close handler clearing the handle, this branch only
+        // runs when the window is still actually alive, and gpui
+        // stays quiet.
         if let Some(handle) = &self.settings_window {
             let activated = handle
                 .update(cx, |_, window, _| window.activate_window())
@@ -1573,6 +1588,14 @@ impl AppView {
                 Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx)
             });
         let bus_for_close = self.settings_bus.clone();
+        // Weak handle so the close callback can clear
+        // `self.settings_window` on the AppView when the OS window
+        // is destroyed. `Weak` (not `Entity`) avoids creating a
+        // strong-ref cycle: the close closure is owned by the
+        // settings window, which is held by AppView's
+        // `settings_window` field, which would otherwise hold the
+        // AppView alive transitively through itself.
+        let app_view_for_close = cx.entity().downgrade();
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -1624,6 +1647,18 @@ impl AppView {
                                 log::error!("save settings-window state: {err}");
                             }
                         }
+                    });
+                    // Drop the AppView's stored handle to this
+                    // window so the next `open_settings` click
+                    // takes the "fresh open" branch instead of
+                    // calling `.update()` on a soon-to-be-dead
+                    // handle. `update` returns `Err` if the
+                    // AppView entity is already gone (app
+                    // tear-down ordering), which is fine — we
+                    // would only be clearing a field on a dead
+                    // object anyway.
+                    let _ = app_view_for_close.update(cx, |app_view, _| {
+                        app_view.settings_window = None;
                     });
                     true
                 });
