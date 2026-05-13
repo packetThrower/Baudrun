@@ -731,10 +731,20 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
     // exposing them to the override UI would let a user accidentally
     // trap themselves in a window with no way to reach Quit or
     // Settings.
+    //
+    // Use `secondary-` (gpui's portable Cmd-on-macOS /
+    // Ctrl-on-Windows-and-Linux token) rather than `cmd-`. gpui's
+    // `cmd` / `super` / `win` literals all set the same
+    // `modifiers.platform` bit, which is the Cmd key on macOS but
+    // the Windows / Super key on the other two — neither of which
+    // can be used as an app shortcut (the OS intercepts them
+    // before they reach the window). `secondary-` is the only
+    // token that fires Cmd+Q on macOS and Ctrl+Q on Windows /
+    // Linux.
     let mut bindings = vec![
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-n", NewWindow, None),
-        KeyBinding::new("cmd-,", OpenSettings, None),
+        KeyBinding::new("secondary-q", Quit, None),
+        KeyBinding::new("secondary-n", NewWindow, None),
+        KeyBinding::new("secondary-,", OpenSettings, None),
     ];
     // Walk the same action list Settings → Shortcuts renders so the
     // menubar and the customization UI agree on which IDs are

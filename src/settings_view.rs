@@ -3599,10 +3599,17 @@ fn parse_spec(spec: &str) -> Option<Keystroke> {
 /// or only modifiers (gpui would reject those at parse time).
 ///
 /// Mirrors `parse_spec` for the modifier-token vocabulary; the
-/// difference is the output encoding — gpui uses `-` between parts
-/// and reserves `cmd` for the platform / meta key, regardless of
-/// host OS (the gpui keymatcher does the platform-translation
-/// internally).
+/// difference is the output encoding — gpui uses `-` between
+/// parts. Crucially, gpui's `cmd` / `super` / `win` tokens all set
+/// `modifiers.platform`, which is the Cmd key on macOS but the
+/// Windows / Super key on Windows / Linux — there is no
+/// auto-translation. The portable token is `secondary-`, which
+/// resolves to Cmd on macOS and Ctrl elsewhere. We can still emit
+/// `cmd-` here because the upstream `default_for_action` is
+/// `#[cfg]`-gated to only use `Meta+...` on macOS; on Windows /
+/// Linux every shortcut feeds in as `Control+...` and we encode
+/// that as `ctrl-...` (which IS portable to the real Control key
+/// on every OS).
 pub(crate) fn spec_to_gpui_binding(spec: &str) -> Option<String> {
     if spec.is_empty() {
         return None;
