@@ -3511,7 +3511,10 @@ impl Render for AppView {
                     .child(
                         div()
                             .flex_shrink_0()
-                            .px_2()
+                            // `px_3` matches the scrollable list
+                            // gutter below + the Settings rail's
+                            // `px_3` for visual continuity.
+                            .px_3()
                             // Top padding combines the standard
                             // `py_3` (12px) baseline with the
                             // `--titlebar-content-inset` override
@@ -3547,8 +3550,27 @@ impl Render for AppView {
                                     .track_scroll(&self.sidebar_scroll)
                                     .overflow_y_scroll()
                                     .child(
+                                        // Symmetric `px_3` gutter
+                                        // (12px each side) matching
+                                        // the Settings rail. `w_full`
+                                        // pins the inner flex_col
+                                        // at the scrollable viewport
+                                        // width so each row's
+                                        // `.w(...)` resolves to the
+                                        // same value regardless of
+                                        // which row has the longest
+                                        // port string. The
+                                        // `vertical_scrollbar` widget
+                                        // (16px wide, always shown)
+                                        // overlays the right ~4px of
+                                        // the rows when active —
+                                        // accepted trade-off over
+                                        // pre-reserving a 16px
+                                        // column that'd shift rows
+                                        // off-centre when no scroll.
                                         div()
-                                            .px_2()
+                                            .w_full()
+                                            .px_3()
                                             .pb_3()
                                             .flex()
                                             .flex_col()
@@ -6163,11 +6185,31 @@ fn profile_row(
             }
         }));
 
+    // Pin row width explicitly. The flex chain (scroll container
+    // → inner content div → flex_col) was shrink-wrapping each
+    // row to its own text's intrinsic width, so a long port
+    // string made one row wider than the others. Compute from
+    // `SIDEBAR_WIDTH_PX` minus the outer `px_3` gutter on both
+    // sides (24px) to pin every row at the same value
+    // regardless of content. Paired with `whitespace_normal`
+    // on the port text below, long port strings wrap inside
+    // the row instead of stretching it.
+    let row_width_px = SIDEBAR_WIDTH_PX - 24.0;
     let mut row = div()
-        .w_full()
-        .px_2()
-        .py_1()
-        .rounded_sm()
+        .w(px(row_width_px))
+        .overflow_hidden()
+        .px_3()
+        .py(px(6.0))
+        // Profile-row corner radius follows the skin's
+        // `--radius-md` so each design language gets its native
+        // look automatically: macOS-26 ships 12px (rounded
+        // "card" cells matching the floating sidebar's 18px
+        // outer radius), Baudrun 6px (subtle pillow), every
+        // RHEL/Windows skin sits in 3-4px, CRT ships 0px (no
+        // rounding at all — phosphor-display aesthetic). Using
+        // `rounded_sm()` with gpui's hardcoded ~2px ignored
+        // every skin's authored intent.
+        .rounded(px(tokens.radius_md))
         .bg(bg)
         .hover(move |st| st.bg(rgba(hover_bg)))
         .cursor_pointer()
@@ -6176,9 +6218,15 @@ fn profile_row(
         .gap_1()
         .child(header)
         .child(
+            // `whitespace_normal` overrides gpui's default
+            // `nowrap`. Long port strings (USB device paths,
+            // `/dev/cu.usbserial-*`, …) wrap to additional lines
+            // inside the constrained row width instead of pushing
+            // the row wider than its neighbours.
             div()
                 .text_size(px(11.0))
                 .text_color(rgba(tokens.fg_tertiary))
+                .whitespace_normal()
                 .child(port),
         );
     if let Some(err) = error {
@@ -6186,6 +6234,7 @@ fn profile_row(
             div()
                 .text_size(px(11.0))
                 .text_color(rgba(tokens.sidebar_error))
+                .whitespace_normal()
                 .child(err),
         );
     }
