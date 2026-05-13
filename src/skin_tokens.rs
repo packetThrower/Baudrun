@@ -178,6 +178,26 @@ pub struct SkinTokens {
     /// `shell_padding_px` is non-zero. `--panel-radius` in the
     /// skin vars.
     pub panel_radius_px: f32,
+
+    /// Visible title-bar strip height for flush-edged skins
+    /// (gpui-component's `TitleBar` widget is overridden via
+    /// `.h(...)` to this value when it sits in the flex_col).
+    /// Floating-card skins use the absolute-overlay title bar
+    /// instead and the height has no visible effect — only the
+    /// hit-test / drag region is sized by it. `--titlebar-height`
+    /// in the skin vars; default 44px (close to the macOS
+    /// "Big Sur+" / Liquid Glass standard). macOS Classic sets a
+    /// shorter 24px strip; flush-edged Baudrun / Windows 11 /
+    /// Adwaita / … inherit the 44px default for breathing room
+    /// above the sidebar header.
+    pub titlebar_height_px: f32,
+    /// Extra top inset on the sidebar's first content row when
+    /// panes extend up under the title bar (floating-card skins).
+    /// Pushes the "PROFILES" header + + / ⊟ / ⚙ icons below the
+    /// macOS traffic lights at (16, 16) so they don't overlap.
+    /// macOS-26 ships 24px; every other bundled skin ships 0.
+    /// `--titlebar-content-inset` in the skin vars.
+    pub titlebar_content_inset_px: f32,
 }
 
 impl Global for SkinTokens {}
@@ -249,6 +269,16 @@ impl SkinTokens {
             shell_padding_px: 0.0,
             shell_gap_px: 0.0,
             panel_radius_px: 0.0,
+            // 44px title-bar strip is the modern-macOS standard
+            // and gives the sidebar's "PROFILES" header
+            // breathing room above it. macOS Classic overrides
+            // to 24px; macOS-26 explicitly declares 44px (no-op
+            // vs default).
+            titlebar_height_px: 44.0,
+            // Flush-edged skins don't need extra inset — the
+            // visible title bar already separates traffic
+            // lights from sidebar content. macOS-26 overrides.
+            titlebar_content_inset_px: 0.0,
         }
     }
 
@@ -331,6 +361,11 @@ impl SkinTokens {
             shell_padding_px: pick_px("--shell-padding", fb.shell_padding_px),
             shell_gap_px: pick_px("--shell-gap", fb.shell_gap_px),
             panel_radius_px: pick_px("--panel-radius", fb.panel_radius_px),
+            titlebar_height_px: pick_px("--titlebar-height", fb.titlebar_height_px),
+            titlebar_content_inset_px: pick_px(
+                "--titlebar-content-inset",
+                fb.titlebar_content_inset_px,
+            ),
         }
     }
 }

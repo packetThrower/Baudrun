@@ -3322,13 +3322,16 @@ impl Render for AppView {
                     // top, with its default theme bg + border
                     // — that's the visible title bar strip the
                     // Baudrun / classic / etc. skins expect.
+                    // `.h(...)` overrides gpui-component's hard-
+                    // coded 34px so skins can opt into a taller
+                    // (or shorter) strip via `--titlebar-height`.
                     // Floating-card skins (panel_radius_px > 0)
                     // move the title bar to an absolute overlay
                     // (added at the outermost div below) so the
                     // panes can claim the full window height and
                     // traffic lights float over the sidebar.
                     .when(s.panel_radius_px == 0.0, |this| {
-                        this.child(TitleBar::new())
+                        this.child(TitleBar::new().h(px(s.titlebar_height_px)))
                     })
                     .child(
                         div()
@@ -3400,19 +3403,20 @@ impl Render for AppView {
                     })
                     .px_2()
                     .py_3()
-                    // Floating-card mode: extra top inset so the
-                    // sidebar's "PROFILES" header + + / ⊟ / ⚙
-                    // icon strip sit BELOW the macOS traffic
-                    // lights instead of behind them. Traffic
-                    // lights live at (9, 9) with ~12px height,
-                    // so we need content to start at y >= ~24
-                    // local to the sidebar (sidebar itself is
-                    // at y = shell_padding_px from window top,
-                    // so 24 + 10 = 34 from window top — safely
-                    // below the lights). `pt` overrides the top
-                    // half of the `py_3` above.
-                    .when(s.panel_radius_px > 0.0, |this| {
-                        this.pt(px(24.0))
+                    // Extra top inset (`--titlebar-content-inset`
+                    // in the skin) so the sidebar's "PROFILES"
+                    // header + + / ⊟ / ⚙ icon strip sit BELOW
+                    // the macOS traffic lights when panes extend
+                    // up under a transparent title bar. macOS-26
+                    // ships 24px; flush-edged skins ship 0 since
+                    // their visible title bar already separates
+                    // lights from sidebar content. `pt` overrides
+                    // the top half of the `py_3` above. Custom
+                    // skins can tune this independently from
+                    // `--panel-radius` (e.g. floating cards with
+                    // a different traffic-light layout).
+                    .when(s.titlebar_content_inset_px > 0.0, |this| {
+                        this.pt(px(s.titlebar_content_inset_px))
                     })
                     .flex()
                     .flex_col()

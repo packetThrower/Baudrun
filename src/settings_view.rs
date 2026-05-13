@@ -1507,18 +1507,18 @@ impl Render for SettingsView {
                     .flex_col()
                     // Title bar — flush-edged skins get gpui-
                     // component's default with its theme bg +
-                    // bottom border (visible strip at the top
-                    // of the Settings window). Floating-card
-                    // skins override to transparent + no border
-                    // so the shell colour reads continuously
-                    // from the top edge. See the matching
-                    // branch in `app_view.rs`.
+                    // bottom border, height from
+                    // `--titlebar-height`. Floating-card skins
+                    // override to transparent + no border so
+                    // the shell colour reads continuously from
+                    // the top edge. See the matching branch in
+                    // `app_view.rs`.
                     .child(if s.panel_radius_px > 0.0 {
                         TitleBar::new()
                             .bg(gpui::transparent_black())
                             .border_color(gpui::transparent_black())
                     } else {
-                        TitleBar::new()
+                        TitleBar::new().h(px(s.titlebar_height_px))
                     })
                     .child(window_header(
                         s,

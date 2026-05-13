@@ -124,6 +124,7 @@
       "--shell-gap": "10px",
       "--shell-padding": "10px",
       "--sidebar-divider": "none",
+      "--titlebar-content-inset": "24px",
       "--titlebar-height": "44px"
     },
     "lightVars": {
