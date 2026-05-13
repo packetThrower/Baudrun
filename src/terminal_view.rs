@@ -166,6 +166,15 @@ pub struct TerminalView {
     /// highlight-replay path can rebuild the Term with the same
     /// buffer size instead of falling back to alacritty's default.
     scrollback_lines: usize,
+    /// Total newlines received this session, capped at
+    /// `scrollback_lines`. Drives the status bar's `X/Y` line
+    /// counter — more intuitive than alacritty's `history_size()`
+    /// which only counts rows that have scrolled OUT of the
+    /// visible viewport (so it sits at 0 on a fresh session
+    /// even with 20+ rows of content on screen). Reset by
+    /// `clear_serial_tx` so the counter starts fresh on each
+    /// connect.
+    lines_received: usize,
     /// Shared with the `TerminalListener` inside `term`. Polled
     /// after each `feed_bytes` to pick up bell events that fired
     /// during the parser advance.
@@ -355,6 +364,7 @@ impl TerminalView {
             focus_handle: cx.focus_handle(),
             palette,
             scrollback_lines: scrolling_history,
+            lines_received: 0,
             listener_state,
             serial_tx: None,
             profile_settings: ProfileSettings::default(),
@@ -398,6 +408,9 @@ impl TerminalView {
     pub fn clear_serial_tx(&mut self) {
         self.serial_tx = None;
         self.paste_task = None;
+        // Reset session counters so the status bar starts fresh
+        // on the next connect.
+        self.lines_received = 0;
     }
 
     /// Replace the active highlight rule set. Called by
@@ -545,7 +558,7 @@ impl TerminalView {
     /// alacritty's grid (rows currently held above the visible
     /// area); max is the configured `scrolling_history`.
     pub fn scrollback_state(&self) -> (usize, usize) {
-        (self.term.grid().history_size(), self.scrollback_lines)
+        (self.lines_received, self.scrollback_lines)
     }
 
     pub fn set_scrollback_lines(&mut self, lines: usize, cx: &mut Context<Self>) {
@@ -553,6 +566,9 @@ impl TerminalView {
             return;
         }
         self.scrollback_lines = lines;
+        // Re-cap the live session counter against the new
+        // ceiling so a shrink immediately reflects in the bar.
+        self.lines_received = self.lines_received.min(lines);
         let cfg = alacritty_terminal::term::Config {
             scrolling_history: lines,
             ..alacritty_terminal::term::Config::default()
@@ -758,6 +774,24 @@ impl TerminalView {
     /// the boot-time sample stream and for typed-input loopback.
     /// `cx.notify()` triggers a re-render.
     pub fn feed_bytes(&mut self, bytes: &[u8], cx: &mut Context<Self>) {
+        // Count newlines for the status bar's session-line count.
+        // alacritty's `history_size()` (the old `scrollback_state`
+        // numerator) reports rows above the visible viewport —
+        // not "lines received" — so it stays at 0 until the user
+        // scrolls past the viewport's row capacity. Tracking the
+        // raw `\n` byte tally here gives the bar an
+        // incrementing-from-0 counter even on a fresh session,
+        // capped at `scrollback_lines` to match the buffer's
+        // own retention. Don't double-count during replay (the
+        // highlight-rule replay path feeds the same bytes back
+        // through this function after edits).
+        if !self.replaying {
+            let new_lines = bytes.iter().filter(|&&b| b == b'\n').count();
+            self.lines_received = self
+                .lines_received
+                .saturating_add(new_lines)
+                .min(self.scrollback_lines);
+        }
         // Three optional transforms run in series before the bytes
         // hit the VT parser:
         //   1. Hex view: 16-byte-per-row hex dump (own line layout).
@@ -1283,21 +1317,35 @@ impl TerminalView {
         }
         // Chrome overhead: bytes the window doesn't give to the
         // terminal grid. Hardcoded against the current AppView
-        // layout — sidebar takes horizontal width, session header
-        // + status bar take vertical height. When the layout
-        // shifts (e.g. multi-window, removable header), this needs
-        // to come from real measured pane bounds instead. Treat
-        // these numbers as "what gpui actually paints those rows
-        // at" — counted from running the prototype, not from
-        // padding spec, so they include text-line-height fudge.
+        // layout — sidebar takes horizontal width, title bar +
+        // session header + status bar take vertical height. When
+        // the layout shifts (e.g. multi-window, removable header)
+        // this needs to come from real measured pane bounds
+        // instead. Treat these numbers as "what gpui actually
+        // paints those rows at" — counted from running the app,
+        // not from padding spec, so they include text-line-height
+        // fudge.
         const SIDEBAR_PX: f32 = 220.0;
         const SESSION_HEADER_PX: f32 = 50.0;
         // Status bar measures ~24px, but giving the grid an extra
         // ~16px of room above it keeps the prompt from sitting
         // flush against the footer (Tauri version does the same).
         const STATUS_BAR_PX: f32 = 40.0;
+        // Title bar height is skin-driven now (38-46px depending
+        // on `--titlebar-height`). On floating-card skins
+        // (`--panel-radius > 0`) the title bar is an absolute
+        // overlay that takes zero vertical space — the pane row
+        // pads itself by `--shell-padding` top + bottom instead.
+        // Subtracting the right value here keeps the bottom row
+        // of the terminal viewport visible regardless of skin.
+        let s = *cx.global::<crate::skin_tokens::SkinTokens>();
+        let title_bar_h = if s.panel_radius_px > 0.0 {
+            s.shell_padding_px * 2.0
+        } else {
+            s.titlebar_height_px
+        };
         let chrome_w = SIDEBAR_PX;
-        let chrome_h = SESSION_HEADER_PX + STATUS_BAR_PX;
+        let chrome_h = title_bar_h + SESSION_HEADER_PX + STATUS_BAR_PX;
         let content_w =
             (f32::from(viewport.width) - chrome_w - GRID_PADDING_PX * 2.0).max(0.0);
         let content_h =

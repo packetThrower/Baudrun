@@ -137,6 +137,22 @@ pub struct AppView {
     /// failed profile is still selected; cleared when the user
     /// picks a different profile or the connection later succeeds.
     connect_error: Option<String>,
+    /// Transient log line displayed in the status bar. Takes
+    /// priority over the default "Connected to … / Editing … /
+    /// Not connected" text while set. Set via
+    /// `AppView::log_event` which also spawns a background
+    /// timer to clear the slot after a few seconds so the bar
+    /// reverts to its steady-state text. Lets us surface
+    /// ambient logs — connect failures, dropped sessions,
+    /// auto-reconnect status, log-file IO problems — without
+    /// stealing focus with a Dialog or a Notification toast.
+    footer_event: Option<FooterEvent>,
+    /// Monotonic counter incremented on every `log_event` call.
+    /// Each call's auto-clear timer captures the generation it
+    /// was spawned for; on fire it only clears the live event
+    /// if the generation still matches — older fires don't wipe
+    /// a fresh event the user hasn't read yet.
+    footer_event_seq: u64,
     /// Foreground async task draining the active connection's read
     /// channel into `TerminalView::feed_bytes`. Held (not detached)
     /// so dropping the field — when switching profiles — also drops
@@ -406,6 +422,36 @@ enum FontBump {
     Reset,
 }
 
+/// Severity of an ambient event surfaced in the status bar.
+/// Drives the text colour: `Info` reads at the default footer
+/// muted tone, `Warn` picks up the skin's `--warn` token, and
+/// `Error` picks up `--danger`. The skin tokens stay
+/// consistent across all chrome paths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LogSeverity {
+    Info,
+    Warn,
+    Error,
+}
+
+/// A transient log line shown in the status bar. Replaces the
+/// default "Connected to / Editing / Not connected" text until
+/// the auto-clear timer (`AppView::log_event`) wipes it. Held
+/// by value on `AppView` rather than going through the
+/// notification toast layer so it sits inline with the existing
+/// chrome instead of stealing focus.
+#[derive(Debug, Clone)]
+struct FooterEvent {
+    text: SharedString,
+    severity: LogSeverity,
+    /// Generation counter so a late-firing clear timer from an
+    /// older event doesn't wipe a newer one the user hasn't
+    /// seen yet. The timer captures the generation it was
+    /// spawned for; on fire it only clears if the live event
+    /// still matches that generation.
+    generation: u64,
+}
+
 /// Right-click menu state for sidebar profile rows. Stores the
 /// profile id that was right-clicked plus the cursor position to
 /// anchor the popup to.
@@ -484,6 +530,8 @@ impl AppView {
             send_hex: None,
             session_overflow_open: false,
             sidebar_scroll: ScrollHandle::new(),
+            footer_event: None,
+            footer_event_seq: 0,
             profile_context_menu: None,
             auto_reconnect_task: None,
             auto_reconnect_for: None,
@@ -950,7 +998,9 @@ impl AppView {
 
         let port = profile.port_name.clone();
         if port.is_empty() {
-            self.connect_error = Some("profile has no port set".into());
+            let msg = "profile has no port set";
+            self.connect_error = Some(msg.into());
+            self.log_event(msg, LogSeverity::Error, cx);
             return;
         }
         // `Profile::baud_rate` is `i32` to round-trip via JSON
@@ -995,7 +1045,8 @@ impl AppView {
                     let msg = last_err
                         .map(|e| friendly_open_error(&port, &e))
                         .unwrap_or_else(|| format!("open {port}: unknown"));
-                    self.connect_error = Some(msg);
+                    self.connect_error = Some(msg.clone());
+                    self.log_event(msg, LogSeverity::Error, cx);
                     return;
                 }
             }
@@ -1062,11 +1113,19 @@ impl AppView {
         let log_file = if profile.log_enabled {
             match open_session_log(&profile) {
                 Ok((file, path)) => {
-                    log::info!("session log: {}", path.display());
+                    self.log_event(
+                        format!("Session log: {}", path.display()),
+                        LogSeverity::Info,
+                        cx,
+                    );
                     Some(file)
                 }
                 Err(e) => {
-                    log::error!("session log: open failed: {e}");
+                    self.log_event(
+                        format!("Session log open failed: {e}"),
+                        LogSeverity::Error,
+                        cx,
+                    );
                     None
                 }
             }
@@ -1202,16 +1261,28 @@ impl AppView {
         self.terminal.update(cx, |t, _| t.clear_serial_tx());
 
         let Some(profile) = self.profile_store.get(&id) else {
-            log::warn!("session dropped (profile {id} no longer exists)");
+            self.log_event(
+                format!("session dropped (profile {id} no longer exists)"),
+                LogSeverity::Warn,
+                cx,
+            );
             cx.notify();
             return;
         };
         if !profile.auto_reconnect {
-            log::warn!("session dropped (auto-reconnect off)");
+            self.log_event(
+                "Session dropped (auto-reconnect off)",
+                LogSeverity::Warn,
+                cx,
+            );
             cx.notify();
             return;
         }
-        log::warn!("session dropped — auto-reconnecting");
+        self.log_event(
+            "Session dropped — auto-reconnecting…",
+            LogSeverity::Warn,
+            cx,
+        );
         // Hold the profile id in `auto_reconnect_for` so the right
         // pane keeps the terminal viewport on screen during the
         // retry window. The retry-task's eventual `connect_to`
@@ -1511,7 +1582,9 @@ impl AppView {
             return;
         };
         let Some(profile) = self.profile_store.get(&id) else {
-            self.connect_error = Some("profile not found".into());
+            let msg = "profile not found";
+            self.connect_error = Some(msg.into());
+            self.log_event(msg, LogSeverity::Error, cx);
             cx.notify();
             return;
         };
@@ -1739,6 +1812,56 @@ impl AppView {
             self.session_overflow_open = false;
             cx.notify();
         }
+    }
+
+    /// Set the transient status-bar log line for the user.
+    /// Replaces whatever's currently shown (last-write-wins) and
+    /// schedules an auto-clear after a few seconds so the bar
+    /// reverts to its steady-state text. Severity drives the
+    /// text colour in `status_bar`. Also writes through to
+    /// `log::*!` so the same string lands in stderr / the
+    /// `env_logger` sink for ops debugging.
+    pub(crate) fn log_event(
+        &mut self,
+        text: impl Into<SharedString>,
+        severity: LogSeverity,
+        cx: &mut Context<Self>,
+    ) {
+        let text = text.into();
+        // Mirror to the standard logger so the same string is
+        // also available in stderr / log files when the user
+        // reports a problem.
+        match severity {
+            LogSeverity::Info => log::info!("{text}"),
+            LogSeverity::Warn => log::warn!("{text}"),
+            LogSeverity::Error => log::error!("{text}"),
+        }
+        let gen_id = self.footer_event_seq.wrapping_add(1);
+        self.footer_event_seq = gen_id;
+        self.footer_event = Some(FooterEvent {
+            text,
+            severity,
+            generation: gen_id,
+        });
+        cx.notify();
+        // Auto-clear after a delay. Errors linger longer than
+        // info / warn so destructive failures get more eye time.
+        let delay = match severity {
+            LogSeverity::Error => Duration::from_secs(15),
+            _ => Duration::from_secs(8),
+        };
+        cx.spawn(async move |this, cx_async| {
+            cx_async.background_executor().timer(delay).await;
+            let _ = this.update(cx_async, |app, cx| {
+                if let Some(ev) = &app.footer_event {
+                    if ev.generation == gen_id {
+                        app.footer_event = None;
+                        cx.notify();
+                    }
+                }
+            });
+        })
+        .detach();
     }
 
     /// Fire a serial break (`set_break` / sleep / `clear_break`)
@@ -3718,6 +3841,7 @@ impl Render for AppView {
                         reconnecting,
                         editor_name.as_deref(),
                         Some(self.terminal.read(cx).scrollback_state()),
+                        self.footer_event.as_ref(),
                     )),
             )
             // Floating-card-only: absolute-positioned title bar
@@ -4248,17 +4372,78 @@ fn status_bar(
     reconnecting: bool,
     editing_profile_name: Option<&str>,
     scrollback: Option<(usize, usize)>,
+    event: Option<&FooterEvent>,
 ) -> impl IntoElement {
-    let text = match (connected, editing_profile_name) {
-        (Some(p), _) if reconnecting => {
-            format!("Reconnecting to {} @ {}…", p.port_name, p.baud_rate)
+    // Transient event log takes priority over the default
+    // connection-state text. When set, the bar shows the event
+    // tinted by severity; when None it falls back to the steady-
+    // state text below.
+    let (text, text_color) = match event {
+        Some(ev) => {
+            let colour = match ev.severity {
+                LogSeverity::Info => rgba(s.fg_secondary),
+                LogSeverity::Warn => rgba(s.warn),
+                LogSeverity::Error => rgba(s.danger),
+            };
+            (ev.text.to_string(), colour)
         }
-        (Some(p), _) => format!("Connected to {} @ {}", p.port_name, p.baud_rate),
-        (None, Some(name)) if !name.is_empty() => format!("Editing {name}"),
-        (None, Some(_)) => "Editing new profile".to_string(),
-        (None, None) => "Not connected".to_string(),
+        None => {
+            let text = match (connected, editing_profile_name) {
+                (Some(p), _) if reconnecting => {
+                    format!("Reconnecting to {} @ {}…", p.port_name, p.baud_rate)
+                }
+                (Some(p), _) => format!("Connected to {} @ {}", p.port_name, p.baud_rate),
+                (None, Some(name)) if !name.is_empty() => format!("Editing {name}"),
+                (None, Some(_)) => "Editing new profile".to_string(),
+                (None, None) => "Not connected".to_string(),
+            };
+            (text, rgba(s.fg_secondary))
+        }
     };
-    let scrollback_text = scrollback.map(|(filled, max)| format!("{filled}/{max}"));
+    // Right-side indicators — only when a profile is actually
+    // connected (so the bar doesn't show stale chips after
+    // disconnect and doesn't reveal flags that haven't taken
+    // effect yet on an idle window).
+    //
+    // Each active flag (`hex_view` / `timestamps` /
+    // `line_numbers`) renders as a small uppercase chip. The
+    // user gets a quick at-a-glance read of which formatters
+    // the live byte stream is going through without having to
+    // open the profile editor.
+    let (indicators, scrollback_text): (Vec<&'static str>, Option<String>) = match connected {
+        Some(p) => {
+            let mut tags: Vec<&'static str> = Vec::new();
+            if p.hex_view {
+                tags.push("HEX");
+            }
+            if p.timestamps {
+                tags.push("TIME");
+            }
+            if p.line_numbers {
+                tags.push("LINE#");
+            }
+            if p.log_enabled {
+                tags.push("TO FILE");
+            }
+            (tags, scrollback.map(|(filled, max)| format!("{filled}/{max}")))
+        }
+        None => (Vec::new(), None),
+    };
+    let bg_input = s.bg_input;
+    let fg_secondary = s.fg_secondary;
+    let chip = move |label: &'static str| {
+        // Flat pill — no border + no vertical padding so the
+        // status bar's overall height stays the same as the
+        // text-only baseline. A taller bar steals a row from
+        // the terminal viewport and the last line gets clipped.
+        div()
+            .px(px(6.0))
+            .rounded_md()
+            .bg(rgba(bg_input))
+            .text_color(rgba(fg_secondary))
+            .text_size(px(10.0))
+            .child(label)
+    };
     div()
         .w_full()
         .px_4()
@@ -4271,7 +4456,9 @@ fn status_bar(
         .flex()
         .flex_row()
         .items_center()
-        .child(div().flex_1().child(text))
+        .gap_2()
+        .child(div().flex_1().text_color(text_color).child(text))
+        .children(indicators.into_iter().map(chip))
         .children(scrollback_text.map(|t| {
             div()
                 .id("status-scrollback")
