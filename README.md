@@ -66,6 +66,9 @@ Sample JSON for authoring your own skins, themes, and highlight packs is on the
   work with no driver at all.
 - **Auto-reconnect.** When a USB adapter drops, the session comes back on its
   own and the scrollback survives the gap.
+- **Output formatting and capture.** Per-line wall-clock timestamps,
+  session-local line numbers, a hex-dump view of incoming bytes, and raw
+  session recording to a file. Each is a per-profile toggle.
 - **Send Break.** A 300 ms TX-low pulse for Cisco ROMMON, Juniper diagnostic
   mode, and bootloader interrupts.
 - **File transfer.** XMODEM, XMODEM-CRC, XMODEM-1K, and YMODEM, for pushing

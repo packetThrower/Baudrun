@@ -46,8 +46,9 @@ the app is closed.
     "rtsOnDisconnect": "default",
     "hexView": false,
     "timestamps": false,
+    "lineNumbers": false,
     "logEnabled": false,
-    "autoReconnect": false,
+    "autoReconnect": true,
     "backspaceKey": "del",
     "createdAt": "2026-04-17T10:15:22Z",
     "updatedAt": "2026-04-17T10:15:22Z"
@@ -90,6 +91,7 @@ Network gear is overwhelmingly 9600 8N1.
 | `backspaceKey` | string  | `"del"`, `"bs"`                  | `"del"` | What the Backspace key sends. DEL (0x7f) matches VT100/xterm; BS (0x08) for some older Cisco/Foundry gear. Wrong setting surfaces as `^H` echoed on screen. |
 | `hexView`      | boolean | `true` / `false`                 | `false` | Render incoming bytes as a hex dump (16 per line, ASCII sidebar). Binary protocols, firmware loaders. |
 | `timestamps`   | boolean | `true` / `false`                 | `false` | Prefix each line with `[HH:MM:SS.mmm]`.                                                       |
+| `lineNumbers`  | boolean | `true` / `false`                 | `false` | Prefix each line with a session-local counter. Resets to 1 on every reconnect.                |
 | `themeId`      | string  | any theme ID or `""`             | `""`    | Per-profile theme override. Empty = use the global default theme from Settings.               |
 
 ### Control lines (DTR/RTS)
@@ -126,7 +128,7 @@ lines mid-session regardless of the connect-time policy.
 | Field           | Type    | Default | Purpose                                                                                                    |
 | --------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------- |
 | `logEnabled`    | boolean | `false` | Record raw incoming bytes to a timestamped file. Directory configured in Settings → Advanced (defaults to `<support>/logs/`). |
-| `autoReconnect` | boolean | `false` | On disconnect (port disappeared), poll for the port to reappear (1s interval, 30s timeout) and reopen with the same config. Preserves xterm backlog across the gap. |
+| `autoReconnect` | boolean | `true`  | On disconnect (port disappeared), poll for the port to reappear (1s interval, 30s timeout) and reopen with the same config. Preserves the scrollback backlog across the gap. |
 
 ### Timestamps
 

@@ -171,6 +171,19 @@ per-session metric rather than a cumulative log-line index.
 - Only visible in plain view; hex view has no per-line concept to
   prefix.
 
+## Line numbers
+
+- Per-profile toggle.
+- Prefixes each newly committed line with a session-local counter.
+- Session-scoped: the counter starts at 1 on connect and resets to
+  1 on every reconnect, so it counts lines for the current session
+  rather than a cumulative total.
+- Applied at line commit time, same as timestamps; enabling
+  mid-session does not retroactively number existing scrollback.
+- Stacks with timestamps when both are on — the number comes
+  first, then the timestamp, then the line content
+  (`   42  [14:30:01.123] interface up`).
+
 ## Config-directory relocation
 
 - Settings → Advanced → **Config Directory**.
