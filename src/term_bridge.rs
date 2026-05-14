@@ -44,7 +44,7 @@ use alacritty_terminal::{
 };
 
 use crate::data::themes::Theme;
-use crate::terminal_grid::{Cell as GridCell, CellFlags, TerminalGrid, SELECTION_BG};
+use crate::terminal_grid::{Cell as GridCell, CellFlags, TerminalGrid};
 
 /// Shared state mutated by `TerminalListener` and read from
 /// `TerminalView`. Lives behind an `Rc` so the listener (held
@@ -115,6 +115,14 @@ pub struct Palette {
     pub fg: Rgb,
     pub bg: Rgb,
     pub cursor: Rgb,
+    /// Background fill painted behind selected cells. Sourced from
+    /// the theme's `selection` field (see `from_theme`).
+    pub selection: Rgb,
+    /// Foreground override for text inside the selection. `Some`
+    /// when the theme declares `selectionForeground`; `None` —
+    /// the common case — leaves selected text in its own colour,
+    /// recoloured only by the `selection` background behind it.
+    pub selection_fg: Option<Rgb>,
     pub black: Rgb,
     pub red: Rgb,
     pub green: Rgb,
@@ -148,6 +156,10 @@ impl Palette {
             fg: rgb(0xe4, 0xe4, 0xe7),
             bg: rgb(0x0b, 0x0b, 0x0d),
             cursor: rgb(0xe4, 0xe4, 0xe7),
+            // The pre-theming default — the muted blue-grey that
+            // used to live in `terminal_grid::SELECTION_BG`.
+            selection: rgb(0x4a, 0x5a, 0x80),
+            selection_fg: None,
             black: rgb(0x1e, 0x1e, 0x22),
             red: rgb(0xff, 0x69, 0x61),
             green: rgb(0x7c, 0xd9, 0x92),
@@ -179,6 +191,12 @@ impl Palette {
             fg: pick(&theme.foreground, fb.fg),
             bg: pick(&theme.background, fb.bg),
             cursor: pick(&theme.cursor, fb.cursor),
+            selection: pick(&theme.selection, fb.selection),
+            // `selectionForeground` is optional in the theme
+            // schema — an empty / unparseable value means "leave
+            // selected text its own colour," so this stays `None`
+            // rather than falling back to a slot.
+            selection_fg: parse_hex_rgb(&theme.selection_foreground),
             black: pick(&theme.black, fb.black),
             red: pick(&theme.red, fb.red),
             green: pick(&theme.green, fb.green),
@@ -405,7 +423,14 @@ pub fn mirror_to_grid(
         if is_cursor {
             std::mem::swap(&mut fg, &mut bg);
         } else if is_selected {
-            bg = SELECTION_BG;
+            // Selection background is theme-driven (`palette.selection`).
+            // `selection_fg` recolours the text only when the theme
+            // declared `selectionForeground`; otherwise selected text
+            // keeps its own colour and just gets the new backdrop.
+            bg = palette.selection;
+            if let Some(sfg) = palette.selection_fg {
+                fg = sfg;
+            }
         }
 
         let flags = CellFlags {

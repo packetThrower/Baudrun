@@ -83,10 +83,6 @@ pub const CELL_HEIGHT_PX: f32 = 18.0;
 /// when the user resizes the terminal font.
 pub const CELL_HEIGHT_RATIO: f32 = CELL_HEIGHT_PX / FONT_SIZE_PX;
 
-/// Background colour for selected cells. Hardcoded for now;
-/// becomes a theme field when the theme system lands.
-pub const SELECTION_BG: Rgb = Rgb { r: 0x4a, g: 0x5a, b: 0x80 };
-
 /// Visible text-style attributes for a cell. Subset of alacritty's
 /// `Flags` covering only what affects how a glyph is *painted* —
 /// inverse and hidden are handled in `term_bridge::mirror_to_grid`
