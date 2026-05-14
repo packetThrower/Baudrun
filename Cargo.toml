@@ -260,3 +260,17 @@ files = { "packaging/linux/60-baudrun-serial.rules" = "/usr/lib/udev/rules.d/60-
 # Tauri build.
 info-plist-path = "resources/Info.plist"
 minimum-system-version = "11.0"
+# Ad-hoc codesign the .app bundle. cargo-packager only signs the
+# bundle when `signing-identity` is set; without it the .app ships
+# unsigned. On x86_64 that's the soft "unidentified developer"
+# path, but on arm64 the linker auto-applies an ad-hoc signature
+# to the inner Mach-O while the *bundle* stays unsigned — an
+# inconsistent state Gatekeeper rejects outright as "damaged and
+# can't be opened" (caught on the v0.9.7 release). `"-"` is
+# codesign's ad-hoc identity: cargo-packager signs inside-out
+# (binary then bundle) so the Info.plist binds and resources seal
+# properly. Still not notarized — a quarantined download is
+# "unidentified developer" (right-click → Open, or `xattr -cr`),
+# which is the recoverable path the README documents. Notarization
+# replaces this once an Apple Developer account is in place.
+signing-identity = "-"
