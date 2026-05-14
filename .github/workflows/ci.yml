@@ -149,9 +149,11 @@ jobs:
       # runs the same compiler front-end and fails on the same
       # compile errors, then adds the lint pass on top. A separate
       # `cargo check` step would just compile the crate twice for
-      # no extra signal, so clippy is the gate.
+      # no extra signal, so clippy is the gate. `--all-targets`
+      # widens the lint pass to the test + example code, not just
+      # the `[[bin]]`.
       - name: cargo clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       # Single `[[bin]]` crate, no library target, so `cargo test`
       # runs the in-binary unit tests (under `mod tests` in each

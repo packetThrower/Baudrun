@@ -185,8 +185,6 @@ fn fetch_releases(include_prerelease: bool) -> Option<Vec<Release>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn current_version_parses_as_semver() {
         // Sanity that the build-time-substituted version string
