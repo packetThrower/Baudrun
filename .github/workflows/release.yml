@@ -51,7 +51,10 @@ jobs:
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.runner }}
     steps:
+      # `persist-credentials: false` — build jobs never push.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Rust (stable)
         # SHA-pinned: the `@stable` branch ref no longer carries the
@@ -136,7 +139,7 @@ jobs:
           # facing filenames. Glob whatever cargo-packager
           # produced and rename to our convention. There's only
           # one .dmg per build so the glob is unambiguous.
-          DMG=$(ls "${BUNDLE}"/Baudrun_*.dmg | head -1)
+          DMG=$(find "${BUNDLE}" -maxdepth 1 -name 'Baudrun_*.dmg' | head -1)
           if [ -z "$DMG" ]; then
             echo "no .dmg produced by cargo-packager"
             ls -la "$BUNDLE"
@@ -180,7 +183,10 @@ jobs:
             target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.runner }}
     steps:
+      # `persist-credentials: false` — build jobs never push.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Rust (stable)
         # SHA-pinned: the `@stable` branch ref no longer carries the
@@ -302,7 +308,10 @@ jobs:
             rpm_arch: aarch64
     runs-on: ${{ matrix.runner }}
     steps:
+      # `persist-credentials: false` — build jobs never push.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Setup Rust (stable)
         # SHA-pinned: the `@stable` branch ref no longer carries the
@@ -392,7 +401,7 @@ jobs:
       - name: Inject .deb postinst (udev reload)
         run: |
           set -e
-          DEB=$(ls target/release/*.deb | head -1)
+          DEB=$(find target/release -maxdepth 1 -name '*.deb' | head -1)
           if [ -z "$DEB" ]; then
             echo "no .deb produced by cargo-packager — nothing to patch"
             exit 0
@@ -537,9 +546,13 @@ jobs:
       # Full history + tags so the release-notes step below can
       # resolve the previous tag and list commits between it and
       # the current tag.
+      # `persist-credentials: false` — the release job only reads
+      # git locally (`git log` / `git describe`); the GitHub Release
+      # is created through the API token, not `git push`.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -552,7 +565,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           for dir in artifacts/*/; do
-            (cd "$dir" && sha256sum *)
+            (cd "$dir" && sha256sum ./*)
           done | sort > SHA256SUMS
           cat SHA256SUMS
 
