@@ -15,91 +15,135 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.9.7] — 2026-05-13
+
 ### Added
 
-- **WebGL terminal renderer** with graceful DOM fallback. Glyphs
-  now render onto a GPU-accelerated canvas instead of DOM `<span>`
-  elements, which makes long-buffer scrolling (e.g. paging through
-  `show tech-support`) noticeably snappier. The DOM renderer
-  remains the fallback when WebGL2 isn't available — software-only
-  renderers, headless containers, RDP / X11 forwarding without GLX
-  — and on those paths the v0.9.5 CSS-variable backstop carries
-  rendering correctness as before. As a side benefit, the entire
-  class of "WebKit dropped xterm's runtime stylesheet" rendering
-  bugs (ANSI palette, selection background, cursor fill) physically
-  cannot recur on the WebGL path, since glyphs are painted with
-  explicit per-cell RGBA. Resolves #13.
-- **Settings → Advanced → Terminal Renderer** dropdown with three
-  options: Auto (the recommended default — picks the right
-  renderer per platform; see Changed below), WebGL (force GPU on
-  every platform), DOM (force CPU on every platform). The previous
-  `localStorage.setItem('baudrun-renderer', ...)` developer
-  override still works and wins over this setting, but most users
-  no longer need to touch DevTools.
+- **macOS 26 / Liquid Glass skin.** Floating-card sidebar and main
+  pane lifted off the window edge with `--shell-padding`, separated
+  by `--shell-gap`, with rounded corners (`--panel-radius`) and a
+  transparent title bar that lets the shell gradient flow up to the
+  traffic lights. The lights reposition to overlap the sidebar's
+  top-left in the new layout. Floating-card mode is opt-in per skin
+  — every other ships flush-edged.
+- **Auto-updater (detection-only).** Boot-time GitHub Releases check
+  with `ureq` + `semver`, run on a background-executor task so it
+  doesn't block startup. When a newer release is available, a small
+  amber dot appears on the sidebar gear icon **and** on the new
+  Settings → Updates rail row. The Updates pane shows the version,
+  release-notes preview, and **View release** + **Dismiss this
+  version** buttons. Dismiss persists; the indicator stays silent
+  until a newer tag ships. By design we never download a replacement
+  bundle — the user is always in control of when (and whether) to
+  install.
+- **Right-click context menu in the terminal pane** with Copy /
+  Paste / Select All / Clear. Copy greys when there's no selection.
+  Each row dispatches the same gpui action the keybinding does, so
+  the two surfaces stay equivalent.
+- **Cmd+A / Ctrl+A → Select All** in the terminal. Spans the entire
+  scrollback history through the bottom-right of the visible
+  viewport — same semantics as xterm / iTerm2 / Windows Terminal.
+- **Copy-on-select.** The PuTTY-style toggle in Settings (existed
+  but was dormant) now writes selected text to the clipboard
+  immediately on mouse release.
+- **Settings → Accessibility pane.** Read-only summary of every
+  OS-level preference Baudrun reacts to (currently Reduce Motion),
+  with a per-platform pointer to the system setting that controls
+  it. Discoverable via the filter under "accessibility", "reduce
+  motion", "a11y".
+- **Settings → Updates pane.** Moved out from under Advanced into
+  its own rail entry alongside the amber-dot indicator chain.
+- **Status bar event log.** Connect failures, session drops,
+  auto-reconnect status, session-log open / close, etc. surface in
+  the footer with severity-tinted text (info / warn / error) and
+  auto-clear after 8 s (info / warn) or 15 s (error). Same string
+  mirrors to `log::*!` for stderr capture.
+- **Active-feature chips in the status bar.** Small `HEX` / `TIME`
+  / `LINE#` / `TO FILE` pills on the right when the corresponding
+  formatter or session-log capture is on for the connected profile.
+  Flat (no border / no vertical padding) so they don't grow the bar.
+- **Session line counter** in the status bar — counts newlines
+  received this session, capped at `scrollback_lines`, resets on
+  clear / disconnect / reconnect.
+- **Scrollable profile sidebar.** When the profile list overflows
+  the viewport, a persistent scrollbar appears on the right of the
+  sidebar wired to the same scroll handle. Survives skin changes.
+- **Skin authoring expansion (~18 new tokens).** Skins now author
+  `--titlebar-height`, `--titlebar-content-inset`, `--shell-bg`
+  (gradient), `--shell-padding`, `--shell-gap`, `--panel-radius`,
+  `--label-transform`, `--label-weight`, `--label-letter-spacing`,
+  `--font-size-h1` / `section` / `label`, `--scrollbar-thumb` /
+  `-hover`, `--overlay`, `--accent-hover`, `--bg-terminal`,
+  `--input-border-idle`, `--option-group-fg`, `--sidebar-divider`,
+  `--panel-border`, `--shadow-floating`, `--shadow-panel`. Examples
+  in `docs/examples/`. Custom skins built against v0.9.5's smaller
+  variable set continue to work — missing vars fall back to
+  sensible defaults.
+- **Edit menu on macOS** with Copy / Paste / Select All entries.
+  Accelerator labels derive from the registered KeyBindings.
+- **Settings → Shortcuts customisation rows** for Copy, Paste, and
+  Select All — rebindable like every other action.
 
 ### Changed
 
-- **Windows defaults to the DOM renderer** instead of WebGL.
-  WebView2's compositor produces visibly jittery frame timing for
-  the terminal-style frequent-tiny-update pattern, where the DOM
-  renderer is consistently smoother. macOS WKWebView and Linux
-  WebKit2GTK don't share this characteristic; both still default
-  to WebGL. Users with confirmed working hardware GPUs on Windows
-  can flip the default via Settings → Advanced → Terminal
-  Renderer → WebGL.
+- **`Cmd+Q` / `Cmd+N` / `Cmd+,` reach Windows and Linux too.** The
+  three system bindings now use gpui's portable `secondary-` token
+  so they fire `Ctrl+Q` / `Ctrl+N` / `Ctrl+,` on non-mac instead of
+  the OS-intercepted Win / Super key. macOS menu accelerators still
+  display `⌘Q`.
+- **Terminal Cmd+C / Cmd+V dispatched through gpui actions** with
+  `Some("Terminal")` key-context scoping. Replaces the old inline
+  `KeyDownEvent` modifier inspection, which was fragile under focus
+  routing changes. The new path also gates against accidentally
+  hijacking Cmd+C inside a profile-form Input widget — gpui-component
+  ships its own Input::Copy binding against the "Input" context.
+- **Profile row width and corner radius driven by the active skin.**
+  Rows on every skin pin to a uniform width inside the sidebar's
+  padding; macOS-26 rounds them to match its floating-card aesthetic.
+- **Selection background unified across rail-style widgets**
+  (profile rows, Settings rail, form tab bar). Hover no longer paints
+  grey over the active blue while the cursor sits on the row.
+- **Cargo deps:** `ureq` + `semver` added for the auto-updater. `dirs`
+  5 → 6. `thiserror` 1 → 2.
+- **JetBrains Mono Regular bundled on Linux** so the terminal grid
+  doesn't depend on whatever monospace fontconfig happens to pick.
+  Fixes glyph-width drift on minimal Fedora installs that don't ship
+  `fonts-dejavu`.
 
 ### Fixed
 
-- **Multi-second typing lag on Windows-on-ARM.** The `send` Tauri
-  command (called on every keystroke) was a sync command, and Tauri
-  2 dispatches sync commands on the WebView main thread. WebView2's
-  IPC channel on ARM under emulation has enough per-call overhead
-  that serializing every keystroke through that thread compounded
-  visibly — multi-second lag in extreme cases. Same anti-pattern
-  we fixed for the file-picker freeze in v0.9.5-beta.5; this is the
-  same bug class wearing a different hat. Marking `send` (plus
-  `set_rts`, `set_dtr`, `send_break`, `connect`, `disconnect`)
-  `async` moves them onto the Tokio runtime so the main thread
-  stays free for inbound echoes and UI repaint. macOS WKWebView
-  was unaffected — its IPC dispatch is fast enough that the
-  serialization wasn't visible.
-- **Cursor invisible on Windows (DOM renderer).** The v0.9.5
-  CSS-variable backstop set `background-color` on the cursor
-  element, but xterm also emits an `animation:
-  blink_block_<id> ... infinite` declaration. When the matching
-  `@keyframes` definition gets dropped along with the rest of the
-  injected CSS (the same WebKit2GTK / WebView2 quirk that motivated
-  the original backstop), the orphaned animation reference wins
-  over our static fill and leaves the cursor permanently
-  transparent. Adding `animation: none !important` to the cursor
-  rule disarms the orphan, and a separate outline rule restores
-  the unfocused-cursor look. Side effect: cursor blink is gone
-  everywhere; "always-visible cursor" is the right trade.
+- **Last terminal row clipped under the status bar** with skin-
+  driven title-bar heights. `maybe_resize` now subtracts the
+  flush-edged title-bar height (or the floating-card pane padding)
+  before computing the row count.
+- **1-second lag on profile selection.** The editor rebuild was
+  running synchronously on the click-handler stack, blocking paint.
+  Deferred onto `cx.spawn_in` with `Duration::ZERO` so the active-
+  row blue paints immediately and the editor materialises a tick
+  later.
+- **Windows: stray console window suppressed** plus three gpui
+  invalid-window-handle errors that fired on quit.
+- **Linux on Wayland: window corners grabbable for resize.** Widened
+  the hit-test margin so the SSD-emulating client-side decoration
+  picks up corner drags reliably.
+- **Linux on GNOME Wayland: window draggable from the title bar.**
+  Restored client-side title-bar dragging that the platform
+  preferred over the missing Server-Side-Decoration protocol.
+- **Settings → Accessibility → Reduce Motion** status text now wraps
+  inside its card instead of spilling past the right edge.
+- **Settings → Advanced → Config Directory** keeps the **Choose…**
+  and **Reset** buttons inside the card when the displayed path is
+  long. The path field truncates with a leading `…` so the meaningful
+  tail (`…/Application Support/Baudrun`) stays visible.
 
-### Changed
+### Security
 
-- **Cargo deps:** `dirs` 5 → 6 (deduplicates the dependency tree;
-  many transitive deps were already on 6), `thiserror` 1 → 2.
-- **Docs site (Astro + Starlight) deps:** Astro 6.2 → 6.3,
-  `@astrojs/starlight` 0.38 → 0.39 — both minor.
-- **Frontend deps:** Svelte 5.55.4 → 5.55.5, svelte-check 4.4.6 →
-  4.4.8, `@sveltejs/vite-plugin-svelte` 7.0 → 7.1.2,
-  `@tauri-apps/plugin-dialog` 2.7.0 → 2.7.1,
-  `@tauri-apps/plugin-opener` 2.5.3 → 2.5.4 — all patch / minor.
-- **GitHub Actions in the Docs workflow** bumped to current majors
-  (`actions/checkout@v6`, `pnpm/action-setup@v6`,
-  `actions/setup-node@v6`, `actions/upload-pages-artifact@v5`,
-  `actions/deploy-pages@v5`). The CI workflow was already on these
-  versions; this just brings Docs to parity.
-
-### Internal
-
-- **Dependabot config rewritten** to match the actual repo layout.
-  Previously scanned `gomod` at root (left over from the pre-Tauri
-  Go era) and `npm` at `/frontend` (path no longer exists). Now
-  scans `cargo` at `/src-tauri`, `npm` at the repo root, `npm` at
-  `/docs-next` (the Astro docs project), and GitHub Actions.
-  Resolves #14.
+- **Skin / theme / highlight-pack import path-traversal hardening.**
+  User-declared `id` fields are slugified before they become
+  filenames, so a JSON declaring `"id": "../../foo"` can't escape
+  the imports directory. Covers the three import stores
+  (`data::skins::import`, `data::themes::import`,
+  `data::highlight::import`).
 
 ## [0.9.5] — 2026-05-07
 

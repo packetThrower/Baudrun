@@ -7,10 +7,6 @@ follow SemVer (`vX.Y.Z` or `vX.Y.Z-{alpha,beta}.N` for pre-releases);
 grab the latest from the
 [Releases page](https://github.com/packetThrower/Baudrun/releases).
 
-The `tauri-archive` branch (the pre-rewrite Tauri / Svelte stack
-through `v0.9.5` stable + `v0.9.6-beta.3`) is no longer maintained
-beyond critical fixes.
-
 ## Reporting a vulnerability
 
 **Please don't file public issues for security problems.** Use
@@ -66,7 +62,7 @@ Out of scope (report to the respective upstream):
 
 Baudrun is currently unsigned on all platforms; verifying a release
 means checking the GitHub Actions run that produced it. Code-signing
-+ notarization on macOS and Windows are on the Phase 9 roadmap
++ notarization on macOS and Windows are on the near-term roadmap
 (see [TODO.md](TODO.md)). The Homebrew cask runs
 `xattr -dr com.apple.quarantine` on install to dodge the Gatekeeper
 prompt — that workaround goes away once notarization ships.

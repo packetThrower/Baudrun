@@ -10,26 +10,20 @@
 [![Rust](https://img.shields.io/badge/Rust-stable-CE422B?style=flat-square&logo=rust&logoColor=white)](Cargo.toml)
 [![License: GPL v3+](https://img.shields.io/badge/license-GPLv3%2B-blue?style=flat-square)](LICENSE)
 
-**Shipping Tauri build — minimum OS versions** &nbsp;
+**Minimum OS versions**
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Intel](https://img.shields.io/badge/Intel-x86__64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Windows 10 21H2+](https://img.shields.io/badge/Windows%2010%2021H2%2B-x64%20%2F%20arm64-0078D4?style=flat-square&logo=windows&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 
-[![Ubuntu 24.04+](https://img.shields.io/badge/Ubuntu-24.04%2B-E95420?style=flat-square&logo=ubuntu&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
-[![Debian 13+](https://img.shields.io/badge/Debian-13%2B-A81D33?style=flat-square&logo=debian&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
-[![Fedora 40+](https://img.shields.io/badge/Fedora-40%2B-294172?style=flat-square&logo=fedora&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![Ubuntu 22.04+](https://img.shields.io/badge/Ubuntu-22.04%2B-E95420?style=flat-square&logo=ubuntu&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![Debian 12+](https://img.shields.io/badge/Debian-12%2B-A81D33?style=flat-square&logo=debian&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![Fedora 38+](https://img.shields.io/badge/Fedora-38%2B-294172?style=flat-square&logo=fedora&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Arch](https://img.shields.io/badge/Arch-1793D1?style=flat-square&logo=archlinux&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![openSUSE Tumbleweed](https://img.shields.io/badge/openSUSE-Tumbleweed-73BA25?style=flat-square&logo=opensuse&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 
-Linux minimums above are gated by Tauri v2's `libwebkit2gtk-4.1` requirement
-(GTK4-era WebKit, first widely available on Ubuntu 24.04 / Debian 13 / Fedora
-40). The in-progress gpui rewrite removes the webview entirely and replaces it
-with a Vulkan + xkbcommon stack — its real floor is **Ubuntu 22.04 / Debian 12
-/ Fedora 38 / Arch (rolling) / openSUSE Tumbleweed**, plus a Vulkan-capable
-GPU with current Mesa (the same floor Zed itself runs on). The README's
-distro badges will drop to the lower line once the rewrite ships as the
-default build.
+Linux additionally needs a Vulkan-capable GPU with current Mesa drivers —
+the same floor [Zed](https://zed.dev) ships against.
 
 A cross-platform serial terminal for network devices. Built for switch consoles,
 router CLIs, and other serial-attached gear. Profile-based: each device gets a
@@ -48,17 +42,6 @@ Developed in close collaboration with Claude (Anthropic). See
     <img src="docs-next/public/screenshots/macos-dark-baudrun.png" alt="Baudrun in its default skin" width="720">
   </picture>
 </p>
-
-> **Status — mainline rewrite.** `main` is now the
-> `alacritty_terminal` + [`gpui`](https://www.gpui.rs/) build — same
-> features as the Tauri version, native window, no embedded browser.
-> The last shipping Tauri release (**v0.9.5**) and earlier are still on
-> the [Releases page](https://github.com/packetThrower/Baudrun/releases),
-> and their source lives on the
-> [`tauri-archive`](https://github.com/packetThrower/Baudrun/tree/tauri-archive)
-> branch. Alpha builds of the gpui rewrite ship as `v0.9.x-alpha.N`
-> pre-releases; the next stable will be cut once Phase 9 (signing /
-> notarization / auto-updater) lands.
 
 ## Documentation
 
@@ -110,7 +93,7 @@ For authoring your own skins / themes / highlight packs, sample JSON lives in
 - **Relocatable config directory** — keep profiles, themes, skins, and
   settings alongside your dotfiles; pick the target in Settings → Advanced.
 
-## Install (shipping Tauri build)
+## Install
 
 Package managers track the latest stable tag and handle the Gatekeeper /
 SmartScreen first-launch friction for you. Pre-release channels are available
@@ -149,9 +132,7 @@ are planned — see [TODO.md](TODO.md).
 
 ## Building from source
 
-### `main` — alacritty + gpui build
-
-Single-crate Rust project at the repo root. No Node, no webview.
+Single-crate Rust project at the repo root.
 
 ```bash
 git clone git@github.com:packetThrower/Baudrun.git
@@ -168,31 +149,6 @@ System libraries:
 - **Fedora**: `sudo dnf install libusb1-devel systemd-devel pkgconf-pkg-config`
 - **Arch**: `sudo pacman -S libusb pkgconf`
 - **Windows**: nothing extra; the gpui DirectX backend ships with Windows 10+.
-
-Outstanding work tracked in the
-[Phase 9 punch list in TODO.md](TODO.md); macOS signing / notarization, the
-Windows code-signing pipeline, and the auto-updater are the gating items
-before the next stable Release.
-
-### `tauri-archive` — Tauri v2 + Svelte 5 build (legacy)
-
-The pre-rewrite stack that built every Release up to `v0.9.5`. Kept buildable
-for back-porting fixes only; new feature work happens on `main`.
-
-Prerequisites: Rust stable, Node 20+, and the
-[Tauri prerequisites](https://tauri.app/start/prerequisites/) for your
-platform.
-
-```bash
-git clone -b tauri-archive git@github.com:packetThrower/Baudrun.git
-cd Baudrun
-npm install                              # pulls Tauri CLI + frontend deps
-npm run tauri dev                        # hot-reload dev (Rust + Vite)
-npm run tauri build                      # production bundle for host arch
-```
-
-System libraries on Linux: `gtk3-dev`, `webkit2gtk-4.1-dev`, `libsoup-3.0-dev`,
-`libayatana-appindicator3-dev`, `librsvg2-dev`, `libusb-1.0-0-dev`, `libudev-dev`.
 
 ## Project layout
 
@@ -235,10 +191,12 @@ Baudrun/
 └── .github/workflows/        # CI + release + docs deploy
 ```
 
-CI (`.github/workflows/ci.yml`) and release (`.github/workflows/release.yml`)
-still target the Tauri build; Phase 9 rewrites them for the gpui crate. The
-docs workflow (`docs.yml`) already targets the Astro site and is
-gpui-agnostic.
+CI (`.github/workflows/ci.yml`) runs `cargo check / clippy / test` across
+macOS, Windows, and Linux on every push. Release
+(`.github/workflows/release.yml`) builds `.dmg` / NSIS / `.deb` / `.rpm` /
+`.AppImage` / `.pkg.tar.zst` bundles via `cargo-packager` on every tag and
+attaches them to the GitHub Releases page. The docs workflow (`docs.yml`)
+deploys the Astro site to GitHub Pages on changes under `docs-next/`.
 
 ## License
 
