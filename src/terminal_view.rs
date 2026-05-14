@@ -215,6 +215,15 @@ pub struct TerminalView {
     /// on mouse_up. Without this gate, mouse_move events while the
     /// button is up would still extend selection.
     is_dragging: bool,
+    /// `true` when the active selection came from a triple-click
+    /// (line-content select). That selection is a `Simple` range
+    /// pinned to the line's printed extent — character-granular,
+    /// so unlike the word-sticky `Semantic` double-click it would
+    /// collapse on the slightest mouse jiggle. `handle_mouse_move`
+    /// checks this and skips drag-extension for triple-clicks;
+    /// `is_dragging` still stays `true` so copy-on-select fires
+    /// on release.
+    triple_click_selection: bool,
     /// PuTTY-style auto-copy on mouse-selection release. Reads
     /// the global `Settings::copy_on_select` flag, mirrored here
     /// by `AppView::apply_copy_on_select` so each settings change
@@ -388,6 +397,7 @@ impl TerminalView {
             grid_bounds: Rc::new(Cell::new(None)),
             scroll_accum: 0.0,
             is_dragging: false,
+            triple_click_selection: false,
             copy_on_select: false,
             context_menu_pos: None,
             scrollbar_drag: None,
@@ -1109,10 +1119,58 @@ impl TerminalView {
         let Some(point) = self.pixel_to_point(event.position) else {
             return;
         };
-        // Fresh selection on every click. Drag-update extends; a
-        // single click without movement leaves an empty selection
-        // which `mirror_to_grid` ignores.
-        self.term.selection = Some(Selection::new(SelectionType::Simple, point, Side::Left));
+        // Click count picks the selection granularity, matching the
+        // universal terminal convention:
+        //   1 click  → character-level (drag to extend)
+        //   2 clicks → the word under the cursor — alacritty's
+        //              `Semantic` mode, bounded by its semantic-
+        //              escape character set
+        //   3 clicks → the line's printed content
+        // gpui bumps `click_count` for rapid repeats in the same
+        // spot; 4+ falls through to `Simple` so a stray extra
+        // click drops back to a fresh character selection.
+        //
+        // Triple-click does NOT use alacritty's `SelectionType::Lines`.
+        // That type spans the whole row including every trailing
+        // blank cell, and `selection_to_string` tacks a `\n` onto
+        // the result — on a serial terminal that newline submits
+        // the line the moment it's pasted. Instead we scan the row
+        // for its last printed (non-space) column and build a plain
+        // `Simple` range from column 0 to there: the highlight
+        // stops at the visible text and the copied string carries
+        // no trailing newline.
+        self.triple_click_selection = event.click_count >= 3;
+        if self.triple_click_selection {
+            let line = point.line;
+            let cols = self.term.columns();
+            let row = &self.term.grid()[line];
+            // Highest column on the line that holds a non-space
+            // glyph. `None` ⇒ the line is entirely blank, in which
+            // case the selection collapses to a single cell at
+            // column 0 (empty — `copy_selection` filters it out).
+            let last_content = (0..cols).rev().find(|&i| row[Column(i)].c != ' ');
+            let mut sel =
+                Selection::new(SelectionType::Simple, GridPoint::new(line, Column(0)), Side::Left);
+            if let Some(last) = last_content {
+                sel.update(GridPoint::new(line, Column(last)), Side::Right);
+            }
+            self.term.selection = Some(sel);
+        } else {
+            // `Semantic` (double-click) covers its word the moment
+            // it's created — no drag needed — and a subsequent drag
+            // extends word-by-word through `sel.update()`. `Simple`
+            // (single-click) starts empty and grows character-wise.
+            let sel_type = match event.click_count {
+                2 => SelectionType::Semantic,
+                _ => SelectionType::Simple,
+            };
+            self.term.selection = Some(Selection::new(sel_type, point, Side::Left));
+        }
+        // `is_dragging` stays true for every click count so the
+        // mouse-up handler treats it as a finished selection for
+        // copy-on-select. `handle_mouse_move` separately checks
+        // `triple_click_selection` and skips drag-extension for
+        // the triple-click case.
         self.is_dragging = true;
         mirror_to_grid(
             &self.term,
@@ -1136,6 +1194,15 @@ impl TerminalView {
             return;
         }
         if !self.is_dragging {
+            return;
+        }
+        // A triple-click line selection is pinned to the line's
+        // printed extent; dragging must not extend it (a `Simple`
+        // range would just collapse toward the cursor). The button
+        // is still "down" so `is_dragging` stays set for the
+        // mouse-up / copy-on-select path — we only skip the
+        // extend.
+        if self.triple_click_selection {
             return;
         }
         let Some(point) = self.pixel_to_point(event.position) else {
