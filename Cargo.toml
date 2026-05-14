@@ -1,7 +1,7 @@
 [package]
 name = "baudrun"
 version = "0.9.7"
-description = "Serial terminal for network engineers. alacritty_terminal + gpui."
+description = "Serial terminal for network engineers."
 authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
 edition = "2021"
 publish = false
@@ -196,7 +196,7 @@ copyright = "© 2025–2026 packetThrower / Baudrun contributors"
 homepage = "https://packetthrower.github.io/Baudrun/"
 authors = ["Will Lehnertz"]
 publisher = "packetThrower"
-description = "Serial terminal for network engineers. alacritty_terminal + gpui."
+description = "Serial terminal for network engineers."
 long-description = """
 Baudrun is a cross-platform (macOS + Windows + Linux) serial terminal \
 for network devices. Built for switch consoles, router CLIs, and other \
