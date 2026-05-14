@@ -2616,9 +2616,24 @@ impl SettingsView {
                             .flex_row()
                             .items_center()
                             .gap_2()
+                            // `min_w_0 + overflow_hidden + whitespace_nowrap`
+                            // + `text_ellipsis_start` collapses to a single-
+                            // line path field that shows the meaningful
+                            // tail when it can't fit ("…Application
+                            // Support/Baudrun" rather than
+                            // "/Users/wlehne…"). Without these the long
+                            // absolute path forced the field to its
+                            // intrinsic content width and pushed the
+                            // Choose… + Reset buttons off the card's
+                            // right edge — Reset was invisible in the
+                            // screenshot the user reported.
                             .child(
                                 div()
                                     .flex_1()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .whitespace_nowrap()
+                                    .text_ellipsis_start()
                                     .px_3()
                                     .py(px(6.0))
                                     .rounded_md()
@@ -2629,18 +2644,27 @@ impl SettingsView {
                                     .text_color(rgba(s.fg_secondary))
                                     .child(self.config_dir_display.clone()),
                             )
-                            .child(import_button(
-                                s,
-                                "Choose\u{2026}",
-                                cx,
-                                |this, window, cx| this.choose_config_dir(window, cx),
-                            ))
-                            .child(import_button(
-                                s,
-                                "Reset",
-                                cx,
-                                |this, window, cx| this.reset_config_dir(window, cx),
-                            )),
+                            // `flex_shrink_0` on each button keeps them
+                            // at their natural intrinsic width even when
+                            // the flex row is starved — otherwise long
+                            // paths could compress the buttons until the
+                            // labels truncate or wrap.
+                            .child(
+                                div().flex_shrink_0().child(import_button(
+                                    s,
+                                    "Choose\u{2026}",
+                                    cx,
+                                    |this, window, cx| this.choose_config_dir(window, cx),
+                                )),
+                            )
+                            .child(
+                                div().flex_shrink_0().child(import_button(
+                                    s,
+                                    "Reset",
+                                    cx,
+                                    |this, window, cx| this.reset_config_dir(window, cx),
+                                )),
+                            ),
                     ),
             )
     }
