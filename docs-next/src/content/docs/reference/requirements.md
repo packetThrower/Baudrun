@@ -17,144 +17,139 @@ These are the floors for end users downloading from the Releases page.
 - **Gatekeeper warning on first launch.** The app is ad-hoc signed
   but not notarized. Right-click → Open to bypass. If macOS still
   refuses with "damaged" or "unidentified developer," strip the
-  quarantine flag: `xattr -cr Baudrun.app`. The .dmg installer
-  handles signatures correctly out of the box; the .zip works once
+  quarantine flag: `xattr -cr Baudrun.app`. The `.dmg` installer
+  handles signatures correctly out of the box; the `.zip` works once
   unpacked with Finder or `ditto -x -k`.
 - **USB-to-serial drivers** where applicable. See the chipset table
   in [README.md](https://github.com/packetThrower/Baudrun/blob/main/README.md#usb-to-serial-adapter-drivers).
 
-The 11.0 floor is set by Tauri v2's webview baseline (Apple Silicon's
-own minimum) and `bundle.macOS.minimumSystemVersion` in
-`src-tauri/tauri.conf.json`.
-
 ### Windows
-- **Windows 10 21H2 or later**, or Windows 11. amd64 and arm64 builds
-  shipped separately; pick the matching artifact.
-- **[Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)**.
-  Already installed on Windows 11 and most recent Windows 10
-  builds. Baudrun surfaces a pointer to the installer if it's
-  missing.
+- **Windows 10 21H2 or later**, or Windows 11. `amd64` and `arm64`
+  builds shipped separately; pick the matching artifact.
 - **SmartScreen warning on first launch.** Unsigned, so click "More
-  info" → "Run anyway". Code signing is tracked in
-  [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md).
-- Windows 10 1803–21H1 will technically run WebView2, but nothing
-  older than 21H2 is tested or supported here.
-- Pre-release builds (`v*-alpha.N`, `v*-beta.N`, `v*-rc.N`) ship
-  the NSIS `.exe` installer only. Stable releases additionally
-  produce an `.msi` for corporate silent-deploy workflows; WiX
-  rejects alphanumeric pre-release identifiers, so MSI is held to
+  info" → "Run anyway". Code signing is on the near-term roadmap
+  (see [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md)).
+- Windows 10 1803–21H1 will technically launch the binary, but
+  nothing older than 21H2 is tested or supported here.
+- Pre-release builds (`v*-alpha.N`, `v*-beta.N`, `v*-rc.N`) ship the
+  NSIS `.exe` installer only. Stable releases additionally produce
+  an `.msi` for corporate silent-deploy workflows; WiX rejects
+  alphanumeric pre-release identifiers, so the MSI is held to
   stable tags.
 
 ### Linux
-- **GTK3 ≥ 3.22** plus **WebKit2GTK 4.1** (`libwebkit2gtk-4.1-0`).
-  WebKit2GTK 4.0 was deprecated upstream in 2024 and isn't supported.
-- Concretely, this means:
-  - **Ubuntu 24.04 Noble+**
-  - **Debian 13 Trixie+**
-  - **Fedora 40+**
+- **Vulkan-capable GPU** with current Mesa drivers — the same floor
+  [Zed](https://zed.dev) ships against. The renderer goes straight
+  to Vulkan; there's no software fallback. Practically every
+  distribution-shipped GPU stack from 2022 onward qualifies.
+- Floor for the bundled packages and their dependency declarations:
+  - **Ubuntu 22.04 Jammy+**
+  - **Debian 12 Bookworm+**
+  - **Fedora 38+**
   - **Arch** (rolling)
   - **openSUSE Tumbleweed** (rolling)
-- `.deb` / `.rpm` / `.pkg.tar.zst` declare GTK3 + WebKit2GTK-4.1 +
-  libusb-1.0 as package deps, so `apt` / `dnf` / `pacman` pull them
-  in. They also install a udev rule
-  (`/usr/lib/udev/rules.d/60-baudrun-serial.rules`) that grants the
-  console user ACL access to `/dev/ttyUSB*` via systemd-logind's
-  `uaccess` tag, with no need to add yourself to the `dialout` group.
+- `.deb` / `.rpm` / `.pkg.tar.zst` declare `libusb-1.0` as a package
+  dep, so `apt` / `dnf` / `pacman` pull it in. They also install a
+  udev rule (`/usr/lib/udev/rules.d/60-baudrun-serial.rules`) that
+  grants the console user ACL access to `/dev/ttyUSB*` via
+  systemd-logind's `uaccess` tag, with no need to add yourself to
+  the `dialout` group.
 - **AppImage** has the same runtime requirement plus **FUSE**
   (`libfuse2` on Ubuntu, `fuse2` on most others). Run with
   `--appimage-extract-and-run` if FUSE is unavailable. The AppImage
   doesn't run the post-install udev hook the package installers do,
   so AppImage users still need group / udev setup of their own.
+- **Wayland** and **X11** are both supported; Wayland is preferred
+  on GNOME / KDE / Sway / Hyprland for HiDPI scaling and IME
+  handling. The window uses a client-side title bar so it stays
+  draggable under GNOME Mutter (which doesn't ship server-side
+  decorations).
 
 ## Building from source
 
-### Common toolchain
+### Toolchain
 
 | Tool | Minimum | Why |
 |---|---|---|
-| Rust | stable (1.77+) | `rust-version` in `src-tauri/Cargo.toml`. |
-| Node.js | 20 LTS | Used by Vite 8 + Svelte 5. CI uses Node 20. |
-| `@tauri-apps/cli` | v2 | Pulled in as a dev-dep via `npm install`; no separate global install. |
+| Rust | stable (1.77+) | `rust-version` in `Cargo.toml`. |
+| `pkg-config` | any | Used to resolve `libusb` on macOS / Linux. |
 
 ```bash
 # Install Rust (if you don't already have it)
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Or via Homebrew: brew install rustup-init && rustup-init -y
 
-# Pull in the Tauri CLI + frontend deps
-npm install
+# Clone + build
+git clone git@github.com:packetThrower/Baudrun.git
+cd Baudrun
+cargo build --release         # optimized binary at target/release/Baudrun
+cargo run                     # dev launch (loopback mode if no port)
 ```
+
+No Node, no JavaScript build step, no webview runtime.
 
 ### macOS host
 - **Xcode Command Line Tools** (`xcode-select --install`) for the
-  Apple toolchain against WebKit.
+  Apple toolchain.
 - **libusb + pkg-config** (`brew install libusb pkg-config`) for the
-  link against `rusb` inside the vendored `src-tauri/src/usbserial/`
-  CP210x backend.
-- Producing a **universal** artifact is not in the build flow.
-  Each release ships a native per-arch binary instead
-  (`npm run tauri build -- --target aarch64-apple-darwin` on Apple
-  Silicon, `--target x86_64-apple-darwin` on Intel). Homebrew's
-  libusb is per-arch only, so a universal binary would need a
-  hand-`lipo`'d libusb dylib; splitting sidesteps that.
+  link against the vendored `rusb` (CP210x direct backend on
+  macOS).
+- Each release ships a native per-arch binary
+  (`cargo build --release --target aarch64-apple-darwin` on Apple
+  Silicon, `--target x86_64-apple-darwin` on Intel). Universal
+  artifacts aren't part of the build flow — Homebrew's `libusb` is
+  per-arch only and the dual-arch split sidesteps a hand-`lipo`'d
+  dylib.
 - **SDK version matters for window chrome.** The release workflow
   pins the `macos-26` runner (arm64) so binaries link against the
-  Tahoe SDK and pick up macOS 26 window corners. The Intel slot
-  uses `macos-15-intel`. Building on an older macOS still works,
-  but the resulting binary falls back to legacy window chrome when
-  run on macOS 26 hosts.
+  Tahoe SDK and pick up the rounded-corner / vibrancy treatment.
+  The Intel slot uses `macos-15-intel`. Building on an older macOS
+  still works, but the resulting binary falls back to legacy window
+  chrome when run on macOS 26.
 
 ### Windows host
-- **Visual Studio Build Tools 2022** (MSVC + Windows SDK). The
-  `link.exe` toolchain Tauri / `wry` / `webview2-com-sys` need.
-- **Native ARM for arm64 builds.** Like Wails before it, Tauri v2
-  doesn't cleanly cross-compile to Windows-on-ARM from x86 Windows;
-  use a native ARM host (Surface Pro X, Copilot+ PC, the
-  `windows-11-arm` GitHub runner).
+- **Visual Studio Build Tools 2022** (MSVC + Windows SDK) for the
+  `link.exe` toolchain that the gpui DirectX backend links through.
+- **Native ARM for arm64 builds.** Cross-compiling to Windows-on-ARM
+  from x86 Windows isn't reliable; use a native ARM host (Surface
+  Pro X, Copilot+ PC, the `windows-11-arm` GitHub runner).
+- No `libusb` install needed — Windows uses the Win32 serial API
+  directly.
 
 ### Linux host
-- Runtime deps + their `-dev` headers for the link step:
+- Build deps:
   ```
-  libgtk-3-dev libwebkit2gtk-4.1-dev libsoup-3.0-dev \
-    libayatana-appindicator3-dev librsvg2-dev \
-    libusb-1.0-0-dev libudev-dev pkg-config
+  libusb-1.0-0-dev libudev-dev pkg-config
   ```
-- **`xdg-utils`** is bundled into the AppImage so `plugin-opener`
-  works on target hosts without it. Install on the build host with
-  `sudo apt install xdg-utils` (omitted from the runtime list above
-  because it's a build-time copy-into-bundle, not a link-time dep).
+  Plus the usual `build-essential` / `gcc` toolchain for cgo-free
+  Rust linking.
 - **Cross-compiling Linux from macOS or Windows is not supported.**
   Use a Linux host, a Linux VM, or CI.
 - Extra tools only needed for packaging:
+  - **`cargo-packager`** drives the `.dmg` / NSIS / `.deb` / `.rpm`
+    / `.AppImage` builds (`cargo install cargo-packager` or use the
+    binstall release from CI).
   - **`fpm`** drives `.pkg.tar.zst` output
-    (`sudo gem install fpm`). Tauri's bundler handles `.deb`, `.rpm`,
-    and `.AppImage` natively but doesn't target pacman.
+    (`sudo gem install fpm`). `cargo-packager` doesn't target
+    pacman.
   - **`libarchive-tools`** provides `bsdtar`, which fpm shells out
     to when building `.pkg.tar.zst`.
-  - **`file`** and **`libfuse2t64`** are needed by Tauri's AppImage
-    bundler (`appimagetool` is downloaded on-demand by the
-    bundler).
 
 ## Why these floors?
 
-- **macOS 11**: Apple Silicon's own minimum and Tauri v2 / WebKit's
-  effective baseline. The bundle's `minimumSystemVersion` reflects
-  this.
+- **macOS 11**: Apple Silicon's own minimum and gpui's effective
+  baseline. The bundle's `minimumSystemVersion` reflects this.
 - **Windows 10 21H2**: the last consumer-supported Windows 10 tail
-  for Microsoft's long-tail updates. WebView2 technically runs on
-  1809+, but 21H2 is the tested floor.
-- **WebKit2GTK 4.1**: upstream deprecated the 4.0 series in 2024 and
-  Ubuntu 24.04 stopped shipping it. Targeting 4.1 keeps us aligned
-  with the long-term Linux ecosystem at the cost of dropping pre-
-  24.04 distros.
-- **Rust stable / Node 20**: both current stable / LTS. We pin
-  `rust-version = "1.77"` in `Cargo.toml` because that's the floor
-  Tauri v2's `tauri-build` macro requires; nothing in our own code
-  needs anything newer.
+  for Microsoft's long-tail updates. gpui's DirectX backend runs on
+  10 1809+, but 21H2 is the tested floor.
+- **Linux Vulkan floor**: gpui renders through Vulkan with no
+  software fallback. Practically any distro shipped from 2022
+  onward with current Mesa qualifies; the package declarations pick
+  a conservative version floor below which we can't validate.
+- **Rust stable**: `rust-version = "1.77"` is set in `Cargo.toml`;
+  newer is fine.
 
 ## Upstream references
 
-- **Tauri v2 prerequisites**: https://tauri.app/start/prerequisites/
-- **Microsoft Edge WebView2 supported OSes**: https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
-- **Svelte 5 runtime requirements**: https://svelte.dev/
-- **WebKit2GTK releases**: https://webkitgtk.org/releases
+- **gpui**: https://www.gpui.rs/
+- **alacritty_terminal**: https://github.com/alacritty/alacritty/tree/master/alacritty_terminal

@@ -15,7 +15,7 @@ failed" message on industrial or rebranded gear.
 Legend: **✓** works out of the box, **✗** not supported through that
 path, **driver** means a user-installed vendor driver is required.
 "Direct USB" is Baudrun's vendored libusb-backed backend
-(`src-tauri/src/usbserial/`). When that column is ✓, Baudrun opens
+(`src/data/usbserial/`). When that column is ✓, Baudrun opens
 the device itself without any driver install regardless of what the
 OS does.
 
@@ -145,7 +145,7 @@ non-ARM64 kernel modules in an ARM64 kernel. Per-vendor state:
   (theAmberLion/Prolific, daniel-marschall) are also x64-only.
   Replace the cable with FTDI or CP210x.
 
-**Direct USB** is the in-tree `src-tauri/src/usbserial/` module
+**Direct USB** is the in-tree `src/data/usbserial/` module
 (originally vendored from
 [`packetThrower/usbserial-go`](https://github.com/packetThrower/usbserial-go)
 and ported to Rust on top of `rusb`). No vendor driver needed; no

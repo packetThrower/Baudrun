@@ -52,12 +52,14 @@ Baudrun respects the OS-level `prefers-reduced-motion` preference.
   "Scanning for COM ports…" status in the footer. Static under
   Reduce Motion.
 
-**Caveat:** WKWebView on macOS sometimes caches the
-`prefers-reduced-motion` value at page load. If the setting is
-toggled while Baudrun is open, the animations may not change
-until the app is quit and relaunched. This is an upstream
-WebKit behavior shared across Tauri / Electron / any embedded
-WebKit consumer, not something Baudrun can work around.
+**Caveat:** the Reduce Motion preference is read once from the OS
+at app launch and cached for the session. Flipping the system
+toggle while Baudrun is running won't change behaviour until the
+app is quit and relaunched. **Settings → Accessibility → Reduce
+Motion** shows the current value and points at the OS path to
+change it (System Settings → Accessibility → Display on macOS,
+Settings → Accessibility → Visual effects on Windows, your
+desktop environment's animation settings on Linux).
 
 ## Terminal zoom
 

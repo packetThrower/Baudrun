@@ -6,8 +6,12 @@ editUrl: https://github.com/packetThrower/Baudrun/edit/main/docs/SKINS.md
 
 Skins swap Baudrun's app chrome: colors, typography, radii, elevation,
 layout shape. Distinct from **themes**, which only recolor the terminal
-viewport. A skin is a flat map of CSS custom-property values applied to
-`document.documentElement`.
+viewport. A skin is a flat map of CSS-custom-property-style values
+that Baudrun reads at startup (and after each Skin-picker change) and
+projects into the runtime token store the render code consumes. Keys
+begin with `--` for parity with the CSS variable conventions Baudrun
+was designed against; values use familiar CSS syntax (hex / rgba /
+linear-gradient / `1px solid <color>` shorthand / etc.).
 
 ## File location
 
@@ -53,10 +57,10 @@ this or has an empty name / no variables.
 
 ## Variable reference
 
-Skins can override any CSS custom property the app's stylesheet reads.
-The full list lives in
-[`src/style.css`](https://github.com/packetThrower/Baudrun/blob/main/src/style.css) under `:root`.
-Grouped for navigation:
+The full list of authored tokens lives in
+[`src/skin_tokens.rs`](https://github.com/packetThrower/Baudrun/blob/main/src/skin_tokens.rs).
+Anything not declared in your skin falls back to the built-in
+default for that token. Grouped for navigation:
 
 ### Typography
 
@@ -129,15 +133,18 @@ Grouped for navigation:
 | `--shadow-floating` | Elevated surfaces (modals, dropdowns)                       |
 | `--blur-strength`   | Used by `backdrop-filter: blur(var(--blur-strength))`       |
 
-### Layout (floating bubble vs. flush edge)
+### Layout (floating card vs. flush edge)
 
-| Variable            | Purpose                                                                   |
-| ------------------- | ------------------------------------------------------------------------- |
-| `--shell-padding`   | Outer padding around sidebar + main. `0` = flush, `10px` = floating cards |
-| `--shell-gap`       | Gap between sidebar and main                                              |
-| `--panel-radius`    | Corner radius on sidebar + main                                           |
-| `--panel-shadow`    | Drop shadow on sidebar + main                                             |
-| `--titlebar-height` | Space reserved at top for the macOS traffic lights                        |
+| Variable                    | Purpose                                                                   |
+| --------------------------- | ------------------------------------------------------------------------- |
+| `--shell-padding`           | Outer padding around sidebar + main. `0` = flush, `10px` = floating cards |
+| `--shell-gap`               | Gap between sidebar and main                                              |
+| `--panel-radius`            | Corner radius on sidebar + main                                           |
+| `--panel-shadow`            | Drop shadow on sidebar + main                                             |
+| `--titlebar-height`         | Title bar height in flush-edged mode (40px is the default; the macOS-26 / Liquid Glass skin sets 0 to suppress it entirely and lets the transparent overlay take over) |
+| `--titlebar-content-inset`  | Extra top padding inside the sidebar / main pane to clear an overlay title bar — macOS-26 sets 24px so the traffic lights don't overlap the PROFILES header |
+| `--shadow-panel`            | Per-pane shadow (sidebar + main), used by floating-card skins where the panes read as cards rather than meeting the window edge |
+| `--shadow-floating`         | Shadow on transient elevated surfaces: dialogs, the right-click context menu, dropdown popovers |
 
 ### Scrollbars
 
@@ -154,43 +161,46 @@ Grouped for navigation:
 
 ## Light / dark handling
 
-The window's macOS `NSVisualEffectView` material is pinned dark at
-startup. Tauri v2's runtime appearance setters don't reliably swap
-NSAppearance live on macOS, so the vibrancy material can't follow
-the user's light/dark preference. Practical consequence for skin
-authors: **light-mode overlays need opaque or near-opaque surface
-colors**, since translucent light CSS on a dark vibrancy backdrop reads
-as muddy gray.
+Baudrun observes the OS appearance and re-applies the active skin
+live whenever the system flips Light / Dark — no relaunch
+required. Authors set a base `vars` block plus an optional
+`lightVars` overlay; when the user is in light mode (or `auto`
+with the OS in light mode), the two are merged with `lightVars`
+winning on conflicts.
 
 ```json
 {
   "supportsLight": true,
   "vars": {
-    "--bg-main": "rgba(20, 20, 22, 0.55)"
+    "--bg-main": "#1a1a1c",
+    "--fg-primary": "#e5e5e7"
   },
   "lightVars": {
-    "--bg-main": "#ffffff"
+    "--bg-main": "#ffffff",
+    "--fg-primary": "#1d1d1f"
   }
 }
 ```
 
 For skins that only make sense dark (CRT, synthwave), set
-`"supportsLight": false` and omit `lightVars`. The applier pins dark
-for those regardless of the user's Appearance preference.
+`"supportsLight": false` and omit `lightVars`. The applier pins
+dark for those regardless of the user's Appearance preference.
 
 ## What you can't do
 
-1. **Per-skin element-level CSS.** Built-ins can target specific
-   elements via `[data-skin="<id>"]` selectors in `style.css` (e.g.
-   the Windows XP Start-button look on the Settings footer). User
-   skins get a unique DOM attribute but no matching rule, because
-   the rule is gated on a built-in ID.
-2. **Window chrome.** Title-bar style, traffic-light position, and
-   bundle background are set in `src-tauri/tauri.conf.json` and the
-   `tauri::Builder` setup in `src-tauri/src/lib.rs`. macOS traffic
-   lights are repositioned at runtime via `tauri-plugin-decorum` to
-   match floating-bubble skin layouts (e.g. Liquid Glass). No CSS
-   variable can alter the native window chrome itself.
+1. **Element-specific styling beyond the documented tokens.** The
+   render code reads a fixed set of typed fields off the
+   `SkinTokens` struct. If a value isn't in
+   [`skin_tokens.rs`](https://github.com/packetThrower/Baudrun/blob/main/src/skin_tokens.rs)
+   today, your skin can't influence it. Open an issue with the
+   use case if you're hitting a gap.
+2. **Window chrome below the title bar.** macOS traffic-light
+   positioning, the system min/max/close glyphs, and the window-
+   manager's own decorations on Windows / Linux are owned by the
+   OS and the gpui platform layer. The `--titlebar-height`,
+   `--titlebar-content-inset`, and `--shell-bg` tokens give a lot
+   of leverage over how the chrome reads from inside the window,
+   but the OS-side chrome itself isn't customizable from JSON.
 3. **Appearance modes beyond light / dark.** Only `lightVars` and
    `darkVars` overlays are honored. No sepia, high-contrast, etc.
    beyond what one of those can express.
@@ -266,16 +276,20 @@ Skin dropdown.
 
 ## Development tips
 
-- **Iterate with DevTools.** `npm run tauri dev` opens the webview
-  inspector (right-click → Inspect Element on the running app).
-  Live-tweak variables via
-  `document.documentElement.style.setProperty("--bg-main", "#...")` in
-  the console until values feel right, then copy into the JSON.
-- **Start from a built-in.** Inspect a skin you like with
-  `getComputedStyle(document.documentElement).getPropertyValue("--bg-main")`
-  to capture the applied values, or read the JSON for each built-in
-  skin directly in
-  [`src-tauri/resources/builtin_skins.json`](https://github.com/packetThrower/Baudrun/blob/main/src-tauri/resources/builtin_skins.json).
+- **Iterate by editing the JSON.** Save changes; in **Settings →
+  App Skin** pick a different skin and switch back to your skin
+  (or restart Baudrun). The new values apply on the next render
+  without rebuild. Settings → App Skin → **Reveal in finder**
+  opens the skins directory so you can keep your editor next to
+  the picker.
+- **Start from a built-in.** Read the JSON for each built-in skin
+  in
+  [`resources/builtin_skins.json`](https://github.com/packetThrower/Baudrun/blob/main/resources/builtin_skins.json)
+  — copy the variable block of the one closest to what you want,
+  rename `id` + `name`, and tweak. The macOS-26 / Liquid Glass
+  entry is the most complete demonstration of every authored
+  variable; flush-edged skins like Baudrun-default show the
+  minimum viable set.
 - **Test both appearances** if you set `supportsLight: true`. The
   Appearance dropdown in Settings flips modes without reload.
 - **Skins vs. themes.** The terminal viewport is styled by the active

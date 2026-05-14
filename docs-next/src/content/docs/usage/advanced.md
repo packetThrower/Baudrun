@@ -9,6 +9,63 @@ describes what the feature does, where it's configured, and notable
 behavior. For the full JSON schema of every profile field referenced,
 see [PROFILES.md](/Baudrun/usage/profiles/).
 
+## Status bar
+
+The footer strip at the bottom of every window has three roles
+that share the same row:
+
+### Default context line
+
+Whatever's most relevant given the current window state:
+
+| State | Footer text |
+|---|---|
+| No profile selected | `Not connected` |
+| Profile selected, disconnected | `Editing <profile-name>` |
+| Connected | `Connected to <profile-name> · <port> · <baud> <framing>` |
+| Auto-reconnecting | `Reconnecting to <profile-name>…` |
+
+### Transient event log
+
+Connection failures, session drops, auto-reconnect transitions,
+session-log open / close events, and other user-relevant
+notifications surface here in place of the default context line.
+The text is tinted by severity:
+
+- **Info** (default colour) — successful, non-urgent transitions
+  like "Session log opened at /tmp/baudrun-…log".
+- **Warn** (amber) — recoverable problems like "Port dropped,
+  auto-reconnecting in 5s".
+- **Error** (red) — terminal-state failures like "Couldn't open
+  /dev/ttyUSB0: Permission denied".
+
+Events auto-clear after 8 s (info / warn) or 15 s (error) and
+restore the default context line. A newer event displaces an older
+one immediately.
+
+### Active-feature chips
+
+When a profile is connected (or auto-reconnecting), small chips
+appear on the right of the bar for any per-profile formatter or
+capture that's on:
+
+- **HEX** — hex view formatter is active for the connected profile.
+- **TIME** — timestamps are being prepended to each line.
+- **LINE#** — session-local line numbers are being prepended.
+- **TO FILE** — `logEnabled` is on and bytes are being captured
+  to the session-log file under the config directory.
+
+The chips are read-only summaries; toggle the underlying feature
+from the profile's Editing pane.
+
+### Session line counter
+
+Right of the chips, when connected, the bar shows `<n> / <max>`
+where `n` is the number of newlines received in the current
+session and `max` is the configured scrollback ceiling. Counts
+reset to 0 on every connect / disconnect / clear, so it's a
+per-session metric rather than a cumulative log-line index.
+
 ## Send Break
 
 - Session-header **Break** button.
@@ -213,22 +270,22 @@ well below 20 characters.
 
 - Profile field `backspaceKey`: `"del"` (0x7F) or `"bs"` (0x08).
   Empty string is treated as `"del"`.
-- Default `"del"` matches VT100 / xterm / every modern OS; wrong
-  value typically surfaces as `^H` echoed on screen when Backspace
-  is pressed.
-- xterm always emits 0x7F from the Backspace key. The swap happens
-  in the Terminal component's input handler before `sendBytes`.
+- Default `"del"` matches the VT100 / xterm convention plus every
+  modern OS; the wrong value typically surfaces as `^H` echoed on
+  screen when Backspace is pressed.
+- The keystroke encoder swaps `Backspace` to the configured byte
+  before sending it to the serial port.
 
 ## Copy on select
 
 - Global setting (Settings → Advanced), default `false`.
-- Hooks xterm's `onSelectionChange` event. On every selection
-  update, the current selection text is written to the clipboard
-  via `navigator.clipboard.writeText`.
+- On mouse-button release, if a drag selection ended with non-empty
+  text, the selection contents are written to the system clipboard.
+  No Cmd+C / Ctrl+C needed.
 - Empty selections (plain clicks) are skipped so clicking into the
   terminal doesn't clobber the clipboard.
-- Because the event fires continuously during a drag, the clipboard
-  always reflects the live selection.
+- The selection itself survives the release, so Cmd+V into another
+  app still works after the auto-copy.
 
 ## Multi-window
 
@@ -254,9 +311,9 @@ source window, the live session moves with it:
 - The serial port stays open the entire time. No mid-session bytes
   are lost, no DTR/RTS pulse fires, and there is no need to re-
   authenticate the device-side shell.
-- The visible xterm scrollback rides along too (serialized via
-  `@xterm/addon-serialize` and replayed in the new window's terminal
-  on mount), so you don't lose what was on screen.
+- The visible scrollback rides along too — the alacritty grid is
+  snapshotted from the source window and replayed into the new
+  window's terminal on mount, so you don't lose what was on screen.
 - The source window's session UI clears. The connection now belongs
   to the new window.
 - An in-flight XMODEM/YMODEM transfer blocks migration with a
@@ -270,12 +327,10 @@ right-click → "Open" with a non-active profile).
 
 ### Per-window sessions
 
-Each window keeps its own session in the backend, keyed by Tauri
-window label (`main` for the original, `win-<uuid>` for spawned
-ones). Settings, profiles, themes, skins, and highlight packs
-remain shared across all windows; only the *connection state* is
-per-window. Closing a window disconnects only that window's session,
-not the others.
+Each window keeps its own connection state. Settings, profiles,
+themes, skins, and highlight packs remain shared across all
+windows; only the *active session* is per-window. Closing a window
+disconnects only that window's session, not the others.
 
 A single physical port can still only be opened once at the OS
 level. If window A is connected to `/dev/cu.usbserial-1234` and you
@@ -284,92 +339,80 @@ Migrate the session instead of trying to open the port twice.
 
 ### Cross-platform behavior
 
-- macOS: spawned windows match the main window's overlay-titlebar +
-  traffic-light layout, so they don't look out of place against the
-  active skin.
-- Windows + Linux: spawned windows get the OS's default decorated
-  chrome (titlebar with title + min/max/close). The drag-out
-  gesture works the same: Tauri queries the OS cursor position
-  directly rather than trusting browser-event coordinates, which
-  side-steps the WebKitGTK / WebView2 quirks around `dragend`.
+- macOS: spawned windows match the main window's title-bar style
+  and traffic-light positioning from the active skin (macOS 26 /
+  Liquid Glass floats the lights over the sidebar; flush-edged
+  skins keep them in the default slot).
+- Windows + Linux: spawned windows get the same custom title bar
+  the main window uses, so the chrome stays consistent across the
+  workspace.
 
 ## Software updates
 
-Settings → Advanced → Updates controls the launch-time check
-against GitHub for a newer Baudrun release. Default behavior:
+Baudrun's update check is **detection-only**. On every launch a
+background task hits the GitHub Releases API; if a newer version
+is published, two indicators light up:
 
-- Check for updates on launch is **on**. The check hits the GitHub
-  Releases API once per app start; failures (offline, rate limit)
-  fall through silently.
-- Include pre-releases is **off**. Stable users see only stable
-  releases as updates; flip the toggle to surface alphas / betas
-  / RCs too.
+1. An amber dot overlays the sidebar's gear icon.
+2. The same amber dot appears next to **Updates** in the Settings
+   rail.
 
-When an update is available a one-line toast appears in the
-bottom-right of the footer: `Update available: vX.Y.Z` linking to
-the release notes, with an `×` to dismiss for that exact version
-(it'll re-show next time something newer is published). Pre-release
-toasts open the release page in your browser so you can read the
-notes and download manually. Stable toasts get an additional
-**Install** button that uses Tauri's signed-updater plugin:
+Opening **Settings → Updates** shows the new version number, the
+release-notes preview, and two actions: **View release** opens
+the GitHub release page in your browser so you can read the full
+notes and download the bundle, and **Dismiss this version** mutes
+the indicators until a newer tag ships.
 
-1. Downloads the platform-specific bundle from the GitHub release.
-2. Verifies the bundle's minisign signature against the public key
-   embedded in `tauri.conf.json`. Bundles signed with any other
-   key are rejected before they touch disk.
-3. Replaces the installed binary in place and relaunches into the
-   new version.
+The pane also exposes two preferences:
 
-The signing keypair is held outside the repo. Per-platform mechanics:
+- **Check for updates on launch** is on by default. The check hits
+  the GitHub Releases API once per app start; failures (offline,
+  rate limit) fall through silently with no user-visible error.
+- **Include pre-releases** is off by default. Stable users see
+  only stable tags; flip the toggle to surface
+  `vX.Y.Z-alpha.N` / `-beta.N` / `-rc.N` candidates too.
 
-- **macOS.** Auto-update unpacks `Baudrun.app.tar.gz` next to the
-  installed `.app` and replaces it. Builds are ad-hoc codesigned
-  (no paid Apple Developer account yet), so each downloaded update
-  triggers Gatekeeper's "right-click → Open" prompt the first time
-  on each user's machine.
-- **Windows.** Downloads the NSIS `setup.exe` and runs it in
-  silent mode.
-- **Linux.** AppImage updater. `.deb`, `.rpm`, and Arch users update
-  through their distro's package manager (or download a fresh
-  package from the release page); the in-app updater leaves those
-  alone.
+There's no in-app installer — the user picks whether and when to
+install. Two reasons for the detection-only posture:
 
-Pre-release tags (`vX.Y.Z-alpha.N`, `-beta.N`, `-rc.N`) ship signed
-updater bundles too but **don't** update the
-`/releases/latest/download/latest.json` manifest the auto-updater
-reads from. So existing stable installs aren't auto-jumped onto an
-alpha; pre-release-channel users continue to install pre-releases
-manually.
+- **macOS code-signing + notarization haven't shipped yet.** Auto-
+  replacing a running unsigned bundle would re-trip Gatekeeper
+  on every launch.
+- The "swap the live binary on quit" relauncher (Sparkle-style)
+  is real work that's hard to verify across all three platforms.
+  Detection-only keeps the user in control until that lands.
+
+Update through the same path you used to install: `brew upgrade
+--cask baudrun`, `scoop update baudrun`, your distro's package
+manager for `.deb` / `.rpm`, or a fresh download from the release
+page for direct-download installs.
 
 ## Session suspend / resume
 
 - **Suspend** session-header button: leaves the port open and the
-  `<Terminal>` component mounted, and routes the UI back to the
-  profile view.
-- **Resume** is triggered by returning to the suspended profile's
-  terminal view. A `refit()` call on the xterm instance re-syncs
-  the viewport to current dimensions.
-- Because the component never unmounts, scrollback and cursor
-  position are preserved across suspend.
+  terminal view mounted, and routes the UI back to the profile
+  view. The serial read / write threads keep running so device
+  output continues to feed scrollback in the background.
+- **Resume** is triggered by returning to the suspended profile.
+  The viewport re-fits to current dimensions, scrollback and
+  cursor position carry over intact, and any output that arrived
+  while suspended is sitting at the bottom waiting.
 - Navigating away *without* suspending (clicking another profile,
   opening Settings, or creating a new profile) triggers an automatic
   Disconnect.
 
 ## Scrollback
 
-- Global setting (`scrollbackLines`, default `10000`). Applied via
-  xterm.js's constructor `scrollback` option.
+- Global setting (`scrollbackLines`, default `10000`). Applied to
+  the `alacritty_terminal::Term`'s history buffer.
 - Settings UI ships five presets (1k / 5k / 10k / 50k / 100k) with
   approximate memory cost annotated inline. Custom values can be set
   by editing `settings.json` directly and are preserved, surfaced in
   the dropdown as `N lines (custom)` so they don't silently reset.
-- Changing the setting tears down and rebuilds the `<Terminal>`
-  component, since xterm doesn't resize the ring buffer in place. The
-  rebuild snapshots the existing buffer as plain text and writes it
-  back into the fresh instance. Tradeoffs on the existing scrollback:
-  plain text survives, ANSI color attributes are flattened, current
-  selection is lost. New output after the rebuild is colored as
-  normal. Same mechanism the font-size live-update uses.
+- Changing the setting applies live to the running session — the
+  underlying ring buffer is rebuilt and the existing scrollback
+  carries over, color attributes intact. The selection is dropped
+  across the rebuild.
 - The buffer is strictly in-memory. Independent of, and not
   affected by, the Session logging feature. If you need permanent
   history, enable `logEnabled` on the profile.
@@ -378,35 +421,32 @@ manually.
 
 | Scrollback | Memory |
 |---|---|
-| 1,000 lines | ~0.4 MB |
-| 5,000 lines | ~2 MB |
-| 10,000 lines (default) | ~4 MB |
-| 50,000 lines | ~20 MB |
-| 100,000 lines | ~40 MB |
-| 500,000 lines | ~200 MB |
+| 1,000 lines | ~0.2 MB |
+| 5,000 lines | ~1 MB |
+| 10,000 lines (default) | ~2 MB |
+| 50,000 lines | ~10 MB |
+| 100,000 lines | ~20 MB |
+| 500,000 lines | ~100 MB |
 
-xterm.js stores each cell as an object (character + 24-bit fg/bg +
-attributes), so the per-line cost scales with column count.
-Narrower terminals cost proportionally less.
+`alacritty_terminal` stores each cell as a compact struct (Unicode
+codepoint + foreground / background colour + attribute flags), so
+the per-line cost scales with column count. Narrower terminals cost
+proportionally less.
 
-Past ~100k lines, two things start to degrade: the WebKit garbage
-collector spends visibly more time on cleanup cycles, and the
-buffer-snapshot step inside the recreate path (font-size or
-scrollback change) takes noticeably longer because it linearly
-reads every cell. In-terminal search, if/when wired in, would also
-scale linearly with line count.
+Past ~100k lines, the dominant cost is still memory rather than
+CPU — alacritty's grid is a ring buffer with O(1) push, so output
+throughput stays steady. In-terminal search, if/when wired in,
+would scale linearly with line count.
 
 ## Light / dark appearance
 
 - Global setting (`appearance`): `auto` / `light` / `dark`.
-- `auto` follows the OS preference via
-  `matchMedia('(prefers-color-scheme: dark)')` and updates live when
-  the OS flips.
-- Only swaps the CSS palette. The window's own
-  `NSVisualEffectView` material on macOS is pinned to the dark
-  system appearance at startup. Tauri v2's runtime appearance
-  setters don't reliably swap NSAppearance live on macOS, so the
-  vibrancy material cannot change after launch.
+- `auto` follows the OS preference and updates live when the OS
+  flips Light / Dark — gpui observes the window's appearance and
+  re-applies the skin without restart.
+- Swaps both the chrome palette (sidebar, panes, buttons) and the
+  active skin's light variant when one is authored. Skins that
+  don't ship a light variant stay in their default palette.
 - Dark-only skins (CRT, Cyberpunk) ignore the preference and pin
   their palette to dark.
 
@@ -470,7 +510,7 @@ runs in your browser; the file you drop never leaves your machine.
 ## Theme preview
 
 - Settings → Installed Themes → each row has a **Preview** button.
-- Opens a modal containing a read-only xterm instance that renders
+- Opens a modal containing a read-only terminal that renders
   a canned RuggedCom-style output sample (prompts, interface
   status, MAC addresses, IPs, timestamps, warnings, errors).
 - The sample is passed through the highlighter, so the preview
@@ -491,7 +531,7 @@ runs in your browser; the file you drop never leaves your machine.
 - Shows a yellow banner above the port dropdown when a USB-serial
   chipset is plugged in but no corresponding serial port is
   enumerated by the OS **and** Baudrun's vendored libusb-direct
-  backend (`src-tauri/src/usbserial/`) can't open it either.
+  backend (`src/data/usbserial/`) can't open it either.
 - Banner includes a link to the vendor driver download and a
   Refresh action.
 - Dismissal via × is session-scoped; the banner re-shows on the

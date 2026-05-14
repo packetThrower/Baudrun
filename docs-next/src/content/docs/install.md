@@ -73,13 +73,6 @@ prompt.
 Update with `scoop update baudrun` (or `baudrun-prerelease`). Same 6h
 auto-bump cadence as the Homebrew tap.
 
-### WebView2 runtime
-
-Scoop won't install WebView2 for you. It's already present on Windows 11
-and most Windows 10 builds from 21H2 onward; if Baudrun launches with a
-"WebView2 missing" message, install the **Evergreen Bootstrapper** from
-[microsoft.com/edge/webview2](https://developer.microsoft.com/microsoft-edge/webview2/).
-
 ## Linux
 
 There is no package-manager bucket equivalent for Linux. `apt`, `dnf`,
@@ -94,8 +87,8 @@ into each distro's native package format:
     sudo apt install ./Baudrun_<version>_amd64.deb
     ```
 
-    The `.deb` declares its GTK / WebKit2GTK / libusb dependencies so
-    `apt` pulls them in automatically. A udev rule
+    The `.deb` declares its libusb dependency so `apt` pulls it in
+    automatically. A udev rule
     (`/usr/lib/udev/rules.d/60-baudrun-serial.rules`) is also installed
     so you don't need `dialout` / `plugdev` group membership to open
     serial adapters.
@@ -132,7 +125,7 @@ into each distro's native package format:
     automatically. Add yourself to the `dialout` group manually
     (`sudo usermod -aG dialout $USER`) or apply the rule by hand.
 
-Substitute `<version>` with the tag you want (e.g. `0.9.2` for the
+Substitute `<version>` with the tag you want (e.g. `0.9.7` for the
 current stable). For ARM64 hosts use the matching `arm64` / `aarch64`
 artifact. The full per-platform artifact table is on the
 [Releases](https://github.com/packetThrower/Baudrun/releases) page and in
@@ -161,9 +154,12 @@ sidestep both items below:
 - **Windows SmartScreen.** The NSIS installer is unsigned. Click "More
   info" → "Run anyway".
 
-The auto-updater inside Baudrun handles signature verification on its
-own via a minisign keypair embedded in the binary. Once past the first
-launch, subsequent updates apply regardless of how the app was installed.
+Baudrun's in-app update check is **detection-only** — when a newer
+release is published, a small amber dot appears on the sidebar's gear
+icon and on **Settings → Updates**, with a "View release" button that
+opens the GitHub Releases page in your browser. Downloading and
+replacing the bundle is a manual step; code-signing + notarization
+are on the near-term roadmap before that becomes an auto-install path.
 
 ## Pre-release channel
 
@@ -183,9 +179,10 @@ Linux users grab a pre-release tag's artifact directly from the
 "latest/download/" shortcut always tracks stable so it isn't useful for
 pre-release downloads.
 
-The in-app updater can also follow the pre-release channel: Settings →
-Advanced → Updates → "Include pre-releases" makes the launch update
-check consider pre-release tags. This works on any install path.
+The in-app update check can also follow the pre-release channel:
+**Settings → Updates → "Include pre-releases"** makes the boot-time
+check consider pre-release tags. The amber dot then lights up on the
+next pre-release just like it does on stable.
 
 ## Update
 
@@ -196,7 +193,7 @@ check consider pre-release tags. This works on any install path.
 | `.deb` | `sudo apt install ./Baudrun_<new>_amd64.deb` |
 | `.rpm` | `sudo dnf install ./Baudrun-<new>-1.x86_64.rpm` |
 | `.pkg.tar.zst` | `sudo pacman -U baudrun-<new>-1-x86_64.pkg.tar.zst` |
-| Direct download | use the in-app updater toast on launch |
+| Direct download | watch the amber dot on the sidebar gear icon — opens **Settings → Updates** where "View release" links to the GitHub Releases page for the new artifact |
 
 ## Uninstall
 
@@ -208,5 +205,5 @@ check consider pre-release tags. This works on any install path.
 | Direct download | drag `Baudrun.app` to Trash, run the uninstaller `Baudrun_<version>_x64-setup.exe /S` with `--uninstall`, or just delete the AppImage |
 
 `brew uninstall --zap --cask baudrun` clears profiles, settings, themes,
-skins, and the WebKit cache. The non-zap uninstall leaves them in
+skins, and highlight packs. The non-zap uninstall leaves them in
 `~/Library/Application Support/Baudrun` so reinstalling is seamless.

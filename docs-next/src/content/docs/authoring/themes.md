@@ -108,11 +108,12 @@ contrast against a busy Cyberpunk skin.
 | `cursor`                | **yes**  | Cursor block fill.                                                                          |
 | `cursorAccent`          | no       | Character color under the cursor. Defaults to `background` if unset.                        |
 | `selection`             | **yes**  | Selection highlight background.                                                             |
-| `selectionForeground`   | no       | Text color inside the selection. Unset leaves xterm in its "use foreground" default.        |
+| `selectionForeground`   | no       | Text color inside the selection. Unset leaves the renderer in its "use foreground" default. |
 | `black` … `brightWhite` | **yes**  | The 16 ANSI slots (indexes 0-15). Devices pick these via SGR codes `30-37`, `40-47`, `90-97`, `100-107`. |
 
-All color values accept any format xterm.js understands: `#rrggbb`,
-`#rgb`, `rgb()`, `rgba()`, or CSS named colors.
+All color values accept the same shorthand the iTerm2 / Alacritty
+theme files use: `#rrggbb`, `#rgb`, `rgb()`, `rgba()`, or CSS
+named colors.
 
 ## Variable meaning (ANSI palette)
 

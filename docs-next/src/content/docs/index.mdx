@@ -64,10 +64,10 @@ Baudrun keeps named profiles for each device, runs a full terminal emulator with
     Each device gets a saved profile with port, baud rate, parity, line endings, and a theme. Connection takes one click.
   </Card>
   <Card title="Terminal" icon="laptop">
-    Built on xterm.js with VT processing, scrollback, search, and syntax highlighting for IPs, MACs, interface names, and vendor-specific output.
+    Native VT100 / xterm parsing with scrollback, selection, syntax highlighting for IPs, MACs, interface names, and vendor-specific output. Copy / paste / select-all wired to the platform clipboard.
   </Card>
   <Card title="Cross-platform" icon="setting">
-    macOS, Windows, and Linux from a single Tauri 2 codebase. Native window chrome on each platform, single binary install, automatic updates on stable and pre-release channels.
+    macOS, Windows, and Linux from a single Rust binary. GPU-accelerated rendering, native title-bar and traffic-light treatment per platform, single-file install.
   </Card>
   <Card title="Adapter detection" icon="seti:powershell">
     Recognizes CH340, CP210x, FTDI, and other common USB-serial chipsets. Identifies missing drivers and links to the vendor download.
