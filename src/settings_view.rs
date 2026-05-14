@@ -2179,16 +2179,40 @@ impl SettingsView {
                 div()
                     .flex()
                     .flex_row()
-                    .items_center()
+                    // `items_start` (not `items_center`) so the dot
+                    // pins to the first line of the now-wrapping
+                    // status label rather than drifting to the
+                    // vertical middle once the text spans two rows.
+                    .items_start()
                     .gap_2()
                     .child(
+                        // Hold the dot at the cap-height baseline of
+                        // the first text line so the alignment reads
+                        // naturally — `mt(px(5.0))` lines up under
+                        // `text_sm` (13px) on macOS / Windows. The
+                        // `flex_shrink_0` keeps a long status string
+                        // from squashing the dot into an oval.
                         div()
+                            .mt(px(5.0))
                             .w(px(8.0))
                             .h(px(8.0))
+                            .flex_shrink_0()
                             .rounded_full()
                             .bg(rgba(dot_color)),
                     )
-                    .child(div().text_sm().child(status_label)),
+                    // `flex_1 + min_w_0` lets the label shrink + wrap
+                    // when the status string runs longer than the
+                    // card. Without `min_w_0` flex items keep their
+                    // intrinsic content width and overflow the card
+                    // (the visible bug: " are on." spills past the
+                    // right edge of the Reduce Motion card).
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_sm()
+                            .child(status_label),
+                    ),
             )
             .child(
                 div()
