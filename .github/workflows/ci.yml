@@ -111,19 +111,20 @@ jobs:
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
-      # Linux: libusb (rusb / CP210x direct backend) + libudev
-      # (serialport's tty enumerator). xkbcommon / wayland / x11 /
-      # xcb are gpui_linux's compile-time pkg-config deps.
+      # Linux: libudev for serialport's tty enumerator. libusb is
+      # compiled statically into the binary by rusb's `vendored`
+      # feature (see Cargo.toml), so there's no libusb-1.0-0-dev
+      # here — this matches release.yml. xkbcommon / wayland /
+      # x11 / xcb are gpui_linux's compile-time pkg-config deps.
       # No GTK / WebKit / soup / appindicator — gpui owns the
       # window + renderer end-to-end. Vulkan loads at runtime via
-      # ash's dlopen so no SDK install needed for `cargo check`
-      # / `cargo test --lib`.
+      # ash's dlopen so no SDK install needed for `cargo test`.
       - name: Install Linux deps
         if: startsWith(matrix.runner, 'ubuntu-')
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libusb-1.0-0-dev libudev-dev \
+            libudev-dev \
             libxkbcommon-dev libxkbcommon-x11-dev \
             libwayland-dev \
             libx11-dev libxcb1-dev libxcb-randr0-dev \
@@ -132,11 +133,13 @@ jobs:
             libfontconfig1-dev libfreetype-dev \
             pkg-config
 
-      # macOS: libusb for rusb's bulk transfers. pkg-config so the
-      # build script can locate it via Homebrew's prefix.
+      # macOS: pkg-config so serialport's build script can probe
+      # via Homebrew's prefix. libusb is compiled statically by
+      # rusb's `vendored` feature (see Cargo.toml) — no Homebrew
+      # libusb needed, same as release.yml.
       - name: Install macOS deps
         if: startsWith(matrix.runner, 'macos-')
-        run: brew install libusb pkg-config
+        run: brew install pkg-config
 
       # Windows: nothing extra. The gpui DirectX backend, serialport,
       # and rusb (via libusb1-sys's bundled fallback) all link
