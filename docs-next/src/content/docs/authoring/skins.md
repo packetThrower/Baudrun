@@ -216,10 +216,10 @@ dark for those regardless of the user's Appearance preference.
 For a complete working skin with every option set and a per-field
 comment on what it does, see:
 
-- [`docs/examples/skin.example.jsonc`](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/skin.example.jsonc):
+- [`docs-next/public/examples/skin.example.jsonc`](https://github.com/packetThrower/Baudrun/blob/main/docs-next/public/examples/skin.example.jsonc):
   annotated version, for reading and learning. Not directly
   importable (Baudrun's JSON parser doesn't accept comments).
-- [`docs/examples/skin.example.json`](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/skin.example.json):
+- [`docs-next/public/examples/skin.example.json`](https://github.com/packetThrower/Baudrun/blob/main/docs-next/public/examples/skin.example.json):
   stripped version with the same values, importable via
   **Settings → Installed Skins → Import skin…** or by dropping into
   the skins directory.

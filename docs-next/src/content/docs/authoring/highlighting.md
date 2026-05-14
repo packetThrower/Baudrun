@@ -81,5 +81,5 @@ By default every profile inherits the global Syntax Highlighting selection from 
 
 ## Starter packs
 
-- [**Minimal example**](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/highlight-pack.example.md): near-empty skeleton showing the schema. Copy, rename `id` and `name`, add rules, import.
-- [**Syslog / journald**](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/syslog.example.md): practical starter for generic syslog / journald output (severity keywords, systemd unit states, sshd accepted/denied lines, `[OK]` / `[FAILED]` markers, daemon tags, PIDs).
+- [**Minimal example**](https://github.com/packetThrower/Baudrun/blob/main/docs-next/public/examples/highlight-pack.example.md): near-empty skeleton showing the schema. Copy, rename `id` and `name`, add rules, import.
+- [**Syslog / journald**](https://github.com/packetThrower/Baudrun/blob/main/docs-next/public/examples/syslog.example.md): practical starter for generic syslog / journald output (severity keywords, systemd unit states, sshd accepted/denied lines, `[OK]` / `[FAILED]` markers, daemon tags, PIDs).

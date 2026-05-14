@@ -190,10 +190,10 @@ with theme selection.
 For a complete working theme with every color slot set and a
 per-field comment on what it does, see:
 
-- [`docs/examples/theme.example.jsonc`](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/theme.example.jsonc):
+- [`docs-next/public/examples/theme.example.jsonc`](https://github.com/packetThrower/Baudrun/blob/main/docs-next/public/examples/theme.example.jsonc):
   annotated version, for reading and learning. Not directly
   importable (Baudrun's JSON parser doesn't accept comments).
-- [`docs/examples/theme.example.json`](https://github.com/packetThrower/Baudrun/blob/main/docs/examples/theme.example.json):
+- [`docs-next/public/examples/theme.example.json`](https://github.com/packetThrower/Baudrun/blob/main/docs-next/public/examples/theme.example.json):
   stripped version with the same values, importable by dropping
   into the themes directory.
 

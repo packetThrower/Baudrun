@@ -191,8 +191,8 @@ Baudrun/
 ├── build/                    # icon source + Windows installer assets
 ├── packaging/                # Linux udev rule + .desktop file + Arch PKGBUILD
 ├── scripts/virtual-serial/   # Go test rig for XMODEM/YMODEM smoke tests
-├── docs/examples/            # sample skin / theme / highlight-pack JSON
 ├── docs-next/                # Astro/Starlight docs site source
+│   └── public/examples/      # sample skin / theme / highlight-pack JSON
 └── .github/workflows/        # CI + release + docs deploy
 ```
 

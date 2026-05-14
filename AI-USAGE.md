@@ -16,8 +16,8 @@ can judge for themselves.
   settings UI, hex view, paste safety).
 - CI/CD pipeline (GitHub Actions matrix, fpm packaging, AppImage,
   AUR PKGBUILD).
-- Reference documentation under [docs/](docs/) and most in-code
-  comments.
+- Reference documentation under [docs-next/](docs-next/) and most
+  in-code comments.
 - Mechanical refactors — notably the Svelte 3 → 5 runes migration.
 
 **The maintainer** drives the human side:

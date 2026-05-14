@@ -100,9 +100,9 @@ final stable entry at tag time.
   `-hover`, `--overlay`, `--accent-hover`, `--bg-terminal`,
   `--input-border-idle`, `--option-group-fg`, `--sidebar-divider`,
   `--panel-border`, `--shadow-floating`, `--shadow-panel`. Examples
-  in `docs/examples/`. Custom skins built against v0.9.5's smaller
-  variable set continue to work — missing vars fall back to
-  sensible defaults.
+  in `docs-next/public/examples/`. Custom skins built against
+  v0.9.5's smaller variable set continue to work — missing vars
+  fall back to sensible defaults.
 - **Edit menu on macOS** with Copy / Paste / Select All entries.
   Accelerator labels derive from the registered KeyBindings.
 - **Settings → Shortcuts customisation rows** for Copy, Paste, and
@@ -356,7 +356,8 @@ rendering quality. Highlights below; the per-commit story lives in
 ### Docs
 
 - **Note that Scoop needs `git` before adding a third-party
-  bucket.** The README + `docs/INSTALL.md` quickstart now run
+  bucket.** The README + [install guide](https://packetthrower.github.io/Baudrun/install/)
+  quickstart now run
   `scoop install git` before `scoop bucket add packetThrower
   https://github.com/packetThrower/scoop-bucket`. Scoop fails
   fast with `ERROR Git is required for buckets.` otherwise.
@@ -439,7 +440,7 @@ rendering quality. Highlights below; the per-commit story lives in
   and visible scrollback move to the new window — same port, same
   DTR/RTS state, no mid-session bytes lost. Tear-off mid-transfer is
   rejected with a "wait or cancel first" message; everything else
-  follows you. See [docs/ADVANCED.md](docs/ADVANCED.md#multi-window)
+  follows you. See the [Advanced settings guide](https://packetthrower.github.io/Baudrun/usage/advanced/)
   for the gesture map and edge cases.
 
 ### Fixed
@@ -504,8 +505,9 @@ rendering quality. Highlights below; the per-commit story lives in
   Settings → Syntax Highlighting → Import pack reads a JSON file
   into `$SUPPORT_DIR/highlight/<id>.json` and auto-enables it.
   Imported packs show a Remove button. Two starter examples ship
-  under [docs/examples/](docs/examples/) — the minimal-skeleton
-  schema and a practical syslog/journald set with severity
+  under [docs-next/public/examples/](docs-next/public/examples/) —
+  the minimal-skeleton schema and a practical syslog/journald set
+  with severity
   keywords, systemd unit states, sshd events, and PID highlighting.
 
 ### Changed
@@ -566,9 +568,9 @@ port in v0.9.0.
   through libusb with no vendor driver install. Devices surface in the
   port picker as `USB · VID:PID — product name` alongside the regular
   `/dev/*` entries. The driver-missing banner stays silent for any
-  chipset the library can open directly. See
-  [docs/ADAPTERS.md](docs/ADAPTERS.md) for the full per-chipset
-  × per-OS support matrix.
+  chipset the library can open directly. See the
+  [USB-serial adapters guide](https://packetthrower.github.io/Baudrun/usage/adapters/)
+  for the full per-chipset × per-OS support matrix.
 - **Configurable scrollback buffer.** Settings → Advanced → Scrollback
   gives a presets list (1k / 5k / 10k default / 50k / 100k lines) with
   memory-estimate hints. Custom values set directly in `settings.json`
@@ -577,7 +579,7 @@ port in v0.9.0.
   `.deb` / `.rpm` / `.pkg.tar.zst` packages. Uses `TAG+="uaccess"` so
   the currently-logged-in console user can open serial adapters
   without `sudo` or `dialout` / `plugdev` group membership. Full
-  walkthrough in [docs/ADAPTERS.md](docs/ADAPTERS.md#linux-mainline-kernel-module).
+  walkthrough in the [USB-serial adapters guide](https://packetthrower.github.io/Baudrun/usage/adapters/).
 - **Helpful error enrichment** when a port open fails with permission
   denied (AppImage or manual-build users who don't get the udev rule
   installed). Error text now names the exact `sudo usermod -aG
@@ -592,7 +594,7 @@ port in v0.9.0.
   `Ctrl+Shift+K` / `Ctrl+Shift+B` / `Ctrl+Shift+S` on Linux and
   Windows. The split scheme preserves plain `Ctrl+letter`
   passthroughs (XOFF, VT, STX, etc.) to the serial device. Full
-  details in [docs/SHORTCUTS.md](docs/SHORTCUTS.md).
+  details in the [Keyboard shortcuts guide](https://packetthrower.github.io/Baudrun/usage/shortcuts/).
 - **Editable keyboard shortcuts.** Settings → Keyboard Shortcuts
   lets you rebind each session-level action to any combo you want,
   with a click-to-record widget and per-binding reset-to-default.
