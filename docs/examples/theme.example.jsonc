@@ -1,5 +1,5 @@
 // ============================================================================
-// Reference theme — every color slot Baudrun / xterm.js reads, grouped and
+// Reference theme — every color slot Baudrun's terminal renderer reads, grouped and
 // annotated. This is a .jsonc file (JSON with comments) for humans to read;
 // Baudrun's importer only eats strict JSON, so import theme.example.json
 // instead, or strip the // comments from this file before importing.

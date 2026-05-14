@@ -12,8 +12,9 @@
 //   Linux:   $XDG_CONFIG_HOME/Baudrun/skins/
 // ).
 //
-// Variables you don't set fall back to the defaults in src/style.css.
-// See docs/SKINS.md for the full reference and light/dark caveats.
+// Variables you don't set fall back to the built-in defaults in
+// src/skin_tokens.rs. See docs/SKINS.md for the full reference and
+// light/dark caveats.
 // ============================================================================
 
 {
@@ -88,9 +89,11 @@
     "--radius-sm":        "4px",   // Small inputs, swatches
     "--radius-md":        "6px",   // Buttons, cards
     "--radius-lg":        "10px",  // Large panels, modals
-    "--shadow-panel":     "none",  // Card/panel shadow
+    "--shadow-panel":     "none",  // Card / panel shadow
     "--shadow-floating":  "0 8px 24px rgba(0, 0, 0, 0.35)", // Modals, dropdowns
-    "--blur-strength":    "0px",   // backdrop-filter: blur(var(--blur-strength))
+    // Note: `--blur-strength` carries over from the CSS-era skins but is not
+    // honoured by the gpui renderer (no backdrop-blur primitive). Safe to
+    // declare in custom skins; the value is silently ignored.
 
     // ─── Layout (flush-edge vs. floating-bubble) ───────────────────────
     // Set all four to non-zero for the floating-bubble look (sidebar + main

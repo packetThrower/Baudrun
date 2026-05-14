@@ -245,8 +245,8 @@ well below 20 characters.
 **`pasteWarnMultiline`** (profile field, default `true`)
 
 - Only applies to pastes that contain a line break.
-- Prompts via `window.confirm` with the line count plus a truncated
-  (80-char) preview of the first line.
+- Opens a native confirmation dialog with the line count plus a
+  truncated (80-char) preview of the first line.
 - On cancel, the paste is discarded and a "Paste cancelled" status
   message is shown.
 

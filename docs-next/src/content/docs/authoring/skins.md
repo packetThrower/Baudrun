@@ -129,9 +129,15 @@ default for that token. Grouped for navigation:
 | `--radius-sm`       | Small inputs, swatches                                      |
 | `--radius-md`       | Buttons, cards                                              |
 | `--radius-lg`       | Large panels, modals                                        |
-| `--shadow-panel`    | Card/panel shadow                                           |
+| `--shadow-panel`    | Card / panel shadow                                         |
 | `--shadow-floating` | Elevated surfaces (modals, dropdowns)                       |
-| `--blur-strength`   | Used by `backdrop-filter: blur(var(--blur-strength))`       |
+
+:::note
+Some skins ship a `--blur-strength` token; it carries over from the
+CSS-styled era but **is not honoured** by the gpui renderer (gpui
+has no backdrop-blur primitive). Leaving it in custom skins is
+harmless — the value is silently ignored.
+:::
 
 ### Layout (floating card vs. flush edge)
 
