@@ -45,6 +45,16 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded PR runs — a re-push to a PR shouldn't leave the
+# previous run burning all six matrix runners to completion. Keyed
+# on the PR number for `pull_request`, the ref otherwise; cancelling
+# is gated to PRs so pushes to `main` and the release-triggered
+# `workflow_call` run (which arrives as event_name: push) always run
+# to completion.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   rust:
     name: ${{ matrix.runner }}
@@ -125,9 +135,11 @@ jobs:
       # and rusb (via libusb1-sys's bundled fallback) all link
       # against libraries that ship with the Windows SDK image.
 
-      - name: cargo check
-        run: cargo check
-
+      # `cargo clippy` is a strict superset of `cargo check` — it
+      # runs the same compiler front-end and fails on the same
+      # compile errors, then adds the lint pass on top. A separate
+      # `cargo check` step would just compile the crate twice for
+      # no extra signal, so clippy is the gate.
       - name: cargo clippy
         run: cargo clippy -- -D warnings
 

@@ -18,16 +18,23 @@ on:
 # each job gets only what it needs: `build` just reads the repo,
 # and only `deploy` touches Pages + the OIDC token.
 
-# Only one concurrent deploy; cancel in-progress runs in favor of newer ones.
-concurrency:
-  group: pages
-  cancel-in-progress: false
+# No workflow-level `concurrency:` — the two jobs need different
+# rules. A PR build only has to cancel its own superseded runs; the
+# Pages deploy needs a global lock (GitHub allows one live
+# deployment at a time) and must never be cancelled mid-flight. One
+# shared group can't express both, so each job declares its own.
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # Superseded PR builds cancel; `main` builds (keyed on the
+    # branch ref) run to completion so every push to main is
+    # deployed.
+    concurrency:
+      group: docs-build-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       # Actions pinned to a full commit SHA (mutable tags can be
       # repointed at malicious code); the `# vX.Y.Z` comment is
@@ -66,6 +73,13 @@ jobs:
     permissions:
       pages: write
       id-token: write
+    # GitHub Pages allows one live deployment at a time, so this
+    # global `pages` group serialises deploys across all runs.
+    # Never cancel one in flight — a half-applied deployment is
+    # worse than a slow one.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
