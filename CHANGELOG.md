@@ -15,6 +15,30 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Added
+
+- **Foundry app skin** — the Blueprint engineering-drawing
+  treatment (grid overlay, sharp corners, all-caps mono labels)
+  recolored to burnt orange. Dark mode is a deep amber ground
+  with a warm ink grid; light mode is cream paper with a
+  burnt-orange grid. 15th built-in skin.
+- **Molten terminal theme** — the matching half of the Foundry
+  pair (like CRT / CRT Phosphor). A deep amber ground with a
+  warm-biased ANSI set, sitting on the exact background the
+  Foundry skin uses for its viewport. 14th built-in theme.
+- **Double-click selects a word, triple-click selects a line.**
+  Double-click uses the terminal's semantic word boundaries;
+  triple-click selects the line's printed content and stops at
+  the last character — no trailing newline, so a triple-click
+  copy doesn't submit the line when pasted into a serial console.
+- **Theme-driven terminal selection colour.** The selection
+  highlight now comes from the active theme's `selection` /
+  `selectionForeground` fields instead of a fixed blue-grey, so
+  every theme — built-in or imported `.itermcolors` — shows its
+  own selection colour, and it follows a live theme switch. The
+  theme preview dialog now includes a sample line painted with
+  the selection colour.
+
 ## [0.9.7] — 2026-05-13
 
 ### Added

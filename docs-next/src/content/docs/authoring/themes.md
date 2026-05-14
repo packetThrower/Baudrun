@@ -49,6 +49,7 @@ Deleting a user theme from Settings also removes its file.
 | `crt-phosphor`    | CRT Phosphor (Green)  | **CRT** skin               |
 | `synthwave`       | Synthwave             | **Cyberpunk** skin         |
 | `brogrammer`      | Brogrammer            | any dark skin              |
+| `molten`          | Molten                | **Foundry** skin           |
 
 **Colorblind Safe** uses Bang Wong's palette
 ([Nature Methods, 2011](https://www.nature.com/articles/nmeth.1618)).
@@ -63,6 +64,14 @@ with the CRT skin for a matched single-hue aesthetic.
 **Synthwave** is a neon palette (hot-pink magenta, electric cyan,
 acid yellow) over a near-black canvas. Status colors hit hard for
 contrast against a busy Cyberpunk skin.
+
+**Molten** is the terminal half of the Foundry pair: a deep amber
+ground with a warm-biased ANSI set — hot reds and oranges, amber
+yellows, desaturated steel blues and teals that don't fight the
+warm background. The 16 slots stay semantically readable (red is
+still red, green still green) since network gear colors output by
+meaning. Its background matches the Foundry skin's `--bg-terminal`,
+so the viewport blends into the chrome.
 
 ## JSON schema
 
