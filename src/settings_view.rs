@@ -1211,9 +1211,9 @@ impl SettingsView {
         let Some(theme) = self.themes_store.get(&theme_id) else { return };
         let title = SharedString::from(theme.name.clone());
         let subtitle = SharedString::from(if theme.source == "user" {
-            "Imported theme \u{00B7} sample network-gear output"
+            "Imported theme \u{00B7} sample output \u{00B7} last line shows text selection"
         } else {
-            "Built-in theme \u{00B7} sample network-gear output"
+            "Built-in theme \u{00B7} sample output \u{00B7} last line shows text selection"
         });
         window.open_dialog(cx, move |dlg, _, _| {
             // `close_button(true)` adds the `×` glyph in the title
@@ -3353,6 +3353,35 @@ fn theme_preview_block(theme: &themes::Theme) -> impl IntoElement {
                 }))
         })
         .collect();
+    // Selection demo — one representative line painted with the
+    // theme's `selection` background so the picker shows what a
+    // drag- or triple-click selection will actually look like.
+    // Honours `selectionForeground` exactly like the live
+    // renderer (`term_bridge::mirror_to_grid`): when the theme
+    // declares one, selected text takes it; otherwise each span
+    // keeps its own palette colour and only the backdrop changes.
+    // The row shrink-wraps its text rather than stretching full
+    // width — matching the triple-click line-content selection,
+    // which stops at the last printed character.
+    let selection_bg = parse_theme_color(&theme.selection).unwrap_or(0x4A5A80FFu32);
+    let selection_fg = parse_theme_color(&theme.selection_foreground);
+    let selected_line = div().flex().flex_row().bg(rgba(selection_bg)).children(
+        [
+            ("green", "GigabitEthernet0/1"),
+            ("fg", "  "),
+            ("green", "up"),
+            ("fg", "      1     "),
+            ("green", "full"),
+            ("fg", "    1000"),
+        ]
+        .into_iter()
+        .map(|(slot, text)| {
+            let color = selection_fg.unwrap_or_else(|| pick(slot));
+            div()
+                .text_color(rgba(color))
+                .child(SharedString::from(text))
+        }),
+    );
     div()
         .px_4()
         .py_3()
@@ -3364,6 +3393,11 @@ fn theme_preview_block(theme: &themes::Theme) -> impl IntoElement {
         .flex()
         .flex_col()
         .children(line_views)
+        // A blank gap, then the selected line — set apart from the
+        // sample above so it reads as a deliberate "this is the
+        // selection" swatch rather than another output line.
+        .child(div().h(px(12.0)))
+        .child(selected_line)
 }
 
 /// Compact `#rrggbb` parser specialised for the theme JSON shape.
