@@ -133,9 +133,30 @@ named colors.
 
 Baudrun's **syntax highlighter** uses the ANSI slots by name. If
 you change `red` you change what `down` looks like. Device-sourced
-colors (ANSI CSI sequences in the serial stream) also map to the
-ANSI slots, so themes affect both highlighter output and raw device
-colors uniformly.
+SGR colors in the 0–15 range (`30`–`37`, `40`–`47`, `90`–`97`,
+`100`–`107`) map to the same slots, so a theme recolors highlighter
+output and raw 16-color device output together.
+
+### 256-color and truecolor
+
+The 16 slots above are the only colors a theme defines. Devices
+can also emit two wider color spaces, and Baudrun renders both —
+they're just not theme-controlled:
+
+- **256-color** (`38;5;N` / `48;5;N`). Indices **0–15** are the
+  theme slots. Indices **16–231** are the standard 6×6×6 color
+  cube and **232–255** the 24-step grayscale ramp — both computed
+  to the canonical xterm values, identical under every theme. A
+  device that asks for index 200 gets the same color whether
+  you're on Dracula or Foundry.
+- **24-bit truecolor** (`38;2;R;G;B` / `48;2;R;G;B`). Rendered as
+  the exact RGB the device specifies, untouched.
+
+This is deliberate: indices 16–255 and truecolor are explicit,
+absolute color choices the device made, so Baudrun paints them
+as-is — no contrast nudging, no remapping — and gradient ramps and
+color-cube output look the way the device intended. Only the 16
+named slots are yours to restyle.
 
 ## Previewing
 

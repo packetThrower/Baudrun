@@ -420,3 +420,58 @@ pub fn mirror_to_grid(
         out.set_cell(row, col, GridCell { ch: term_cell.c, fg, bg, flags });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // `indexed_to_rgb` is the 256-colour resolver: 0..16 are the
+    // named ANSI slots (theme-driven), 16..232 the 6×6×6 cube,
+    // 232..256 the 24-step grayscale ramp. The cube + grayscale
+    // halves are pure arithmetic with three transition points
+    // (15→16 named→cube, 231→232 cube→grayscale, the 255
+    // endpoint) — exactly the kind of boundary math worth pinning
+    // so a future "cleanup" of the channel ramp can't silently
+    // shift every 256-colour value.
+
+    #[test]
+    fn indexed_named_range_maps_through_palette() {
+        let p = Palette::baudrun();
+        // 0..16 mirror NamedColor's first 16 variants 1:1.
+        assert_eq!(indexed_to_rgb(0, &p), p.black);
+        assert_eq!(indexed_to_rgb(1, &p), p.red);
+        assert_eq!(indexed_to_rgb(7, &p), p.white);
+        assert_eq!(indexed_to_rgb(8, &p), p.bright_black);
+        assert_eq!(indexed_to_rgb(15, &p), p.bright_white);
+    }
+
+    #[test]
+    fn indexed_cube_boundaries() {
+        let p = Palette::baudrun();
+        // 16 = first cube cell = (0,0,0) → pure black.
+        assert_eq!(indexed_to_rgb(16, &p), Rgb { r: 0, g: 0, b: 0 });
+        // 231 = last cube cell = (5,5,5) → pure white.
+        assert_eq!(indexed_to_rgb(231, &p), Rgb { r: 255, g: 255, b: 255 });
+        // A mid-cube index proves the r/g/b decomposition:
+        // 113 = 16 + 36·2 + 6·4 + 1 → (r=2, g=4, b=1)
+        //     → ramp steps (135, 215, 95).
+        assert_eq!(indexed_to_rgb(113, &p), Rgb { r: 135, g: 215, b: 95 });
+    }
+
+    #[test]
+    fn indexed_grayscale_boundaries() {
+        let p = Palette::baudrun();
+        // 232 = darkest gray = 8 + 0·10 = #080808.
+        assert_eq!(indexed_to_rgb(232, &p), Rgb { r: 8, g: 8, b: 8 });
+        // 255 = lightest gray = 8 + 23·10 = 238 = #eeeeee.
+        assert_eq!(indexed_to_rgb(255, &p), Rgb { r: 238, g: 238, b: 238 });
+    }
+
+    #[test]
+    fn cube_step_is_the_canonical_xterm_ramp() {
+        // The 6-level per-channel ramp every xterm-256 terminal
+        // shares: 0, 95, 135, 175, 215, 255.
+        let ramp: [u8; 6] = std::array::from_fn(|i| cube_step(i as u8));
+        assert_eq!(ramp, [0, 95, 135, 175, 215, 255]);
+    }
+}
