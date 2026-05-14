@@ -772,26 +772,17 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-n", NewWindow, None),
         KeyBinding::new("secondary-,", OpenSettings, None),
-        // Terminal-pane clipboard actions. Context-scoped to
-        // `Terminal` so they fire only when the terminal div is
-        // in the focus chain (the div sets `.key_context("Terminal")`
-        // in `TerminalView::render`). On macOS `secondary-` resolves
-        // to Cmd; on Windows / Linux it resolves to Ctrl. Hijacking
-        // bare Ctrl+C on non-Mac means the wire's traditional
-        // 0x03 (ETX / SIGINT) can no longer be typed — a deliberate
-        // choice the user opted into. A "Ctrl+C sends interrupt
-        // instead of copying" setting is on the follow-up list.
-        KeyBinding::new("secondary-c", TerminalCopy, Some("Terminal")),
-        KeyBinding::new("secondary-v", TerminalPaste, Some("Terminal")),
-        KeyBinding::new("secondary-a", TerminalSelectAll, Some("Terminal")),
-        // Cross-platform alternative for users who prefer the
-        // GNOME / KDE / Windows-Terminal convention of
-        // Ctrl+Shift+C / Ctrl+Shift+V for clipboard. Mac users
-        // already have Cmd; this row is just non-Mac belt-and-
-        // braces and harmless to register on Mac too.
-        KeyBinding::new("ctrl-shift-c", TerminalCopy, Some("Terminal")),
-        KeyBinding::new("ctrl-shift-v", TerminalPaste, Some("Terminal")),
     ];
+    // Terminal-pane clipboard actions used to live as hardcoded
+    // rows here, but they now flow through Settings → Shortcuts
+    // like every other customisable binding — see the
+    // `"copy"` / `"paste"` / `"select-all"` ids in
+    // `settings_view::SHORTCUT_ACTIONS` and the matching defaults
+    // (Meta+C / Meta+V / Meta+A on macOS, Control+C / Control+V /
+    // Control+A on Windows / Linux). Users who prefer the GNOME /
+    // KDE convention can change their Copy spec to Control+Shift+C
+    // (and free Ctrl+C back to the wire's 0x03 / ETX) from the
+    // Shortcuts pane.
     // Walk the same action list Settings → Shortcuts renders so the
     // menubar and the customization UI agree on which IDs are
     // bindable. Action IDs map 1:1 to the gpui Action structs by
@@ -831,6 +822,15 @@ fn key_binding_for_action(id: &str, gpui_spec: &str) -> Option<KeyBinding> {
         "font-increase" => KeyBinding::new(gpui_spec, FontIncrease, None),
         "font-decrease" => KeyBinding::new(gpui_spec, FontDecrease, None),
         "font-reset" => KeyBinding::new(gpui_spec, FontReset, None),
+        // Terminal-pane clipboard actions are context-scoped to
+        // the `Terminal` key_context the terminal div sets on
+        // itself (see `TerminalView::render`). That keeps Cmd+C
+        // inside a profile-form input firing gpui-component's
+        // Input::Copy binding instead of grabbing the (likely
+        // empty) terminal selection.
+        "copy" => KeyBinding::new(gpui_spec, TerminalCopy, Some("Terminal")),
+        "paste" => KeyBinding::new(gpui_spec, TerminalPaste, Some("Terminal")),
+        "select-all" => KeyBinding::new(gpui_spec, TerminalSelectAll, Some("Terminal")),
         unknown => {
             log::warn!("shortcut: unknown action id {unknown}");
             return None;

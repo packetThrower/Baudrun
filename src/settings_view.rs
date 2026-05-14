@@ -3411,6 +3411,15 @@ pub(crate) const SHORTCUT_ACTIONS: &[&str] = &[
     "font-increase",
     "font-decrease",
     "font-reset",
+    // Terminal-pane clipboard actions. Context-scoped to the
+    // terminal in `key_binding_for_action`, so customising them
+    // here won't accidentally hijack Cmd+C inside a profile-form
+    // text input (gpui-component's Input ships its own Copy
+    // binding against the "Input" context that the terminal
+    // binding can't shadow).
+    "copy",
+    "paste",
+    "select-all",
 ];
 
 fn shortcut_label(action: &'static str) -> &'static str {
@@ -3427,6 +3436,9 @@ fn shortcut_label(action: &'static str) -> &'static str {
         "font-increase" => "Increase font size",
         "font-decrease" => "Decrease font size",
         "font-reset" => "Reset font size",
+        "copy" => "Copy",
+        "paste" => "Paste",
+        "select-all" => "Select all",
         _ => action,
     }
 }
@@ -3455,6 +3467,9 @@ fn default_for_action(action: &str) -> &'static str {
         "font-increase" => "Meta+=",
         "font-decrease" => "Meta+-",
         "font-reset" => "Meta+0",
+        "copy" => "Meta+C",
+        "paste" => "Meta+V",
+        "select-all" => "Meta+A",
         _ => "",
     }
 }
@@ -3474,6 +3489,17 @@ fn default_for_action(action: &str) -> &'static str {
         "font-increase" => "Control+=",
         "font-decrease" => "Control+-",
         "font-reset" => "Control+0",
+        // Defaults to plain Ctrl+C / Ctrl+V on Windows / Linux per
+        // the user's preference. Trades the wire's traditional
+        // 0x03 (ETX / SIGINT) -- a network engineer reaches that
+        // via Send Break or by overriding this binding to e.g.
+        // Control+Shift+C and freeing Control+C back to the wire.
+        // A "Ctrl+C is selection-aware (copies when there's a
+        // selection, sends interrupt otherwise)" toggle lives on
+        // the follow-up list.
+        "copy" => "Control+C",
+        "paste" => "Control+V",
+        "select-all" => "Control+A",
         _ => "",
     }
 }
