@@ -114,12 +114,16 @@ action id:
 }
 ```
 
-The string format is [W3C aria-keyshortcuts](https://www.w3.org/TR/wai-aria-1.2/#aria-keyshortcuts)
-syntax: modifier names (`Control`, `Meta`, `Alt`, `Shift`) joined
-with `+`, followed by the key. Missing entries fall back to the
-platform default, so you can override one binding without having
-to restate the others. Empty string is treated as "no override"
-so the **↺** reset works by clearing rather than deleting.
+The string format follows the
+[W3C aria-keyshortcuts](https://www.w3.org/TR/wai-aria-1.2/#aria-keyshortcuts)
+syntax — modifier names (`Control`, `Meta`, `Alt`, `Shift`) joined
+with `+`, followed by the key. Borrowed for ergonomics (it's the
+clearest plain-text shorthand for a chord), not because Baudrun
+uses ARIA at runtime — this is a native gpui app with no DOM.
+Missing entries fall back to the platform default, so you can
+override one binding without having to restate the others. Empty
+string is treated as "no override" so the **↺** reset works by
+clearing rather than deleting.
 
 ## Discoverability
 

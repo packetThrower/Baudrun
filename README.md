@@ -87,9 +87,13 @@ For authoring your own skins / themes / highlight packs, sample JSON lives in
   macOS 26 (Liquid Glass), Windows 11 (Fluent), GNOME (Adwaita), KDE (Breeze),
   CRT, Cyberpunk, Blueprint, E-Ink, and High Contrast. Skins and themes are
   independent.
-- **Accessibility** — `prefers-reduced-motion` respected, keyboard zoom,
-  configurable shortcuts, ARIA labels on every icon-only control. Details at
-  [Accessibility](https://packetthrower.github.io/Baudrun/reference/accessibility/).
+- **Accessibility** — OS reduce-motion preference honoured (suppresses
+  the reconnect pulse + terminal cursor blink), keyboard zoom, full
+  keyboard reachability for every action via customisable shortcuts,
+  bundled **High Contrast** skin + **Colorblind Safe** terminal theme.
+  Screen-reader output for the terminal grid is still a gap — see
+  [Accessibility](https://packetthrower.github.io/Baudrun/reference/accessibility/)
+  for the honest current state.
 - **Relocatable config directory** — keep profiles, themes, skins, and
   settings alongside your dotfiles; pick the target in Settings → Advanced.
 

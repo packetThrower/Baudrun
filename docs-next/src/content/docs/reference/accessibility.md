@@ -1,38 +1,22 @@
 ---
 title: Accessibility
-description: 'Built-in accessibility features, screen-reader integration, and known caveats.'
+description: 'Built-in accessibility features, what the OS-level preferences gate, and the known gaps.'
 editUrl: https://github.com/packetThrower/Baudrun/edit/main/docs/ACCESSIBILITY.md
 ---
 
 Reference for the accessibility features Baudrun ships with, the
-OS settings they interact with, and the known gaps.
-
-## Screen reader support
-
-- Settings → Advanced → **Enable xterm screen-reader mode**.
-- Backed by `Settings.screenReaderMode`; pushed into xterm via
-  `term.options.screenReaderMode` at init and on every subsequent
-  toggle.
-- When enabled, xterm routes incoming terminal output through an
-  ARIA live region, which macOS VoiceOver / Windows Narrator / NVDA
-  / Orca can narrate.
-- Off by default. There's a small performance cost on heavy
-  output (the live region gets updated on every write), so users
-  who don't need it don't pay for it.
-
-**Verification:** with the toggle on, run in the app's DevTools
-console:
-
-```js
-document.querySelector('.xterm-accessibility')
-```
-
-If it returns an element, xterm is in screen-reader mode. If
-`null`, the toggle didn't land.
+OS settings it respects, and the known gaps. Baudrun is a native
+gpui app — the chrome and terminal grid are GPU-rendered rather
+than HTML — so the conventional web-accessibility surface (ARIA
+roles, `aria-live` regions, `prefers-reduced-motion` CSS) doesn't
+apply. The platform-level accessibility hooks (NSAccessibility on
+macOS, UI Automation on Windows, AT-SPI on Linux) are gpui's
+responsibility and are still maturing upstream.
 
 ## Reduced motion
 
-Baudrun respects the OS-level `prefers-reduced-motion` preference.
+Baudrun reads the OS-level "reduce motion" preference once at app
+launch and gates its optional animations off it.
 
 **Where the setting lives:**
 
@@ -41,6 +25,7 @@ Baudrun respects the OS-level `prefers-reduced-motion` preference.
 | macOS | System Settings → Accessibility → Display → **Reduce motion** |
 | Windows | Settings → Accessibility → Visual effects → **Animation effects** (off) |
 | Linux (GNOME) | Settings → Accessibility → **Reduce animations** |
+| Linux (KDE) | System Settings → Accessibility → **Animation speed → Disabled** |
 
 **What's gated on it:**
 
@@ -48,82 +33,91 @@ Baudrun respects the OS-level `prefers-reduced-motion` preference.
   while auto-reconnect polls for the port. With Reduce Motion on,
   the dot stays visible as a static amber indicator instead of
   pulsing.
-- The **port-scanning pulse**: the accent-colored dot next to the
-  "Scanning for COM ports…" status in the footer. Static under
-  Reduce Motion.
+- The **terminal cursor blink**: with Reduce Motion on, the cursor
+  stays solid instead of toggling visible / invisible at the
+  half-second cadence.
+- The **port-scanning indicator** in the footer, where applicable.
 
-**Caveat:** the Reduce Motion preference is read once from the OS
-at app launch and cached for the session. Flipping the system
-toggle while Baudrun is running won't change behaviour until the
-app is quit and relaunched. **Settings → Accessibility → Reduce
-Motion** shows the current value and points at the OS path to
-change it (System Settings → Accessibility → Display on macOS,
-Settings → Accessibility → Visual effects on Windows, your
-desktop environment's animation settings on Linux).
+**Settings → Accessibility → Reduce Motion** in the app shows the
+current value (read at launch) plus a one-line pointer to the OS
+path that controls it.
+
+**Caveat:** the preference is read once at launch and cached for
+the session. Flipping the system toggle while Baudrun is running
+won't change behaviour until the app is quit and relaunched.
+Detecting live changes is a follow-up; the OS query API is
+synchronous and we'd need an OS-event subscription to react
+without polling.
 
 ## Terminal zoom
 
-- **Cmd + "="** / **Ctrl + "="** (or the literal `+` key): font +1
-- **Cmd + "-"** / **Ctrl + "-"**: font −1
-- **Cmd + "0"** / **Ctrl + "0"**: reset to 13 (the app default)
+| Action | macOS | Windows / Linux |
+|---|---|---|
+| Increase font size | `⌘=` (or `⌘+`) | `Ctrl+=` (or `Ctrl++`) |
+| Decrease font size | `⌘-` | `Ctrl+-` |
+| Reset to default (13 px) | `⌘0` | `Ctrl+0` |
 
-Clamped 8-28 px. The shortcut also echoes `Font size: N` to the
-status bar so users get immediate feedback that the change
-registered.
+Clamped to 8–28 px. The status bar reports `Font size: N` after
+each change so the keystroke is acknowledged even when the visible
+delta is small. The size persists across launches under
+`Settings.fontSize` and applies live — the grid re-measures cell
+dimensions and reflows without restart.
 
-Zoom writes through to `Settings.fontSize`, so it persists across
-app launches. The xterm instance rebuilds on each change to pick
-up the new cell metrics, since xterm caches glyph dimensions at
-construction and an in-place font-size change wouldn't re-measure.
+## Keyboard reachability
 
-## Session shortcuts
+Every menu-bar action and every customisable shortcut in
+**Settings → Shortcuts** is keyboard-reachable. The full set
+covers profile editing, connect / disconnect, suspend / resume,
+clear, send break, file transfer, copy / paste / select all,
+terminal zoom, and new-window / new-profile. See
+[Keyboard shortcuts](/Baudrun/usage/shortcuts/) for the full
+table and the per-OS rationale.
 
-For the three session-header buttons that are otherwise mouse-only
-(**Clear**, **Send Break**, **Suspend**). See
-[Keyboard shortcuts](/Baudrun/usage/shortcuts/) for the default bindings table,
-the per-OS rationale, and how to rebind them via
-Settings → Keyboard Shortcuts.
+The right-click context menu on the terminal grid offers
+Copy / Paste / Select All / Clear as a mouse alternative to the
+keybindings.
 
-Each shortcut gates on the same enablement as the button it
-mirrors. Break and Suspend are no-ops without an active
-(unsuspended, not-reconnecting) session; Clear needs the terminal
-view to be up. The shortcuts also appear in each button's
-`title` tooltip and `aria-keyshortcuts` attribute so
-keyboard-first and screen-reader users discover them without
-having to read this page.
+## Skin choices
 
-## ARIA labels
+Two skins are explicitly accessibility-oriented and ship with the
+app:
 
-Every icon-only or text-light control has an explicit `aria-label`:
+- **High Contrast** — exaggerates the luminance gap between
+  surfaces, text, and accents. Black backgrounds with bright
+  borders; useful when ambient glare or low-vision conditions
+  wash out subtle palette gradations.
+- **Colorblind Safe** (terminal theme) — uses Bang Wong's palette
+  from *Nature Methods* 2011, which sits perpendicular to the
+  protan / deutan confusion axis. The eight ANSI slots stay
+  distinguishable across the common red-green vision deficiencies.
 
-- Sidebar → **New Profile** (+ icon)
-- Profile form → **Rescan ports** (↻ icon), **Dismiss driver notice**
-  (× on the driver-install banner)
-- Settings → **Preview theme**, **Remove theme**, **Remove skin**
-- Session header → **More actions** (⋯ overflow menu)
-- Modal dismiss buttons (×) on Hex send, File transfer, Theme preview
-
-Text-labeled controls (DTR/RTS pills, Clear, Suspend, Disconnect,
-Send Break, Send Hex…, Send File…, Settings) rely on their visible
-text.
+Pick either from **Settings → App Skin** / **Settings →
+Themes**.
 
 ## Not yet supported
 
-- **High-contrast theme mode independent of skin.** Today the
-  High Contrast skin is the explicit a11y surface; there's no
-  per-user "force high contrast" toggle that overrides the chosen
-  skin. Likely unnecessary since the skin exists, but noted.
-- **Focus-ring overrides per skin.** Some skins don't currently
-  set a custom `:focus-visible` style; the browser default falls
-  through, which is usable but could be more consistent.
+Be honest with users — these are real gaps:
 
-## Verifying with DevTools
+- **Screen-reader output for the terminal grid.** gpui doesn't
+  yet route alacritty_terminal grid content through the platform
+  accessibility APIs (NSAccessibility on macOS, UI Automation on
+  Windows, AT-SPI on Linux), so a screen reader pointed at
+  Baudrun won't narrate output as it arrives. This is the most
+  significant gap; tracking upstream gpui's accessibility work.
+- **Screen-reader labels on chrome controls.** The sidebar `+` /
+  gear / new-window icons, the session-header buttons, and the
+  Settings rail rows don't yet announce themselves through the
+  OS accessibility APIs. Hover tooltips remain available for
+  sighted users.
+- **Live-reactive Reduce Motion.** As above — preference is read
+  at launch only; relaunch picks up a change.
+- **Per-skin focus-ring customisation.** All skins currently use
+  gpui's default focus indicator. Adding a skin-authored token
+  for the focus ring colour / thickness is on the follow-up list.
+- **Per-user "force high contrast" override.** Today the High
+  Contrast skin is the explicit a11y surface; no toggle layers
+  high-contrast over an arbitrary skin.
 
-For debug builds, right-click inside the app → Inspect. The
-DevTools Rendering panel can emulate accessibility preferences
-without changing the OS setting:
-
-- **Emulate CSS media feature** → `prefers-reduced-motion: reduce`
-  to test the static-dot behavior.
-- **Emulate vision deficiencies** → blurred vision, achromatopsia,
-  and similar. Useful for evaluating color contrast on themes and skins.
+If any of these blocks your use case, please open an issue on
+the [GitHub tracker](https://github.com/packetThrower/Baudrun/issues)
+so we can prioritise against the rest of the queue.
