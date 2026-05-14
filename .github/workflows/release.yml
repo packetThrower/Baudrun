@@ -192,27 +192,35 @@ jobs:
             Set-Content -NoNewline Cargo.toml
           Write-Host "Building version: $version"
 
-      # WiX (MSI) requires a numeric-only pre-release identifier
-      # and rejects alphanumeric ones like 0.9.0-alpha.3. NSIS has
-      # no such restriction. So pre-release tags ship NSIS only;
-      # stable tags ship both NSIS + WiX for corporate-deploy use
-      # cases that prefer .msi.
+      # NSIS ships on every Windows build. The MSI (WiX) path is
+      # narrower — gated on two independent conditions:
+      #
+      #   (a) Stable tag only. WiX requires a numeric-only pre-
+      #       release identifier and rejects alphanumeric ones
+      #       like 0.9.0-alpha.3. NSIS has no such restriction.
+      #
+      #   (b) amd64 only. WiX Toolset's `candle.exe` doesn't
+      #       run reliably on Windows-on-ARM runners — caught
+      #       on v0.9.7's first stable build:
+      #         `ERROR Error running candle.exe: candle.exe`
+      #         `Error: Process completed with exit code 1.`
+      #       arm64 users get the NSIS installer or the portable
+      #       `.zip`; corporate-deploy workflows that need MSI
+      #       are overwhelmingly x64 anyway.
       #
       # The GH Actions ternary `cond && X || Y` returns Y when X
-      # is falsy — and the empty string is falsy. The earlier
-      # form (`contains && '' || '-f wix'`) therefore returned
-      # `'-f wix'` for both branches. Invert the condition (use
-      # `!contains`) so the empty-string fallback is only taken
-      # on the actual pre-release path.
+      # is falsy — and the empty string is falsy. So we compose
+      # both gates with `&&` first, then fall back to the empty
+      # string on either negative branch.
       #
       # Same `--target` omission as macOS: runner is native, so
       # the default host target matches; passing --target would
       # split paths between `target/<triple>/release/` (what
       # cargo-packager expects) and `target/release/` (what
       # `cargo build --release` produces without --target).
-      - name: Build .exe (NSIS) + .msi (stable only)
+      - name: Build .exe (NSIS) + .msi (stable amd64 only)
         shell: cmd
-        run: cargo packager --release -f nsis ${{ !contains(github.ref_name, '-') && '-f wix' || '' }}
+        run: cargo packager --release -f nsis ${{ (!contains(github.ref_name, '-') && matrix.arch == 'amd64') && '-f wix' || '' }}
 
       - name: Stage artifacts
         shell: pwsh

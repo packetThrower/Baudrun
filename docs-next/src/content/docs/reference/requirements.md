@@ -31,11 +31,18 @@ These are the floors for end users downloading from the Releases page.
   (see [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md)).
 - Windows 10 1803–21H1 will technically launch the binary, but
   nothing older than 21H2 is tested or supported here.
-- Pre-release builds (`v*-alpha.N`, `v*-beta.N`, `v*-rc.N`) ship the
-  NSIS `.exe` installer only. Stable releases additionally produce
-  an `.msi` for corporate silent-deploy workflows; WiX rejects
-  alphanumeric pre-release identifiers, so the MSI is held to
-  stable tags.
+- Every Windows release ships the NSIS `-setup.exe` installer plus
+  a portable `.zip` of the bare `Baudrun.exe`. Stable releases on
+  **amd64** additionally produce an `.msi` for corporate silent-
+  deploy workflows. The `.msi` is gated on two conditions:
+  - **Stable tag only** — WiX requires a numeric-only pre-release
+    identifier and rejects alphanumeric ones (`-alpha.N`, `-beta.N`,
+    `-rc.N`).
+  - **amd64 only** — WiX Toolset's `candle.exe` doesn't run
+    reliably on Windows-on-ARM. arm64 users get the NSIS
+    installer or the portable `.zip`; the small minority who
+    need MSI on arm64 can either run the amd64 `.msi` under
+    emulation or wait for WiX's arm64 support to mature.
 
 ### Linux
 - **Vulkan-capable GPU** with current Mesa drivers — the same floor
