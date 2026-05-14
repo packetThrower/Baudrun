@@ -84,7 +84,7 @@ Sample JSON for authoring your own skins, themes, and highlight packs is on the
   Juniper Junos, Aruba AOS-CX, Arista EOS, and MikroTik RouterOS, plus a
   vendor-neutral default. Write your own and test them against real captures
   in the [rule playground](https://packetthrower.github.io/Baudrun/playground.html).
-- **13 terminal themes, 14 app skins.** Themes include Dracula, Solarized,
+- **14 terminal themes, 15 app skins.** Themes include Dracula, Solarized,
   Gruvbox, Nord, OneDark, and a Colorblind Safe palette built for red-green
   vision deficiency. Skins include macOS 26 (Liquid Glass), Windows 11, GNOME,
   KDE, CRT, Cyberpunk, Blueprint, E-Ink, and High Contrast. Skins and themes
@@ -185,8 +185,8 @@ Baudrun/
 ├── resources/                # bundled at compile time
 │   ├── Info.plist            # macOS bundle metadata
 │   ├── icons/                # .icns / .ico / .png set
-│   ├── builtin_skins.json    # 14 built-in app skins
-│   ├── builtin_themes.json   # 13 built-in terminal themes
+│   ├── builtin_skins.json    # 15 built-in app skins
+│   ├── builtin_themes.json   # 14 built-in terminal themes
 │   └── highlight/            # bundled vendor rule packs
 ├── build/                    # icon source + Windows installer assets
 ├── packaging/                # Linux udev rule + .desktop file + Arch PKGBUILD

@@ -337,5 +337,31 @@
     "brightMagenta": "#5350b9",
     "brightCyan": "#0f7ddb",
     "brightWhite": "#ffffff"
+  },
+  {
+    "id": "molten",
+    "name": "Molten",
+    "source": "builtin",
+    "background": "#1c1208",
+    "foreground": "#ffe9cf",
+    "cursor": "#ff9d2e",
+    "cursorAccent": "#1c1208",
+    "selection": "#4a2f12",
+    "black": "#2a1c0c",
+    "red": "#d8442a",
+    "green": "#9a9636",
+    "yellow": "#e0951f",
+    "blue": "#5b7a96",
+    "magenta": "#b86a7a",
+    "cyan": "#5f968c",
+    "white": "#cdb494",
+    "brightBlack": "#6b5436",
+    "brightRed": "#ff7a4d",
+    "brightGreen": "#c3bb52",
+    "brightYellow": "#ffc14a",
+    "brightBlue": "#82a3bd",
+    "brightMagenta": "#dd96a6",
+    "brightCyan": "#88bab0",
+    "brightWhite": "#ffe9cf"
   }
 ]
