@@ -114,7 +114,21 @@ export default defineConfig({
 						// GitHub social link.
 						{
 							label: 'Rule playground',
-							link: '/Baudrun/playground.html',
+							// Absolute URL on purpose. Starlight's sidebar
+							// `link` field, when given a site-relative path,
+							// (a) prepends Astro's configured `base` (so
+							// authors who hand-write `/Baudrun/...` get a
+							// double prefix — `/Baudrun/Baudrun/...`), and
+							// (b) strips trailing `.html` to match its own
+							// pretty-URL routing convention — together
+							// producing `/Baudrun/Baudrun/playground` (404)
+							// from `/Baudrun/playground.html`. An absolute
+							// `https://...` URL is treated as external and
+							// passes through unmodified. The local-dev
+							// "downside" is that clicking this in `astro dev`
+							// goes to the live deploy rather than the local
+							// public/playground.html — fine for sidebar nav.
+							link: 'https://packetthrower.github.io/Baudrun/playground.html',
 							attrs: { target: '_blank', rel: 'noopener' },
 						},
 					],
