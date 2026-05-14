@@ -199,14 +199,23 @@ jobs:
       #       release identifier and rejects alphanumeric ones
       #       like 0.9.0-alpha.3. NSIS has no such restriction.
       #
-      #   (b) amd64 only. WiX Toolset's `candle.exe` doesn't
-      #       run reliably on Windows-on-ARM runners — caught
-      #       on v0.9.7's first stable build:
-      #         `ERROR Error running candle.exe: candle.exe`
-      #         `Error: Process completed with exit code 1.`
-      #       arm64 users get the NSIS installer or the portable
-      #       `.zip`; corporate-deploy workflows that need MSI
-      #       are overwhelmingly x64 anyway.
+      #   (b) amd64 only. cargo-packager 0.11.8 hardcodes a
+      #       download of WiX 3.11 (2017), whose `candle.exe`
+      #       predates `-arch arm64` — that was added in WiX
+      #       3.14. So `candle.exe -arch arm64` exits non-zero
+      #       and the build dies; cargo-packager's error Display
+      #       (`"Error running {0}: {0}"`) throws the real
+      #       message away, leaving the unhelpful
+      #       `ERROR Error running candle.exe: candle.exe` seen
+      #       on v0.9.7's first stable build. It is NOT a runner
+      #       or x86-emulation problem — candle.exe runs fine
+      #       under emulation; the bundled WiX is just too old.
+      #       cargo-packager has no WiX-version override, so the
+      #       real fix is moving MSI generation to cargo-wix
+      #       (modern WiX, native arm64) — tracked in TODO.md.
+      #       Until then arm64 users get the NSIS installer or
+      #       the portable `.zip`; corporate-deploy workflows
+      #       that need MSI are overwhelmingly x64 anyway.
       #
       # The GH Actions ternary `cond && X || Y` returns Y when X
       # is falsy — and the empty string is falsy. So we compose
