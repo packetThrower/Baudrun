@@ -106,31 +106,50 @@ rustPlatform.buildRustPackage (finalAttrs: {
     }
   '';
 
-  # Linux desktop integration — mirror of what release.yml's
-  # .deb / .rpm / .AppImage / .pkg.tar.zst bundles install. The
-  # binary's renamed to lowercase to match those packages; the
-  # `.desktop` file points at `baudrun` (lowercase), and the
-  # `60-baudrun-serial.rules` udev rule lives at
-  # `$out/lib/udev/rules.d/` where NixOS's `services.udev.packages`
-  # will pick it up if a user adds the package to that list.
-  postInstall = lib.optionalString stdenv.hostPlatform.isLinux ''
-    mv $out/bin/Baudrun $out/bin/baudrun
+  # Per-platform desktop integration. Mirrors what release.yml's
+  # `.dmg` (macOS) and `.deb` / `.rpm` / `.AppImage` / `.pkg.tar.zst`
+  # (Linux) bundles install, just translated to nix store paths.
+  postInstall =
+    # macOS: assemble a real `Baudrun.app` bundle so the Dock shows
+    # the icon (via Info.plist's CFBundleIconFile + the `.icns` in
+    # `Resources/`) and macOS treats us as a proper app — same
+    # shape `cargo packager` ships in the release `.dmg`. The bare
+    # `$out/bin/Baudrun` binary would otherwise show the generic
+    # system icon and miss the Info.plist-driven identity. CLI
+    # symlink stays in `$out/bin/` so `nix run` and shell launches
+    # still work; macOS resolves the symlink at exec time, the
+    # process's executable path lands inside the bundle, and Cocoa
+    # walks up from there to find Info.plist. Same pattern
+    # zed-editor's nixpkgs derivation uses.
+    lib.optionalString stdenv.hostPlatform.isDarwin ''
+      APP=$out/Applications/Baudrun.app
+      mkdir -p $APP/Contents/MacOS $APP/Contents/Resources
+      mv $out/bin/Baudrun $APP/Contents/MacOS/Baudrun
+      install -m644 $src/resources/Info.plist $APP/Contents/Info.plist
+      install -m644 $src/resources/icons/icon.icns $APP/Contents/Resources/icon.icns
+      ln -s $APP/Contents/MacOS/Baudrun $out/bin/Baudrun
+    ''
+    # Linux: lowercase the binary, install the `.desktop` entry +
+    # icon set + udev rule. NixOS users can pick the udev rule up
+    # via `services.udev.packages = [ pkgs.baudrun ];`.
+    + lib.optionalString stdenv.hostPlatform.isLinux ''
+      mv $out/bin/Baudrun $out/bin/baudrun
 
-    install -Dm644 $src/packaging/linux/baudrun.desktop \
-      $out/share/applications/baudrun.desktop
+      install -Dm644 $src/packaging/linux/baudrun.desktop \
+        $out/share/applications/baudrun.desktop
 
-    install -Dm644 $src/resources/icons/icon.png \
-      $out/share/icons/hicolor/512x512/apps/baudrun.png
-    install -Dm644 $src/resources/icons/128x128.png \
-      $out/share/icons/hicolor/128x128/apps/baudrun.png
-    install -Dm644 $src/resources/icons/64x64.png \
-      $out/share/icons/hicolor/64x64/apps/baudrun.png
-    install -Dm644 $src/resources/icons/32x32.png \
-      $out/share/icons/hicolor/32x32/apps/baudrun.png
+      install -Dm644 $src/resources/icons/icon.png \
+        $out/share/icons/hicolor/512x512/apps/baudrun.png
+      install -Dm644 $src/resources/icons/128x128.png \
+        $out/share/icons/hicolor/128x128/apps/baudrun.png
+      install -Dm644 $src/resources/icons/64x64.png \
+        $out/share/icons/hicolor/64x64/apps/baudrun.png
+      install -Dm644 $src/resources/icons/32x32.png \
+        $out/share/icons/hicolor/32x32/apps/baudrun.png
 
-    install -Dm644 $src/packaging/linux/60-baudrun-serial.rules \
-      $out/lib/udev/rules.d/60-baudrun-serial.rules
-  '';
+      install -Dm644 $src/packaging/linux/60-baudrun-serial.rules \
+        $out/lib/udev/rules.d/60-baudrun-serial.rules
+    '';
 
   # The in-binary unit tests build fine but can't reasonably run in
   # the nix sandbox (font system + windowing backends). CI's
