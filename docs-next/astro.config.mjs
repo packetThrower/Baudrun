@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import sitemap from '@astrojs/sitemap';
 
 // https://astro.build/config
 export default defineConfig({
@@ -143,6 +144,24 @@ export default defineConfig({
 				{ label: 'Changelog', slug: 'changelog' },
 			],
 			lastUpdated: true,
+		}),
+		// Explicit `@astrojs/sitemap` config — Starlight auto-pulls
+		// the integration, but its default emits `<loc>`-only
+		// entries. Adding it here lets us pass a `lastmod` so each
+		// URL carries a freshness timestamp. Google Search Console
+		// uses lastmod for crawl scheduling; without it, every
+		// entry looks equally stale and the crawler is less
+		// aggressive about re-indexing changed pages.
+		//
+		// `new Date()` evaluates at build time, so every page in
+		// the sitemap gets the deployment timestamp. Per-page
+		// per-file mtime would be more accurate but requires a
+		// `serialize()` callback that walks git history per URL
+		// — not worth the build-time cost for a docs site this
+		// small, where everything tends to ship in the same
+		// release anyway.
+		sitemap({
+			lastmod: new Date(),
 		}),
 	],
 });
