@@ -2,6 +2,12 @@
 # puts everything under target/.
 /target/
 
+# `nix build` output symlink (and `result-<output>` for multi-
+# output derivations). Always machine-local; flake.lock is the
+# committed source of truth for reproducibility.
+/result
+/result-*
+
 # Dev-tool binary accidentally built at repo root by `go build ./scripts/...`
 /virtual-serial
 
