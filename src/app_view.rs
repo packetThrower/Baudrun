@@ -3914,10 +3914,26 @@ impl Render for AppView {
                                     // `--shadow-panel` matches the
                                     // sidebar's; skins author one
                                     // value that applies to both
-                                    // floating cards.
-                                    .when(!shadow_panel.is_empty(), |this| {
-                                        this.shadow(shadow_panel.clone())
-                                    })
+                                    // floating cards. Gated on
+                                    // `panel_radius_px > 0` (same
+                                    // condition as the bg paint
+                                    // above): on flush-edged skins
+                                    // the wrapper has no bg, and
+                                    // gpui's shadow renderer floods
+                                    // the box interior with the
+                                    // shadow colour when there's no
+                                    // bg to occlude it — so a
+                                    // coloured `--shadow-panel`
+                                    // (e.g. Synthwave's magenta
+                                    // glow) painted the whole pane
+                                    // its shadow colour instead of
+                                    // just glowing around it. The
+                                    // sidebar isn't affected because
+                                    // it always paints `bg_sidebar`.
+                                    .when(
+                                        s.panel_radius_px > 0.0 && !shadow_panel.is_empty(),
+                                        |this| this.shadow(shadow_panel.clone()),
+                                    )
                                     .child(right_pane),
                             ),
                     )
