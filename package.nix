@@ -95,9 +95,12 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   # gpui dlopens Vulkan + Wayland + libGL at runtime, so the bare
   # binary won't find them through the nix store without an explicit
-  # rpath. Same `patchelf` recipe zed-editor uses.
+  # rpath. Same `patchelf` recipe zed-editor uses. The Linux
+  # `postInstall` below renames the bin to lowercase `baudrun`
+  # before `fixupPhase` runs — patchelf points at the renamed
+  # file accordingly.
   postFixup = lib.optionalString stdenv.hostPlatform.isLinux ''
-    patchelf $out/bin/Baudrun --add-rpath ${
+    patchelf $out/bin/baudrun --add-rpath ${
       lib.makeLibraryPath [
         libGL
         vulkan-loader
