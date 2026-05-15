@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-14
+
 ### Added
 
 - **Foundry app skin** — the Blueprint engineering-drawing
@@ -38,6 +40,18 @@ final stable entry at tag time.
   own selection colour, and it follows a live theme switch. The
   theme preview dialog now includes a sample line painted with
   the selection colour.
+
+### Fixed
+
+- **Synthwave profile editor no longer renders as a magenta
+  wash.** A latent rendering issue on flush-edged skins with a
+  coloured `--shadow-panel` (Synthwave's magenta glow, specifically)
+  caused the editor's right pane to fill with the shadow's colour
+  rather than show through to the skin's `--bg-window`. The wrapper
+  shadow is now gated to floating-card mode where there's a bg to
+  absorb it; flush skins lose a shadow that wasn't visually
+  meaningful anyway (a glow around a flush-edged pane has no
+  "outside the box" to fall on).
 
 ## [0.9.7] — 2026-05-13
 
