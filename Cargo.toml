@@ -79,7 +79,7 @@ serialport = "4"
 # from the OS-thread side, and `recv_async` is awaited inside a gpui
 # foreground task. Already a transitive dep of `gpui`; pinning it
 # explicitly here keeps the dep graph honest.
-flume = "0.11"
+flume = "0.12"
 
 # gpui-component (Apache-2.0 / MIT, 60+ widgets) — Phase 2 needs
 # `resizable`, `sidebar`, `list`, `form`, `input`, `select`,
