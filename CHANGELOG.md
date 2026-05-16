@@ -29,6 +29,30 @@ final stable entry at tag time.
   `#e1e2e7`, blue ink `#3760bf`), active when the system
   Appearance is light. 16th built-in skin, 15th built-in theme.
 
+- **Collapsible sidebar.** Click the `‹` chevron next to the
+  PROFILES label (or hit `⌘B` / `Ctrl+B` from anywhere in the
+  window) to fold the sidebar into a 48px icon strip. The chrome
+  buttons (`›`, `+`, `⧉`, `⚙`) stack vertically at the top; the
+  right pane expands into the recovered width — useful when the
+  terminal needs every column it can get. Click `›` (or hit the
+  shortcut again) to expand back. The collapsed state is saved
+  to settings, so a window that's been collapsed stays collapsed
+  across relaunches by default. Per-window state is independent
+  — toggling one window's sidebar doesn't affect another's, but
+  the most recent toggle is what the next-launched window
+  inherits.
+
+- **Default profile icon in the collapsed sidebar.** Each profile
+  renders as a single Lucide `square-terminal` glyph — universally
+  read as "command-line / serial console session" — colour-coded
+  by status: muted by default, accent when selected, success
+  green when connected, warn amber while reconnecting, danger
+  red on a connection failure. Click selects the profile, right-
+  click opens the same context menu the expanded row has, and a
+  hover tooltip carries the name + port path so identity isn't
+  lost when names disappear. Custom per-profile icons are a
+  future option; the default fits every profile for now.
+
 ## [0.10.0] — 2026-05-14
 
 ### Added

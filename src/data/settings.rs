@@ -123,6 +123,15 @@ pub struct Settings {
     /// matching `disable_driver_detection` / `disable_update_check`.
     #[serde(default, skip_serializing_if = "is_false")]
     pub disable_window_state_restore: bool,
+
+    /// Whether new windows open with the sidebar collapsed (icon
+    /// strip mode) instead of fully expanded. Toggled live via
+    /// the chevron in the sidebar header or the Cmd+B / Ctrl+B
+    /// shortcut. This field is the DEFAULT for new windows — each
+    /// open window's sidebar state can drift independently and
+    /// the most recent toggle wins on next save.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub sidebar_collapsed: bool,
 }
 
 /// Saved size + position of an app window. All fields optional so
@@ -184,6 +193,7 @@ impl Default for Settings {
             settings_window: None,
             main_window: None,
             disable_window_state_restore: false,
+            sidebar_collapsed: false,
         }
     }
 }

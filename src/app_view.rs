@@ -40,7 +40,8 @@ use gpui_component::{
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
     tooltip::Tooltip,
-    Disableable, IndexPath, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
+    Disableable, Icon, IconName, IndexPath, Root, Sizable, Theme, ThemeMode,
+    TitleBar, WindowExt,
 };
 use gpui::SharedString;
 
@@ -67,6 +68,13 @@ use crate::terminal_view::{ProfileSettings, TerminalView};
 /// enough that the terminal still gets the lion's share of the
 /// window.
 const SIDEBAR_WIDTH_PX: f32 = 220.0;
+
+/// Width of the sidebar in collapsed (icon-strip) mode. 48px is wide
+/// enough for the existing 15–16px chrome glyphs (+, ⧉, ⚙) plus a
+/// few px of breathing room on each side, and matches the activity-
+/// bar width VS Code / Atom / Zed use so the proportions read
+/// "iconified sidebar" at a glance rather than "tiny weird stripe".
+const SIDEBAR_COLLAPSED_WIDTH_PX: f32 = 48.0;
 
 pub struct AppView {
     terminal: Entity<TerminalView>,
@@ -201,6 +209,13 @@ pub struct AppView {
     /// `vertical_scrollbar(...)` sibling that paints the visible
     /// thumb.
     sidebar_scroll: ScrollHandle,
+    /// `true` when the sidebar is in collapsed (icon-strip) mode —
+    /// only the +/⧉/⚙ chrome buttons + an expand chevron are
+    /// visible; the profile list is hidden and the right pane
+    /// expands to fill the recovered width. Seeded from
+    /// `Settings::sidebar_collapsed` on window creation; toggled
+    /// live by `Self::toggle_sidebar` (chevron click or Cmd+B).
+    sidebar_collapsed: bool,
     /// `Some(_)` while a profile-row right-click menu is showing.
     /// Carries the right-clicked profile id + the click position so
     /// the popup can render anchored at the cursor. Cleared by any
@@ -530,6 +545,7 @@ impl AppView {
             send_hex: None,
             session_overflow_open: false,
             sidebar_scroll: ScrollHandle::new(),
+            sidebar_collapsed: initial.sidebar_collapsed,
             footer_event: None,
             footer_event_seq: 0,
             profile_context_menu: None,
@@ -1685,6 +1701,28 @@ impl AppView {
                     ed.error = Some(format!("{e}"));
                 }
             }
+        }
+        cx.notify();
+    }
+
+    /// Flip the sidebar between collapsed (icon-strip, 48px wide)
+    /// and expanded (full profile list, `SIDEBAR_WIDTH_PX` wide)
+    /// states. Persists the new value as the boot-time default for
+    /// future windows; the current window updates immediately via
+    /// `cx.notify()`. Other already-open windows keep their own
+    /// per-window state — they don't snap to match this one.
+    ///
+    /// Hooked up to the chevron in `sidebar_header` (expanded mode)
+    /// and at the top of the collapsed icon strip, plus the
+    /// `actions::ToggleSidebar` shortcut (Cmd+B / Ctrl+B).
+    pub(crate) fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.sidebar_collapsed = !self.sidebar_collapsed;
+        let mut next = self.settings_bus.read(cx).current().clone();
+        next.sidebar_collapsed = self.sidebar_collapsed;
+        if let Err(err) =
+            self.settings_bus.update(cx, |bus, cx| bus.replace(next, cx))
+        {
+            log::error!("toggle_sidebar: persist failed: {err}");
         }
         cx.notify();
     }
@@ -3670,7 +3708,11 @@ impl Render for AppView {
             // sidebar rather than chrome at the boundary.
             .child(
                 div()
-                    .w(px(SIDEBAR_WIDTH_PX))
+                    .w(px(if self.sidebar_collapsed {
+                        SIDEBAR_COLLAPSED_WIDTH_PX
+                    } else {
+                        SIDEBAR_WIDTH_PX
+                    }))
                     .h_full()
                     .bg(rgba(s.bg_sidebar))
                     // 1px right separator driven by the skin's
@@ -3739,7 +3781,19 @@ impl Render for AppView {
                                 px(12.0)
                             })
                             .pb_1()
-                            .child(sidebar_header(update_pending, cx)),
+                            // Header swaps depending on collapsed
+                            // state: the icon strip variant stacks
+                            // the chrome buttons vertically + adds
+                            // an expand chevron; the full variant
+                            // is the horizontal `PROFILES | + ⧉ ⚙`
+                            // row with a collapse chevron prefix.
+                            .child(if self.sidebar_collapsed {
+                                sidebar_icon_strip(update_pending, cx)
+                                    .into_any_element()
+                            } else {
+                                sidebar_header(update_pending, cx)
+                                    .into_any_element()
+                            }),
                     )
                     // -- scrollable profile list --
                     //
@@ -3747,8 +3801,11 @@ impl Render for AppView {
                     // positions itself absolutely) anchors to
                     // this container. `flex_1 + min_h_0` lets it
                     // shrink to whatever space is left after the
-                    // fixed header.
-                    .child(
+                    // fixed header. Wrapped in `.when(!collapsed)`
+                    // — collapsed mode skips the list entirely so
+                    // the 48px icon strip doesn't try to render
+                    // profile rows that wouldn't fit.
+                    .when(!self.sidebar_collapsed, |this| this.child(
                         div()
                             .relative()
                             .flex_1()
@@ -3838,7 +3895,73 @@ impl Render for AppView {
                                     ),
                             )
                             .vertical_scrollbar(&self.sidebar_scroll),
-                    ),
+                    ))
+                    // -- collapsed profile strip --
+                    //
+                    // Mirror of the expanded scrollable list,
+                    // sized for the 48px icon strip. Each
+                    // profile renders as `profile_icon` — a
+                    // single Lucide `square-terminal` glyph with
+                    // its colour driven by connection status
+                    // (success / warn / danger) or selection
+                    // (accent) or default (muted fg_secondary).
+                    // Tooltip on hover carries name + port so
+                    // identity isn't lost when names disappear.
+                    // No visible scrollbar — long profile lists
+                    // scroll with trackpad / mouse wheel; a
+                    // proper scrollbar in 48px would crowd the
+                    // strip and isn't worth the cost most users
+                    // won't pay (sub-dozen profile counts are
+                    // the norm).
+                    .when(self.sidebar_collapsed, |this| {
+                        this.child(
+                            div()
+                                .flex_1()
+                                .min_h_0()
+                                .child(
+                                    div()
+                                        .id("sidebar-profiles-collapsed-scroll")
+                                        .size_full()
+                                        .overflow_y_scroll()
+                                        .child(
+                                            div()
+                                                .w_full()
+                                                .px_1()
+                                                .pb_3()
+                                                .flex()
+                                                .flex_col()
+                                                .gap_1()
+                                                .children(self.profile_store.list().into_iter().map(|profile| {
+                                                    let is_selected = selected.as_deref()
+                                                        == Some(profile.id.as_str());
+                                                    let is_connected = connected.as_deref()
+                                                        == Some(profile.id.as_str());
+                                                    let is_reconnecting = self
+                                                        .auto_reconnect_for
+                                                        .as_deref()
+                                                        == Some(profile.id.as_str());
+                                                    let status = if is_connected {
+                                                        Some(RowStatus::Connected)
+                                                    } else if is_reconnecting {
+                                                        Some(RowStatus::Reconnecting)
+                                                    } else if is_selected
+                                                        && self.connect_error.is_some()
+                                                    {
+                                                        Some(RowStatus::Failed)
+                                                    } else {
+                                                        None
+                                                    };
+                                                    profile_icon(
+                                                        profile,
+                                                        is_selected,
+                                                        status,
+                                                        cx,
+                                                    )
+                                                })),
+                                        ),
+                                ),
+                        )
+                    }),
             )
                             // -- right pane: form OR terminal --
                             //
@@ -4620,18 +4743,43 @@ fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoE
         .justify_between()
         .py_1()
         .child(
-            // PROFILES header. Font size + weight + text
-            // transform come from the skin so authors can
-            // tune the label aesthetic without code changes:
-            //   - macOS-26 sets `--label-transform: none` for
-            //     sentence-case ("Profiles");
-            //   - High Contrast / Cyberpunk bump
-            //     `--label-weight` to 600 for chunkier UI.
+            // Left group: collapse-chevron + PROFILES label.
+            // Click the chevron (or hit Cmd+B / Ctrl+B) to fold
+            // the sidebar into the 48px icon strip.
             div()
-                .text_size(px(s.font_size_label_px))
-                .text_color(rgba(s.fg_tertiary))
-                .font_weight(gpui::FontWeight(s.label_weight as f32))
-                .child(s.label_transform.apply("PROFILES")),
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .child(
+                    // `‹` (U+2039) is the leftward single-angle
+                    // quotation mark — same chrome-glyph aesthetic
+                    // as the other inline buttons (+ / ⧉ / ⚙), so
+                    // the four read as one cluster.
+                    icon_btn("nav-collapse-sidebar", "Collapse sidebar")
+                        .text_size(px(15.0))
+                        .child("\u{2039}")
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                                this.toggle_sidebar(cx);
+                            }),
+                        ),
+                )
+                .child(
+                    // PROFILES header. Font size + weight + text
+                    // transform come from the skin so authors can
+                    // tune the label aesthetic without code changes:
+                    //   - macOS-26 sets `--label-transform: none` for
+                    //     sentence-case ("Profiles");
+                    //   - High Contrast / Cyberpunk bump
+                    //     `--label-weight` to 600 for chunkier UI.
+                    div()
+                        .text_size(px(s.font_size_label_px))
+                        .text_color(rgba(s.fg_tertiary))
+                        .font_weight(gpui::FontWeight(s.label_weight as f32))
+                        .child(s.label_transform.apply("PROFILES")),
+                ),
         )
         .child(
             div()
@@ -4710,6 +4858,116 @@ fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoE
                             )
                         }),
                 ),
+        )
+}
+
+/// Collapsed-mode sidebar contents: the chrome buttons stacked
+/// vertically in a 48px strip, with an expand chevron at the top.
+/// Mirrors what `sidebar_header` would render in expanded mode
+/// (same hover-bg, same tooltip wiring, same actions) but with a
+/// vertical layout that fits the narrow strip. The profile list
+/// is intentionally absent in this mode — profile names wouldn't
+/// fit at 48px wide, and the user expanded the sidebar
+/// specifically to skip the list anyway.
+fn sidebar_icon_strip(
+    update_pending: bool,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
+    let s = *cx.global::<SkinTokens>();
+    let hover_bg = s.bg_hover;
+    // Same `icon_btn` recipe as `sidebar_header`, but stretched to
+    // fill the strip's width so the hover-bg rect reads as a
+    // proper button target rather than a small glyph-only chip.
+    let icon_btn = move |id: &'static str, tip: &'static str| {
+        let tip_text = SharedString::from(tip);
+        div()
+            .id(SharedString::from(id))
+            .w_full()
+            .py(px(6.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_sm()
+            .text_color(rgba(s.fg_primary))
+            .hover(move |st| st.bg(rgba(hover_bg)))
+            .cursor_pointer()
+            .tooltip(move |window, cx| {
+                Tooltip::new(tip_text.clone()).build(window, cx)
+            })
+    };
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_1()
+        .child(
+            // Expand chevron — `›` (U+203A), mirror of the
+            // collapse glyph in `sidebar_header`.
+            icon_btn("nav-expand-sidebar", "Expand sidebar")
+                .text_size(px(16.0))
+                .child("\u{203A}")
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                        this.toggle_sidebar(cx);
+                    }),
+                ),
+        )
+        .child(
+            icon_btn("nav-add-profile-collapsed", "New profile")
+                .text_size(px(16.0))
+                .child("+")
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        this.open_editor(window, cx);
+                    }),
+                ),
+        )
+        .child(
+            icon_btn("nav-new-window-collapsed", "New window")
+                .text_size(px(15.0))
+                .child("\u{29C9}")
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        this.open_new_window(window, cx);
+                    }),
+                ),
+        )
+        .child(
+            // Settings with the same amber update-pending dot as
+            // expanded mode — `.relative()` wrapper anchors the
+            // `.absolute()` dot to the gear glyph rather than the
+            // strip itself, so the dot rides the icon if the
+            // layout ever reflows.
+            div()
+                .relative()
+                .w_full()
+                .child(
+                    icon_btn("nav-settings-collapsed", "Settings")
+                        .text_size(px(15.0))
+                        .child("\u{2699}")
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.open_settings(window, cx);
+                            }),
+                        ),
+                )
+                .when(update_pending, |this| {
+                    this.child(
+                        div()
+                            .absolute()
+                            .top(px(2.0))
+                            .right(px(10.0))
+                            .w(px(8.0))
+                            .h(px(8.0))
+                            .rounded_full()
+                            .bg(rgba(s.warn)),
+                    )
+                }),
         )
 }
 
@@ -6603,4 +6861,94 @@ fn profile_row(
             this.open_profile_context_menu(id_for_right.clone(), evt.position, cx);
         }),
     )
+}
+
+/// Collapsed-mode counterpart to `profile_row`: a single Lucide
+/// `square-terminal` glyph that represents one profile in the 48px
+/// icon strip. Click to select / connect, same as the expanded
+/// row. The icon's colour does the work the row's text + status
+/// dot do in expanded mode — accent when selected, success/warn/
+/// danger when in a connection state, muted otherwise — and the
+/// hover tooltip carries the profile name + port so the user
+/// doesn't lose identity by collapsing the sidebar.
+fn profile_icon(
+    profile: Profile,
+    is_selected: bool,
+    status: Option<RowStatus>,
+    cx: &mut Context<AppView>,
+) -> impl IntoElement {
+    let tokens = *cx.global::<SkinTokens>();
+    let id = profile.id.clone();
+    let name = if profile.name.is_empty() {
+        "(unnamed)".to_string()
+    } else {
+        profile.name.clone()
+    };
+    let port = profile.port_name.clone();
+
+    // Tooltip: "Cisco SG\n/dev/cu.usbserial-A9BTALSS". The port
+    // line gives the user the same identifying info the expanded
+    // row's second line shows, so collapsing the sidebar doesn't
+    // hide which physical device a profile points at.
+    let tip = if port.is_empty() {
+        name.clone()
+    } else {
+        format!("{name}\n{port}")
+    };
+    let tip_text = SharedString::from(tip);
+
+    // Status colour wins over selected — a connected/reconnecting/
+    // failed signal is more urgent than the "this is the row the
+    // user last clicked" cue. Bare `is_selected` (no connection
+    // state) falls back to the accent so the picker is still
+    // visibly tracking which profile would open on Enter / arrow
+    // navigation.
+    let icon_color = match status {
+        Some(s) => s.color(tokens),
+        None if is_selected => tokens.accent,
+        None => tokens.fg_secondary,
+    };
+
+    let bg = if is_selected {
+        rgba(tokens.bg_active)
+    } else {
+        rgba(0x00000000)
+    };
+    let hover_bg = tokens.bg_hover;
+
+    let id_for_left = id.clone();
+    let id_for_right = id.clone();
+    div()
+        .id(SharedString::from(format!("collapsed-profile-{id}")))
+        .w_full()
+        .py(px(6.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_sm()
+        .bg(bg)
+        .when(!is_selected, |this| {
+            this.hover(move |st| st.bg(rgba(hover_bg)))
+        })
+        .cursor_pointer()
+        .tooltip(move |window, cx| {
+            Tooltip::new(tip_text.clone()).build(window, cx)
+        })
+        .child(
+            Icon::new(IconName::SquareTerminal)
+                .size(px(18.0))
+                .text_color(rgba(icon_color)),
+        )
+        .on_mouse_up(
+            MouseButton::Left,
+            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+                this.select_profile(id_for_left.clone(), window, cx);
+            }),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, evt: &MouseDownEvent, _, cx| {
+                this.open_profile_context_menu(id_for_right.clone(), evt.position, cx);
+            }),
+        )
 }

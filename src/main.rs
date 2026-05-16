@@ -81,6 +81,7 @@ pub(crate) mod actions {
             NewWindow,
             About,
             OpenSettings,
+            ToggleSidebar,
             Connect,
             Disconnect,
             Suspend,
@@ -121,7 +122,7 @@ use actions::{
     About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease,
     FontIncrease, FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings,
     Quit, Resume, SendBreak, SendFile, Suspend, TerminalCopy, TerminalPaste,
-    TerminalSelectAll,
+    TerminalSelectAll, ToggleSidebar,
 };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
@@ -499,6 +500,9 @@ fn install_app_menu(
     cx.on_action(|_: &OpenSettings, cx| {
         dispatch_to_app_view(cx, |app, window, cx| app.open_settings(window, cx));
     });
+    cx.on_action(|_: &ToggleSidebar, cx| {
+        dispatch_to_app_view(cx, |app, _window, cx| app.toggle_sidebar(cx));
+    });
     cx.on_action(|action: &ConnectToProfile, cx| {
         let profile_id = action.profile_id.clone();
         dispatch_to_app_view(cx, move |app, window, cx| {
@@ -772,6 +776,11 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
         KeyBinding::new("secondary-q", Quit, None),
         KeyBinding::new("secondary-n", NewWindow, None),
         KeyBinding::new("secondary-,", OpenSettings, None),
+        // Standard sidebar-toggle binding (Cmd+B on macOS, Ctrl+B
+        // on Windows/Linux). Same key VS Code, Sublime, Atom, and
+        // every other editor with a togglable sidebar uses, so
+        // muscle memory transfers in.
+        KeyBinding::new("secondary-b", ToggleSidebar, None),
     ];
     // Terminal-pane clipboard actions used to live as hardcoded
     // rows here, but they now flow through Settings → Shortcuts
