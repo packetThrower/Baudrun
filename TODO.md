@@ -664,6 +664,57 @@ Non-goals: character-set translation (UTF-8 is universal on modern
 network gear), answerback strings (legacy VT-terminal feature, no
 real use for serial consoles).
 
+## Footer / notification parity with Tauri
+
+Surveyed against `tauri-archive` (see analysis in conversation history,
+2026-05-16). The Tauri build had a richer set of footer-pill / toast
+notifications and a couple of features that the gpui rewrite hasn't
+brought back yet. The cheap one-line-each notification wires were
+landed in commit TODO; the items below are the remaining feature work.
+
+- [ ] **Profile delete → 10s undo footer with countdown + Undo
+      button.** Tauri footer showed `"Deleted ${name} — undo
+      available for 10s"` with an inline Undo button that restored
+      the profile. Current `main` (`delete_profile` in
+      [src/app_view.rs:1680](src/app_view.rs:1680)) deletes
+      immediately and irreversibly with no UI feedback. Implementation
+      sketch: new `pending_delete: Option<{ profile, timer_handle }>`
+      on AppView; render an Undo pill alongside `log_event` for 10s;
+      restore on click, finalize on timeout. gpui timer via
+      `cx.background_executor().timer(Duration::from_secs(10))`.
+      Medium complexity, well-contained.
+
+- [ ] **Live DTR/RTS toggle pills in the session header.** The
+      profile JSON's `dtr_on_connect` / `rts_on_connect` policies are
+      already wired and `serial_io::apply_dtr` /
+      [serial_io.rs:244](src/serial_io.rs:244) / `apply_rts` exist —
+      what's missing is the runtime toggle UI. Tauri had a pair of
+      pills in the session header that read/wrote the line state
+      live; clicks called the backend toggle and surfaced any
+      error via the footer. Implementation: two state-tracking
+      bools on AppView, two clickable pills in the session header
+      next to the connection-status pill, calls into a new
+      `Session::toggle_dtr()` / `toggle_rts()` on the serial pump
+      that wrap `apply_dtr` / `apply_rts` mid-session. `docs-next/`
+      profiles page line 124 already promises this feature, so this
+      is also a doc-vs-reality fix.
+
+- [ ] **In-app auto-installer with progress.** Tauri shipped a
+      footer `update-toast` pill with **Install / Notes / Dismiss**
+      buttons; clicking Install downloaded the new build, surfaced
+      a progress bar (`"Installing v${version}… 47%"`), verified
+      signature, applied the update in-place, and relaunched. On
+      `main` the updater ([src/updater.rs](src/updater.rs)) detects
+      newer releases and lights up an amber dot on the Settings
+      gear, but the user still has to open the Releases page, pick
+      the right asset for their platform, download, and run the
+      installer/replace-the-.app by hand. Platform-specific apply:
+      macOS swap `Baudrun.app` then `relaunch`; Windows invoke NSIS
+      uninstaller-then-installer; Linux `dpkg -i` / `rpm -U` / etc.
+      Likely a v0.12 headline feature on its own — significant
+      scope including signature verification and partial-write
+      recovery. Defer until there's time for a focused arc.
+
 ## Distribution
 
 - [ ] **Code sign + notarize macOS binary.** Requires enrollment in the

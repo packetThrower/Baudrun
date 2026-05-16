@@ -1229,6 +1229,16 @@ impl AppView {
             break_tx,
             transfer_sink,
         });
+        // Distinguish initial connect ("Connected to X @ Y") from a
+        // recovery after the auto-reconnect window ("Reconnected") —
+        // the user knows what port/baud they started on and just
+        // wants confirmation the session came back.
+        let was_reconnecting = self.auto_reconnect_for.is_some();
+        let connect_message = if was_reconnecting {
+            "Reconnected".to_string()
+        } else {
+            format!("Connected to {} @ {}", &port, baud)
+        };
         self.connected_profile_id = Some(profile.id);
         // A successful (re)connect ends any auto-reconnect window —
         // the right pane should now render off the live session, not
@@ -1242,6 +1252,7 @@ impl AppView {
         // set — `compute_palette` will pick up this profile's
         // `theme_id` override (if any) and shadow the global default.
         self.apply_palette(cx);
+        self.log_event(connect_message, LogSeverity::Info, cx);
     }
 
     /// Open the form for a new profile, seeded from `Profile::defaults`.
@@ -1375,17 +1386,18 @@ impl AppView {
                     return;
                 }
             }
-            log::warn!(
-                "auto-reconnect to {} gave up after {} attempts",
-                profile.port_name,
-                15
-            );
+            let port_name = profile.port_name.clone();
             weak.update(cx, |app, cx| {
                 app.auto_reconnect_task = None;
                 // Drop the visual stand-in so the right pane falls
                 // back to the welcome screen now that we've stopped
                 // trying.
                 app.auto_reconnect_for = None;
+                app.log_event(
+                    format!("Auto-reconnect to {port_name} gave up after 15 attempts"),
+                    LogSeverity::Warn,
+                    cx,
+                );
                 cx.notify();
             })
             .ok();
@@ -1434,6 +1446,7 @@ impl AppView {
             d.shutdown();
         }
         self.open_editor_for(id, window, cx);
+        self.log_event("Disconnected", LogSeverity::Info, cx);
     }
 
     /// Switch the active sub-tab on the open editor. No-op if the
@@ -1611,13 +1624,20 @@ impl AppView {
                     }
                 }
                 cx.notify();
+                self.log_event("Saved", LogSeverity::Info, cx);
                 Some(id)
             }
             Err(e) => {
+                let msg = format!("{e}");
                 if let Some(ed) = self.editor.as_mut() {
-                    ed.error = Some(format!("{e}"));
+                    ed.error = Some(msg.clone());
                 }
                 cx.notify();
+                self.log_event(
+                    format!("Save failed: {msg}"),
+                    LogSeverity::Error,
+                    cx,
+                );
                 None
             }
         }
@@ -2709,6 +2729,11 @@ impl AppView {
             }
         }
         cx.notify();
+        self.log_event(
+            "Session kept alive in background",
+            LogSeverity::Info,
+            cx,
+        );
     }
 
     /// Resume a suspended session. Closes any open editor (matching
@@ -2891,8 +2916,18 @@ impl AppView {
         if let Err(err) =
             self.settings_bus.update(cx, |bus, cx| bus.replace(next, cx))
         {
-            log::error!("shortcut: font bump persist failed: {err}");
+            self.log_event(
+                format!("Font size update failed: {err}"),
+                LogSeverity::Error,
+                cx,
+            );
+            return;
         }
+        self.log_event(
+            format!("Font size: {target}"),
+            LogSeverity::Info,
+            cx,
+        );
     }
 
     /// Move the live serial session out of this window into a freshly
@@ -2924,8 +2959,18 @@ impl AppView {
             self.highlight_store.clone(),
             self.themes_store.clone(),
         ) {
-            log::error!("move session to new window: {err}");
+            self.log_event(
+                format!("Move session failed: {err}"),
+                LogSeverity::Error,
+                cx,
+            );
+            return;
         }
+        self.log_event(
+            "Session moved to new window",
+            LogSeverity::Info,
+            cx,
+        );
     }
 }
 

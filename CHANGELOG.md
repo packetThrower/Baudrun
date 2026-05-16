@@ -15,6 +15,27 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Added
+
+- **Footer-pill confirmations for routine actions.** Operations
+  that previously succeeded (or failed) silently now surface a
+  short message in the footer status bar — auto-clearing after
+  8 seconds for info / warn, 15 seconds for errors. New pills:
+  font zoom (`Font size: 14`) on `⌘=` / `⌘-` / `⌘0`, profile
+  save (`Saved` / `Save failed: …`), session move
+  (`Session moved to new window`), suspend
+  (`Session kept alive in background`), connect
+  (`Connected to /dev/cu.usbserial-XXX @ 9600`), reconnect
+  after an auto-reconnect window (`Reconnected`), disconnect
+  (`Disconnected`), and auto-reconnect give-up
+  (`Auto-reconnect to /dev/cu… gave up after 15 attempts`).
+  Restores the "the app talks back" feel that the Tauri build
+  had and the gpui rewrite hadn't carried over yet. Same colours
+  and severity rules the existing connect-failure / session-log
+  pills already used. The Settings window also gets a new toast
+  on **Log directory updated** / **reset** (skin / theme /
+  highlight-pack import + delete toasts already shipped).
+
 ## [0.11.0] — 2026-05-15
 
 ### Added

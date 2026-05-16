@@ -689,6 +689,12 @@ impl SettingsView {
                     let mut next = this.settings.clone();
                     next.log_dir = path_str;
                     this.commit(next, view_cx);
+                    window.push_notification(
+                        Notification::success(SharedString::from(
+                            "Log directory updated",
+                        )),
+                        view_cx,
+                    );
                 }
             });
         })
@@ -706,6 +712,12 @@ impl SettingsView {
             let mut next = self.settings.clone();
             next.log_dir = String::new();
             self.commit(next, cx);
+            window.push_notification(
+                Notification::success(SharedString::from(
+                    "Log directory reset to default",
+                )),
+                cx,
+            );
         }
     }
 
