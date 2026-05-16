@@ -17,6 +17,23 @@ final stable entry at tag time.
 
 ### Added
 
+- **Undo a profile delete within ~5 seconds.** The Delete button in
+  the profile editor now drops a toast carrying an inline Undo
+  button alongside the existing "Removed profile X" confirmation.
+  Click Undo before the toast fades and the profile is restored to
+  its original id and timestamps — so any sidebar shortcut, log
+  filename, or workflow note that referenced the old id keeps
+  working. Doesn't auto-reconnect: restore is about the saved
+  config, not the live session. Mirrors the same Undo affordance
+  that's been on skin / theme / highlight-pack deletes since
+  v0.9.5.
+
+- **Skin change toast.** Picking a different skin from the
+  Settings → Appearance dropdown now surfaces a `Skin: NAME`
+  confirmation toast. The visual change is already instant —
+  this just calls out which preset you landed on, useful when
+  the dropdown rows are themselves unstyled and the names blur.
+
 - **Live DTR/RTS toggle pills in the session header.** Two pills
   next to the `⋯` button on a connected session, each carrying a
   small green dot when the line is asserted and a muted dot when
@@ -53,6 +70,15 @@ final stable entry at tag time.
   pills already used. The Settings window also gets a new toast
   on **Log directory updated** / **reset** (skin / theme /
   highlight-pack import + delete toasts already shipped).
+
+### Fixed
+
+- **Settings save failures now surface as a toast.** Previously a
+  `commit()` error in the Settings window only made it to stderr,
+  so toggling something on disk-full / permission-denied would
+  appear to take but silently revert on the next launch. The
+  Settings window now pops an error toast (`Couldn't save
+  settings: …`) so the user sees the failure when it happens.
 
 ## [0.11.0] — 2026-05-15
 

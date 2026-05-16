@@ -127,6 +127,8 @@ pub enum ProfileError {
     IdRequired,
     #[error("profile {0} not found")]
     NotFound(String),
+    #[error("profile {0} already exists")]
+    IdConflict(String),
     #[error("serialize profiles: {0}")]
     Serde(#[from] serde_json::Error),
     #[error(transparent)]
@@ -211,6 +213,28 @@ impl Store {
             return Err(err);
         }
         Ok(())
+    }
+
+    /// Re-insert a previously-deleted profile, preserving its id +
+    /// `created_at` + `updated_at`. Used by the Undo path on the
+    /// session-header / sidebar profile-delete toast within the
+    /// 5 s window after a delete. Errors if a profile with the
+    /// same id already exists (would shadow either an in-flight
+    /// new profile or a separately-restored copy).
+    pub fn restore(&self, profile: Profile) -> Result<Profile> {
+        if profile.id.is_empty() {
+            return Err(ProfileError::IdRequired);
+        }
+        let mut guard = self.inner.write().unwrap();
+        if guard.iter().any(|p| p.id == profile.id) {
+            return Err(ProfileError::IdConflict(profile.id.clone()));
+        }
+        guard.push(profile.clone());
+        if let Err(err) = save(&self.path, &guard) {
+            guard.pop();
+            return Err(err);
+        }
+        Ok(profile)
     }
 }
 

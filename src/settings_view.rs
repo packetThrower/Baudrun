@@ -234,6 +234,28 @@ impl SettingsView {
                         let mut next = this.settings.clone();
                         next.skin_id = id.clone();
                         this.commit(next, cx);
+                        // Confirmation toast — the visual change is
+                        // immediate (skin re-applies live), but
+                        // calling out the new skin name by toast
+                        // matches the Tauri build and lets the user
+                        // know which preset they just picked from
+                        // the unstyled dropdown row.
+                        let name = this
+                            .skins_store
+                            .get(id)
+                            .map(|s| s.name)
+                            .unwrap_or_else(|| id.clone());
+                        cx.spawn(async move |weak, cx_async| {
+                            let _ = weak.update_in(cx_async, |_, window, view_cx| {
+                                window.push_notification(
+                                    Notification::success(SharedString::from(format!(
+                                        "Skin: {name}"
+                                    ))),
+                                    view_cx,
+                                );
+                            });
+                        })
+                        .detach();
                     }
                 }
             },
@@ -470,7 +492,24 @@ impl SettingsView {
                 cx.notify();
             }
             Err(err) => {
+                // Previously this was a bare `log::error!` and the user
+                // never saw the failure — the toggle would appear to
+                // take but the next launch would resurrect the old
+                // value because the on-disk write had silently failed.
+                // Defer the toast through a no-op spawn so we can pick
+                // up `window` (the `&mut Context<Self>` we're handed
+                // here doesn't carry one).
                 log::error!("save settings: {err}");
+                let msg = format!("Couldn't save settings: {err}");
+                cx.spawn(async move |weak, cx_async| {
+                    let _ = weak.update_in(cx_async, |_, window, view_cx| {
+                        window.push_notification(
+                            Notification::error(SharedString::from(msg)),
+                            view_cx,
+                        );
+                    });
+                })
+                .detach();
             }
         }
     }

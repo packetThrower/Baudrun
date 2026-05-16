@@ -29,11 +29,12 @@ use std::time::Duration;
 
 use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
-    AppContext, Bounds, Context, Entity, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent,
-    PathPromptOptions, Pixels, Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds,
-    WindowHandle, WindowOptions,
+    AppContext, Bounds, Context, DismissEvent, Entity, IntoElement, MouseButton, MouseDownEvent,
+    MouseUpEvent, PathPromptOptions, Pixels, Render, ScrollHandle, Task, TitlebarOptions, Window,
+    WindowBounds, WindowHandle, WindowOptions,
 };
 use gpui_component::{
+    button::Button,
     checkbox::Checkbox,
     input::{Input, InputState},
     notification::Notification,
@@ -1726,13 +1727,18 @@ impl AppView {
     /// open serial port pointing at a deleted profile id. Selection
     /// state for the deleted id is also cleared so the sidebar
     /// doesn't try to highlight a missing row on the next render.
-    fn delete_from_editor(&mut self, cx: &mut Context<Self>) {
+    fn delete_from_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(editor) = self.editor.as_ref() else {
             return;
         };
         let Some(id) = editor.profile_id.clone() else {
             return;
         };
+        // Snapshot before delete so the Undo path has the original
+        // bytes to re-insert. `profile_store.get` returns a clone so
+        // the subsequent `delete` doesn't invalidate it.
+        let snapshot = self.profile_store.get(&id);
+        let was_selected = self.selected_profile_id.as_deref() == Some(id.as_str());
         match self.profile_store.delete(&id) {
             Ok(()) => {
                 if self.connected_profile_id.as_deref() == Some(id.as_str())
@@ -1747,19 +1753,89 @@ impl AppView {
                         d.shutdown();
                     }
                 }
-                if self.selected_profile_id.as_deref() == Some(id.as_str()) {
+                if was_selected {
                     self.selected_profile_id = None;
                     self.connect_error = None;
                 }
                 self.editor = None;
+                cx.notify();
+                // Undo toast — gpui-component autohides after ~5s.
+                // The Undo path re-inserts the profile via
+                // `profile_store.restore`, restores selection if it
+                // had been the selected one, but does NOT re-open a
+                // serial session (the user clicks Connect again).
+                if let Some(snapshot) = snapshot {
+                    let app = cx.entity();
+                    let name = snapshot.name.clone();
+                    window.push_notification(
+                        Notification::success(SharedString::from(format!(
+                            "Removed profile \u{201C}{name}\u{201D}"
+                        )))
+                        .action(move |_, _, ctx| {
+                            let app = app.clone();
+                            let snapshot = snapshot.clone();
+                            let notif = ctx.entity();
+                            Button::new("undo-profile-delete")
+                                .label("Undo")
+                                .on_click(move |_, _window, cx| {
+                                    let app = app.clone();
+                                    let snapshot = snapshot.clone();
+                                    let notif = notif.clone();
+                                    app.update(cx, |this, view_cx| {
+                                        this.restore_profile(snapshot, was_selected, view_cx);
+                                    });
+                                    dismiss_notification_after(notif, cx);
+                                })
+                        })
+                        // See settings_view's matching comment: the
+                        // .action() builder defaults autohide to false;
+                        // turn it back on so the toast fades after
+                        // gpui-component's ~5s timeout. Undo still
+                        // fires if clicked before the fade completes.
+                        .autohide(true),
+                        cx,
+                    );
+                }
             }
             Err(e) => {
                 if let Some(ed) = self.editor.as_mut() {
                     ed.error = Some(format!("{e}"));
                 }
+                cx.notify();
             }
         }
+    }
+
+    /// Re-insert a profile snapshot held by the post-delete Undo
+    /// toast. Restores selection if the deleted profile had been
+    /// the selected one; does NOT auto-reconnect — restore is
+    /// about the profile config, not the live session.
+    fn restore_profile(
+        &mut self,
+        snapshot: profiles::Profile,
+        was_selected: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let name = snapshot.name.clone();
+        let id = snapshot.id.clone();
+        if let Err(err) = self.profile_store.restore(snapshot) {
+            self.log_event(
+                format!("Couldn't restore profile: {err}"),
+                LogSeverity::Error,
+                cx,
+            );
+            return;
+        }
+        if was_selected {
+            self.selected_profile_id = Some(id);
+            self.connect_error = None;
+        }
         cx.notify();
+        self.log_event(
+            format!("Restored profile \u{201C}{name}\u{201D}"),
+            LogSeverity::Info,
+            cx,
+        );
     }
 
     /// Flip the sidebar between collapsed (icon-strip, 48px wide)
@@ -5800,8 +5876,8 @@ fn form_header(
     let delete_btn = is_edit.then(|| {
         pill_button(s, "Delete", true).on_mouse_up(
             MouseButton::Left,
-            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                this.delete_from_editor(cx);
+            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                this.delete_from_editor(window, cx);
             }),
         )
     });
@@ -7121,4 +7197,26 @@ fn profile_icon(
                 this.open_profile_context_menu(id_for_right.clone(), evt.position, cx);
             }),
         )
+}
+
+/// Dismiss the (already-clicked) Undo toast after a 1.5 s linger so
+/// the follow-up "Restored …" toast has time to take its place
+/// without overlap. Spawned from the notification's own Context
+/// rather than `App::spawn` so the task survives any subsequent
+/// re-renders of the host view. Mirror of the helper in
+/// settings_view.rs — the duplication is cheap and avoids a cross-
+/// module dependency for ten lines of code.
+fn dismiss_notification_after(notif: Entity<Notification>, cx: &mut gpui::App) {
+    notif.update(cx, |_, ctx| {
+        ctx.spawn(async move |weak, cx_async| {
+            cx_async
+                .background_executor()
+                .timer(std::time::Duration::from_millis(1500))
+                .await;
+            let _ = weak.update(cx_async, |_, ctx| {
+                ctx.emit(DismissEvent);
+            });
+        })
+        .detach();
+    });
 }

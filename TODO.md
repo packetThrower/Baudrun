@@ -672,18 +672,6 @@ notifications and a couple of features that the gpui rewrite hasn't
 brought back yet. The cheap one-line-each notification wires were
 landed in commit TODO; the items below are the remaining feature work.
 
-- [ ] **Profile delete → 10s undo footer with countdown + Undo
-      button.** Tauri footer showed `"Deleted ${name} — undo
-      available for 10s"` with an inline Undo button that restored
-      the profile. Current `main` (`delete_profile` in
-      [src/app_view.rs:1680](src/app_view.rs:1680)) deletes
-      immediately and irreversibly with no UI feedback. Implementation
-      sketch: new `pending_delete: Option<{ profile, timer_handle }>`
-      on AppView; render an Undo pill alongside `log_event` for 10s;
-      restore on click, finalize on timeout. gpui timer via
-      `cx.background_executor().timer(Duration::from_secs(10))`.
-      Medium complexity, well-contained.
-
 - [ ] **In-app auto-installer with progress.** Tauri shipped a
       footer `update-toast` pill with **Install / Notes / Dismiss**
       buttons; clicking Install downloaded the new build, surfaced
