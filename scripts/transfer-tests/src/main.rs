@@ -29,8 +29,14 @@
 #[path = "../../../src/data/transfer.rs"]
 mod transfer;
 
+// Same #[path] trick for the hex parser. Lives in `src/data/hex.rs`
+// for the same reason as transfer.rs — pure data, no UI deps. Lifted
+// here so the harness uses the exact code Send-Hex ships, not a
+// drift-prone copy.
+#[path = "../../../src/data/hex.rs"]
+mod hex;
+
 mod bridge;
-mod hex_parse;
 mod port_reader;
 mod tests;
 

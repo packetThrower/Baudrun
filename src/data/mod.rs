@@ -22,6 +22,7 @@
 
 pub mod appdata;
 pub mod events;
+pub mod hex;
 pub mod highlight;
 pub mod profiles;
 pub mod sanitize;

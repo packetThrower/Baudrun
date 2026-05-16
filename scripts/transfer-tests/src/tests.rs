@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::hex_parse::parse_hex_string;
+use crate::hex::parse_hex_string;
 use crate::port_reader::PollReader;
 use crate::transfer::{self, send_xmodem, send_ymodem, Options, XModemVariant};
 use crate::{LINK_A, LINK_B, RX_DIR};

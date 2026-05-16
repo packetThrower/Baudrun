@@ -197,14 +197,19 @@ any byte outside 0x20–0x7e.
 
 ### T4 — input validation
 
-Verifies invalid hex is rejected before sending.
+Verifies invalid hex is rejected before sending. The parser checks
+length **before** character set, so an odd-length string of pure
+junk reports the length error first; the "non-hex characters" error
+only surfaces when length is even.
 
 | Input | Expected behavior |
 |---|---|
-| `xyz` | Dialog shows `Invalid: non-hex characters`; nothing hits the receiver. |
-| `abc` | `Invalid: odd number of hex digits`; nothing sent. |
-| *(empty)* | `Invalid: empty`; nothing sent. |
-| `0x` (just the prefix) | Same — empty after stripping. |
+| `xyz` | `Invalid: odd number of hex digits` (3 chars — length check wins). |
+| `wxyz` | `Invalid: non-hex characters` (4 chars, even — length OK, chars not). |
+| `abc` | `Invalid: odd number of hex digits`. |
+| `0z` | `Invalid: non-hex characters` (2 chars after stripping; `z` not hex). |
+| *(empty)* | `Invalid: empty` (rejected by the modal layer above the parser, which itself returns `Ok(empty)`). |
+| `0x` (just the prefix) | Same — strips to empty input. |
 
 ### T5 — large payload
 

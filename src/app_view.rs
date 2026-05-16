@@ -46,6 +46,7 @@ use gpui_component::{
 use gpui::SharedString;
 
 use crate::data::appdata;
+use crate::data::hex::parse_hex_string;
 use crate::data::highlight;
 use crate::data::transfer::{self, ChannelReader, XModemVariant};
 use crate::serial_io::{ChannelWriter, TransferSink};
@@ -3042,36 +3043,6 @@ fn session_overflow_button(
                 ),
         )
         .children(panel)
-}
-
-/// Parse a Send Hex string into raw bytes. Accepts space-separated,
-/// comma-separated, compact, and `0x`-prefixed input — same rules
-/// as the Tauri version's `parseHex`. Returns `Err(reason)` for
-/// odd lengths, non-hex characters, or empty input so the caller
-/// can surface the reason inline.
-fn parse_hex_string(raw: &str) -> Result<Vec<u8>, &'static str> {
-    let cleaned: String = raw
-        .replace("0x", "")
-        .replace("0X", "")
-        .chars()
-        .filter(|c| !c.is_whitespace() && *c != ',')
-        .collect();
-    if cleaned.is_empty() {
-        return Ok(Vec::new());
-    }
-    if !cleaned.len().is_multiple_of(2) {
-        return Err("odd number of hex digits");
-    }
-    if !cleaned.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err("non-hex characters");
-    }
-    let mut out = Vec::with_capacity(cleaned.len() / 2);
-    let bytes = cleaned.as_bytes();
-    for chunk in bytes.chunks_exact(2) {
-        let s = std::str::from_utf8(chunk).unwrap();
-        out.push(u8::from_str_radix(s, 16).map_err(|_| "non-hex characters")?);
-    }
-    Ok(out)
 }
 
 /// Stable id used as the YMODEM Select option (the default pick).
