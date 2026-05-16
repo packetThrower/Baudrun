@@ -4423,6 +4423,19 @@ fn suspended_banner(
         .bg(rgba(s.bg_active))
         .border_b_1()
         .border_color(rgba(s.border_subtle))
+        // Floating-card skins (`panel_radius_px > 0`) — macOS 26,
+        // Tokyo Night, etc. — wrap the right pane in a rounded
+        // container with `overflow_hidden`, but gpui's
+        // `overflow_hidden` clips to the bounding box, not the
+        // rounded shape. The banner's `bg_active` rectangle would
+        // poke past the wrapper's rounded curve as visible sharp
+        // top corners. Round our own top corners to match so the
+        // banner's fill ends inside the panel's curve. Bottom stays
+        // sharp because the form pane continues immediately below.
+        .when(s.panel_radius_px > 0.0, |this| {
+            let r = px(s.panel_radius_px);
+            this.rounded_tl(r).rounded_tr(r)
+        })
         .flex()
         .flex_col()
         .child(
