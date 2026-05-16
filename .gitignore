@@ -2,8 +2,12 @@
 # puts everything under target/.
 /target/
 
-# Dev-tool binary accidentally built at repo root by `go build ./scripts/...`
-/virtual-serial
+# Standalone Cargo workspace for the virtual-serial dev test rig.
+# Lives in its own subdir so contributors don't pay the main crate's
+# gpui / wgpu / alacritty_terminal compile cost just to use the
+# pty bridge — but that means its build output lands here rather
+# than under /target/, so it needs its own ignore.
+scripts/virtual-serial/target/
 
 # macOS
 .DS_Store

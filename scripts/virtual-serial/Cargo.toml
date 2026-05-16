@@ -1,0 +1,38 @@
+[workspace]
+# Standalone workspace — keeps this dev tool's build graph completely
+# isolated from the main Baudrun crate so contributors don't pay the
+# gpui / wgpu / alacritty_terminal compile cost for what's a few-hundred-
+# line pty fixture. `cd scripts/virtual-serial && cargo build --release`
+# produces a binary at `scripts/virtual-serial/target/release/virtual-
+# serial` that can be moved anywhere (or used in place — see README.md).
+
+[package]
+name = "virtual-serial"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Baud-throttled virtual serial pair for Baudrun dev testing"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "virtual-serial"
+path = "src/main.rs"
+
+[dependencies]
+# pty primitives + termios. `pty` enables `posix_openpt`, `grantpt`,
+# `unlockpt`, `ptsname_r`; `term` enables `cfmakeraw` / `tcsetattr`;
+# `fs` brings the `OFlag` constants we need to open the slave with
+# O_NOCTTY. The `libc` re-export gives us the same `O_NOCTTY` constant
+# for `OpenOptions::custom_flags` without depending on libc directly.
+nix = { version = "0.29", features = ["term", "fs"] }
+
+# Clean SIGINT handler — installs a process-wide signal trampoline
+# and lets us `recv()` on a channel as the "block until Ctrl+C" idiom.
+# 13 KB self, no transitive deps on macOS / Linux.
+ctrlc = "3"
+
+# `libc::O_NOCTTY` for the slave open. The nix crate's `OFlag` is for
+# `posix_openpt`; opening through `std::fs::OpenOptions::custom_flags`
+# wants the raw libc constant. Already a transitive dep via nix, this
+# just makes the use site explicit.
+libc = "0.2"

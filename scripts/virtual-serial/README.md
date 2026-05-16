@@ -15,12 +15,30 @@ via [com0com](https://sourceforge.net/projects/com0com/) and talk to
 real hardware for the baud-sensitive tests — `pty` doesn't exist on
 Windows.
 
+## Build
+
+One-time, from the repo root:
+
+```sh
+(cd scripts/virtual-serial && cargo build --release)
+```
+
+That produces a self-contained binary at
+`scripts/virtual-serial/target/release/virtual-serial`. Everything below
+invokes that binary directly — `cargo run` works too but rebuilds on
+every launch, which adds a couple of seconds of friction to the
+iterate-and-test loop.
+
+The Cargo project is a standalone workspace, isolated from Baudrun's
+main crate, so this build doesn't pay the gpui / wgpu / alacritty_terminal
+compile cost.
+
 ## Usage
 
 From the repo root:
 
 ```sh
-go run ./scripts/virtual-serial -baud 9600
+./scripts/virtual-serial/target/release/virtual-serial -baud 9600
 ```
 
 Typical output:
@@ -53,7 +71,8 @@ end byte-for-byte, at the expected rate:
 
 ```sh
 # Terminal 1
-go run ./scripts/virtual-serial -baud 9600 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
+./scripts/virtual-serial/target/release/virtual-serial \
+    -baud 9600 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
 
 # Terminal 2 — hex-dump anything that comes out of endpoint B
 xxd < /tmp/baudrun-b
@@ -68,7 +87,8 @@ complete — visibly instantaneous but the timing is real.
 
 ```sh
 # Terminal 1 — throttle at a realistic serial-console rate
-go run ./scripts/virtual-serial -baud 115200 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
+./scripts/virtual-serial/target/release/virtual-serial \
+    -baud 115200 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
 
 # Terminal 2 — receive into the current directory
 rb < /tmp/baudrun-b > /tmp/baudrun-b
@@ -84,7 +104,7 @@ For XMODEM variants, swap `rb` for `rx` (XMODEM checksum), `rx -c`
 ### Paste safety under realistic pacing
 
 ```sh
-go run ./scripts/virtual-serial -baud 9600
+./scripts/virtual-serial/target/release/virtual-serial -baud 9600
 cat < /dev/ttys008   # or whatever endpoint B printed
 ```
 
@@ -105,14 +125,15 @@ the session transparently.
 
 ## Accuracy caveats
 
-- `time.Sleep` on stock OS schedulers is accurate to ~100µs on macOS
-  and ~1ms on Linux without PREEMPT_RT. At 9600 baud (~1ms per byte)
-  the pacing is solid; at 115200 (~87µs per byte) it's a coarse
+- `thread::sleep` on stock OS schedulers is accurate to ~100µs on
+  macOS and ~1ms on Linux without PREEMPT_RT. At 9600 baud (~1ms per
+  byte) the pacing is solid; at 115200 (~87µs per byte) it's a coarse
   approximation. Fine for dev-loop testing, not fine for timing-
   critical protocol conformance work.
 - Ptys don't model framing errors, parity errors, control lines
   (DTR/RTS), or Break signaling. For those you still need real
   hardware.
 - Both directions share one process; under heavy concurrent traffic
-  Go's goroutine scheduler may add a handful of microseconds of
-  skew. Irrelevant for anything but exotic latency measurement.
+  the OS scheduler may add a handful of microseconds of skew across
+  the two throttle threads. Irrelevant for anything but exotic latency
+  measurement.

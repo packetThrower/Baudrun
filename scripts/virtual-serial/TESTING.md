@@ -17,9 +17,15 @@ and swap `/tmp/baudrun-*` for the paired COM paths throughout.
 
 | Tool | What it's for | Install (macOS) | Install (Debian/Ubuntu) |
 |---|---|---|---|
-| `virtual-serial` | Bridges two pty endpoints with baud-rate pacing (this repo) | `go run ./scripts/virtual-serial …` | Same |
+| `virtual-serial` | Bridges two pty endpoints with baud-rate pacing (this repo) | `(cd scripts/virtual-serial && cargo build --release)` | Same |
 | `lrzsz` | `rb` / `rx` receivers for YMODEM / XMODEM | `brew install lrzsz` | `sudo apt install lrzsz` |
 | `xxd`, `od`, `cat`, `cmp`, `diff` | Byte inspection + file comparison | Ships with macOS | Ships with every Unix |
+
+The Rust build produces a self-contained binary at
+`scripts/virtual-serial/target/release/virtual-serial`. Every
+invocation below uses that binary directly — building once and then
+running the binary is much faster than `cargo run`, which rechecks the
+build graph on every launch.
 
 ### Baudrun profile pointing at the virtual port
 
@@ -87,7 +93,8 @@ Open them all at the start, keep them visible.
 At the repo root, leave this running for the whole session:
 
 ```sh
-go run ./scripts/virtual-serial -baud 9600 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
+./scripts/virtual-serial/target/release/virtual-serial \
+    -baud 9600 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
 ```
 
 You should see:
@@ -217,7 +224,8 @@ Bump the bridge baud rate for file tests so they don't crawl:
 
 ```sh
 # Ctrl-C the running bridge, then:
-go run ./scripts/virtual-serial -baud 115200 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
+./scripts/virtual-serial/target/release/virtual-serial \
+    -baud 115200 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
 ```
 
 Also update the Baudrun profile's `baudRate` to `115200` (edit the
@@ -364,7 +372,8 @@ Baudrun **Settings → Terminal → Scrollback** = `1,000 lines`.
 Restart the bridge at a fast rate so the flood doesn't take forever:
 
 ```sh
-go run ./scripts/virtual-serial -baud 115200 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
+./scripts/virtual-serial/target/release/virtual-serial \
+    -baud 115200 -link-a /tmp/baudrun-a -link-b /tmp/baudrun-b
 ```
 
 Connect the virtual profile in Baudrun.
@@ -443,7 +452,7 @@ dropdown without being silently rounded to a preset.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `rb` / `rx` hangs at startup, no data | Baudrun never pressed Send, or profile isn't connected | Check Baudrun's session status; kill receiver with Ctrl-C and retry after connecting |
-| Bytes arrive line-buffered in `cat` (only on Enter) | `virtual-serial` build from before the raw-mode fix | Ctrl-C the bridge and rerun `go run ./scripts/virtual-serial …` (`go run` rebuilds each invocation) |
+| Bytes arrive line-buffered in `cat` (only on Enter) | `virtual-serial` build from before the raw-mode fix | Rebuild the binary (`cd scripts/virtual-serial && cargo build --release`), Ctrl-C the bridge, and rerun the freshly built binary |
 | Symlinks missing in `/tmp/` | Bridge process exited | `ps aux \| grep virtual-serial` to check, rerun if dead |
 | Baudrun: `port busy` or `resource busy` on Connect | Two Baudrun instances sharing the same pty slave, or a leaked child from a previous aborted test | Close Baudrun, kill bridge (`pkill -f virtual-serial`), restart both |
 | Transfer succeeds but `diff` reports differences on XMODEM | Forgetting the trailing-pad caveat | Use `cmp -n $(wc -c < src)` (see T7) |
