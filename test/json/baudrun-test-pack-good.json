@@ -1,0 +1,10 @@
+{
+  "id": "import-test-good",
+  "name": "Import Test (good)",
+  "description": "Throwaway pack to confirm Settings → Highlighting import succeeds.",
+  "rules": [
+    { "pattern": "\\bOK\\b",    "color": "green",  "group": "ok"   },
+    { "pattern": "\\bFAIL\\b",  "color": "red",    "group": "fail" },
+    { "pattern": "\\bWARN\\b",  "color": "yellow", "group": "warn" }
+  ]
+}

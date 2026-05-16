@@ -1,0 +1,7 @@
+{
+  "id": "cisco-ios",
+  "name": "Collides with bundled",
+  "rules": [
+    { "pattern": "x", "color": "red" }
+  ]
+}

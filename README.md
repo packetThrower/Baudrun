@@ -84,11 +84,11 @@ Sample JSON for authoring your own skins, themes, and highlight packs is on the
   Juniper Junos, Aruba AOS-CX, Arista EOS, and MikroTik RouterOS, plus a
   vendor-neutral default. Write your own and test them against real captures
   in the [rule playground](https://packetthrower.github.io/Baudrun/playground.html).
-- **14 terminal themes, 15 app skins.** Themes include Dracula, Solarized,
-  Gruvbox, Nord, OneDark, and a Colorblind Safe palette built for red-green
-  vision deficiency. Skins include macOS 26 (Liquid Glass), Windows 11, GNOME,
-  KDE, CRT, Cyberpunk, Blueprint, E-Ink, and High Contrast. Skins and themes
-  are chosen independently.
+- **15 terminal themes, 16 app skins.** Themes include Dracula, Solarized,
+  Gruvbox, Nord, OneDark, Tokyo Night, and a Colorblind Safe palette built
+  for red-green vision deficiency. Skins include macOS 26 (Liquid Glass),
+  Windows 11, GNOME, KDE, CRT, Cyberpunk, Blueprint, E-Ink, High Contrast,
+  Foundry, and Tokyo Night. Skins and themes are chosen independently.
 - **Accessibility.** Baudrun honours the OS reduce-motion setting, supports
   keyboard zoom, and keeps every action reachable from the keyboard through
   customisable shortcuts. A High Contrast skin and a Colorblind Safe theme
@@ -185,12 +185,17 @@ Baudrun/
 ├── resources/                # bundled at compile time
 │   ├── Info.plist            # macOS bundle metadata
 │   ├── icons/                # .icns / .ico / .png set
-│   ├── builtin_skins.json    # 15 built-in app skins
-│   ├── builtin_themes.json   # 14 built-in terminal themes
+│   ├── builtin_skins.json    # 16 built-in app skins
+│   ├── builtin_themes.json   # 15 built-in terminal themes
 │   └── highlight/            # bundled vendor rule packs
 ├── build/                    # icon source + Windows installer assets
 ├── packaging/                # Linux udev rule + .desktop file + Arch PKGBUILD
-├── scripts/virtual-serial/   # Go test rig for XMODEM/YMODEM smoke tests
+├── scripts/                  # dev tools (each its own Cargo workspace)
+│   ├── virtual-serial/       # baud-paced virtual pty pair for testing
+│   └── transfer-tests/       # headless harness for XMODEM / YMODEM / hex
+├── test/                     # tracked fixtures for the test harness
+│   ├── transfers/            # deterministic binary + hex payloads
+│   └── json/                 # JSON packs for Settings → Import smoke tests
 ├── docs-next/                # Astro/Starlight docs site source
 │   └── public/examples/      # sample skin / theme / highlight-pack JSON
 └── .github/workflows/        # CI + release + docs deploy
@@ -202,6 +207,65 @@ macOS, Windows, and Linux on every push. Release
 `.AppImage` / `.pkg.tar.zst` bundles via `cargo-packager` on every tag and
 attaches them to the GitHub Releases page. The docs workflow (`docs.yml`)
 deploys the Astro site to GitHub Pages on changes under `docs-next/`.
+
+## Testing
+
+Two complementary layers.
+
+**Unit tests** (`cargo test`) cover pure-data invariants — JSON
+round-trips, parser edge cases, protocol checksum / CRC, the
+hex-input validator, the highlight runtime. Fast, no I/O, run on
+every CI push.
+
+**Wire-level transfer tests** drive Baudrun's actual XMODEM /
+YMODEM / Send-Hex code paths against a baud-paced virtual pty
+pair, then byte-diff what arrives at the other end against
+deterministic fixtures. See
+[`scripts/transfer-tests/`](scripts/transfer-tests/) for the
+harness and [`scripts/virtual-serial/TESTING.md`](scripts/virtual-serial/TESTING.md)
+for the manual playbook the same fixtures back. Unix-only — pty
+primitives don't exist on Windows.
+
+```sh
+# one-time setup
+(cd scripts/virtual-serial  && cargo build --release)
+(cd scripts/transfer-tests  && cargo build --release)
+
+# run all 11 cases (~144 s wall) or pass --quick to skip T9 (~18 s)
+./scripts/transfer-tests/target/release/transfer-tests
+```
+
+Last verified **2026-05-15** on macOS arm64 (Apple Silicon) against
+virtual-serial at the throttled baud rates shown:
+
+| Test | What | Baud | Wall | Result |
+|---|---|---:|---:|:---:|
+| T1 | hex ASCII (`Hello`) | 9 600 | 0.01 s | ok |
+| T3 | hex binary / non-printable (`00 01 02 ff fe 7f`) | 9 600 | 0.01 s | ok |
+| T5 | hex 1 KiB random | 9 600 | 1.35 s | ok |
+| T11 | YMODEM 512 B over slow link | 9 600 | 5.92 s | ok |
+| T6 | YMODEM 4 KiB | 115 200 | 3.69 s | ok |
+| T9 | YMODEM 1 MiB | 115 200 | 126.00 s | ok |
+| T7c | XMODEM classic (128 B / checksum) | 115 200 | 1.56 s | ok |
+| T7C | XMODEM-CRC (128 B / CRC-16) | 115 200 | 1.56 s | ok |
+| T7k | XMODEM-1K (1024 B / CRC-16) | 115 200 | 1.55 s | ok |
+| T8 | XMODEM single-block (SUB padding) | 115 200 | 1.08 s | ok |
+| T10 | YMODEM cancel mid-transfer | 115 200 | 1.18 s | ok |
+
+**11 / 11 passed, 143.9 s wall.** T9 dominates the run time; the
+other ten cases together finish in under 18 seconds. Each test
+maps to a section in
+[TESTING.md](scripts/virtual-serial/TESTING.md) — the harness
+exists so the same playbook can be run unattended.
+
+The harness lifts [`src/data/transfer.rs`](src/data/transfer.rs)
+verbatim via `#[path]`, so it exercises the same XMODEM / YMODEM
+state machines Baudrun ships — protocol-level regressions surface
+at the next `cargo build` of the harness without any manual sync
+step. See
+[scripts/transfer-tests/README.md](scripts/transfer-tests/README.md)
+for the full design and flag reference, and
+[`test/transfers/`](test/transfers/) for the deterministic payload set.
 
 ## License
 

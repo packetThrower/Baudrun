@@ -37,10 +37,10 @@ DESIGN.json
 PRODUCT.md
 OPENSOURCE_PREP.md
 
-# Local scratch / fixture dir for manual JSON import tests
-# (highlight packs, skins, …). Kept out of the repo since the
-# contents are throwaway and the schema lives in docs/examples/.
-/test/
+# `/test/` is tracked — holds deterministic transfer-test fixtures
+# plus the JSON pack/skin fixtures used for Settings → Import smoke
+# tests. See test/README.md. (The `.DS_Store` files under test/ are
+# already caught by the global `.DS_Store` rule above.)
 
 # Logs & temp
 *.log

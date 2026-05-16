@@ -139,6 +139,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Accessibility', slug: 'reference/accessibility' },
 						{ label: 'Requirements', slug: 'reference/requirements' },
+						{ label: 'Testing', slug: 'reference/testing' },
 					],
 				},
 				{ label: 'Changelog', slug: 'changelog' },
