@@ -50,6 +50,7 @@ Deleting a user theme from Settings also removes its file.
 | `synthwave`       | Synthwave             | **Cyberpunk** skin         |
 | `brogrammer`      | Brogrammer            | any dark skin              |
 | `molten`          | Molten                | **Foundry** skin           |
+| `tokyo-night`     | Tokyo Night           | **Tokyo Night** skin       |
 
 **Colorblind Safe** uses Bang Wong's palette
 ([Nature Methods, 2011](https://www.nature.com/articles/nmeth.1618)).
@@ -72,6 +73,16 @@ warm background. The 16 slots stay semantically readable (red is
 still red, green still green) since network gear colors output by
 meaning. Its background matches the Foundry skin's `--bg-terminal`,
 so the viewport blends into the chrome.
+
+**Tokyo Night** is the bit-exact canonical Tokyo Night Night
+palette — same hex values [folke/tokyonight.nvim](https://github.com/folke/tokyonight.nvim),
+[enkia/tokyo-night-vscode-theme](https://github.com/enkia/tokyo-night-vscode-theme),
+and every alacritty/kitty/WezTerm port ship. Deep `#1a1b26`
+background, soft `#c0caf5` foreground, blue `#7aa2f7` /
+cyan `#7dcfff` / magenta `#bb9af7` accents. Pairs with the
+**Tokyo Night** skin (whose `--bg-terminal` matches the theme's
+background, so the viewport blends into the chrome the same way
+Foundry / Molten do).
 
 ## JSON schema
 

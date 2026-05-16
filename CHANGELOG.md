@@ -15,6 +15,20 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Added
+
+- **Tokyo Night skin and theme.** The well-known navy-and-blue
+  palette in both pieces: a floating-card chrome with the canonical
+  Tokyo Night Night background (`#1a1b26`), soft blue/cyan
+  accents, and a subtle shell-bg gradient that picks up macOS-26's
+  glassy panel feel without needing actual backdrop blur. The
+  matching terminal theme ships the 16-slot ANSI palette every
+  Tokyo Night port uses (folke/tokyonight.nvim,
+  enkia/tokyo-night-vscode-theme, alacritty, kitty, …). Light mode
+  is the canonical Tokyo Night Day variant (cool paper-blue
+  `#e1e2e7`, blue ink `#3760bf`), active when the system
+  Appearance is light. 16th built-in skin, 15th built-in theme.
+
 ## [0.10.0] — 2026-05-14
 
 ### Added

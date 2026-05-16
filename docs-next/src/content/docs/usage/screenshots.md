@@ -63,7 +63,7 @@ full reference on every flag.
 
 ## Built-in skins
 
-Baudrun ships with 15 skins spanning modern OSes, retro OSes,
+Baudrun ships with 16 skins spanning modern OSes, retro OSes,
 aesthetic styles, and accessibility. Skins swap the app chrome
 (colors, window styling, font choices) independently of the terminal
 theme; mix them freely. See [Skins](/Baudrun/authoring/skins/) for
