@@ -684,21 +684,6 @@ landed in commit TODO; the items below are the remaining feature work.
       `cx.background_executor().timer(Duration::from_secs(10))`.
       Medium complexity, well-contained.
 
-- [ ] **Live DTR/RTS toggle pills in the session header.** The
-      profile JSON's `dtr_on_connect` / `rts_on_connect` policies are
-      already wired and `serial_io::apply_dtr` /
-      [serial_io.rs:244](src/serial_io.rs:244) / `apply_rts` exist —
-      what's missing is the runtime toggle UI. Tauri had a pair of
-      pills in the session header that read/wrote the line state
-      live; clicks called the backend toggle and surfaced any
-      error via the footer. Implementation: two state-tracking
-      bools on AppView, two clickable pills in the session header
-      next to the connection-status pill, calls into a new
-      `Session::toggle_dtr()` / `toggle_rts()` on the serial pump
-      that wrap `apply_dtr` / `apply_rts` mid-session. `docs-next/`
-      profiles page line 124 already promises this feature, so this
-      is also a doc-vs-reality fix.
-
 - [ ] **In-app auto-installer with progress.** Tauri shipped a
       footer `update-toast` pill with **Install / Notes / Dismiss**
       buttons; clicking Install downloaded the new build, surfaced
