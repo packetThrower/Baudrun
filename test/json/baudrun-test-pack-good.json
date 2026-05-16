@@ -1,10 +1,11 @@
 {
   "id": "import-test-good",
   "name": "Import Test (good)",
-  "description": "Throwaway pack to confirm Settings → Highlighting import succeeds.",
+  "description": "Throwaway pack to confirm Settings → Highlighting import succeeds. Every optional field is set so the fixture also serves as an import-time schema spot-check — id, name, description, source, and rules (with the ignoreCase + group optionals exercised on at least one rule).",
+  "source": "user",
   "rules": [
-    { "pattern": "\\bOK\\b",    "color": "green",  "group": "ok"   },
-    { "pattern": "\\bFAIL\\b",  "color": "red",    "group": "fail" },
-    { "pattern": "\\bWARN\\b",  "color": "yellow", "group": "warn" }
+    { "pattern": "\\bOK\\b",   "color": "green",  "group": "ok"   },
+    { "pattern": "\\bFAIL\\b", "color": "red",    "group": "fail" },
+    { "pattern": "\\bWARN\\b", "color": "yellow", "group": "warn", "ignoreCase": true }
   ]
 }

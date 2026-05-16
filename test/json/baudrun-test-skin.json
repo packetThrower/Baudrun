@@ -2,7 +2,7 @@
   "id": "import-test",
   "name": "Import Test (vivid teal)",
   "source": "user",
-  "description": "Throwaway skin to confirm Settings → Appearance → Installed Skins import works. High-contrast teal accent against a near-black chrome so the trash-on-row + delete-then-reset-to-baudrun behaviour is obvious.",
+  "description": "Throwaway skin to confirm Settings → Appearance → Installed Skins import works. High-contrast teal accent against a near-black chrome so the trash-on-row + delete-then-reset-to-baudrun behaviour is obvious. supportsLight is false but darkVars is populated so the fixture also exercises the dark-mode override map (vars is the base; darkVars overlays it when the system Appearance is dark).",
   "supportsLight": false,
   "vars": {
     "--accent": "#00d9c8",
@@ -30,5 +30,10 @@
     "--radius-lg": "10px",
     "--radius-md": "6px",
     "--radius-sm": "4px"
-  }
+  },
+  "darkVars": {
+    "--bg-main": "#0c1014",
+    "--bg-window": "#070a0c"
+  },
+  "lightVars": {}
 }

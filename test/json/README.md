@@ -12,10 +12,15 @@ this directory is just the test corpus.
 
 | File | What it tests |
 |---|---|
-| [`baudrun-test-pack-good.json`](baudrun-test-pack-good.json) | Well-formed highlight rule pack with three rules. Import should succeed silently and the pack should appear in **Settings → Highlighting → Imported packs**. |
-| [`baudrun-test-pack-bad-id.json`](baudrun-test-pack-bad-id.json) | Valid JSON, but the `id` field collides with a built-in pack. Import should reject with a clear "id already exists" error and the built-in pack must not be overwritten. |
-| [`baudrun-test-pack-bad-json.json`](baudrun-test-pack-bad-json.json) | Malformed JSON (intentional syntax error). Import should reject with a parse error pointing at the line number, no partial state written to disk. |
-| [`baudrun-test-skin.json`](baudrun-test-skin.json) | Well-formed app skin pack. Import should succeed and the skin should appear in **Settings → Appearance → Imported skins**, immediately selectable. |
+| [`baudrun-test-pack-good.json`](baudrun-test-pack-good.json) | Well-formed highlight rule pack. Exercises every field a pack can have — `id`, `name`, `description`, `source`, plus rules with `pattern`, `color`, `group`, and `ignoreCase` (the last on at least one rule so the optional path is hit). Import should succeed silently and the pack appears under **Settings → Highlighting → Imported packs**. |
+| [`baudrun-test-pack-bad-id.json`](baudrun-test-pack-bad-id.json) | Minimal valid JSON, but the `id` collides with a bundled pack. Kept deliberately bare-bones — its job is the collision branch, not field coverage. Import should reject with a clear "id already exists" error; the built-in pack must not be overwritten. |
+| [`baudrun-test-pack-bad-json.json`](baudrun-test-pack-bad-json.json) | Malformed JSON (intentional syntax error). Import should reject with a parse error pointing at the line number; no partial state written to disk. **Do not "fix" the syntax** — the file's whole purpose is to be broken. |
+| [`baudrun-test-skin.json`](baudrun-test-skin.json) | Well-formed app skin. Exercises every field — `vars` (the base CSS-var map), `darkVars` (overlay applied in dark mode), `lightVars` (empty here because `supportsLight: false`), plus `id` / `name` / `source` / `description` / `supportsLight`. Import should succeed and the skin appears under **Settings → Appearance → Imported skins**. |
+
+The two "good" fixtures (`pack-good`, `skin`) double as quick schema
+spot-checks — if a future refactor adds a non-optional field to
+either struct, the import should fail loudly on these on the next
+run.
 
 ## Manual test recipe
 

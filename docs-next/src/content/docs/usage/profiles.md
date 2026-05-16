@@ -88,11 +88,30 @@ Network gear is overwhelmingly 9600 8N1.
 | `lineEnding`   | string  | `"cr"`, `"lf"`, `"crlf"`         | `"cr"`  | Byte(s) the Enter key sends. Most network gear wants CR; Linux consoles want LF; legacy/Windows sometimes CRLF. |
 | `localEcho`    | boolean | `true` / `false`                 | `false` | Echo typed characters locally. Enable when the device doesn't echo.                           |
 | `highlight`    | boolean | `true` / `false`                 | `true`  | Run the line-buffered regex colorizer over incoming text.                                     |
+| `enabledHighlightPresets` | string array \| `null` | any subset of pack ids (`"baudrun-default"`, `"cisco-ios"`, `"junos"`, `"aruba-cx"`, `"arista-eos"`, `"mikrotik-routeros"`, `"user"`) | `null` | Per-profile highlight-pack subset. `null` (or absent) inherits the global enabled list from Settings. An empty array means "no highlighting at all" for this profile even when `highlight: true`. Only consulted when `highlight` is `true`. |
 | `backspaceKey` | string  | `"del"`, `"bs"`                  | `"del"` | What the Backspace key sends. DEL (0x7f) matches VT100/xterm; BS (0x08) for some older Cisco/Foundry gear. Wrong setting surfaces as `^H` echoed on screen. |
 | `hexView`      | boolean | `true` / `false`                 | `false` | Render incoming bytes as a hex dump (16 per line, ASCII sidebar). Binary protocols, firmware loaders. |
 | `timestamps`   | boolean | `true` / `false`                 | `false` | Prefix each line with `[HH:MM:SS.mmm]`.                                                       |
 | `lineNumbers`  | boolean | `true` / `false`                 | `false` | Prefix each line with a session-local counter. Resets to 1 on every reconnect.                |
 | `themeId`      | string  | any theme ID or `""`             | `""`    | Per-profile theme override. Empty = use the global default theme from Settings.               |
+
+### Paste safety
+
+UARTs on the receiving end of a paste are easy to overrun — even
+modest multi-line blobs can outpace a switch's input buffer at 9600
+baud. Two complementary defences, both on by default.
+
+| Field          | Type           | Default | Purpose                                                                                       |
+| -------------- | -------------- | ------- | --------------------------------------------------------------------------------------------- |
+| `pasteWarnMultiline` | boolean   | `true`  | Show a confirmation dialog before pasting anything containing a newline. Catches the "I meant to paste one line" copy-paste mistake. |
+| `pasteSlow`    | boolean        | `true`  | Pace pasted bytes one at a time with `pasteCharDelayMs` between each, instead of writing the whole buffer at once. |
+| `pasteCharDelayMs` | int \| `null` | `10`    | Per-byte delay in milliseconds when `pasteSlow` is on. 10 ms = 100 bytes/s = effectively 1000 baud — slow enough for any device's input buffer to drain between bytes. Bump higher (20–50 ms) for known-fragile UARTs, or lower (1–5 ms) when you've confirmed the target keeps up. Ignored when `pasteSlow` is `false`. |
+
+The **Send Hex…** path doesn't use the slow-paste throttle — hex
+sends write the whole parsed byte vector through in one go, paced
+only by what the UART itself can absorb. If your target can't keep
+up with that, paste the equivalent bytes from the keyboard buffer
+instead so they go through `pasteSlow` / `pasteCharDelayMs`.
 
 ### Control lines (DTR/RTS)
 
@@ -138,6 +157,13 @@ lines mid-session regardless of the connect-time policy.
 | `updatedAt` | RFC3339 string   | Managed by the app. Bumped on every UI edit.                              |
 
 ## Examples
+
+For a complete reference with **every field** set to a representative
+value, see
+[`docs-next/public/examples/profile.example.json`](https://github.com/packetThrower/Baudrun/blob/main/docs-next/public/examples/profile.example.json).
+The task-focused snippets below omit fields they don't need to make
+their point — the app fills defaults from the table above for
+anything missing.
 
 ### Standard network switch (Cisco, Aruba, etc.)
 
@@ -198,7 +224,8 @@ Deassert DTR on connect so the port open doesn't reset the board:
 ### Modbus RTU debug
 
 Hex view for binary protocol inspection, RTS/CTS for half-duplex
-adapters, auto-reconnect for flaky USB:
+adapters, auto-reconnect for flaky USB, slow-paste tuned wider
+than default since small embedded targets often need it:
 
 ```json
 {
@@ -212,7 +239,9 @@ adapters, auto-reconnect for flaky USB:
   "lineEnding": "cr",
   "hexView": true,
   "timestamps": true,
-  "autoReconnect": true
+  "autoReconnect": true,
+  "pasteSlow": true,
+  "pasteCharDelayMs": 25
 }
 ```
 
@@ -281,8 +310,13 @@ profiles = [
         "rtsOnDisconnect": "default",
         "hexView": False,
         "timestamps": False,
+        "lineNumbers": False,
         "logEnabled": False,
-        "autoReconnect": False,
+        "autoReconnect": True,
+        "pasteWarnMultiline": True,
+        "pasteSlow": True,
+        "pasteCharDelayMs": 10,
+        "enabledHighlightPresets": None,
         "createdAt": now,
         "updatedAt": now,
     }
