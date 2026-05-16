@@ -4245,8 +4245,18 @@ where
 /// the live terminal viewport.
 fn suspended_banner(
     s: SkinTokens,
-    cx: &mut Context<AppView>,
+    _cx: &mut Context<AppView>,
 ) -> impl IntoElement {
+    // Banner is a passive reminder — no Resume button. The two
+    // ways to resume are still wired:
+    //   * click the connected profile row in the sidebar
+    //     (handled by `select_profile` at the suspended branch
+    //     around line 960).
+    //   * close the editor by other means (Escape, ⋯ → Discard).
+    // The footer pill the suspend action fires
+    // ("Session kept alive in background") gives the initial
+    // confirmation; this banner is the steady-state reminder
+    // for as long as the editor is on screen.
     div()
         .w_full()
         .px_4()
@@ -4255,34 +4265,19 @@ fn suspended_banner(
         .border_b_1()
         .border_color(rgba(s.border_subtle))
         .flex()
-        .flex_row()
-        .items_center()
-        .justify_between()
+        .flex_col()
         .child(
             div()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .text_size(px(12.0))
-                        .text_color(rgba(s.fg_primary))
-                        .child("Session suspended"),
-                )
-                .child(
-                    div()
-                        .text_size(px(11.0))
-                        .text_color(rgba(s.fg_secondary))
-                        .child(
-                            "Port still open. Bytes keep flowing into scrollback.",
-                        ),
-                ),
+                .text_size(px(12.0))
+                .text_color(rgba(s.fg_primary))
+                .child("Session suspended"),
         )
-        .child(primary_button(s, "Resume").on_mouse_up(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                this.resume_session(window, cx);
-            }),
-        ))
+        .child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgba(s.fg_secondary))
+                .child("Port still open. Bytes keep flowing into scrollback."),
+        )
 }
 
 /// Right-pane placeholder shown when the session is suspended and
