@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-16
+
 ### Added
 
 - **Undo a profile delete within ~5 seconds.** The Delete button in
