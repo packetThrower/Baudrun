@@ -1,0 +1,45 @@
+[workspace]
+# Standalone workspace — keeps this dev tool's build graph completely
+# isolated from the main Baudrun crate so contributors don't pay the
+# gpui / wgpu / alacritty_terminal compile cost for a harness whose
+# only job is to drive Baudrun's send paths against the virtual-serial
+# bridge. Pattern matches scripts/virtual-serial/.
+
+[package]
+name = "transfer-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Headless test harness for Baudrun's hex / XMODEM / YMODEM send paths"
+license = "GPL-3.0-or-later"
+
+[[bin]]
+name = "transfer-tests"
+path = "src/main.rs"
+
+[dependencies]
+# Required by the lifted src/data/transfer.rs — TransferError derives
+# `thiserror::Error`. Version-pinned to match the main crate so the
+# #[path]-included file compiles against the same trait bounds it was
+# tested against.
+thiserror = "2"
+
+# Clean SIGINT during a test run: lets us tear down the bridge
+# subprocess and any in-flight rb / rx receiver before exiting so
+# the next run doesn't trip over zombie pty holders or stale
+# /tmp/baudrun-* symlinks.
+ctrlc = "3"
+
+# `libc::poll` for the hex tests' bounded read loop. The protocol
+# tests (XMODEM / YMODEM) reuse the canonical `ChannelReader` from
+# the lifted transfer.rs — that's the same forwarder-thread + mpsc
+# wiring production Baudrun uses, so the harness exercises the real
+# reader path. The hex tests can't use that path: a leaked
+# forwarder from the previous hex test would steal the first byte
+# of the next test's stream from the shared pty slave fd. Reading
+# directly with poll() in the main thread keeps each test's fd
+# lifetime tied to its function scope.
+libc = "0.2"
+
+# No serialport-rs: the bridge endpoints are pty fds, so plain
+# `std::fs::File` opens them just fine.

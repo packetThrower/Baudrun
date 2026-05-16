@@ -9,6 +9,11 @@
 # than under /target/, so it needs its own ignore.
 scripts/virtual-serial/target/
 
+# Same story for the transfer-tests harness — standalone workspace
+# next to virtual-serial that drives Baudrun's send paths against
+# the bridge for end-to-end automation.
+scripts/transfer-tests/target/
+
 # macOS
 .DS_Store
 .AppleDouble
