@@ -257,6 +257,17 @@ pub struct AppView {
     /// disconnecting. Cleared on disconnect / migration / explicit
     /// resume. Mirrors `App.svelte::suspended` in the Tauri build.
     suspended: bool,
+    /// Live mid-session DTR line state, driven by the session-
+    /// header pill. Seeded from the profile's `dtr_on_connect`
+    /// policy at connect, then mutated each time the user clicks
+    /// the pill. We track it in-process rather than reading back
+    /// from the serial port because serialport-rs only exposes the
+    /// inbound DSR / CTS lines (`read_data_set_ready`) — not our
+    /// own outbound DTR / RTS state. Meaningful only when
+    /// `connected_profile_id.is_some()`.
+    dtr_asserted: bool,
+    /// Live mid-session RTS line state — see `dtr_asserted`.
+    rts_asserted: bool,
 }
 
 /// In-flight profile form state. Created by `open_editor` (new) or
@@ -390,6 +401,7 @@ struct Editor {
 struct TransferIo {
     write_tx: flume::Sender<Vec<u8>>,
     break_tx: flume::Sender<std::time::Duration>,
+    control_tx: flume::Sender<serial_io::ControlSignal>,
     transfer_sink: std::sync::Arc<std::sync::Mutex<Option<TransferSink>>>,
 }
 
@@ -555,6 +567,12 @@ impl AppView {
             last_highlight_sig: None,
             editor: None,
             suspended: false,
+            // Default to "both asserted" — matches the OS / serialport-rs
+            // defaults on Unix and Windows. The connect_to path overrides
+            // these based on the profile's connect-time policies before
+            // any pill click can fire.
+            dtr_asserted: true,
+            rts_asserted: true,
         };
         this.apply_settings(&initial, cx);
         this
@@ -1121,6 +1139,7 @@ impl AppView {
         let transfer_write = channels.write_tx;
         let transfer_sink = channels.transfer_sink.clone();
         let break_tx = channels.break_tx;
+        let control_tx = channels.control_tx;
         let settings = ProfileSettings {
             line_ending: profile.line_ending.clone(),
             backspace_key: profile.backspace_key.clone(),
@@ -1227,8 +1246,25 @@ impl AppView {
         self.transfer_io = Some(TransferIo {
             write_tx: transfer_write,
             break_tx,
+            control_tx,
             transfer_sink,
         });
+        // Seed the live DTR/RTS state from the connect-time policy so
+        // the session-header pills come up showing whatever the open()
+        // path just applied. `LinePolicy::Default` leaves the OS default
+        // in place — on Unix that's both lines asserted; on Windows the
+        // serialport-rs default also asserts both. So `Default` and
+        // `Assert` are observationally the same at this point and we
+        // treat them identically; only an explicit `Deassert` flips
+        // the pill to the unfilled state.
+        self.dtr_asserted = !matches!(
+            serial_io::LinePolicy::from_str(&profile.dtr_on_connect),
+            serial_io::LinePolicy::Deassert,
+        );
+        self.rts_asserted = !matches!(
+            serial_io::LinePolicy::from_str(&profile.rts_on_connect),
+            serial_io::LinePolicy::Deassert,
+        );
         // Distinguish initial connect ("Connected to X @ Y") from a
         // recovery after the auto-reconnect window ("Reconnected") —
         // the user knows what port/baud they started on and just
@@ -2751,6 +2787,51 @@ impl AppView {
         cx.notify();
     }
 
+    /// Flip the live DTR line and record the new state. Fires the
+    /// signal through the write thread's out-of-band channel; the
+    /// actual `write_data_terminal_ready` call happens on the write
+    /// thread the next time it wakes (worst case ~50ms later).
+    pub(crate) fn toggle_dtr(&mut self, cx: &mut Context<Self>) {
+        let Some(io) = self.transfer_io.as_ref() else { return };
+        let next = !self.dtr_asserted;
+        if io
+            .control_tx
+            .send(serial_io::ControlSignal::Dtr(next))
+            .is_err()
+        {
+            self.log_event("DTR toggle failed: session closed", LogSeverity::Error, cx);
+            return;
+        }
+        self.dtr_asserted = next;
+        self.log_event(
+            if next { "DTR asserted" } else { "DTR deasserted" },
+            LogSeverity::Info,
+            cx,
+        );
+        cx.notify();
+    }
+
+    /// Flip the live RTS line. Mirror of `toggle_dtr`.
+    pub(crate) fn toggle_rts(&mut self, cx: &mut Context<Self>) {
+        let Some(io) = self.transfer_io.as_ref() else { return };
+        let next = !self.rts_asserted;
+        if io
+            .control_tx
+            .send(serial_io::ControlSignal::Rts(next))
+            .is_err()
+        {
+            self.log_event("RTS toggle failed: session closed", LogSeverity::Error, cx);
+            return;
+        }
+        self.rts_asserted = next;
+        self.log_event(
+            if next { "RTS asserted" } else { "RTS deasserted" },
+            LogSeverity::Info,
+            cx,
+        );
+        cx.notify();
+    }
+
     // ----- Shortcut-action handlers ---------------------------------
     // One method per `settings_view::SHORTCUT_ACTIONS` id that
     // doesn't already have a 1:1 existing entry point. The menubar
@@ -3588,6 +3669,8 @@ impl Render for AppView {
                             profile,
                             reconnecting,
                             self.session_overflow_open,
+                            self.dtr_asserted,
+                            self.rts_asserted,
                             cx,
                         ))
                         .child(div().flex_1().min_h_0().child(terminal))
@@ -4465,6 +4548,8 @@ fn session_header(
     profile: Profile,
     reconnecting: bool,
     overflow_open: bool,
+    dtr_asserted: bool,
+    rts_asserted: bool,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let parity_letter = match profile.parity.as_str() {
@@ -4571,6 +4656,44 @@ fn session_header(
                 .flex_row()
                 .gap_2()
                 .child(session_overflow_button(s, overflow_open, cx))
+                .child(
+                    div()
+                        .id("session-dtr")
+                        .child(line_pill(s, "DTR", dtr_asserted))
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(SharedString::from(if dtr_asserted {
+                                "DTR is asserted — click to deassert"
+                            } else {
+                                "DTR is deasserted — click to assert"
+                            }))
+                            .build(window, cx)
+                        })
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                                this.toggle_dtr(cx);
+                            }),
+                        ),
+                )
+                .child(
+                    div()
+                        .id("session-rts")
+                        .child(line_pill(s, "RTS", rts_asserted))
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(SharedString::from(if rts_asserted {
+                                "RTS is asserted — click to deassert"
+                            } else {
+                                "RTS is deasserted — click to assert"
+                            }))
+                            .build(window, cx)
+                        })
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                                this.toggle_rts(cx);
+                            }),
+                        ),
+                )
                 .child(pill_button(s, "Clear", false).on_mouse_up(
                     MouseButton::Left,
                     cx.listener(|this, _: &MouseUpEvent, _window, cx| {
@@ -5447,6 +5570,42 @@ fn port_opts(keep_selected: &str) -> Vec<Opt> {
 /// red for destructive actions like Delete. Returns a bare `Div`
 /// so the call site can attach `.on_mouse_up` etc. — the helper
 /// just owns the visual styling.
+/// Toggle pill for the session header's mid-session DTR / RTS
+/// indicators. Visually a `pill_button` with a small status dot in
+/// front of the label — green (`--success`, same colour as the
+/// session-header connection dot at the left of the row) when the
+/// line is asserted, muted (`--fg-tertiary`) when it's deasserted.
+/// The pill background itself stays the same muted shape in both
+/// states so the eye reads the dot as the state, not the pill fill.
+/// Tooltip + click handler live on the wrapping div in
+/// `session_header` rather than here so the helper stays a pure
+/// styled child.
+fn line_pill(s: SkinTokens, label: &'static str, active: bool) -> gpui::Div {
+    let dot_color = if active { s.success } else { s.fg_tertiary };
+    let hover_bg = s.bg_input_hover;
+    div()
+        .px_3()
+        .py_1()
+        .bg(rgba(s.bg_input))
+        .text_color(rgba(s.fg_primary))
+        .text_size(px(13.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap_2()
+        .rounded_md()
+        .cursor_pointer()
+        .hover(move |st| st.bg(rgba(hover_bg)))
+        .child(
+            div()
+                .w(px(STATUS_DOT_PX))
+                .h(px(STATUS_DOT_PX))
+                .rounded_full()
+                .bg(rgba(dot_color)),
+        )
+        .child(label)
+}
+
 fn pill_button(s: SkinTokens, label: &'static str, danger: bool) -> gpui::Div {
     let fg = if danger { rgba(s.danger) } else { rgba(s.fg_primary) };
     let hover_bg = s.bg_input_hover;

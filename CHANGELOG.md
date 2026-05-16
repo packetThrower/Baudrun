@@ -17,6 +17,24 @@ final stable entry at tag time.
 
 ### Added
 
+- **Live DTR/RTS toggle pills in the session header.** Two pills
+  next to the `⋯` button on a connected session, each carrying a
+  small green dot when the line is asserted and a muted dot when
+  deasserted (matches the visual language of the connection-state
+  dot at the start of the row). Click to toggle mid-session — the
+  serial port's `write_data_terminal_ready` /
+  `write_request_to_send` fires on the next write-thread wake-up
+  (~50 ms worst case), and a footer pill confirms the new state
+  (`DTR asserted` / `DTR deasserted`). Initial state at connect
+  is seeded from the profile's `dtr_on_connect` / `rts_on_connect`
+  policies. Useful for RS-485 direction toggling, Arduino DTR-reset
+  triggering, and firmwares that key off a line transition.
+  The corresponding feature lived in the Tauri build but hadn't
+  been carried into the gpui rewrite — the
+  [usage/profiles](https://packetthrower.github.io/Baudrun/usage/profiles/)
+  page already documented "Live DTR/RTS toggle pills in the session
+  header" under DTR/RTS, so docs and reality are back in sync.
+
 - **Footer-pill confirmations for routine actions.** Operations
   that previously succeeded (or failed) silently now surface a
   short message in the footer status bar — auto-clearing after

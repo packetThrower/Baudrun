@@ -82,6 +82,11 @@ pub struct SerialChannels {
     /// for that long, then clear it. Used by the session header's
     /// "Send Break" menu item.
     pub break_tx: flume::Sender<Duration>,
+    /// Out-of-band signal channel for mid-session DTR/RTS toggles.
+    /// The session header's pills push `ControlSignal::Dtr(bool)` /
+    /// `Rts(bool)` here; the write thread polls at the top of each
+    /// iteration and applies via the serialport-rs writer.
+    pub control_tx: flume::Sender<ControlSignal>,
     /// Slot the read loop checks each iteration. When `Some(_)`,
     /// inbound bytes are funnelled to the sink instead of `read_rx`.
     /// Held in a `Mutex` so the gpui thread can swap it in/out while
@@ -237,6 +242,21 @@ pub struct LinePolicies {
     pub rts_on_disconnect: LinePolicy,
 }
 
+/// Mid-session modem-line toggle. Pushed onto the write thread's
+/// out-of-band channel by the session header's DTR/RTS pills; the
+/// write thread picks them up between byte batches and applies via
+/// `write_data_terminal_ready` / `write_request_to_send`. Connect-
+/// time and disconnect-time policies still come from `LinePolicies`
+/// — this is the live override path that fires when the user
+/// clicks the pill mid-session.
+#[derive(Debug, Clone, Copy)]
+pub enum ControlSignal {
+    /// Set DTR (Data Terminal Ready) to `true` (asserted) or `false`.
+    Dtr(bool),
+    /// Set RTS (Request To Send) to `true` (asserted) or `false`.
+    Rts(bool),
+}
+
 /// Apply a `LinePolicy` to the DTR line. `Default` is a no-op;
 /// errors propagate so the caller can decide whether to abort the
 /// open (currently we log and continue — a control-line refusal
@@ -294,6 +314,7 @@ pub fn open(
     let (read_tx, read_rx) = flume::unbounded::<Vec<u8>>();
     let (write_tx, write_rx) = flume::unbounded::<Vec<u8>>();
     let (break_tx, break_rx) = flume::unbounded::<Duration>();
+    let (control_tx, control_rx) = flume::unbounded::<ControlSignal>();
     let shutdown = Arc::new(AtomicBool::new(false));
     let transfer_sink: Arc<std::sync::Mutex<Option<TransferSink>>> =
         Arc::new(std::sync::Mutex::new(None));
@@ -311,7 +332,14 @@ pub fn open(
     let write_thread = std::thread::Builder::new()
         .name(write_label)
         .spawn(move || {
-            write_loop(write_port, write_rx, break_rx, policies, write_shutdown)
+            write_loop(
+                write_port,
+                write_rx,
+                break_rx,
+                control_rx,
+                policies,
+                write_shutdown,
+            )
         })
         .expect("spawn serial write thread");
 
@@ -319,6 +347,7 @@ pub fn open(
         read_rx,
         write_tx,
         break_tx,
+        control_tx,
         transfer_sink,
         disconnect: Disconnect {
             shutdown,
@@ -390,6 +419,7 @@ fn write_loop(
     mut port: Box<dyn serialport::SerialPort>,
     rx: flume::Receiver<Vec<u8>>,
     break_rx: flume::Receiver<Duration>,
+    control_rx: flume::Receiver<ControlSignal>,
     policies: LinePolicies,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -402,6 +432,22 @@ fn write_loop(
     loop {
         if shutdown.load(Ordering::Relaxed) {
             break;
+        }
+        // Out-of-band: pending DTR/RTS toggle from the session
+        // header's pills. Apply before checking break_rx and rx
+        // so the line state is current by the time the next byte
+        // batch goes out — useful for RS-485 direction toggling.
+        // Drain the channel in case the user clicked rapidly so we
+        // converge to the most recent state rather than playing
+        // back stale toggles.
+        while let Ok(signal) = control_rx.try_recv() {
+            let result = match signal {
+                ControlSignal::Dtr(level) => port.write_data_terminal_ready(level),
+                ControlSignal::Rts(level) => port.write_request_to_send(level),
+            };
+            if let Err(e) = result {
+                log::warn!("serial control signal {signal:?} failed: {e}");
+            }
         }
         // Out-of-band: pending break request. Cheap try_recv at the
         // top of each iteration means the break fires on the next
