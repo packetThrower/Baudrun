@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-15
+
 ### Added
 
 - **Tokyo Night skin and theme.** The well-known navy-and-blue
