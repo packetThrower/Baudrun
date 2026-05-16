@@ -28,12 +28,6 @@ final stable entry at tag time.
   that's been on skin / theme / highlight-pack deletes since
   v0.9.5.
 
-- **Skin change toast.** Picking a different skin from the
-  Settings → Appearance dropdown now surfaces a `Skin: NAME`
-  confirmation toast. The visual change is already instant —
-  this just calls out which preset you landed on, useful when
-  the dropdown rows are themselves unstyled and the names blur.
-
 - **Live DTR/RTS toggle pills in the session header.** Two pills
   next to the `⋯` button on a connected session, each carrying a
   small green dot when the line is asserted and a muted dot when

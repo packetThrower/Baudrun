@@ -234,28 +234,11 @@ impl SettingsView {
                         let mut next = this.settings.clone();
                         next.skin_id = id.clone();
                         this.commit(next, cx);
-                        // Confirmation toast — the visual change is
-                        // immediate (skin re-applies live), but
-                        // calling out the new skin name by toast
-                        // matches the Tauri build and lets the user
-                        // know which preset they just picked from
-                        // the unstyled dropdown row.
-                        let name = this
-                            .skins_store
-                            .get(id)
-                            .map(|s| s.name)
-                            .unwrap_or_else(|| id.clone());
-                        cx.spawn(async move |weak, cx_async| {
-                            let _ = weak.update_in(cx_async, |_, window, view_cx| {
-                                window.push_notification(
-                                    Notification::success(SharedString::from(format!(
-                                        "Skin: {name}"
-                                    ))),
-                                    view_cx,
-                                );
-                            });
-                        })
-                        .detach();
+                        // Intentionally no confirmation toast — the
+                        // skin re-applies live as the user clicks
+                        // through the dropdown, and the visual change
+                        // is its own confirmation. A toast on top would
+                        // be noisy. Tauri shipped one; we don't.
                     }
                 }
             },
