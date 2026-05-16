@@ -769,24 +769,94 @@ line-level streaming. Our regex engine is the right shape.
 
 ## Localization (i18n)
 
-- [ ] **UI translation infrastructure.** **[on request]** Pick a
-      gpui-friendly i18n approach post-migration (likely `fluent-rs`
-      or similar — svelte-i18n notes from the pre-migration plan no
-      longer apply). Extract every hardcoded string in the new
-      sidebar / settings / profile form / modals into a canonical
-      English locale file as the source of truth. Backend strings
-      either return error codes the UI translates, or pass through
-      a small Rust i18n helper.
-      - Ongoing tax: every PR has to extract its new strings; every
-        new feature ships untranslated until a translator catches
-        up. Worth doing once a real translator volunteers — until
-        then, English-only is fine for the network-engineer
-        audience.
-      - Phased path if/when this lands: ship the infrastructure
-        with English-only first; subsequent languages become
-        translator-only PRs adding `<lang>.ftl` (or equivalent).
-        Pluralization, RTL languages (Arabic, Hebrew), and locale-
-        specific number/date formatting are second-pass concerns.
-      - Settings → Language picker once at least one non-English
-        locale ships, persisted in the settings model. Falls back
-        to the OS locale when unset.
+**Status: deferred** until a non-English-speaking user actually
+files an issue asking for it. The network-engineer audience reads
+English manpages and CLI output all day, and the gear they're
+console-ing into doesn't speak French either — there's no clear
+demand signal yet. Notes below capture the survey from 2026-05-16
+so picking it up later doesn't require re-investigating.
+
+### Scope
+
+- **~180 user-facing strings** across `src/`, dominated by
+  `app_view.rs` (notifications + status pills) and
+  `settings_view.rs` (toasts + field labels + dropdown options).
+- ~40 of those use parameter substitution
+  (`"Connected to {} @ {}"`, `"Auto-reconnect to {port} gave up
+  after 15 attempts"`); the rest are static phrases.
+- Zero strings need complex pluralization — the only "N items"
+  shape is the existing `"Sent N bytes"` hex toast.
+- Small enough that one translator volunteer can extract a new
+  language in a 2–4 hour session.
+
+### Library choice: `rust-i18n` (TOML-backed)
+
+[**`rust-i18n`**](https://crates.io/crates/rust-i18n) wins on
+consistency: it's already what `gpui-component` uses internally for
+its calendar / dialog / pagination strings (see
+[`gpui-component/crates/ui/src/lib.rs:127-133`] for the public
+`set_locale()` / `locale()` entry points and
+[`gpui-component/crates/ui/locales/ui.yml`] for the bundled `en`,
+`zh-CN`, `zh-HK`, `it` translations). Calling `set_locale()` once
+at app startup affects both layers — Baudrun's strings AND the
+gpui-component widget chrome — without a second mechanism.
+
+Alternatives considered: `fluent-rs` (Mozilla Fluent — richer
+plural / gender / term-reference syntax, but heavier and not what
+the widget library uses); `gettext-rs` (industry standard with
+mature .po tooling like Poedit / Crowdin, but adds a runtime
+libintl dep that's overkill for ~180 strings). Both lose to
+`rust-i18n` on the consistency argument.
+
+### Phased path
+
+- [ ] **Phase A.1 (30 min, free win).** Just call
+      `gpui_component::set_locale(&...)` from `main()` reading from
+      a new `Settings::locale: String` field (`""` → use the OS
+      locale via `sys-locale`). Doesn't translate any Baudrun
+      strings; does pick up gpui-component's existing en / zh-CN /
+      zh-HK / it widget translations for users whose OS is set to
+      one of those. Reversible if we change our mind later.
+
+- [ ] **Phase A.2 (~6–8 hr, on demand).** Full infrastructure: add
+      `rust-i18n = "4"` to Cargo.toml; extract every Baudrun string
+      into `locales/en.toml` with hierarchical keys
+      (`notifications.connected_to`, `errors.port_in_use`,
+      `buttons.undo`, `editor.fields.port_name_label`); replace
+      string literals at call sites with `t!()` macro calls.
+      Strings that should NOT be translated, because they're stable
+      wire-format identifiers, not display text:
+      - Profile JSON field names (`port_name`, `baud_rate`,
+        `flow_control`, `parity`, `stop_bits`, `theme_id`,
+        `line_ending`, `dtr_on_connect`, …)
+      - Enum value strings (`"none"`, `"odd"`, `"even"`, `"cr"`,
+        `"lf"`, `"crlf"`, `"del"`, `"bs"`, `"default"`,
+        `"assert"`, `"deassert"`, `"rtscts"`, `"xonxoff"`)
+      - Built-in theme / skin / highlight-pack IDs
+        (`"baudrun-default"`, `"cisco-ios"`, `"baudrun"`, …)
+
+- [ ] **Phase B (translator-only PRs).** Once a translator
+      volunteers a language, they add `locales/<lang>.toml` and a
+      one-line dropdown entry in the Settings → Language picker.
+      No core code changes.
+
+- [ ] **Phase C (deferred indefinitely).** RTL layout flip for
+      Arabic / Hebrew — gpui doesn't auto-flip `flex_row` direction,
+      so every `flex_row` in the sidebar / session header / settings
+      would need conditional reversal. Cosmic-text already handles
+      bidirectional text shaping inside the terminal viewport, so
+      the work is purely UI layout. Defer until a real RTL request
+      arrives.
+
+### Non-goals
+
+- **Localising terminal content.** alacritty_terminal + cosmic-text
+  already render any Unicode the device emits (CJK, accents,
+  combining marks). i18n is only for the chrome around the
+  viewport.
+- **Per-locale number / date formatting** for baud rates and byte
+  counts. "9600 baud" reads the same in every language; commas
+  vs. periods in numbers are a cosmetic concern.
+- **Catalog hosting (Crowdin, Lokalise, etc.).** A single
+  hand-edited `.toml` per language is enough until we're shipping
+  more than 3 locales.
