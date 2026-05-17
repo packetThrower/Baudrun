@@ -6,167 +6,85 @@ authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
 edition = "2021"
 publish = false
 
-# Bin name = the .app's CFBundleExecutable (and the macOS dev-mode
-# dock tooltip / Cmd+Tab label / menu-bar app name for non-bundled
-# `cargo run`). Capitalised so the menu bar shows "Baudrun" rather
-# than the kebab-case package name when launched without a .app
-# wrapper. The Cargo package name stays kebab-case as is conventional.
+# Bin name shows in the macOS menu bar / Cmd+Tab / dock on unbundled
+# `cargo run`. Capitalised; the Cargo package name stays kebab-case.
 [[bin]]
 name = "Baudrun"
 path = "src/main.rs"
 
 [dependencies]
-# Zed's GPU-accelerated UI framework. Pinned to a specific
-# zed-industries/zed commit (the gpui crate is a workspace member
-# of that monorepo). Crates.io has a 0.2.2 of gpui from Feb 2026
-# but Zed's source has months of changes since under the same
-# version number, including a fixed `force_width` snap in
-# `text_system::line_layout::apply_force_width_to_layout` that
-# correctly distinguishes base vs combining glyphs (see Phase 0
-# slice 5 commit message — the cell-width snap on 0.2.2 squeezed
-# multi-glyph runs visibly). The pinned commit picks up that fix.
-# Bump deliberately, not via `cargo update`, so we know what
-# changed.
-#
-# No `rev` here: gpui-component's git tip pins gpui as
-# `git = "..."` with no rev, and Cargo treats `git = "..."` and
-# `git = "..." rev = "..."` as different sources even when they
-# resolve to the same commit — duplicating the entire Zed crate
-# graph. Matching the spec (no rev) lets Cargo unify them. Build
-# reproducibility comes from `Cargo.lock` instead of the manifest:
-# fresh checkouts use the locked commit, and bumping is an
-# explicit `cargo update -p gpui` rather than passive drift.
+# Zed's UI framework. No `rev` here on purpose — gpui-component's
+# git tip pins gpui as `git = "..."` with no rev, and Cargo only
+# unifies two git deps when their specs match. With a rev pin we
+# get a duplicated Zed crate graph. Reproducibility comes from
+# Cargo.lock; bump with `cargo update -p gpui` deliberately.
 gpui = { git = "https://github.com/zed-industries/zed" }
 
-# Per-OS platform initialization for gpui. Was bundled inside the
-# `gpui` crate up through the crates.io 0.2.x line; the Zed
-# monorepo split it out as a separate workspace crate. Provides
-# the convenience `application()` constructor (uses
-# `MacPlatform`/`WindowsPlatform`/etc. under cfg gates) that
-# replaces the old `Application::new()`.
+# Per-platform backend. The Linux wayland + x11 features are NOT
+# default — without them, `gpui::guess_compositor()` returns
+# "Wayland" inside any Wayland session but the matching arm in
+# `gpui_linux/src/linux.rs` is cfg'd out, hitting `unreachable!()`
+# before the first window paints.
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
-# `wayland` / `x11` aren't in `gpui_platform`'s default features, and
-# Zed's workspace pins `gpui_linux = { ..., default-features = false }`
-# so the Linux backend's Wayland + X11 arms get cfg'd out unless we
-# opt in explicitly. Without them, `gpui::guess_compositor()`
-# (which is gated on gpui's own wayland/x11 features that ARE on
-# by default) returns "Wayland" inside any Wayland session, but the
-# matching `Some("Wayland") =>` arm in `gpui_linux/src/linux.rs`
-# isn't compiled — the match falls through to `unreachable!()` and
-# Baudrun panics before the window opens. Crash signature was
-# `internal error: entered unreachable code` at
-# `gpui_linux/src/linux.rs:55:14`. Enabling both features here
-# matches the macOS / Windows feature surface gpui already gives
-# us by default, no behaviour change on those platforms.
 
-# alacritty's VT escape parser + grid state. Not the renderer — the
-# renderer is alacritty's own OpenGL code, which we deliberately do
-# NOT pull in (gpui owns rendering). Used by Zed's terminal pane.
+# VT parser + grid state only (NOT the renderer — gpui owns rendering).
 alacritty_terminal = "0.26"
 
-# Logging — matches the main app's log dep choice so any code that
-# eventually migrates from src-tauri lands without a rewrite.
 log = "0.4"
 env_logger = "0.11"
 
-# Serial port I/O. Same major version (4.x) the main app uses so any
-# code that gets promoted to the real tree later doesn't need
-# revisiting. `serialport-rs` exposes a synchronous `Read`/`Write`
-# API; we pump it on dedicated OS threads (see `serial_io.rs`).
+# Serial port I/O. Sync API, pumped on dedicated OS threads — see
+# serial_io.rs for the read / write loop.
 serialport = "4"
 
-# `flume` is a sync+async channel — its sync `send`/`recv` is used
-# from the OS-thread side, and `recv_async` is awaited inside a gpui
-# foreground task. Already a transitive dep of `gpui`; pinning it
-# explicitly here keeps the dep graph honest.
+# Sync+async channel. Sync `send`/`recv` from the OS-thread side,
+# `recv_async` awaited inside gpui foreground tasks.
 flume = "0.12"
 
-# gpui-component (Apache-2.0 / MIT, 60+ widgets) — Phase 2 needs
-# `resizable`, `sidebar`, `list`, `form`, `input`, `select`,
-# `dialog` etc., and re-implementing those from div primitives is
-# weeks of work that already exists. Pinned to a specific git
-# commit (currently 2d2524d8) — the published `gpui-component =
-# "0.5.1"` on crates.io targets the gpui 0.2 crates.io line and
-# would conflict with our Zed-git gpui pin. Their git tip pins
-# gpui to `git = "https://github.com/zed-industries/zed"` with
-# no rev; Cargo unifies both URL-matching gpui deps to our pinned
-# rev so the resolution stays consistent.
+# UI widget library. Pinned to a git rev because crates.io 0.5.1
+# targets gpui 0.2 from crates.io and would conflict with our
+# Zed-git gpui pin. Their git tip pins gpui to the Zed monorepo
+# with no rev, so Cargo unifies it against ours.
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "2d2524d89efc47270e9a0ee18f10fa72cd573eff" }
 
-# gpui-component's icon SVGs (Lucide set) — has to be registered as
-# the app's asset source via `.with_assets(Assets)` at startup,
-# otherwise every `IconName::*` referenced by a gpui-component widget
-# resolves to an empty rect. On macOS the title-bar window controls
-# are drawn by the OS (native traffic lights, see `appears_transparent`
-# in `WindowOptions`) so blank icons are invisible there — but on
-# Windows / Linux `gpui_component::TitleBar` renders its own
-# min/max/close from `IconName::Minimize` / `Maximize` / `Restore` /
-# `Close`, and without this crate the user sees a draggable bar with
-# invisible hover targets on the right. Pinned to the same git rev as
-# `gpui-component` so the icon set stays in sync with the widgets'
-# `IconName` enum (Lucide additions / renames in the asset crate must
-# match what the widget code asks for).
+# Lucide icon SVGs. Without `.with_assets(Assets)` at startup, every
+# `IconName::*` referenced by a gpui-component widget renders an
+# empty rect (worst on Windows / Linux where `TitleBar` draws its
+# own min / max / close from these). Same git rev as gpui-component
+# so the icon set tracks the `IconName` enum.
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "2d2524d89efc47270e9a0ee18f10fa72cd573eff" }
 
-# --- Phase 1: data-layer dependencies ---
-# These power the modules ported from src-tauri/src/ into
-# prototype/src/data/. Versions match the main app's Cargo.toml
-# 1:1 so anything that ports cleanly there ports cleanly here.
-# Pure data / IO; none touch UI.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
-plist = "1"             # for `.itermcolors` parsing in `data::themes::parse`
+plist = "1"             # `.itermcolors` parsing in data::themes::parse
 thiserror = "2"
-anyhow = "1"
-regex = "1"             # used by USB enumeration (parsing system_profiler /
-                        # PowerShell output) and the highlight rule engine
-aho-corasick = "1"      # multi-keyword search for `\b(?:foo|bar|...)\b` style
-                        # rules in highlight packs — much faster than running
-                        # the same patterns through the regex DFA when the
-                        # pack carries dozens of keyword alternations (state
-                        # words, STP roles, BGP states, etc.)
-base64 = "0.22"
-# Synchronous HTTP client for the on-launch GitHub-Releases
-# update check (`src/updater.rs`). `ureq` is the minimal-deps
-# sync flavour — uses rustls (already transitive via gpui's
-# `zed-reqwest` so no extra crypto footprint) and skips the
-# tokio async machinery `reqwest` would drag in. The check
-# runs once per launch on a background gpui task, so blocking
-# the worker thread for the request is fine.
+regex = "1"
+aho-corasick = "1"      # multi-keyword prefilter for highlight packs
+                        # with dozens of `\b(?:foo|bar|…)\b` alternations
+
+# Sync HTTP for the boot-time update check (src/updater.rs). ureq +
+# rustls (already transitive via gpui), no tokio.
 ureq = { version = "2", features = ["json", "tls"] }
-# Tag comparison for the update check. Already transitive
-# through gpui's dep graph; pinning here makes the direct
-# usage in `updater::compare_versions` explicit.
 semver = "1"
-# rusb's `vendored` feature compiles libusb statically into the
-# binary instead of dynamic-linking against the system copy.
-# Tradeoffs: ~10–15 s longer first build (one-time C compile of
-# libusb) and ~50 KB binary growth — bought back by (a) zero
-# runtime libusb dependency on user machines, and (b) no
-# install_name_tool dance in the macOS release pipeline to
-# rewrite Homebrew's `/opt/homebrew/lib/libusb-1.0.0.dylib`
-# load command into `@executable_path/../Frameworks/...`. Phase 9's
-# release pipeline ships a self-contained binary as a result.
+
+# libusb statically compiled. ~50 KB binary growth + ~10–15 s first
+# build, bought back by zero runtime libusb dep on user machines
+# and no install_name_tool rewrite for Homebrew's libusb on macOS.
 rusb = { version = "0.9", features = ["vendored"] }
 
-# macOS-only: set NSApplication's applicationIconImage at startup
-# so the dock icon picks up `resources/icons/icon.png` even when
-# running via `cargo run` (no .app bundle). Production builds will
-# get the icon from the bundle's Info.plist + Resources/icon.icns,
-# so this runtime override is dev-mode polish only. Versions match
-# the transitive ones gpui_macos already pulls in to avoid bloating
-# the dep graph.
+# macOS-only: set NSApplication's applicationIconImage at startup so
+# the dock icon shows on unbundled `cargo run`. Release builds get
+# the icon from the bundle's Info.plist + .icns instead.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSWorkspace", "NSAccessibility"] }
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 
-# Build-time embed of Windows icon (resources/icon.rc) into the
-# Baudrun.exe PE resource section. The crate auto-detects target
-# and no-ops on non-Windows, so it builds cleanly everywhere.
+# Embed Windows icon (resources/icon.rc) into Baudrun.exe's PE
+# resource section. Auto-no-ops on non-Windows.
 [build-dependencies]
 embed-resource = "3"
 
@@ -177,17 +95,9 @@ lto = true
 opt-level = 3
 strip = true
 
-# cargo-packager bundler config. `cargo packager --release` reads
-# this table, builds the release binary via `before-packaging-command`,
-# wraps it into Baudrun.app using our hand-curated Info.plist + .icns,
-# and (per `formats`) optionally produces a .dmg, .msi/.exe, .deb,
-# .AppImage, or .pacman archive depending on host OS. The `--formats`
-# CLI flag overrides this list for one-off local builds.
-#
-# Resources baked into the binary via `include_str!` (builtin_skins.json,
-# builtin_themes.json, resources/highlight/*) deliberately aren't
-# listed here — they ship inside the .text section of Baudrun, so
-# copying them into Resources/ would be dead weight.
+# cargo-packager bundler config. `cargo packager --release` builds via
+# `before-packaging-command`, wraps the binary into Baudrun.app, and
+# emits `.dmg` / `.msi` / `.deb` / `.AppImage` / `.pacman` per host OS.
 [package.metadata.packager]
 product-name = "Baudrun"
 identifier = "io.github.packetThrower.Baudrun"
@@ -209,17 +119,9 @@ before-packaging-command = "cargo build --release"
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
 
 [package.metadata.packager.deb]
-# Runtime dependencies for the .deb. dpkg/apt uses this list to
-# auto-install missing libs at `apt install ./baudrun.deb`. The
-# wayland/x11 surface gpui_linux pulls in needs all of these
-# present at runtime — without an explicit `depends`, a fresh
-# Ubuntu install errors out with
-# `error while loading shared libraries: libxkbcommon-x11.so.0`
-# the first time the user double-clicks Baudrun. Package names
-# are the apt runtime names (so libxkbcommon-x11-0, not
-# libxkbcommon-x11-dev). Versions left unpinned — apt picks the
-# distro's current shipping version, matching whatever
-# user-space's already running.
+# Runtime libs for the gpui_linux Wayland + X11 surface. Without an
+# explicit `depends`, a fresh Ubuntu install fails to launch with
+# `libxkbcommon-x11.so.0: cannot open shared object file`.
 depends = [
   "libxkbcommon0",
   "libxkbcommon-x11-0",
@@ -238,39 +140,23 @@ depends = [
   "libudev1",
 ]
 
-# Extra files installed alongside the binary. cargo-packager's
-# .deb already lays down the binary at /usr/bin/Baudrun and the
-# icon at /usr/share/icons/...; this `files` table adds the udev
-# rule (so /dev/ttyUSB* is accessible without a dialout-group
-# dance) and the freedesktop .desktop entry (so the app shows up
-# in the Activities overview / app launcher).
-#
-# The udev rule won't take effect until a reload + USB replug —
-# .deb postinst hooks aren't exposed by cargo-packager 0.11, so
-# users hit the EACCES path first and our `friendly_open_error`
-# message in `app_view.rs` walks them through the recovery steps.
+# Extra files: udev rule (so /dev/ttyUSB* is accessible without the
+# dialout-group dance) + .desktop entry (launcher discovery). udev
+# rule needs a reload + USB replug to take effect — cargo-packager
+# 0.11 doesn't expose postinst hooks, so users hit EACCES first and
+# `friendly_open_error` in app_view.rs walks them through recovery.
 files = { "packaging/linux/60-baudrun-serial.rules" = "/usr/lib/udev/rules.d/60-baudrun-serial.rules", "packaging/linux/baudrun.desktop" = "/usr/share/applications/baudrun.desktop", "resources/icons/icon.png" = "/usr/share/icons/hicolor/512x512/apps/baudrun.png" }
 
 [package.metadata.packager.macos]
-# Reuse the hand-curated Info.plist from Phase 8 #6 instead of
-# letting cargo-packager generate one from the table above —
-# the existing plist carries LSMultipleInstancesProhibited (single-
-# instance launch), NSHighResolutionCapable, and a stable
-# CFBundleIdentifier the user's keychain already trusts from the
-# Tauri build.
+# Hand-curated Info.plist (LSMultipleInstancesProhibited for single-
+# instance launch, NSHighResolutionCapable, stable CFBundleIdentifier
+# the keychain already trusts from the Tauri build).
 info-plist-path = "resources/Info.plist"
 minimum-system-version = "11.0"
-# Ad-hoc codesign the .app bundle. cargo-packager only signs the
-# bundle when `signing-identity` is set; without it the .app ships
-# unsigned. On x86_64 that's the soft "unidentified developer"
-# path, but on arm64 the linker auto-applies an ad-hoc signature
-# to the inner Mach-O while the *bundle* stays unsigned — an
-# inconsistent state Gatekeeper rejects outright as "damaged and
-# can't be opened" (caught on the v0.9.7 release). `"-"` is
-# codesign's ad-hoc identity: cargo-packager signs inside-out
-# (binary then bundle) so the Info.plist binds and resources seal
-# properly. Still not notarized — a quarantined download is
-# "unidentified developer" (right-click → Open, or `xattr -cr`),
-# which is the recoverable path the README documents. Notarization
-# replaces this once an Apple Developer account is in place.
+# Ad-hoc codesign the bundle. On arm64 the linker auto-signs the inner
+# Mach-O; without bundle-level signing the result is inconsistent and
+# Gatekeeper rejects it as "damaged and can't be opened" (regression
+# we caught on v0.9.7). `-` is codesign's ad-hoc identity. Not
+# notarized — first launch is still the "unidentified developer"
+# right-click → Open path until an Apple Developer account lands.
 signing-identity = "-"

@@ -593,8 +593,6 @@ version = "0.12.0"
 dependencies = [
  "aho-corasick",
  "alacritty_terminal",
- "anyhow",
- "base64",
  "chrono",
  "dirs",
  "embed-resource",
