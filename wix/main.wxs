@@ -1,0 +1,162 @@
+<?xml version='1.0' encoding='windows-1252'?>
+
+<!--
+    Baudrun WiX source. Built into per-arch .msi installers via
+    cargo-wix in CI on a Windows native-arch runner (the cargo-wix
+    invocation passes the target triple and nocapture flag; see the
+    release.yml workflow for the full command). Replaces cargo-
+    packager's `-f wix` path, which bundled WiX 3.11 and therefore
+    couldn't pass `-arch arm64` to candle.exe — see commit history
+    on the workflow rename for the full backstory.
+
+    Why this file is hand-edited rather than cargo-wix-init-generated:
+    the default template carries a WixUI_InstallDir flow that requires
+    a license.rtf, plus default ARP entries that don't carry the
+    metadata the winget validator scans for. Customising in-place
+    keeps the file under our control and aligned with what winget's
+    automated executable-discovery step expects.
+
+    Winget conformance check-list this file satisfies:
+      * InstallScope = perMachine          : registry writes to HKLM,
+                                              files to ProgramFiles64
+      * ARPINSTALLLOCATION set explicitly  : winget reads this to
+                                              find the primary .exe
+                                              after install
+      * Stable UpgradeCode                 : version-to-version
+                                              upgrades replace cleanly
+                                              via MajorUpgrade
+      * ProductCode = '*'                  : auto-generated per build,
+                                              required for MSI semantics
+      * ARPHELPLINK / ARPURLINFOABOUT      : Apps and Features links
+                                              to the right places
+      * ARPNOMODIFY / ARPNOREPAIR          : hide the buttons we
+                                              don't actually support
+                                              (no feature tree, no
+                                              file repair beyond
+                                              reinstall)
+-->
+
+<!--
+    `sys.BUILDARCH` is set by candle.exe's `-arch` flag (passed by
+    cargo-wix from the cargo target triple). On x64 and arm64 we
+    drop files under `Program Files\Baudrun\`; on 32-bit hosts —
+    which we don't actually ship for, but cover defensively — we
+    fall back to the 32-bit `Program Files` folder.
+-->
+<?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>
+    <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
+<?else ?>
+    <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
+<?endif ?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='Baudrun'
+        UpgradeCode='9F53E1BD-D65D-4B6A-9D85-F8DC39D1F937'
+        Manufacturer='packetThrower'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='Baudrun — serial terminal for network engineers'
+            Manufacturer='packetThrower'
+            InstallerVersion='500'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perMachine'
+            SummaryCodepage='1252'/>
+
+        <!--
+            Replace-on-upgrade. `afterInstallInitialize` means the
+            new install removes the old one cleanly before files
+            land, avoiding the side-by-side scenarios that confuse
+            Apps & Features. `DowngradeErrorMessage` fires when the
+            user double-clicks an older .msi over a newer install
+            (winget itself blocks downgrades, so this is for the
+            hand-installed path only).
+        -->
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            DowngradeErrorMessage='A newer version of Baudrun is already installed. Setup will now exit.'/>
+
+        <Media Id='1' Cabinet='baudrun.cab' EmbedCab='yes'/>
+
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <Directory Id='$(var.PlatformProgramFilesFolder)'>
+                <Directory Id='APPLICATIONFOLDER' Name='Baudrun'>
+                    <Component Id='MainExecutable' Guid='*'>
+                        <File Id='BaudrunExe'
+                            Name='Baudrun.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\Baudrun.exe'
+                            KeyPath='yes'/>
+                    </Component>
+                </Directory>
+            </Directory>
+
+            <!--
+                Start Menu shortcut. winget's executable-discovery
+                step also checks .lnk targets in known menu paths;
+                pointing one at Baudrun.exe doubles as a backup
+                discovery anchor if the ARP InstallLocation lookup
+                ever drifts.
+            -->
+            <Directory Id='ProgramMenuFolder'>
+                <Component Id='StartMenuShortcut' Guid='93F5CD50-96F3-44B4-9DD7-33ACA186497C'>
+                    <Shortcut Id='BaudrunStartMenuShortcut'
+                        Name='Baudrun'
+                        Description='Serial terminal for network engineers'
+                        Target='[APPLICATIONFOLDER]Baudrun.exe'
+                        WorkingDirectory='APPLICATIONFOLDER'/>
+                    <RegistryValue Root='HKCU'
+                        Key='Software\packetThrower\Baudrun'
+                        Name='installed'
+                        Type='integer'
+                        Value='1'
+                        KeyPath='yes'/>
+                </Component>
+            </Directory>
+        </Directory>
+
+        <Feature Id='Main' Title='Baudrun' Description='Baudrun application' Level='1'>
+            <ComponentRef Id='MainExecutable'/>
+            <ComponentRef Id='StartMenuShortcut'/>
+        </Feature>
+
+        <!--
+            The four winget-relevant ARP properties:
+
+            * ARPINSTALLLOCATION — written to
+              HKLM\…\Uninstall\<ProductCode>\InstallLocation by
+              Windows Installer. This is the value the winget
+              validator reads to find Baudrun.exe post-install.
+              Setting it explicitly avoids the validator falling
+              back to heuristics and missing the binary.
+            * ARPHELPLINK / ARPURLINFOABOUT — populate the
+              "Help" and "Product website" links in Apps &
+              Features. Mostly metadata polish, but winget's
+              moderators do glance at these.
+            * ARPNOMODIFY / ARPNOREPAIR — Baudrun has no feature
+              tree and the .msi can't repair a corrupted install
+              (no patch resources), so hide those buttons in
+              Apps & Features.
+        -->
+        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+        <Property Id='ARPHELPLINK' Value='https://packetthrower.github.io/Baudrun/'/>
+        <Property Id='ARPURLINFOABOUT' Value='https://github.com/packetThrower/Baudrun'/>
+        <Property Id='ARPNOMODIFY' Value='yes'/>
+        <Property Id='ARPNOREPAIR' Value='yes'/>
+
+        <!--
+            No UIRef. winget runs the .msi with `/quiet`, and double-
+            click installs get Windows Installer's built-in progress
+            dialog — sufficient for a single-binary app. Skipping
+            WixUI_* means we don't need a license.rtf in the repo.
+        -->
+    </Product>
+
+</Wix>

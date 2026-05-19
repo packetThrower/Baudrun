@@ -207,6 +207,43 @@ jobs:
         with:
           tool: cargo-packager
 
+      # cargo-wix replaces cargo-packager's `-f wix` MSI path. It
+      # uses a system-installed WiX (set up in the next step) rather
+      # than cargo-packager's vendored WiX 3.11 — which is what
+      # made arm64 MSI builds impossible on the old setup (candle.exe
+      # 3.11 predates `-arch arm64`, that flag was added in WiX
+      # 3.14). Only needed on stable tags because MSI's
+      # `ProductVersion` field rejects alphanumeric prerelease
+      # identifiers like `0.9.0-alpha.3` — NSIS has no such limit.
+      - name: Install cargo-wix
+        if: ${{ !contains(github.ref_name, '-') }}
+        uses: taiki-e/install-action@e1c4cd42111751368541a7cb5db3522bd1f846a4 # v2.78.0
+        with:
+          tool: cargo-wix
+
+      # WiX 3.14 (current pre-GA build under chocolatey's `--pre`
+      # gate) is the minimum that carries `-arch arm64`. choco's
+      # package sets the `WIX` env var and adds `<install>\bin` to
+      # the system PATH on install, but the current process's
+      # environment doesn't pick up those changes until we re-read
+      # them — hence the path-write to GITHUB_PATH so the cargo-
+      # wix step below can find candle.exe / light.exe without a
+      # full session reload.
+      - name: Install WiX Toolset 3.14
+        if: ${{ !contains(github.ref_name, '-') }}
+        shell: pwsh
+        run: |
+          choco install wixtoolset --pre -y --no-progress
+          $wixDir = (Get-ChildItem 'C:\Program Files (x86)\WiX Toolset *' -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          if ($wixDir) {
+            "$wixDir\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+            "WIX=$wixDir\" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+            Write-Host "WiX installed at $wixDir"
+          } else {
+            Write-Error "WiX install directory not found after choco install"
+            exit 1
+          }
+
       - name: Patch version from tag
         shell: pwsh
         run: |
@@ -215,44 +252,31 @@ jobs:
             Set-Content -NoNewline Cargo.toml
           Write-Host "Building version: $version"
 
-      # NSIS ships on every Windows build. The MSI (WiX) path is
-      # narrower — gated on two independent conditions:
+      # NSIS ships on every Windows build via cargo-packager. The
+      # MSI path is gated on stable tags only (MSI ProductVersion
+      # rejects alphanumeric prereleases — NSIS doesn't). Both
+      # arm64 and amd64 now produce MSIs since cargo-wix +
+      # system WiX 3.14 supports `-arch arm64` natively.
       #
-      #   (a) Stable tag only. WiX requires a numeric-only pre-
-      #       release identifier and rejects alphanumeric ones
-      #       like 0.9.0-alpha.3. NSIS has no such restriction.
-      #
-      #   (b) amd64 only. cargo-packager 0.11.8 hardcodes a
-      #       download of WiX 3.11 (2017), whose `candle.exe`
-      #       predates `-arch arm64` — that was added in WiX
-      #       3.14. So `candle.exe -arch arm64` exits non-zero
-      #       and the build dies; cargo-packager's error Display
-      #       (`"Error running {0}: {0}"`) throws the real
-      #       message away, leaving the unhelpful
-      #       `ERROR Error running candle.exe: candle.exe` seen
-      #       on v0.9.7's first stable build. It is NOT a runner
-      #       or x86-emulation problem — candle.exe runs fine
-      #       under emulation; the bundled WiX is just too old.
-      #       cargo-packager has no WiX-version override, so the
-      #       real fix is moving MSI generation to cargo-wix
-      #       (modern WiX, native arm64) — tracked in TODO.md.
-      #       Until then arm64 users get the NSIS installer or
-      #       the portable `.zip`; corporate-deploy workflows
-      #       that need MSI are overwhelmingly x64 anyway.
-      #
-      # The GH Actions ternary `cond && X || Y` returns Y when X
-      # is falsy — and the empty string is falsy. So we compose
-      # both gates with `&&` first, then fall back to the empty
-      # string on either negative branch.
-      #
-      # Same `--target` omission as macOS: runner is native, so
-      # the default host target matches; passing --target would
-      # split paths between `target/<triple>/release/` (what
-      # cargo-packager expects) and `target/release/` (what
-      # `cargo build --release` produces without --target).
-      - name: Build .exe (NSIS) + .msi (stable amd64 only)
+      # No `--target` flag on either tool: the runner is already
+      # native for its arch (windows-latest = x64, windows-11-arm
+      # = arm64), so the default host target matches what we want.
+      # Passing --target would split paths between
+      # `target/<triple>/release/` and `target/release/`,
+      # confusing both tools' binary-discovery.
+      - name: Build .exe (NSIS via cargo-packager)
         shell: cmd
-        run: cargo packager --release -f nsis ${{ (!contains(github.ref_name, '-') && matrix.arch == 'amd64') && '-f wix' || '' }}
+        run: cargo packager --release -f nsis
+
+      # `--no-build` reuses cargo-packager's just-built binary at
+      # `target/release/Baudrun.exe` instead of compiling a second
+      # time. `--nocapture` streams candle/light output so a WiX
+      # failure surfaces in the GH Actions log instead of being
+      # buried in cargo-wix's default-quiet wrapper.
+      - name: Build .msi (cargo-wix, stable tags only)
+        if: ${{ !contains(github.ref_name, '-') }}
+        shell: cmd
+        run: cargo wix --no-build --nocapture
 
       - name: Stage artifacts
         shell: pwsh
@@ -265,14 +289,27 @@ jobs:
           Write-Host "--- contents of $bundle ---"
           Get-ChildItem -Path $bundle -File -Recurse | ForEach-Object { $_.FullName }
 
-          # NSIS .exe and (stable-only) WiX .msi pick up directly
-          # from cargo-packager's output dir. cargo-packager names
-          # them `Baudrun_<version>_<arch>-setup.exe` and
-          # `Baudrun_<version>_<arch>.msi`.
+          # NSIS .exe ships from cargo-packager's output dir. The
+          # name is `Baudrun_<version>_<arch>-setup.exe`.
           Get-ChildItem "$bundle/*-setup.exe" -ErrorAction SilentlyContinue |
             Copy-Item -Destination release-artifacts/
-          Get-ChildItem "$bundle/*.msi" -ErrorAction SilentlyContinue |
-            Copy-Item -Destination release-artifacts/
+
+          # MSI ships from cargo-wix's output dir (`target/wix/`).
+          # cargo-wix uses kebab-case `baudrun-<version>-<arch>.msi`
+          # by default; rename to the existing
+          # `Baudrun_<version>_<arch>_en-US.msi` convention so the
+          # winget manifest URLs stay stable across the cargo-
+          # packager → cargo-wix migration.
+          $wixOut = "target/wix"
+          if (Test-Path $wixOut) {
+            Write-Host "--- contents of $wixOut ---"
+            Get-ChildItem -Path $wixOut -File | ForEach-Object { $_.FullName }
+            Get-ChildItem "$wixOut/*.msi" -ErrorAction SilentlyContinue | ForEach-Object {
+              $dest = "release-artifacts/Baudrun_${version}_${arch}_en-US.msi"
+              Copy-Item $_.FullName -Destination $dest
+              Write-Host "renamed $($_.Name) -> $(Split-Path -Leaf $dest)"
+            }
+          }
 
           # Portable .zip of the bare Baudrun.exe for users who'd
           # rather not run an installer.

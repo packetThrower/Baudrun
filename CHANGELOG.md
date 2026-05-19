@@ -15,6 +15,21 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Changed
+
+- **Windows MSI now ships for both x64 and arm64.** v0.12.0 only
+  carried an x64 `.msi` because cargo-packager's bundled WiX 3.11
+  (2017) couldn't pass `candle.exe -arch arm64` — that flag was
+  added in WiX 3.14. Switched MSI generation from cargo-packager
+  to [`cargo-wix`](https://github.com/volks73/cargo-wix), which
+  uses a system-installed WiX (set up in CI via chocolatey) and
+  handles both architectures with one toolchain. The arm64 winget
+  manifest entry is now `InstallerType: wix` with a real
+  `ProductCode`, replacing the v0.12.0 NSIS entry whose half-
+  machine / half-user registry shape was tripping winget's
+  Apps & Features validation. cargo-packager continues to own
+  NSIS, `.dmg`, `.deb`, `.rpm`, `.AppImage`, and `.pkg.tar.zst`.
+
 ## [0.12.0] — 2026-05-16
 
 ### Added

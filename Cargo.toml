@@ -160,3 +160,24 @@ minimum-system-version = "11.0"
 # notarized — first launch is still the "unidentified developer"
 # right-click → Open path until an Apple Developer account lands.
 signing-identity = "-"
+
+# cargo-wix configuration for the per-arch .msi installer build.
+# Picked up by `cargo wix --target <triple>` in release.yml on the
+# Windows runners. wix/main.wxs carries the full WiX source; this
+# table only sets the build-time constants cargo-wix would otherwise
+# auto-generate (and auto-regenerating the UpgradeCode would break
+# version-to-version upgrades — Apps & Features would treat each
+# build as an entirely new product instead of replacing the prior
+# install).
+#
+# We use cargo-wix instead of cargo-packager's `-f wix` path because
+# cargo-packager 0.11 bundles WiX 3.11 (2017) — predates `candle.exe
+# -arch arm64` (WiX 3.14). cargo-wix relies on the system-installed
+# WiX (release.yml installs WiX 3.14+ via choco) and so handles
+# both architectures with the same toolchain.
+[package.metadata.wix]
+# Stable per-app. Mirrors the UpgradeCode in wix/main.wxs — the two
+# must agree or cargo-wix's own upgrade detection won't line up with
+# the .msi's MajorUpgrade table. Never change once an installer has
+# shipped with it.
+upgrade-guid = "9F53E1BD-D65D-4B6A-9D85-F8DC39D1F937"

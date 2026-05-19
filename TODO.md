@@ -704,34 +704,15 @@ landed in commit TODO; the items below are the remaining feature work.
       DigiCert / Sectigo / SSL.com (~$200+/yr; EV cert is pricier but
       skips SmartScreen warmup). Add as secrets, sign the .exe with
       `signtool` in the `build-windows` job.
-- [ ] **arm64 Windows MSI via cargo-wix.** The `build-windows` job
-      builds the MSI with cargo-packager, gated to amd64 only.
-      cargo-packager 0.11.8 (the latest — even its unreleased `main`)
-      hardcodes a download of WiX 3.11 (2017), and WiX 3.11's
-      `candle.exe` predates `-arch arm64` (added in WiX 3.14). There's
-      no `WIX_URL` / `WIX_PATH` override in cargo-packager, so arm64
-      MSI is impossible through it — the `candle.exe -arch arm64`
-      invocation just exits non-zero, and cargo-packager's
-      `Error::WixFailed` Display (`"Error running {0}: {0}"`) throws
-      the real error away. Fix: move MSI generation off cargo-packager
-      onto [`cargo-wix`](https://github.com/volks73/cargo-wix), which
-      uses system-installed WiX (so we pick the version) and supports
-      WiX 4+/3.14.1+ with native arm64.
-      1. `cargo wix init` to generate `wix/main.wxs`; customise
-         (product name, shortcuts, install dir) and commit it.
-      2. Set the `.wxs` `UpgradeCode` to match what cargo-packager's
-         MSI used, so existing amd64 installs upgrade in place rather
-         than installing side-by-side.
-      3. In `build-windows`: add a WiX install step
-         (`dotnet tool install --global wix` — the .NET SDK is already
-         on both runners), drop `-f wix` from the `cargo packager`
-         call, add a `cargo wix` step for both arches.
-      4. cargo-packager keeps `.dmg` / `.app` / NSIS / `.deb` / `.rpm`
-         / `.AppImage`; cargo-wix owns MSI for x64 **and** arm64 — one
-         generator, consistent installers.
-      Best done alongside Windows code-signing above: both touch the
-      `build-windows` job, and the same `signtool` step can sign the
-      cargo-wix MSI output.
+- [x] **arm64 Windows MSI via cargo-wix.** Landed on the
+      `cargo-wix` branch (merge target v0.13.0). Released v0.12.0
+      shipped arm64 NSIS only because cargo-packager's bundled
+      WiX 3.11 couldn't pass `candle.exe -arch arm64`; cargo-wix
+      with system WiX 3.14 fixes that and gives both architectures
+      identical `.msi` shape (ProductCode, ARPINSTALLLOCATION in
+      HKLM, MajorUpgrade for clean version-to-version replacement).
+      Signing-friendly when the certs land — one MSI to sign per
+      arch, no per-tool dance.
 - [ ] **Public downloads for a private source repo.** Shared
       downloads repo serving both Baudrun and get_switch_info:
       1. Create public `packetThrower/downloads` (empty, README listing
