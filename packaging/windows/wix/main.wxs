@@ -66,7 +66,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='Baudrun — serial terminal for network engineers'
+            Description='Baudrun: serial terminal for network engineers'
             Manufacturer='packetThrower'
             InstallerVersion='500'
             Languages='1033'
