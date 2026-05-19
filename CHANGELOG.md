@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-05-19
+
 ### Changed
 
 - **Windows MSI now ships for both x64 and arm64.** v0.12.0 only
