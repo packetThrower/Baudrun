@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='windows-1252'?>
+<?xml version='1.0' encoding='utf-8'?>
 
 <!--
     Baudrun WiX source. Built into per-arch .msi installers via
@@ -29,6 +29,10 @@
                                               required for MSI semantics
       * ARPHELPLINK / ARPURLINFOABOUT      : Apps and Features links
                                               to the right places
+      * ARPPRODUCTICON                     : Apps and Features shows
+                                              the Baudrun icon instead
+                                              of Windows Installer's
+                                              generic blue glyph
       * ARPNOMODIFY / ARPNOREPAIR          : hide the buttons we
                                               don't actually support
                                               (no feature tree, no
@@ -126,6 +130,24 @@
             <ComponentRef Id='MainExecutable'/>
             <ComponentRef Id='StartMenuShortcut'/>
         </Feature>
+
+        <!--
+            App icon for Apps and Features. Without ARPPRODUCTICON
+            set, the listing shows Windows Installer's generic blue
+            MSI glyph. Reusing `resources/icons/icon.ico` (the same
+            multi-resolution .ico the embed-resource build script
+            compiles into Baudrun.exe's PE resource section) means
+            the icon shown in Apps and Features matches the icon
+            on the .exe in Explorer / taskbar / Alt-Tab.
+
+            The `Id='AppIcon.ico'` value MUST end in `.ico` —
+            Windows Installer uses the suffix to figure out the
+            resource type when serialising the icon into the .msi
+            stream. A bare `Id='AppIcon'` would compile but produce
+            a corrupted icon at install time.
+        -->
+        <Icon Id='AppIcon.ico' SourceFile='resources/icons/icon.ico'/>
+        <Property Id='ARPPRODUCTICON' Value='AppIcon.ico'/>
 
         <!--
             The four winget-relevant ARP properties:
