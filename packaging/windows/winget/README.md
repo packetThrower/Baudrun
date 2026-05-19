@@ -28,7 +28,7 @@ opens the PR for us.
 # Windows host. winget install Microsoft.WingetCreate (one-time).
 
 $Version  = "0.12.0"
-$MsiX64   = "https://github.com/packetThrower/Baudrun/releases/download/v$Version/Baudrun_${Version}_x64_en-US.msi"
+$MsiX64   = "https://github.com/packetThrower/Baudrun/releases/download/v$Version/Baudrun_${Version}_amd64_en-US.msi"
 $MsiArm64 = "https://github.com/packetThrower/Baudrun/releases/download/v$Version/Baudrun_${Version}_arm64_en-US.msi"
 
 # First-time submission: scaffolds the three YAMLs interactively
@@ -65,7 +65,7 @@ cp /path/to/Baudrun/packaging/windows/winget/packetThrower.Baudrun.locale.en-US.
 sed -i "s/^PackageVersion: .*/PackageVersion: $VERSION/" "$DEST/packetThrower.Baudrun.locale.en-US.yaml"
 
 # SHA256s from the GitHub Release artifacts.
-SHA_X64=$(curl -sL "https://github.com/packetThrower/Baudrun/releases/download/v$VERSION/Baudrun_${VERSION}_x64_en-US.msi" | sha256sum | awk '{print $1}')
+SHA_X64=$(curl -sL "https://github.com/packetThrower/Baudrun/releases/download/v$VERSION/Baudrun_${VERSION}_amd64_en-US.msi" | sha256sum | awk '{print $1}')
 SHA_ARM64=$(curl -sL "https://github.com/packetThrower/Baudrun/releases/download/v$VERSION/Baudrun_${VERSION}_arm64_en-US.msi" | sha256sum | awk '{print $1}')
 
 # ProductCodes: per-build GUIDs that change each release. Extract
