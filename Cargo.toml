@@ -162,8 +162,8 @@ minimum-system-version = "11.0"
 signing-identity = "-"
 
 # cargo-wix configuration for the per-arch .msi installer build.
-# Picked up by `cargo wix --target <triple>` in release.yml on the
-# Windows runners. wix/main.wxs carries the full WiX source; this
+# Picked up by `cargo wix` in release.yml on the Windows runners.
+# `packaging/windows/wix/main.wxs` carries the full WiX source; this
 # table only sets the build-time constants cargo-wix would otherwise
 # auto-generate (and auto-regenerating the UpgradeCode would break
 # version-to-version upgrades — Apps & Features would treat each
@@ -176,8 +176,13 @@ signing-identity = "-"
 # WiX (release.yml installs WiX 3.14+ via choco) and so handles
 # both architectures with the same toolchain.
 [package.metadata.wix]
-# Stable per-app. Mirrors the UpgradeCode in wix/main.wxs — the two
-# must agree or cargo-wix's own upgrade detection won't line up with
-# the .msi's MajorUpgrade table. Never change once an installer has
-# shipped with it.
+# Stable per-app. Mirrors the UpgradeCode in
+# packaging/windows/wix/main.wxs — the two must agree or cargo-wix's
+# own upgrade detection won't line up with the .msi's MajorUpgrade
+# table. Never change once an installer has shipped with it.
 upgrade-guid = "9F53E1BD-D65D-4B6A-9D85-F8DC39D1F937"
+# Override cargo-wix's default `wix/`-at-repo-root discovery so the
+# WiX source can live under `packaging/windows/`, alongside the
+# Linux + Arch packaging files and the winget manifest scaffold.
+# Keeps the repo's OS-grouped packaging tree consistent.
+include = ["packaging/windows/wix/main.wxs"]

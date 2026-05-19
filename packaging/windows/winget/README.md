@@ -72,7 +72,8 @@ SHA_ARM64=$(curl -sL "https://github.com/packetThrower/Baudrun/releases/download
 # from each MSI with `msiextract --version` or `lessmsi list` on
 # Linux/macOS; on Windows use the WindowsInstaller COM API.
 # wingetcreate auto-detects if going via that path. The UpgradeCode
-# is stable (defined in wix/main.wxs); ProductCodes are not.
+# is stable (defined in packaging/windows/wix/main.wxs); ProductCodes
+# are not.
 PRODUCT_CODE_X64='{REPLACE-WITH-X64-MSI-PRODUCT-GUID}'
 PRODUCT_CODE_ARM64='{REPLACE-WITH-ARM64-MSI-PRODUCT-GUID}'
 
@@ -108,9 +109,10 @@ winget validate --manifest "$DEST"
 - **Both architectures ship .msi** (since v0.13.0). The MSI build
   is driven by cargo-wix + system-installed WiX 3.14 in
   `.github/workflows/release.yml`; the WiX source is
-  `wix/main.wxs` at the repo root. v0.12.0 shipped arm64 as
-  NSIS only because cargo-packager's bundled WiX 3.11 predated
-  `-arch arm64`.
+  `packaging/windows/wix/main.wxs` (overridden from cargo-wix's
+  default `wix/` discovery via `[package.metadata.wix].include`
+  in Cargo.toml). v0.12.0 shipped arm64 as NSIS only because
+  cargo-packager's bundled WiX 3.11 predated `-arch arm64`.
 - **Schema version is 1.12.0** (current as of the 0.12.0 submission).
   winget-pkgs accepts older schemas back to 1.0; bump templates +
   rendered when 1.13+ ships.
