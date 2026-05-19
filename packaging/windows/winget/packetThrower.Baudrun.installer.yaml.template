@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+#
+# Installer manifest template. Fill in:
+#
+#   ${VERSION}              SemVer, no leading `v` (e.g. `0.12.0`)
+#   ${RELEASE_DATE}         ISO date the GitHub Release was cut
+#   ${SHA256_AMD64_MSI}     `Get-FileHash -Algorithm SHA256` of the .msi
+#   ${SHA256_ARM64_NSIS}    same for the ARM64 -setup.exe
+#   ${PRODUCT_CODE_AMD64}   '{GUID}' extracted from the .msi (wingetcreate auto-detects)
+#
+# AMD64 ships both NSIS and WiX MSI on stable releases; we prefer
+# the .msi for winget because it has a ProductCode + clean
+# Add/Remove Programs integration. ARM64 ships NSIS only (no WiX
+# on ARM64 builds), so the arm64 entry uses `nullsoft` with
+# explicit silent-mode switches.
+
+PackageIdentifier: packetThrower.Baudrun
+PackageVersion: ${VERSION}
+ReleaseDate: ${RELEASE_DATE}
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+Installers:
+  - Architecture: x64
+    InstallerType: wix
+    InstallerUrl: https://github.com/packetThrower/Baudrun/releases/download/v${VERSION}/Baudrun_${VERSION}_x64_en-US.msi
+    InstallerSha256: ${SHA256_AMD64_MSI}
+    ProductCode: '${PRODUCT_CODE_AMD64}'
+    Scope: machine
+    InstallerSwitches:
+      Silent: /quiet /norestart
+      SilentWithProgress: /passive /norestart
+  - Architecture: arm64
+    InstallerType: nullsoft
+    InstallerUrl: https://github.com/packetThrower/Baudrun/releases/download/v${VERSION}/Baudrun_${VERSION}_arm64-setup.exe
+    InstallerSha256: ${SHA256_ARM64_NSIS}
+    Scope: machine
+    InstallerSwitches:
+      Silent: /S
+      SilentWithProgress: /S
+ManifestType: installer
+ManifestVersion: 1.12.0
