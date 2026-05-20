@@ -15,6 +15,28 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.12.2] — 2026-05-20
+
+### Fixed
+
+- **Windows installs on machines without the Visual C++
+  Redistributable now work.** v0.12.1 (and every prior Rust+MSVC
+  build of Baudrun) shipped a `Baudrun.exe` that dynamically linked
+  against `VCRUNTIME140.dll`, part of the Visual C++ 2015+
+  Redistributable. On a freshly-imaged Windows install — including
+  winget's automated validator sandbox — that DLL isn't present,
+  so the Windows loader bailed with `STATUS_DLL_NOT_FOUND`
+  (`0xC0000135`) before any Baudrun code could run, and the user
+  got Windows' "code execution cannot proceed because
+  VCRUNTIME140.dll was not found" loader dialog with no recovery
+  hint from us. v0.12.2 static-links the MSVC C runtime into the
+  binary via `+crt-static` in a new `.cargo/config.toml`, so the
+  `.exe` is self-contained at the CRT layer. ~200 KB binary growth,
+  no other behaviour change. Also unblocks the v0.12.1 winget
+  submission ([microsoft/winget-pkgs#376876](https://github.com/microsoft/winget-pkgs/pull/376876))
+  which was failing the validator's launch test on this exact
+  issue.
+
 ## [0.12.1] — 2026-05-19
 
 ### Changed

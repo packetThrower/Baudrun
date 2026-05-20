@@ -1,6 +1,6 @@
 [package]
 name = "baudrun"
-version = "0.12.1"
+version = "0.12.2"
 description = "Serial terminal for network engineers."
 authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
 edition = "2021"
