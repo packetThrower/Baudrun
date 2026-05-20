@@ -15,6 +15,26 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.12.3] — 2026-05-20
+
+### Fixed
+
+- **Windows launches on machines without a working GPU no longer
+  silently crash.** When gpui's DirectX renderer couldn't acquire
+  a graphics device — driver paused, headless session, GPU
+  exhaustion, or (most visibly) the winget validator's arm64
+  sandbox returning `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE` — v0.12.2
+  panic-aborted the process with `STATUS_STACK_BUFFER_OVERRUN`
+  (`0xC0000409`) before any user-visible feedback could surface.
+  v0.12.3 catches the failure: it logs the underlying HRESULT,
+  pops a Windows error dialog explaining what's wrong, and exits
+  cleanly. v0.12.2's `gpui` git pin is also bumped forward — the
+  upstream handles the device-not-currently-available case more
+  gracefully on the new tip, so the dialog path should be rare in
+  practice. Unblocks v0.12.2's
+  [winget submission](https://github.com/microsoft/winget-pkgs/pull/377330)
+  which hit this exact crash on the arm64 validator.
+
 ## [0.12.2] — 2026-05-20
 
 ### Fixed
