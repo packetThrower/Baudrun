@@ -352,7 +352,7 @@ fn main() {
             themes_store: themes_store.clone(),
         });
 
-        let window = open_app_window(
+        let window = match open_app_window(
             cx,
             WindowInit::Fresh(terminal.clone()),
             profile_store.clone(),
@@ -360,8 +360,36 @@ fn main() {
             skins_store.clone(),
             highlight_store.clone(),
             themes_store.clone(),
-        )
-        .expect("open window");
+        ) {
+            Ok(window) => window,
+            Err(err) => {
+                // Window creation can fail when the OS can't hand
+                // gpui a graphics device — driver paused, headless
+                // session, GPU exhaustion. Most visibly: the winget
+                // validator's arm64 sandbox couldn't initialize a
+                // DXGI device on the v0.12.2 launch test
+                // (DXGI_ERROR_NOT_CURRENTLY_AVAILABLE, HRESULT
+                // 0x887A0022), so `open_app_window` returned Err
+                // and the prior `.expect("open window")` aborted
+                // with STATUS_STACK_BUFFER_OVERRUN before any user-
+                // visible reporting could happen.
+                //
+                // Now: log the error, show a system error dialog
+                // on Windows (release builds are
+                // `windows_subsystem = "windows"`, so log::error!
+                // is invisible without a console), then ask gpui
+                // to quit cleanly. The MessageBox doubles as a
+                // "process is alive" signal to the winget
+                // validator's launch test, so the validator sees
+                // a normal user-facing error report instead of an
+                // instant crash.
+                log::error!("failed to open window: {err:?}");
+                #[cfg(target_os = "windows")]
+                show_window_open_error_dialog(&err);
+                cx.quit();
+                return;
+            }
+        };
 
         // Boot-time update check — fire-and-forget. Respects the
         // user's `disable_update_check` opt-out from Settings →
@@ -459,9 +487,17 @@ fn main() {
         // the Entity<TerminalView> we stashed before opening the
         // window.
         let viewport_focus = view.read(cx).focus_handle().clone();
-        window
+        // Focusing the terminal viewport at boot is a nicety — it
+        // lets the user type without clicking first — not a
+        // correctness requirement. If gpui can't reach the window
+        // (handle invalidated, etc.) log and carry on rather than
+        // aborting the whole app; the window is already open and
+        // a click into the viewport recovers focus.
+        if let Err(err) = window
             .update(cx, |_, window, cx| viewport_focus.focus(window, cx))
-            .expect("focus terminal view");
+        {
+            log::warn!("focus terminal view at boot: {err}");
+        }
 
         cx.activate(true);
     });
@@ -1043,6 +1079,70 @@ fn detect_reduce_motion() -> bool {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn detect_reduce_motion() -> bool {
     false
+}
+
+/// Pop a modal Windows error dialog when `open_app_window` fails.
+/// Release builds set `windows_subsystem = "windows"` (no attached
+/// console), so a plain `log::error!` is invisible to the user — a
+/// `MessageBoxW` is the only feedback path that actually surfaces a
+/// startup-time failure on Windows. The dialog blocks the calling
+/// thread until the user clicks OK, which also keeps the process
+/// alive long enough that the winget validator's launch test sees a
+/// normal "GUI app waiting on user input" outcome instead of an
+/// instant crash with `STATUS_STACK_BUFFER_OVERRUN`.
+///
+/// Inline FFI on `MessageBoxW` (user32.dll) for the same reason
+/// `detect_reduce_motion` uses inline `SystemParametersInfoW`:
+/// avoids a direct `windows-sys` dep that'd conflict with
+/// gpui_windows's transitive version on every gpui bump.
+#[cfg(target_os = "windows")]
+fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    // Body carries the full anyhow chain via `{err:?}` so the user
+    // (or a support thread) sees the underlying HRESULT, not just
+    // "couldn't open window". Wrapping copy explains the most
+    // common cause we've observed (DXGI device not currently
+    // available) without committing to that being the only one.
+    let body = format!(
+        "Baudrun couldn't initialize its window.\n\n\
+         {err:?}\n\n\
+         This usually means the graphics adapter isn't currently \
+         available — paused driver, headless session, or GPU \
+         exhaustion. Try restarting Windows, or sign into a \
+         desktop session before launching Baudrun."
+    );
+    let caption = "Baudrun — failed to start";
+
+    let to_wide = |s: &str| -> Vec<u16> {
+        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    };
+    let body_w = to_wide(&body);
+    let caption_w = to_wide(caption);
+
+    // MB_OK | MB_ICONERROR = "[ OK ]" button + red-X icon. No need
+    // for the SETFOREGROUND flag — the app isn't on screen yet (no
+    // window was opened) so the dialog comes up as the only
+    // foreground window for our process.
+    const MB_OK: u32 = 0x0;
+    const MB_ICONERROR: u32 = 0x10;
+    unsafe extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut core::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            utype: u32,
+        ) -> i32;
+    }
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body_w.as_ptr(),
+            caption_w.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
 }
 
 /// Right-click menu on the macOS dock icon (no-op on other
