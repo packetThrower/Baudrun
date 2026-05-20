@@ -77,18 +77,29 @@ SHA_ARM64=$(curl -sL "https://github.com/packetThrower/Baudrun/releases/download
 PRODUCT_CODE_X64='{REPLACE-WITH-X64-MSI-PRODUCT-GUID}'
 PRODUCT_CODE_ARM64='{REPLACE-WITH-ARM64-MSI-PRODUCT-GUID}'
 
-# Render the templates.
-VERSION="$VERSION" RELEASE_DATE="$DATE" \
-  SHA256_AMD64_MSI="$SHA_X64" SHA256_ARM64_MSI="$SHA_ARM64" \
-  PRODUCT_CODE_AMD64="$PRODUCT_CODE_X64" PRODUCT_CODE_ARM64="$PRODUCT_CODE_ARM64" \
-  envsubst < /path/to/Baudrun/packaging/windows/winget/packetThrower.Baudrun.yaml.template \
-  > "$DEST/packetThrower.Baudrun.yaml"
+# Render the templates. The envsubst allowlist argument is
+# load-bearing: the templates' `# yaml-language-server: $schema=…`
+# line contains a literal `$schema` that bare envsubst would
+# helpfully expand to nothing, breaking the schema header and
+# failing winget validation with "schema header URL does not
+# match the expected pattern" (caught on #376876's first
+# validation run). The allowlist tells envsubst to substitute
+# only our six known variables and pass `$schema` through.
+ENVSUBST_VARS='${VERSION} ${RELEASE_DATE} ${SHA256_AMD64_MSI} ${SHA256_ARM64_MSI} ${PRODUCT_CODE_AMD64} ${PRODUCT_CODE_ARM64}'
 
 VERSION="$VERSION" RELEASE_DATE="$DATE" \
   SHA256_AMD64_MSI="$SHA_X64" SHA256_ARM64_MSI="$SHA_ARM64" \
   PRODUCT_CODE_AMD64="$PRODUCT_CODE_X64" PRODUCT_CODE_ARM64="$PRODUCT_CODE_ARM64" \
-  envsubst < /path/to/Baudrun/packaging/windows/winget/packetThrower.Baudrun.installer.yaml.template \
-  > "$DEST/packetThrower.Baudrun.installer.yaml"
+  envsubst "$ENVSUBST_VARS" \
+    < /path/to/Baudrun/packaging/windows/winget/packetThrower.Baudrun.yaml.template \
+    > "$DEST/packetThrower.Baudrun.yaml"
+
+VERSION="$VERSION" RELEASE_DATE="$DATE" \
+  SHA256_AMD64_MSI="$SHA_X64" SHA256_ARM64_MSI="$SHA_ARM64" \
+  PRODUCT_CODE_AMD64="$PRODUCT_CODE_X64" PRODUCT_CODE_ARM64="$PRODUCT_CODE_ARM64" \
+  envsubst "$ENVSUBST_VARS" \
+    < /path/to/Baudrun/packaging/windows/winget/packetThrower.Baudrun.installer.yaml.template \
+    > "$DEST/packetThrower.Baudrun.installer.yaml"
 
 # Validate before pushing — same checks the upstream CI runs.
 winget validate --manifest "$DEST"
