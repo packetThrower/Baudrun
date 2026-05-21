@@ -110,7 +110,10 @@ brew tap packetThrower/tap
 brew install --cask baudrun                 # stable
 brew install --cask baudrun@alpha           # pre-release
 
-# Windows — Scoop
+# Windows — winget (stable, x64)
+winget install packetThrower.Baudrun
+
+# Windows — Scoop (stable + pre-release, x64 + arm64)
 scoop install git                           # if you don't already have git
 scoop bucket add packetThrower https://github.com/packetThrower/scoop-bucket
 scoop install baudrun                       # stable
