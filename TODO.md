@@ -713,6 +713,35 @@ landed in commit TODO; the items below are the remaining feature work.
       HKLM, MajorUpgrade for clean version-to-version replacement).
       Signing-friendly when the certs land — one MSI to sign per
       arch, no per-tool dance.
+- [ ] **arm64 winget submission.** v0.12.4 shipped x64-only on
+      winget (`microsoft/winget-pkgs#377461`). arm64 cleared every
+      validation step except the launch test, which trips a gpui
+      RefCell reentrancy on the validator's headless arm64
+      sandbox: DXGI can't initialize a graphics adapter
+      (`DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`, `0x887A0022`), gpui's
+      `open_window` returns Err, and the cleanup of pre-window
+      state we set up before the failed open
+      (`gpui_component::init`, the settings-bus subscribe) tries
+      to update an entity via `AsyncApp` while the outer `app.run`
+      borrow is still held — `RefCell already borrowed`, which
+      `panic = "abort"` then turns into `STATUS_STACK_BUFFER_OVERRUN`.
+      Fix is structural: adopt Zed's defer-window-creation-into-
+      `cx.spawn` pattern (`crates/zed/src/main.rs` →
+      `fail_to_open_window_async`) so window creation happens
+      after the initial `app.run` callback has released its
+      borrow. Best done with a local Windows-arm64 dev environment
+      for fast iteration — the 30+ min round-trip via the winget
+      validator that got us this far is not a sustainable feedback
+      loop for a structural refactor. Until then, arm64 winget
+      users fall back to the x64 `.msi` via Windows 11's
+      x86_64-on-arm64 emulation (which runs Rust+MSVC binaries
+      fine in practice); native arm64 `.msi` continues to ship on
+      the GitHub Releases page and via Scoop's `baudrun` /
+      `baudrun-prerelease` manifests. PortFinder's
+      `let _ = cx.open_window(...)` pattern is a viable lighter-
+      touch alternative but degrades UX on real broken-GPU
+      hardware (process zombies after failed window creation, no
+      feedback), so the Zed structural path is preferred.
 - [ ] **Public downloads for a private source repo.** Shared
       downloads repo serving both Baudrun and get_switch_info:
       1. Create public `packetThrower/downloads` (empty, README listing
