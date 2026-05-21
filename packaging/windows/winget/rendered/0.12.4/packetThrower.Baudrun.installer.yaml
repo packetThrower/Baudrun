@@ -42,14 +42,5 @@ Installers:
     InstallerSwitches:
       Silent: /quiet /norestart
       SilentWithProgress: /passive /norestart
-  - Architecture: arm64
-    InstallerType: wix
-    InstallerUrl: https://github.com/packetThrower/Baudrun/releases/download/v0.12.4/Baudrun_0.12.4_arm64_en-US.msi
-    InstallerSha256: D0829465AD00CC53524BC5EA918B9691DE4C8D355BFD7D60705490A575E47AB7
-    ProductCode: '{9D96937E-829E-4EE7-96C3-FE4AEACD6547}'
-    Scope: machine
-    InstallerSwitches:
-      Silent: /quiet /norestart
-      SilentWithProgress: /passive /norestart
 ManifestType: installer
 ManifestVersion: 1.12.0
