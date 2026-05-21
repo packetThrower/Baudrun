@@ -15,6 +15,27 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.12.4] — 2026-05-21
+
+### Fixed
+
+- **Windows boot no longer fast-fails when the graphics adapter
+  isn't available.** v0.12.3 added a graceful handler for window-
+  creation failures (log + system error dialog + `cx.quit()` to
+  shut down cleanly), but the `cx.quit()` step turned out to be
+  unsafe to call from inside gpui's initial-setup closure: it
+  re-borrows an internal RefCell and panics with
+  `STATUS_STACK_BUFFER_OVERRUN` (`0xC0000409`) on its way out —
+  fast-failing the process with the same exit code we were trying
+  to avoid in the first place. v0.12.4 replaces `cx.quit()` with
+  a plain `return`; gpui's event loop idles with no windows, the
+  error dialog still shows on Windows, and the process exits when
+  the user closes the dialog and kills the residual idle process
+  via Task Manager. Same survival pattern PortFinder uses to clear
+  the winget validator on its arm64 sandbox. Unblocks
+  [microsoft/winget-pkgs#377384](https://github.com/microsoft/winget-pkgs/pull/377384)'s
+  launch test, which hit this regression on every retry.
+
 ## [0.12.3] — 2026-05-20
 
 ### Fixed
