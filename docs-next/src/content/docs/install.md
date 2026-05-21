@@ -44,6 +44,43 @@ Update with `brew upgrade --cask baudrun` (or `baudrun@alpha`). The tap's
 auto-bump workflow polls upstream every 6 hours, so a new tag is normally
 installable within a quarter day.
 
+## Windows (winget)
+
+[winget](https://github.com/microsoft/winget-cli) ships with Windows 11
+and modern Windows 10 builds — it's Microsoft's first-party package
+manager. The
+[packetThrower.Baudrun](https://github.com/microsoft/winget-pkgs/tree/master/manifests/p/packetThrower/Baudrun)
+manifest points at the per-arch `.msi` installers from the
+[Releases page](https://github.com/packetThrower/Baudrun/releases),
+so installing is a one-liner:
+
+```powershell
+winget install packetThrower.Baudrun
+# or, using the registered shorthand:
+winget install baudrun
+```
+
+**Scope**: x64 only, stable releases only.
+
+- Pre-release tags (`vX.Y.Z-beta.N`) aren't submitted to winget — the
+  MSI build itself is gated on stable tags only because WiX's
+  `ProductVersion` field rejects alphanumeric pre-release identifiers.
+  Pre-release NSIS `-setup.exe` installers are still produced and
+  shipped via Scoop's `baudrun-prerelease` channel, or you can grab
+  them directly from the Releases page.
+- arm64 .msi is also not currently listed in winget. arm64 Windows
+  users running `winget install` get the x64 .msi installed via
+  Windows 11's x86_64-on-arm64 emulation, which runs the Rust+MSVC
+  binary fine in practice. For a native-arm64 install, reach for
+  Scoop or the Releases page. Native-arm64 winget inclusion is
+  deferred — see [TODO.md](https://github.com/packetThrower/Baudrun/blob/main/TODO.md)
+  for the underlying constraint (winget's arm64 validation sandbox
+  can't initialize a graphics adapter for the launch test).
+
+Update with `winget upgrade packetThrower.Baudrun`. Manifests are
+submitted manually after each stable release, so a new tag is
+normally installable within a day of the GitHub Release going live.
+
 ## Windows (Scoop)
 
 The bucket [`packetThrower/scoop-bucket`](https://github.com/packetThrower/scoop-bucket)
