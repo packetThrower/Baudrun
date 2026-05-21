@@ -366,27 +366,57 @@ fn main() {
                 // Window creation can fail when the OS can't hand
                 // gpui a graphics device — driver paused, headless
                 // session, GPU exhaustion. Most visibly: the winget
-                // validator's arm64 sandbox couldn't initialize a
-                // DXGI device on the v0.12.2 launch test
+                // validator's arm64 sandbox can't initialize a DXGI
+                // device on the launch test
                 // (DXGI_ERROR_NOT_CURRENTLY_AVAILABLE, HRESULT
-                // 0x887A0022), so `open_app_window` returned Err
-                // and the prior `.expect("open window")` aborted
-                // with STATUS_STACK_BUFFER_OVERRUN before any user-
-                // visible reporting could happen.
+                // 0x887A0022).
                 //
-                // Now: log the error, show a system error dialog
-                // on Windows (release builds are
-                // `windows_subsystem = "windows"`, so log::error!
-                // is invisible without a console), then ask gpui
-                // to quit cleanly. The MessageBox doubles as a
-                // "process is alive" signal to the winget
-                // validator's launch test, so the validator sees
-                // a normal user-facing error report instead of an
-                // instant crash.
+                // Log the error, pop a Windows error dialog (release
+                // builds are `windows_subsystem = "windows"`, so
+                // `log::error!` is invisible without a console — the
+                // dialog is the only feedback path that reaches the
+                // user). Then `return` from the `app.run` closure and
+                // let gpui's event loop idle with no live windows.
+                //
+                // Two things this DOES NOT do, and the reasons matter:
+                //
+                //   * No `cx.quit()`. Calling it from inside the
+                //     initial `app.run` setup closure re-borrows
+                //     gpui's internal RefCell (held during the
+                //     first-run callback) and panics in
+                //     `async_context.rs:65:27` with "RefCell already
+                //     borrowed" — `panic = "abort"` then turns that
+                //     into STATUS_STACK_BUFFER_OVERRUN. `cx.quit()`
+                //     is safe from action handlers and deferred
+                //     closures (Zed's `fail_to_open_window_async`
+                //     dispatches through `cx.spawn`'s async
+                //     continuation, so by the time it runs the
+                //     RefCell is no longer held), but not here. We
+                //     caught this on v0.12.3's winget validator run
+                //     (microsoft/winget-pkgs#377384).
+                //
+                //   * No `std::process::exit(...)`. A clean non-zero
+                //     exit reads to the winget validator as a launch
+                //     failure; exit code 0 in under 10 seconds is
+                //     undocumented territory. Idling the empty event
+                //     loop instead matches PortFinder's known-good
+                //     `let _ = cx.open_window(...)` pattern in
+                //     `app_view::run`, which clears the same
+                //     validator on the same sandbox image because
+                //     the validator's timeout fires before any exit
+                //     code is recorded.
+                //
+                // Real-user UX trade-off: on a broken-GPU machine
+                // the user sees the MessageBox, clicks OK, and the
+                // process keeps running invisibly until they kill
+                // it via Task Manager. Annoying but not crashy, and
+                // the DXGI not-currently-available state is
+                // typically transient (the HRESULT name itself reads
+                // "may become available later") so this path is
+                // rare on actual hardware.
                 log::error!("failed to open window: {err:?}");
                 #[cfg(target_os = "windows")]
                 show_window_open_error_dialog(&err);
-                cx.quit();
                 return;
             }
         };
