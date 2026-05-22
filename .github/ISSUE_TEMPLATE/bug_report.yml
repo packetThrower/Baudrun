@@ -1,0 +1,130 @@
+name: Bug report
+description: Something in Baudrun isn't working the way you expect. Crashes, wrong bytes on the wire, UI glitches, silent failures — all welcome here.
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing this. The fields below are the minimum needed to reproduce most issues — fill in what's relevant and skip what isn't. Serial-port hardware is wildly varied, so the more concrete detail about the target device the better.
+
+        If the bug is a crash on startup or right after install, the troubleshooting flow in [`reference/troubleshooting`](https://packetthrower.github.io/Baudrun/reference/troubleshooting/) covers the common environmental causes (missing system libs on Linux, GPU driver issues on Windows, Gatekeeper friction on macOS).
+
+  - type: checkboxes
+    id: pre-flight
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I checked the [existing issues](https://github.com/packetThrower/Baudrun/issues?q=is%3Aissue) and didn't find this one already reported.
+          required: true
+        - label: I'm on the latest release (or a recent pre-release) — older versions may have already been fixed.
+          required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Baudrun version
+      description: From Settings → About, or `Baudrun --version` on the CLI. Include the full SemVer (e.g. `0.12.4`, `0.12.0-beta.2`).
+      placeholder: ex. 0.12.4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: host-os
+    attributes:
+      label: Host operating system
+      description: The machine running Baudrun, not the device on the other end of the serial cable.
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows 11 (x64)
+        - Windows 11 (arm64)
+        - Windows 10 (x64)
+        - Linux — Debian / Ubuntu family
+        - Linux — Fedora / RHEL family
+        - Linux — Arch / Manjaro
+        - Linux — openSUSE
+        - Linux — other (note in details)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install Baudrun?
+      options:
+        - Homebrew (`brew install --cask baudrun`)
+        - Scoop (`scoop install baudrun`)
+        - winget (`winget install packetThrower.Baudrun`)
+        - Direct download — DMG / MSI / NSIS / deb / rpm / AppImage / pkg.tar.zst
+        - Built from source (`cargo build --release`)
+    validations:
+      required: true
+
+  - type: input
+    id: target-device
+    attributes:
+      label: Target device on the serial cable
+      description: Vendor + model + firmware version if known. "Cisco WS-C2960X-48TS-L (IOS 15.2(7))E10", "Juniper EX2300-48P (Junos 22.4R3-S5)", "MikroTik hAP ax3 (RouterOS 7.16.1)", "Arduino Uno R4 WiFi (bootloader)", etc. Leave blank if the bug doesn't involve a specific device (e.g. a UI-only issue).
+      placeholder: ex. Juniper EX2300-48P (Junos 22.4R3-S5)
+
+  - type: textarea
+    id: profile-config
+    attributes:
+      label: Profile configuration
+      description: Paste the relevant profile from `~/.config/baudrun/profiles/` (Linux), `~/Library/Application Support/Baudrun/profiles/` (macOS), or `%APPDATA%\Baudrun\profiles\` (Windows). Or just describe the settings — port, baud rate, framing, flow control, line ending, control-line policies. Redact device hostnames / passwords / send-on-connect tokens before pasting.
+      render: json
+      placeholder: |
+        {
+          "name": "Junos lab",
+          "port": "/dev/cu.usbserial-A50285BI",
+          "baud": 9600,
+          ...
+        }
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+      description: Include exact error messages, footer-pill text, OS dialogs — verbatim. Screenshots help if it's a visual / rendering issue (drag image files directly into the box).
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Concrete sequence of clicks / keystrokes / connections. The smaller the repro, the faster the fix.
+      placeholder: |
+        1. Open Baudrun.
+        2. Select the "Junos lab" profile in the sidebar.
+        3. Click Connect.
+        4. Press Enter once.
+        5. Observe two `root>` prompts appear instead of one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Run Baudrun from a terminal to capture stderr — `cargo run` from source, or invoke the installed binary directly:
+          - macOS: `/Applications/Baudrun.app/Contents/MacOS/Baudrun`
+          - Windows: `& 'C:\Program Files\Baudrun\Baudrun.exe'`
+          - Linux: `/usr/bin/Baudrun`
+        Set `RUST_LOG=baudrun=debug` for verbose output. Paste the last ~50 lines below.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Workarounds you've tried, related crash reports, suspicions about cause, hardware quirks of the USB adapter (chipset / driver version), tmux/screen settings if Baudrun is one of multiple terminals running against the same port — whatever's relevant.

@@ -1,0 +1,18 @@
+# Disables the "Open a blank issue" link on the chooser page so users
+# are nudged into one of the three structured templates. A blank
+# issue can still be filed by hitting the URL directly
+# (`/issues/new`), so this isn't a hard gate — it just makes the
+# structured forms the default path.
+blank_issues_enabled: false
+
+# Off-ramp links shown on the issue chooser page. Anything that
+# isn't really a defect / feature / pack request — usage questions,
+# casual feedback, security disclosures — goes here so people don't
+# file an issue for it.
+contact_links:
+  - name: Documentation
+    url: https://packetthrower.github.io/Baudrun/
+    about: How-tos, profile reference, theme / skin / highlight-pack authoring guides, troubleshooting. Most "how do I do X" questions are answered here.
+  - name: Discussions
+    url: https://github.com/packetThrower/Baudrun/discussions
+    about: Open-ended questions, "is this the right approach", configuration help, sharing profiles or rule packs. Lower-friction than an issue.

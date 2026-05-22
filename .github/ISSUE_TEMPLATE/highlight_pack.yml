@@ -1,0 +1,73 @@
+name: Vendor highlight pack
+description: Propose a new bundled syntax-highlight rule set for a vendor / device family Baudrun doesn't cover yet. Or improvements to an existing pack.
+title: "[Highlight pack] "
+labels: ["enhancement", "highlight-pack"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Baudrun ships rule packs for Cisco IOS, Juniper Junos, Aruba AOS-CX, Arista EOS, MikroTik RouterOS, and a vendor-neutral default. New packs slot in via the same JSON schema documented on the [highlight authoring](https://packetthrower.github.io/Baudrun/authoring/highlights/) page, and you can prototype them in the [regex playground](https://packetthrower.github.io/Baudrun/playground.html) without touching the codebase.
+
+        This template is for *requesting* a bundled pack or proposing rules — if you already have a fully-authored pack you want merged, file a PR instead and link it here.
+
+  - type: input
+    id: vendor
+    attributes:
+      label: Vendor and device family
+      description: Be specific about the firmware/OS family — "Cisco IOS-XE" and "Cisco NX-OS" and "Cisco IOS" all need different rules even though it's the same vendor.
+      placeholder: ex. Extreme EXOS, Brocade FastIron, Ubiquiti EdgeOS, Fortinet FortiOS, Palo Alto PAN-OS
+    validations:
+      required: true
+
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample console output
+      description: |
+        Paste a representative chunk of unmodified output from a working session — `show version`, `show running-config`, an error scenario, whatever's typical for the device. Use a code-fenced block to preserve formatting. **Redact** hostnames, IPs, passwords, serial numbers, license keys, internal-only IP/MAC ranges, etc. before pasting. The point is the *shape* of the output, not your actual deployment.
+      render: shell
+      placeholder: |
+        switch1# show version
+        Network Operating System  Version 12.0.34
+        Build Date                2024-01-15
+        Boot ROM Version          1.4.2
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-to-highlight
+    attributes:
+      label: What should be highlighted, and how?
+      description: |
+        Free-text. Examples:
+        - Errors and warning keywords in red / amber
+        - IP addresses and MAC addresses in blue
+        - Interface names (`GigabitEthernet0/0/1`, `Port-channel12`) in cyan
+        - Vendor-specific prompt patterns
+        - Multi-word config statements (`spanning-tree mode rapid-pvst`)
+
+        Rough is fine — exact regex isn't expected here. If you've already sketched rules in JSON form, paste them under "Pre-authored rules" below.
+    validations:
+      required: true
+
+  - type: textarea
+    id: prior
+    attributes:
+      label: Pre-authored rules (optional)
+      description: If you've drafted the pack in JSON already (e.g. using the playground), paste it here.
+      render: json
+
+  - type: textarea
+    id: reference
+    attributes:
+      label: Reference packs from other tools (optional)
+      description: Links to syntax-highlighter configs for this vendor in Sublime / VS Code / vim / SecureCRT / TextMate / etc. Useful as a starting point even when the license / format don't allow direct copying.
+
+  - type: checkboxes
+    id: licensing
+    attributes:
+      label: Licensing
+      options:
+        - label: The sample output above is mine to share publicly (no NDA / customer-confidential material).
+          required: true

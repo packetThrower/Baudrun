@@ -1,0 +1,54 @@
+name: Feature request
+description: A serial-workflow problem you'd like Baudrun to solve, or an existing behaviour you'd like to extend.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Baudrun's audience is network / firmware / embedded folks working against switch consoles, router CLIs, and other serial-attached gear. The strongest feature requests come from a concrete problem you've hit on real hardware. Frame it that way and the request is much more likely to land.
+
+        Before filing: skim the [TODO](https://github.com/packetThrower/Baudrun/blob/main/TODO.md) — large chunks of the roadmap are already there with context on prioritization, and you may find this request is already tracked.
+
+  - type: checkboxes
+    id: pre-flight
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I checked the [existing issues](https://github.com/packetThrower/Baudrun/issues?q=is%3Aissue) and the [TODO file](https://github.com/packetThrower/Baudrun/blob/main/TODO.md) for prior discussion of this feature.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The workflow / use case in your own words. "I'm trying to do X, but Baudrun makes that hard because Y." Concrete examples beat abstract framing — name the device, describe what the screen looks like, walk through the keystrokes.
+      placeholder: |
+        Example: When I'm bringing up a stack of Junos switches I need to set the same hostname-prefix-then-suffix-number pattern on each one. Right now I retype the whole command per device. A "send block" with a `{n}` placeholder per session would let me set up the template once and step through the stack.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried so far?
+      description: Workarounds, scripts, other tools (SecureCRT, PuTTY, screen, minicom, etc.). Knowing what didn't work helps frame what would.
+      placeholder: |
+        Example: I've been writing per-device .scr files for SecureCRT but the editing loop is awkward, and the script can't react to error output mid-paste.
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested solution
+      description: Sketch what the feature might look like in Baudrun. UI affordance, behaviour, settings exposed, defaults. Don't worry about implementation details unless you specifically want them on the table.
+
+  - type: textarea
+    id: prior-art
+    attributes:
+      label: Prior art
+      description: Other tools, terminal emulators, or RFCs / specs that handle this well. Links + which specific behaviour you'd lift. Especially useful for things like control-sequence handling, ECMA-48 corners, vendor protocol quirks.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
