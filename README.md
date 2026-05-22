@@ -12,15 +12,18 @@
 
 ## Minimum OS versions
 
-**macOS** (Apple Silicon and Intel) 
+**macOS** (Apple Silicon and Intel)
+
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 
-**Windows** (x64 and ARM64) 
+**Windows** (x64 and ARM64)
+
 [![Intel](https://img.shields.io/badge/Intel-x86__64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Windows 10 21H2+](https://img.shields.io/badge/Windows%2010%2021H2%2B-x64%20%2F%20arm64-0078D4?style=flat-square&logo=windows&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 
 **Linux** (amd64 and arm64)
+
 [![Ubuntu 22.04+](https://img.shields.io/badge/Ubuntu-22.04%2B-E95420?style=flat-square&logo=ubuntu&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Debian 12+](https://img.shields.io/badge/Debian-12%2B-A81D33?style=flat-square&logo=debian&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Fedora 38+](https://img.shields.io/badge/Fedora-38%2B-294172?style=flat-square&logo=fedora&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
