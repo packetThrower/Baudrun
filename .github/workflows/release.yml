@@ -11,11 +11,46 @@ on:
       # up with the "Pre-release" label and don't displace the
       # "Latest release" pointer.
       - "v[0-9]+.[0-9]+.[0-9]+-*"
+  # On-demand build for any branch — produces the same per-platform
+  # artifact set as a tag-triggered run, but the `release` job is
+  # gated off (see `if: github.event_name == 'push'` there) so no
+  # GitHub Release lands and the Releases page stays uncluttered.
+  # Artifacts live for 90 days on the workflow-run page; download
+  # via `gh run download <run-id>` or the Actions UI.
+  #
+  # Useful for verifying a PR's binary on real hardware before the
+  # branch lands on main — most importantly the Windows-arm probe
+  # path that needs an actual arm64 sandbox to exercise. GitHub
+  # only shows the "Run workflow" button if the trigger lives on
+  # the default branch (so this needs to ride on main even when
+  # the build you want to test lives on a feature branch).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Version string used for filenames + Cargo.toml /
+          Info.plist patching, with no leading "v"
+          (e.g. "0.12.5-dev1"). A hyphen in the value is treated
+          as a pre-release marker the same way a tag would be,
+          so MSI building is skipped — `ProductVersion` rejects
+          alphanumeric segments and would fail the build.
+        required: true
+        default: '0.0.0-dev'
 
 # No workflow-level `permissions:` — each job declares its own so
 # the `contents: write` needed to publish the release is scoped to
 # the one job that actually creates it. The build jobs and the
 # `ci` call only read the repo.
+
+# Workflow-level effective version. Resolves to the dispatch input
+# when present, otherwise the ref name (tag for push triggers).
+# Steps that need a version (Cargo.toml patching, artifact
+# filenames, pre-release detection) read `$EFFECTIVE_VERSION` /
+# `$env:EFFECTIVE_VERSION` / `env.EFFECTIVE_VERSION` instead of
+# computing from `GITHUB_REF_NAME` so the dispatch path falls
+# through correctly without per-step plumbing.
+env:
+  EFFECTIVE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
 
 # Queue, don't cancel: a mid-flight release shouldn't be interrupted
 # by a retag of the same version — risk of half-uploaded artifacts.
@@ -101,7 +136,7 @@ jobs:
 
       - name: Patch version from tag
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${EFFECTIVE_VERSION#v}"
           # Awk over sed: BSD sed's `1,/.../{s/.../}` block syntax
           # bombs on macOS, while GNU sed accepts it. Awk handles
           # the in-[package]-section scoping portably, so the same
@@ -142,7 +177,7 @@ jobs:
 
       - name: Stage artifacts
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${EFFECTIVE_VERSION#v}"
           mkdir -p release-artifacts
 
           # Loop both arches, renaming cargo-packager's outputs
@@ -232,7 +267,7 @@ jobs:
       # `ProductVersion` field rejects alphanumeric prerelease
       # identifiers like `0.9.0-alpha.3` — NSIS has no such limit.
       - name: Install cargo-wix
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ !contains(env.EFFECTIVE_VERSION, '-') }}
         uses: taiki-e/install-action@65851e10cd6c377f11a60e600abc07cb08643468 # v2.79.3
         with:
           tool: cargo-wix
@@ -246,7 +281,7 @@ jobs:
       # wix step below can find candle.exe / light.exe without a
       # full session reload.
       - name: Install WiX Toolset 3.14
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ !contains(env.EFFECTIVE_VERSION, '-') }}
         shell: pwsh
         run: |
           choco install wixtoolset --pre -y --no-progress
@@ -263,7 +298,7 @@ jobs:
       - name: Patch version from tag
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $version = "$env:EFFECTIVE_VERSION" -replace '^v', ''
           (Get-Content Cargo.toml -Raw) -replace '(?m)^version = .*', "version = `"$version`"" |
             Set-Content -NoNewline Cargo.toml
           Write-Host "Building version: $version"
@@ -290,14 +325,14 @@ jobs:
       # failure surfaces in the GH Actions log instead of being
       # buried in cargo-wix's default-quiet wrapper.
       - name: Build .msi (cargo-wix, stable tags only)
-        if: ${{ !contains(github.ref_name, '-') }}
+        if: ${{ !contains(env.EFFECTIVE_VERSION, '-') }}
         shell: cmd
         run: cargo wix --no-build --nocapture
 
       - name: Stage artifacts
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $version = "$env:EFFECTIVE_VERSION" -replace '^v', ''
           $arch = "${{ matrix.arch }}"
           $bundle = "target/release"
           New-Item -ItemType Directory -Force release-artifacts | Out-Null
@@ -414,7 +449,7 @@ jobs:
 
       - name: Patch version from tag
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${EFFECTIVE_VERSION#v}"
           # Awk (over sed) for portability with the macOS job —
           # see the macOS step's note. On Linux GNU sed would also
           # work but using the same tool everywhere keeps the
@@ -487,7 +522,7 @@ jobs:
 
       - name: Build .rpm via fpm
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${EFFECTIVE_VERSION#v}"
           ARCH="${{ matrix.rpm_arch }}"
           BIN="target/release/Baudrun"
 
@@ -554,7 +589,7 @@ jobs:
       # empty here matches what the old Tauri release.yml shipped.
       - name: Build .pkg.tar.zst via fpm
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${EFFECTIVE_VERSION#v}"
           ARCH="${{ matrix.rpm_arch }}"
           fpm -s dir -t pacman -C pkg \
             --name baudrun --version "$VERSION" --architecture "$ARCH" \
@@ -590,6 +625,13 @@ jobs:
 
   release:
     needs: [build-macos, build-windows, build-linux]
+    # Skip the GitHub Release on workflow_dispatch — the build
+    # jobs above produce the same artifact set either way, but
+    # the dispatch flow is for ad-hoc testing on the workflow-run
+    # page, not for shipping. Only the tag-push path lands a
+    # Release; workflow_dispatch artifacts live on the run page
+    # for 90 days.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     # The one job that needs write: it creates the GitHub Release and
     # uploads the artifacts. Everything upstream is read-only.
@@ -694,4 +736,4 @@ jobs:
           # Tags with a hyphen in the SemVer pre-release slot flag
           # as pre-release so GitHub shows the "Pre-release" badge
           # and leaves "Latest release" on the most recent stable.
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(env.EFFECTIVE_VERSION, '-') }}
