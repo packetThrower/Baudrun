@@ -210,6 +210,7 @@ impl Store {
         out
     }
 
+    #[allow(dead_code)]
     pub fn update_user_pack(&self, mut pack: HighlightPack) -> Result<HighlightPack> {
         // The id + source fields are owned by the store; users
         // can edit name / description / rules but the slot itself

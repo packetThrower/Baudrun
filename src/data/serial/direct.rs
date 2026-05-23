@@ -12,6 +12,12 @@
 //!
 //! VID and PID are lowercase 4-hex-digit strings; Serial is the
 //! iSerial descriptor value with NUL / whitespace padding stripped.
+//!
+//! **Status:** orphaned post-gpui-migration alongside its
+//! `crate::data::usbserial` siblings — the new serial path goes
+//! `serialport`-only. Narrowed replacement for `data/mod.rs`'s
+//! blanket allow.
+#![allow(dead_code)]
 
 use std::io;
 use std::sync::Arc;

@@ -92,6 +92,7 @@ impl Store {
             .cloned()
     }
 
+    #[allow(dead_code)]
     pub fn resolve(&self, id: &str) -> Skin {
         self.get(id)
             .or_else(|| self.get(DEFAULT_SKIN_ID))

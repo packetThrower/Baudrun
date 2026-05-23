@@ -68,6 +68,7 @@ pub fn chipset_for_vid(vid: &str) -> &'static str {
 
 /// Driver download URL for a VID. Empty string when no user-
 /// installable driver is required (FTDI, CDC-ACM, etc.).
+#[allow(dead_code)]
 pub fn driver_url_for_vid(vid: &str) -> &'static str {
     driver_url_by_vid(&vid.to_ascii_lowercase())
 }

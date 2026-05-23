@@ -4,6 +4,13 @@
 //! chipsets the kernel doesn't drive (notably CP210x on macOS
 //! without SiLabs' VCP kext installed).
 //!
+//! **Status:** orphaned post-gpui-migration. The serial path went
+//! `serialport`-only in the gpui rewrite; this module + its
+//! `cp210x` submodule aren't wired anywhere live. Kept compiled
+//! so the rusb-backed code stays buildable for the eventual
+//! libusb-fallback resurrection. Narrowed replacement for the
+//! `data/mod.rs` blanket allow.
+//!
 //! Architecture mirrors the Go version:
 //!
 //!   - [`Port`] is the cross-chipset surface (Read + Write + line /
@@ -18,6 +25,8 @@
 //! Windows builds are a passthrough — the OS vendor driver exposes
 //! a COM port and `serialport` drives it natively, so libusb-direct
 //! isn't used there. [`list`] returns an empty slice on Windows.
+
+#![allow(dead_code)]
 
 use std::io;
 use std::sync::{Mutex, OnceLock};

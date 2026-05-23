@@ -4,6 +4,12 @@
 //! that already have a serial driver bound — the whole point of
 //! missing-driver detection is to find devices the driver HASN'T
 //! bound to yet.
+//!
+//! **Status:** the public entry point is unused (no caller hits
+//! `detect_missing_drivers` from the gpui UI yet). Tests still
+//! exercise the parser. Narrowed replacement for `data/mod.rs`'s
+//! blanket allow.
+#![allow(dead_code)]
 
 use std::collections::HashSet;
 use std::process::Command;

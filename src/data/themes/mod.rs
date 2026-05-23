@@ -106,6 +106,7 @@ impl Store {
 
     /// Returns the theme with the given id, falling back to the
     /// default and finally the first builtin.
+    #[allow(dead_code)]
     pub fn resolve(&self, id: &str) -> Theme {
         self.get(id)
             .or_else(|| self.get(DEFAULT_THEME_ID))

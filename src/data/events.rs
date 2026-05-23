@@ -1,6 +1,15 @@
 //! Event names and payload types emitted on the Tauri event bus.
 //! Kept as constants so backend emitters and frontend listeners can
 //! both reference the same symbols without drift.
+//!
+//! **Status:** orphaned post-gpui-migration. The gpui rewrite has no
+//! event bus — cross-window settings sync runs through `SettingsBus`
+//! (gpui Entity) and transfer progress through gpui actions. Pure
+//! Tauri-era residue. Candidate for full deletion — kept compiled
+//! for now per the audit's "flag, don't delete pre-existing dead
+//! code" rule. Narrowed replacement for `data/mod.rs`'s blanket
+//! allow.
+#![allow(dead_code)]
 
 use serde::Serialize;
 

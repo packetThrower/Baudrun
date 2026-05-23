@@ -5,6 +5,17 @@
 //! Reference: SiLabs AN571 "CP210x/CP211x USB to UART Bridge VCP
 //! Interface Specification".
 //! <https://www.silabs.com/documents/public/application-notes/AN571.pdf>
+//!
+//! **Status:** orphaned post-gpui-migration. The new serial I/O path
+//! in `src/serial_io.rs` uses the `serialport` crate uniformly
+//! across platforms, so the direct-libusb fallback this module
+//! implements isn't called from anywhere. Kept compiled (rather
+//! than gated behind a feature or deleted) so the chipset tests
+//! still run and the code stays buildable for whenever we wire
+//! the libusb path back in. The `#![allow(dead_code)]` below is
+//! the narrowed replacement for the module-wide allow that used
+//! to live on `data/mod.rs`.
+#![allow(dead_code)]
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};

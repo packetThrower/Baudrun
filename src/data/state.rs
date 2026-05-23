@@ -2,6 +2,16 @@
 //! `AppHandle::state()` for the lifetime of the process; commands
 //! reach it with `tauri::State<AppState>`.
 //!
+//! **Status:** orphaned post-gpui-migration. gpui manages app state
+//! through its own `Entity` + `Global` system (see `AppShared` in
+//! `src/main.rs`), and per-window session lifecycle is now owned
+//! by `AppView`. No code constructs `AppState` or `SessionHandle`
+//! anywhere live. Pure Tauri-era residue, candidate for full
+//! deletion. Kept compiled for now per the audit's "flag, don't
+//! delete" rule.
+#![allow(dead_code)]
+
+//!
 //! ## Per-window sessions
 //!
 //! Every Tauri window — the original `main` plus any tear-off windows

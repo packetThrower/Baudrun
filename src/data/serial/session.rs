@@ -6,6 +6,15 @@
 //! split the underlying FD into independent read and write handles,
 //! so command invocations (send, set_dtr, send_break, ...) don't
 //! contend with the 100ms blocking read loop.
+//!
+//! **Status:** orphaned post-gpui-migration. The gpui code path in
+//! `src/serial_io.rs` runs its own thread-pump pattern directly
+//! against `serialport`, so this module's `Session` type and the
+//! associated `SessionError` variants aren't constructed from
+//! anywhere live. Kept compiled because the trait shape is a
+//! useful reference for the next round of session-handle work.
+//! Narrowed replacement for the module-wide allow in `data/mod.rs`.
+#![allow(dead_code)]
 
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
