@@ -14,13 +14,17 @@
 //!   - `events`, `state` — Tauri-era residue (event bus, AppState).
 //!     gpui replaces both wholesale. Candidates for full deletion.
 //!   - `serial::session`, `serial::direct`, `serial::usb_darwin`,
-//!     `usbserial::*` — libusb-direct serial path; the gpui code
-//!     runs `serialport`-only. Kept compiled as a reference for
+//!     `serial::chipsets`, `usbserial::*` — libusb-direct serial
+//!     path + the chipset-identification table that backs it on
+//!     macOS / Windows only. The gpui code runs `serialport`-only;
+//!     `chipsets` specifically is fully dead on Linux because its
+//!     callers (`detect`, `usb_darwin`, `usb_windows`) are all
+//!     cfg-gated to non-Linux. Kept compiled as a reference for
 //!     the eventual libusb-fallback resurrection.
 //!   - Other modules (`profiles`, `settings`, `skins`, `themes`,
 //!     `highlight`, `sanitize`, `transfer`, `hex`, `appdata`,
-//!     `serial::ports`, `serial::chipsets`) are actively wired
-//!     into the gpui UI.
+//!     `serial::ports`) are actively wired into the gpui UI on
+//!     all platforms.
 
 pub mod appdata;
 pub mod events;

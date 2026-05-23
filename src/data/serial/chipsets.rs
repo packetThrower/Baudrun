@@ -10,6 +10,18 @@
 //!  3. Manufacturer-string heuristic as a last resort — the chip's
 //!     own iManufacturer descriptor often outs the underlying silicon
 //!     even when the enclosing device has its own VID.
+//!
+//! **Status:** every public item here is called only from
+//! `serial::detect` / `serial::usb_darwin` / `serial::usb_windows`,
+//! all of which are `#[cfg(any(target_os = "macos", target_os =
+//! "windows"))]`. On Linux the entire missing-driver-detection
+//! path is a `Vec::new()` stub (kernel-side driver loading covers
+//! the same need), so on Linux every item in this module is
+//! unreachable — dead-code under `-D warnings`. File-level allow
+//! matches the pattern used by `usb_darwin`, `direct`, `cp210x`,
+//! `usbserial`, the other modules in the same platform-conditional
+//! cluster.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 
@@ -68,7 +80,6 @@ pub fn chipset_for_vid(vid: &str) -> &'static str {
 
 /// Driver download URL for a VID. Empty string when no user-
 /// installable driver is required (FTDI, CDC-ACM, etc.).
-#[allow(dead_code)]
 pub fn driver_url_for_vid(vid: &str) -> &'static str {
     driver_url_by_vid(&vid.to_ascii_lowercase())
 }
