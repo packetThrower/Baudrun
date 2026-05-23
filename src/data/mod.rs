@@ -11,8 +11,6 @@
 //! orphans surface as clippy warnings instead of being silently
 //! absorbed:
 //!
-//!   - `events`, `state` — Tauri-era residue (event bus, AppState).
-//!     gpui replaces both wholesale. Candidates for full deletion.
 //!   - `serial::session`, `serial::direct`, `serial::usb_darwin`,
 //!     `serial::chipsets`, `usbserial::*` — libusb-direct serial
 //!     path + the chipset-identification table that backs it on
@@ -20,14 +18,22 @@
 //!     `chipsets` specifically is fully dead on Linux because its
 //!     callers (`detect`, `usb_darwin`, `usb_windows`) are all
 //!     cfg-gated to non-Linux. Kept compiled as a reference for
-//!     the eventual libusb-fallback resurrection.
+//!     the eventual libusb-fallback resurrection (see TODO.md's
+//!     "Re-wire `data::usbserial::cp210x` as a fallback" entry).
 //!   - Other modules (`profiles`, `settings`, `skins`, `themes`,
 //!     `highlight`, `sanitize`, `transfer`, `hex`, `appdata`,
 //!     `serial::ports`) are actively wired into the gpui UI on
 //!     all platforms.
+//!
+//! Deleted in this branch (previously flagged as Tauri-era
+//! residue): `events` (event-bus name constants + payloads — gpui
+//! has no event bus, cross-window state flows through
+//! `SettingsBus` and direct entity references) and `state`
+//! (`AppState` singleton + per-window `SessionHandle` map — gpui
+//! holds per-window state on `AppView` directly and shared state
+//! in the `AppShared` global).
 
 pub mod appdata;
-pub mod events;
 pub mod hex;
 pub mod highlight;
 pub mod profiles;
@@ -35,7 +41,6 @@ pub mod sanitize;
 pub mod serial;
 pub mod settings;
 pub mod skins;
-pub mod state;
 pub mod themes;
 pub mod transfer;
 pub mod usbserial;
