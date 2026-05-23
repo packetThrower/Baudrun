@@ -22,6 +22,7 @@
 //! pointer-driven.
 
 mod buttons;
+mod opts;
 mod session;
 mod window;
 
@@ -44,9 +45,9 @@ use gpui_component::{
     input::{Input, InputState},
     notification::Notification,
     scroll::ScrollableElement,
-    select::{Select, SelectItem, SelectState},
+    select::{Select, SelectState},
     tooltip::Tooltip,
-    Disableable, Icon, IconName, IndexPath, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
+    Disableable, Icon, IconName, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
 };
 
 use crate::data::appdata;
@@ -54,7 +55,6 @@ use crate::data::hex::parse_hex_string;
 use crate::data::highlight;
 use crate::data::profiles::{self, Profile};
 use crate::data::sanitize::SanitizingLogWriter;
-use crate::data::serial::ports;
 use crate::data::settings;
 use crate::data::skins;
 use crate::data::themes;
@@ -68,6 +68,10 @@ use crate::term_bridge::Palette;
 use crate::terminal_view::{ProfileSettings, TerminalView};
 
 use buttons::{line_pill, pill_button, primary_button};
+use opts::{
+    backspace_opts, baud_opts, data_bits_opts, flow_control_opts, line_ending_opts,
+    line_policy_opts, make_select, parity_opts, port_opts, read_select, stop_bits_opts, Opt,
+};
 use session::{bounds_to_geometry, geometry_to_bounds};
 pub use session::{SessionBundle, WindowInit};
 pub use window::open_app_window;
@@ -5170,203 +5174,6 @@ fn editor_fields_match(a: &Profile, b: &Profile) -> bool {
         && a.theme_id == b.theme_id
         && a.highlight == b.highlight
         && a.enabled_highlight_presets == b.enabled_highlight_presets
-}
-
-/// One choice in a select widget. `id` is the canonical value
-/// stored on the `Profile` (e.g. `"none"`, `"9600"`, `"crlf"`);
-/// `title` is the human-readable label shown in the menu and as
-/// the closed-state value (e.g. `"None"`, `"9600 (default)"`,
-/// `"CRLF (\\r\\n) — modems"`). Cheap to clone (two `String`s) —
-/// the option lists are tiny and built once per editor open.
-#[derive(Clone)]
-struct Opt {
-    id: String,
-    title: SharedString,
-}
-
-impl Opt {
-    fn new(id: &str, title: &str) -> Self {
-        Self {
-            id: id.to_string(),
-            title: SharedString::from(title.to_string()),
-        }
-    }
-}
-
-impl SelectItem for Opt {
-    type Value = String;
-
-    fn title(&self) -> SharedString {
-        self.title.clone()
-    }
-
-    fn value(&self) -> &Self::Value {
-        &self.id
-    }
-}
-
-/// Build a `SelectState<Vec<Opt>>` pre-selected to whichever option
-/// in `opts` has `id == selected`. If `selected` doesn't match
-/// anything, no option is pre-selected (the closed-state shows the
-/// placeholder, if any). Wraps the gpui-component constructor so
-/// caller sites don't have to deal with `IndexPath` directly.
-fn make_select(
-    opts: Vec<Opt>,
-    selected: &str,
-    window: &mut Window,
-    cx: &mut Context<AppView>,
-) -> Entity<SelectState<Vec<Opt>>> {
-    let idx = opts
-        .iter()
-        .position(|o| o.id == selected)
-        .map(IndexPath::new);
-    cx.new(|cx| SelectState::new(opts, idx, window, cx))
-}
-
-/// Read the currently-selected id from a `SelectState<Vec<Opt>>`.
-/// Falls back to an empty string if nothing is selected — the
-/// `Profile` validator rejects empty strings for these fields, so
-/// the user gets a clear error rather than a silent bad save.
-fn read_select(state: &Entity<SelectState<Vec<Opt>>>, cx: &Context<AppView>) -> String {
-    state.read(cx).selected_value().cloned().unwrap_or_default()
-}
-
-// --- Option lists --------------------------------------------------
-//
-// Mirrors the Tauri ProfileForm.svelte option arrays. Labels are
-// hand-written to match: short id + parenthetical hint where the
-// raw id alone (e.g. "cr", "del") would be opaque to a user who
-// hasn't shipped serial-console code before. Wrapping each in a
-// fn keeps the borrowed-vec ergonomics simple — gpui-component
-// takes the `Vec<Opt>` by value into the SelectState.
-
-fn baud_opts() -> Vec<Opt> {
-    [
-        ("9600", "9600 (default)"),
-        ("19200", "19200"),
-        ("38400", "38400"),
-        ("57600", "57600"),
-        ("115200", "115200"),
-        ("230400", "230400"),
-        ("460800", "460800"),
-        ("921600", "921600"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn data_bits_opts() -> Vec<Opt> {
-    ["5", "6", "7", "8"]
-        .into_iter()
-        .map(|s| Opt::new(s, s))
-        .collect()
-}
-
-fn parity_opts() -> Vec<Opt> {
-    [
-        ("none", "None"),
-        ("odd", "Odd"),
-        ("even", "Even"),
-        ("mark", "Mark"),
-        ("space", "Space"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn stop_bits_opts() -> Vec<Opt> {
-    ["1", "1.5", "2"]
-        .into_iter()
-        .map(|s| Opt::new(s, s))
-        .collect()
-}
-
-fn flow_control_opts() -> Vec<Opt> {
-    [
-        ("none", "None"),
-        ("rtscts", "RTS/CTS"),
-        ("xonxoff", "XON/XOFF"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn line_ending_opts() -> Vec<Opt> {
-    [
-        ("cr", "CR (\\r) — switches, routers"),
-        ("lf", "LF (\\n) — Linux consoles"),
-        ("crlf", "CRLF (\\r\\n) — legacy / Windows"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-/// Line-policy options for DTR/RTS on connect/disconnect — pulled
-/// verbatim from `src/lib/api.ts` (LINE_POLICIES). Empty-string id
-/// is allowed by `Profile::validate` but isn't useful in the UI;
-/// "default" carries the same semantics ("leave as-is").
-fn line_policy_opts() -> Vec<Opt> {
-    [
-        ("default", "Default (leave as-is)"),
-        ("assert", "Assert (high)"),
-        ("deassert", "Deassert (low)"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn backspace_opts() -> Vec<Opt> {
-    [
-        ("del", "DEL (0x7F) — VT100, xterm, modern"),
-        ("bs", "BS (0x08) — older Cisco, Foundry"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-/// Build the Serial Port select options from the current OS port
-/// list. Each detected port becomes one option; the title bundles
-/// the device path with whatever the enumerator found
-/// (`/dev/cu.usbserial-XYZ — FT232R USB UART · FTDI`) — same shape
-/// the Tauri form uses, so the user gets enough info to identify
-/// the right adapter without opening System Settings.
-///
-/// If `keep_selected` is non-empty and isn't in the detected list,
-/// it's prepended as an "(not connected)" option so the saved
-/// profile still shows its port even when the device is unplugged.
-/// On port enumeration failure we still want a usable form, so we
-/// fall back to the keep_selected (if any) and otherwise an empty
-/// list — the user can rescan later.
-fn port_opts(keep_selected: &str) -> Vec<Opt> {
-    let detected = ports::list_ports().unwrap_or_default();
-    let mut opts: Vec<Opt> = detected
-        .iter()
-        .map(|p| {
-            let mut title = p.name.clone();
-            if !p.product.is_empty() {
-                title.push_str(" — ");
-                title.push_str(&p.product);
-            }
-            if !p.chipset.is_empty() {
-                title.push_str(" · ");
-                title.push_str(&p.chipset);
-            }
-            Opt::new(&p.name, &title)
-        })
-        .collect();
-    if !keep_selected.is_empty() && !detected.iter().any(|p| p.name == keep_selected) {
-        // Prepend so the user's saved port shows up first when
-        // it isn't currently detected (cable unplugged, etc.).
-        let title = format!("{keep_selected} (not connected)");
-        opts.insert(0, Opt::new(keep_selected, &title));
-    }
-    opts
 }
 
 /// All Editor fields a render needs, cloned out so the call site
