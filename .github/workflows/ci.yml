@@ -193,3 +193,19 @@ jobs:
       # pass `--lib` — that errors with "no library targets found".
       - name: cargo test
         run: cargo test
+
+      # scripts/* are dev-only helper crates (virtual-serial test
+      # rig, transfer-tests wire harness) that aren't part of
+      # cargo's workspace — the root `cargo clippy` / `cargo test`
+      # skip them entirely. Without this step, a shared type change
+      # in `src/data/transfer.rs` could break `scripts/transfer-tests`
+      # silently. Cold compile is ~30s per crate (small dep trees,
+      # no gpui); incremental is a few seconds. Ubuntu-only — these
+      # crates target Unix and the libudev install above satisfies
+      # their serialport dep.
+      - name: cargo build scripts/*
+        if: matrix.runner == 'ubuntu-latest'
+        run: |
+          for d in scripts/*/; do
+            (cd "$d" && cargo build)
+          done
