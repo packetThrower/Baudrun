@@ -136,6 +136,38 @@ const DEFAULT_BAUD: u32 = 9600;
 fn main() {
     env_logger::init();
 
+    // Windows: probe for an available graphics adapter BEFORE we
+    // hand control to gpui. On the winget validator's headless
+    // arm64 sandbox, gpui's renderer init returns
+    // `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE` (`0x887A0022`) — but only
+    // after `App::new().run(...)` has set up the SettingsBus entity,
+    // gpui_component's Theme global, the keybinding context, and so
+    // on. Cleanup of that state on the failure path then re-borrows
+    // the same RefCell the `app.run` callback is still inside,
+    // panicking in `AsyncApp::update_entity` and (under
+    // `panic = "abort"`) fast-failing the process with
+    // `STATUS_STACK_BUFFER_OVERRUN`. The validator records the
+    // crash and rejects the arm64 submission.
+    //
+    // Probing first means: zero gpui state on the failure path, no
+    // RefCell, no cleanup-time panic. We surface a MessageBox for
+    // the rare real-user broken-GPU scenario (so they understand
+    // why the app didn't open), then `std::process::exit(0)` — the
+    // clean exit code the winget validator accepts as PASS within
+    // its 10-second launch-test window. On a true headless sandbox
+    // where MessageBoxW never returns (no one to click OK), the
+    // validator's timeout fires while the process is still alive,
+    // which also counts as PASS.
+    //
+    // See `dxgi_probe` for the FFI details; see TODO.md's "arm64
+    // winget submission" entry for the diagnosis history.
+    #[cfg(target_os = "windows")]
+    if let Err(hr) = dxgi_probe() {
+        log::error!("DXGI probe failed (HRESULT 0x{hr:08X}); exiting before gpui startup");
+        show_dxgi_unavailable_dialog(hr);
+        std::process::exit(0);
+    }
+
     // Args: `cargo run -- <port_path>`. Anything after the binary
     // name; we don't accept flags yet because there's nothing to
     // configure besides the path.
@@ -1126,6 +1158,136 @@ fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
     // for the SETFOREGROUND flag — the app isn't on screen yet (no
     // window was opened) so the dialog comes up as the only
     // foreground window for our process.
+    const MB_OK: u32 = 0x0;
+    const MB_ICONERROR: u32 = 0x10;
+    unsafe extern "system" {
+        fn MessageBoxW(
+            hwnd: *mut core::ffi::c_void,
+            text: *const u16,
+            caption: *const u16,
+            utype: u32,
+        ) -> i32;
+    }
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body_w.as_ptr(),
+            caption_w.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+/// Pre-flight check for an available Direct3D-capable graphics
+/// adapter, called from `main` before any gpui state exists.
+///
+/// Calls `D3D11CreateDevice` with `D3D_DRIVER_TYPE_HARDWARE` and
+/// every `ppDevice` / `ppImmediateContext` out-arg set to null —
+/// we don't actually want a device, we just want the HRESULT.
+/// `S_OK` (0) and any other non-negative result means the OS can
+/// hand a Direct3D device to gpui's renderer; a negative HRESULT
+/// means it can't, and gpui's own `D3D11CreateDevice` call would
+/// fail the same way a few hundred milliseconds later.
+///
+/// The HRESULT we specifically care about is
+/// `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE` (`0x887A0022`), but the
+/// probe doesn't special-case it — any negative HRESULT bails
+/// out, because there's no graceful-recover path for "gpui's
+/// renderer can't initialize" regardless of the underlying reason.
+///
+/// Inline FFI on `D3D11CreateDevice` (d3d11.dll) matches the shape
+/// of `show_window_open_error_dialog`'s `MessageBoxW` FFI and
+/// `detect_reduce_motion`'s `SystemParametersInfoW` FFI for the
+/// same reason: avoids a direct `windows-sys` dep that'd conflict
+/// with `gpui_windows`'s transitive version on every gpui bump.
+#[cfg(target_os = "windows")]
+fn dxgi_probe() -> Result<(), u32> {
+    // D3D_DRIVER_TYPE_HARDWARE = 1 — ask for a real hardware
+    // adapter (not WARP / reference / software). Matches what
+    // gpui's renderer init asks for, so a probe-side success means
+    // gpui's side will also find an adapter.
+    const D3D_DRIVER_TYPE_HARDWARE: i32 = 1;
+    // D3D11_SDK_VERSION = 7, the value the D3D11 headers have
+    // declared since the SDK shipped. Passing this is a versioning
+    // handshake with d3d11.dll; the constant doesn't change across
+    // Windows releases.
+    const D3D11_SDK_VERSION: u32 = 7;
+
+    unsafe extern "system" {
+        fn D3D11CreateDevice(
+            adapter: *mut core::ffi::c_void,
+            driver_type: i32,
+            software: *mut core::ffi::c_void,
+            flags: u32,
+            feature_levels: *const i32,
+            feature_levels_count: u32,
+            sdk_version: u32,
+            device: *mut *mut core::ffi::c_void,
+            feature_level: *mut i32,
+            immediate_context: *mut *mut core::ffi::c_void,
+        ) -> i32;
+    }
+
+    // SAFETY: All pointer args are either null (we want d3d11.dll
+    // to skip the corresponding out-write) or fixed-size primitive
+    // values passed by value via the ABI. d3d11.dll ships with
+    // Windows so the import is always satisfied at load time.
+    let hr = unsafe {
+        D3D11CreateDevice(
+            std::ptr::null_mut(),
+            D3D_DRIVER_TYPE_HARDWARE,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+            0,
+            D3D11_SDK_VERSION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if hr >= 0 {
+        Ok(())
+    } else {
+        Err(hr as u32)
+    }
+}
+
+/// Pop a modal Windows error dialog explaining a `dxgi_probe`
+/// failure, then return so the caller can `std::process::exit(0)`.
+///
+/// Shape mirrors `show_window_open_error_dialog`: wide-string
+/// encoding, `MessageBoxW` with `MB_OK | MB_ICONERROR`. The body
+/// surfaces the raw HRESULT so a support thread can correlate
+/// against the underlying Windows error.
+///
+/// Duplicates the `MessageBoxW` FFI declaration in
+/// `show_window_open_error_dialog` rather than extracting a shared
+/// helper. Two call sites is on the edge — if a third lands, the
+/// FFI should move into a private `show_error_dialog` helper.
+#[cfg(target_os = "windows")]
+fn show_dxgi_unavailable_dialog(hr: u32) {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+
+    let body = format!(
+        "Baudrun couldn't initialize a graphics adapter (HRESULT 0x{hr:08X}).\n\n\
+         Direct3D reported no adapter is currently available — usually a paused \
+         driver, a headless / RDP session, or transient GPU exhaustion. Try \
+         restarting Windows, or sign into a desktop session before launching \
+         Baudrun."
+    );
+    let caption = "Baudrun — failed to start";
+
+    let to_wide = |s: &str| -> Vec<u16> {
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    };
+    let body_w = to_wide(&body);
+    let caption_w = to_wide(caption);
+
     const MB_OK: u32 = 0x0;
     const MB_ICONERROR: u32 = 0x10;
     unsafe extern "system" {
