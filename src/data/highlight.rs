@@ -122,14 +122,31 @@ pub fn bundled_packs() -> &'static [HighlightPack] {
                 include_str!("../../resources/highlight/mikrotik-routeros.json"),
             ),
         ];
+        // `bundled_packs_parse` gates the well-formedness of these
+        // JSONs at test time, so a parse failure here means either a
+        // dev shipped without running tests (rare, caught by CI) or
+        // the in-binary bytes corrupted post-link (vanishingly rare).
+        // Either way, panicking at boot turns "one pack broke" into
+        // "the user can't launch Baudrun at all" — too steep. Log the
+        // failure at error level and skip the bad pack; the rest of
+        // the set continues to load. If `baudrun-default` is the one
+        // that broke, `default_user_pack`'s `.expect` downstream still
+        // hard-stops the boot (the user-pack seed depends on it), so
+        // the load-bearing pack stays as a fail-loud invariant.
         raw_packs
             .iter()
-            .map(|(id, raw)| {
-                let mut p: HighlightPack = serde_json::from_str(raw)
-                    .unwrap_or_else(|e| panic!("bundled highlight pack {} invalid: {}", id, e));
-                p.source = "builtin".into();
-                p
-            })
+            .filter_map(
+                |(id, raw)| match serde_json::from_str::<HighlightPack>(raw) {
+                    Ok(mut p) => {
+                        p.source = "builtin".into();
+                        Some(p)
+                    }
+                    Err(e) => {
+                        log::error!("bundled highlight pack {id} invalid, skipping: {e}");
+                        None
+                    }
+                },
+            )
             .collect()
     })
 }
