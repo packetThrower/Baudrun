@@ -120,6 +120,20 @@ jobs:
         if: matrix.runner == 'ubuntu-latest'
         run: cargo fmt --check
 
+      # cargo-deny reads Cargo.lock + deny.toml only — fully platform-
+      # independent, so the same one-runner gating as the fmt check
+      # applies. taiki-e/install-action fetches a prebuilt binary
+      # rather than building cargo-deny from source (~3 min savings).
+      - name: Install cargo-deny
+        if: matrix.runner == 'ubuntu-latest'
+        uses: taiki-e/install-action@65851e10cd6c377f11a60e600abc07cb08643468 # v2.79.3
+        with:
+          tool: cargo-deny
+
+      - name: cargo deny check
+        if: matrix.runner == 'ubuntu-latest'
+        run: cargo deny check
+
       # Linux: libudev for serialport's tty enumerator. libusb is
       # compiled statically into the binary by rusb's `vendored`
       # feature (see Cargo.toml), so there's no libusb-1.0-0-dev

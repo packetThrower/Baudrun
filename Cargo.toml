@@ -5,6 +5,12 @@ description = "Serial terminal for network engineers."
 authors = ["Will Lehnertz <6597817+packetThrower@users.noreply.github.com>"]
 edition = "2021"
 publish = false
+# Informational only since `publish = false` — never reaches
+# crates.io's metadata. Declared so cargo-deny's license check
+# (see deny.toml) doesn't have to special-case our own crate, and
+# so package-metadata readers (`cargo pkgid --format-version 2`,
+# IDE tooltips) get the right answer without consulting LICENSE.
+license = "GPL-3.0-or-later"
 
 # Bin name shows in the macOS menu bar / Cmd+Tab / dock on unbundled
 # `cargo run`. Capitalised; the Cargo package name stays kebab-case.
