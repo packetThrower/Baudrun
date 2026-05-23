@@ -21,6 +21,8 @@
 //! TerminalView so keystrokes still reach the grid; sidebar is
 //! pointer-driven.
 
+mod session;
+
 use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
@@ -31,7 +33,7 @@ use gpui::SharedString;
 use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
     AppContext, Bounds, Context, DismissEvent, Entity, IntoElement, MouseButton, MouseDownEvent,
-    MouseUpEvent, PathPromptOptions, Pixels, Render, ScrollHandle, Task, TitlebarOptions, Window,
+    MouseUpEvent, PathPromptOptions, Render, ScrollHandle, Task, TitlebarOptions, Window,
     WindowBounds, WindowHandle, WindowOptions,
 };
 use gpui_component::{
@@ -62,6 +64,9 @@ use crate::settings_view::SettingsView;
 use crate::skin_tokens::{self, SkinFonts, SkinTokens};
 use crate::term_bridge::Palette;
 use crate::terminal_view::{ProfileSettings, TerminalView};
+
+use session::{bounds_to_geometry, geometry_to_bounds};
+pub use session::{SessionBundle, WindowInit};
 
 /// Width of the left sidebar in logical pixels. Matches the main
 /// app's sidebar width — wide enough for two-line profile rows
@@ -3317,79 +3322,10 @@ where
     btn
 }
 
-/// Bundle of live serial-session state that can be moved from one
-/// window's `AppView` to another. Captures everything the source
-/// AppView held about the live connection — the TerminalView entity
-/// (bytes already on screen and in scrollback), the OS-side
-/// disconnect token, the read-loop drain task, transfer I/O, and
-/// any in-flight transfer + auto-reconnect bookkeeping. Built by
-/// [`AppView::extract_session`] on the source side and consumed by
-/// [`AppView::install_session`] on the destination side.
-pub struct SessionBundle {
-    terminal: Entity<TerminalView>,
-    drain_task: Option<Task<()>>,
-    serial_disconnect: serial_io::Disconnect,
-    transfer_io: TransferIo,
-    transfer: Option<TransferState>,
-    connected_profile_id: String,
-    auto_reconnect_for: Option<String>,
-    auto_reconnect_task: Option<Task<()>>,
-    last_highlight_sig: Option<Vec<(String, String, bool)>>,
-}
-
-/// What kind of window to open via [`open_app_window`]. `Fresh`
-/// takes a caller-built TerminalView (so main.rs can still hold the
-/// handle for the CLI serial-port attach path) and lands on the
-/// welcome screen. `WithSession` accepts a moved [`SessionBundle`]
-/// and installs it after construction so the destination window
-/// comes up already connected, with the source window's terminal
-/// contents intact. `FreshAutoConnect` opens a fresh window and
-/// immediately connects to a named profile — used by the
-/// right-click "Connect in New Window" path on the sidebar.
-pub enum WindowInit {
-    Fresh(Entity<TerminalView>),
-    // Boxed to keep `WindowInit`'s stack footprint small —
-    // SessionBundle carries the whole live-session state machine
-    // (terminal entity, serial channels, transfer state, …) so
-    // inlining it bloats the other variants too.
-    WithSession(Box<SessionBundle>),
-    FreshAutoConnect {
-        terminal: Entity<TerminalView>,
-        profile_id: String,
-    },
-}
-
-/// Open a new top-level Baudrun window with a fresh `AppView`. The
-/// stores + `SettingsBus` are shared (cloned `Rc`/`Entity`) so each
-/// window's settings live-update in lockstep with the others, but
-/// the `TerminalView`, sidebar, profile editor, and transfer state
-/// are per-window — connecting in one window doesn't touch the
-/// terminal in another. Used both at startup (one window) and from
-/// `AppView::open_new_window` / `move_session_to_new_window`.
-/// Convert a saved geometry record into the bounds shape
-/// `WindowOptions` wants. Returns `None` when the saved record is
-/// missing dimensions — caller falls back to the centered default.
-fn geometry_to_bounds(g: &settings::WindowGeometry) -> Option<Bounds<Pixels>> {
-    if g.width <= 0 || g.height <= 0 {
-        return None;
-    }
-    Some(Bounds {
-        origin: gpui::point(px(g.x as f32), px(g.y as f32)),
-        size: gpui::size(px(g.width as f32), px(g.height as f32)),
-    })
-}
-
-/// Snapshot the live window bounds into the serializable form used
-/// for on-disk persistence. Float pixels round-trip to `i32` since
-/// the underlying OS APIs all return integer-pixel rects anyway.
-fn bounds_to_geometry(b: Bounds<Pixels>) -> settings::WindowGeometry {
-    settings::WindowGeometry {
-        x: f32::from(b.origin.x) as i32,
-        y: f32::from(b.origin.y) as i32,
-        width: f32::from(b.size.width) as i32,
-        height: f32::from(b.size.height) as i32,
-    }
-}
+// SessionBundle, WindowInit, and the geometry_to_bounds /
+// bounds_to_geometry helpers now live in `app_view::session`.
+// Re-exported below from the `mod session;` declaration at the top
+// of this file.
 
 /// Universal macOS traffic-light position used for every window
 /// we open. `(16, 16)` is a compromise between the two layouts:
@@ -3411,6 +3347,13 @@ fn bounds_to_geometry(b: Bounds<Pixels>) -> settings::WindowGeometry {
 /// card skins without restarting.
 const TRAFFIC_LIGHT_POSITION_PX: f32 = 16.0;
 
+/// Open a new top-level Baudrun window with a fresh `AppView`. The
+/// stores + `SettingsBus` are shared (cloned `Rc`/`Entity`) so each
+/// window's settings live-update in lockstep with the others, but
+/// the `TerminalView`, sidebar, profile editor, and transfer state
+/// are per-window — connecting in one window doesn't touch the
+/// terminal in another. Used both at startup (one window) and from
+/// `AppView::open_new_window` / `move_session_to_new_window`.
 pub fn open_app_window(
     cx: &mut gpui::App,
     init: WindowInit,
