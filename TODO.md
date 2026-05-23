@@ -626,6 +626,27 @@ are deferred until someone actually asks — useful but high-effort or
 niche enough that priority tracks real demand. All of these will be
 implemented in the new stack post-migration.
 
+- [ ] **Re-wire `data::usbserial::cp210x` as a fallback in
+      `serial_io::open`.** The Tauri build dropped through to the
+      libusb-direct CP210x backend when the OS didn't surface the
+      port (most common case: macOS without SiLabs' VCP kext
+      installed). The gpui rewrite went `serialport`-only and
+      never restored the fallback — so on a fresh macOS install,
+      a Siemens RuggedCom RST2228 (CP210x rebrand at VID 0x0908,
+      PID 0x01FF — already in `cp210x.rs::REBRANDS`) doesn't
+      enumerate and the user can't connect. The full driver code
+      already exists at `src/data/usbserial/cp210x.rs` (carrying
+      the AN571 control-transfer dance + the `Cp210xPort` Read /
+      Write / control-line surface) under a file-level
+      `#![allow(dead_code)]` so it builds; the missing piece is
+      wiring it into `serial_io::open`'s "OS port not found"
+      branch, plus surfacing the libusb-direct ports under the
+      same `usb:VID:PID:Serial` name scheme `data::serial::direct`
+      already defines. Verification target: connect to a
+      RuggedCom RST2228 on a macOS host that hasn't installed
+      the SiLabs VCP kext. Once wired, drop the file-level
+      `allow(dead_code)` on `cp210x.rs`, `usbserial/mod.rs`, and
+      `serial/direct.rs` so future drift surfaces.
 - [ ] **Macros / quick-send buttons.** **[on request]** Profile-level
       canned strings bound to session-header buttons — `show
       running-config`, `AT+RST`, vendor-specific reboot commands,
