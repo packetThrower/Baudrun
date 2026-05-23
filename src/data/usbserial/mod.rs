@@ -231,7 +231,9 @@ fn read_string_descriptors(
         if idx == 0 {
             return String::new();
         }
-        let Some(lang) = lang else { return String::new() };
+        let Some(lang) = lang else {
+            return String::new();
+        };
         handle
             .read_string_descriptor(lang, idx, timeout)
             .map(|s| trim_descriptor(&s))

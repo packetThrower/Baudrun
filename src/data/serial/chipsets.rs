@@ -13,8 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 
-const SILABS_DRIVER_URL: &str =
-    "https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers";
+const SILABS_DRIVER_URL: &str = "https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers";
 
 /// USB device whose VID/manufacturer points at a known serial
 /// chipset but which isn't currently accessible as a serial port —
@@ -211,7 +210,10 @@ mod tests {
     fn identify_ftdi_has_no_driver_url() {
         let info = identify("0403", "6001", "");
         assert_eq!(info.name, "FTDI");
-        assert!(!info.needs_driver(), "FTDI uses kernel CDC — no user driver");
+        assert!(
+            !info.needs_driver(),
+            "FTDI uses kernel CDC — no user driver"
+        );
     }
 
     #[test]
@@ -236,7 +238,9 @@ mod tests {
 
     #[test]
     fn suspect_product_detection() {
-        assert!(is_suspect_product("Please install corresponding PL2303 driver"));
+        assert!(is_suspect_product(
+            "Please install corresponding PL2303 driver"
+        ));
         assert!(is_suspect_product("DEVICE NOT SUPPORT on newer driver"));
         assert!(!is_suspect_product("USB Serial Converter"));
     }

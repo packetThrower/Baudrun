@@ -299,7 +299,9 @@ pub fn open(
     baud: u32,
     policies: LinePolicies,
 ) -> serialport::Result<SerialChannels> {
-    let mut read_port = serialport::new(port_path, baud).timeout(READ_TIMEOUT).open()?;
+    let mut read_port = serialport::new(port_path, baud)
+        .timeout(READ_TIMEOUT)
+        .open()?;
     if let Err(e) = apply_dtr(&mut *read_port, policies.dtr_on_connect) {
         log::warn!("serial: dtr_on_connect failed: {e}");
     }

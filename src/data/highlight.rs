@@ -105,7 +105,10 @@ pub fn bundled_packs() -> &'static [HighlightPack] {
                 "cisco-ios",
                 include_str!("../../resources/highlight/cisco-ios.json"),
             ),
-            ("junos", include_str!("../../resources/highlight/junos.json")),
+            (
+                "junos",
+                include_str!("../../resources/highlight/junos.json"),
+            ),
             (
                 "aruba-cx",
                 include_str!("../../resources/highlight/aruba-cx.json"),
@@ -220,9 +223,8 @@ impl Store {
             );
             HighlightError::Invalid("couldn't read selected file".into())
         })?;
-        let mut pack: HighlightPack = serde_json::from_slice(&data).map_err(|e| {
-            HighlightError::Invalid(format!("invalid pack JSON: {}", e))
-        })?;
+        let mut pack: HighlightPack = serde_json::from_slice(&data)
+            .map_err(|e| HighlightError::Invalid(format!("invalid pack JSON: {}", e)))?;
 
         if pack.rules.is_empty() {
             return Err(HighlightError::Invalid(

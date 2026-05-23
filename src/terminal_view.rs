@@ -35,15 +35,16 @@ use alacritty_terminal::{
     vte::ansi::Processor,
 };
 use gpui::{
-    anchored, black, deferred, div, font, prelude::*, px, rgb, rgba, relative, App,
-    AnyElement, Bounds, ClipboardItem, Context, FocusHandle, Focusable, IntoElement,
-    KeyDownEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point as PixelPoint, Render, ScrollDelta, ScrollWheelEvent, SharedString,
-    Task, TextRun, Window,
+    anchored, black, deferred, div, font, prelude::*, px, relative, rgb, rgba, AnyElement, App,
+    Bounds, ClipboardItem, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent, Keystroke,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point as PixelPoint, Render,
+    ScrollDelta, ScrollWheelEvent, SharedString, Task, TextRun, Window,
 };
 use gpui_component::WindowExt;
 
-use crate::term_bridge::{make_term, mirror_to_grid, Dims, ListenerState, Palette, TerminalListener};
+use crate::term_bridge::{
+    make_term, mirror_to_grid, Dims, ListenerState, Palette, TerminalListener,
+};
 use crate::terminal_grid::{pack, TerminalGrid};
 
 /// Cursor blink half-period. The cursor toggles visible/invisible
@@ -466,8 +467,7 @@ impl TerminalView {
                     // be a pure overhead.
                     self.highlight = None;
                 } else {
-                    self.highlight =
-                        Some(crate::highlight_runtime::HighlightBuffer::new(engine));
+                    self.highlight = Some(crate::highlight_runtime::HighlightBuffer::new(engine));
                 }
             }
             _ => {
@@ -494,8 +494,7 @@ impl TerminalView {
         // doesn't pile a second copy on top of the existing grid.
         let rows = self.grid.rows();
         let cols = self.grid.cols();
-        let (term, processor, listener_state) =
-            make_term(rows, cols, self.scrollback_lines);
+        let (term, processor, listener_state) = make_term(rows, cols, self.scrollback_lines);
         self.term = term;
         self.processor = processor;
         self.listener_state = listener_state;
@@ -1043,12 +1042,10 @@ impl TerminalView {
             underline: None,
             strikethrough: None,
         }];
-        let layout = window.text_system().layout_line(
-            &sample,
-            px(self.grid.font_size_px()),
-            &runs,
-            None,
-        );
+        let layout =
+            window
+                .text_system()
+                .layout_line(&sample, px(self.grid.font_size_px()), &runs, None);
         // Use the layout-line reported advance directly — no
         // calibration. Earlier iterations applied 0.75x to match
         // an apparent paint-pipeline width difference, but that
@@ -1149,8 +1146,11 @@ impl TerminalView {
             // case the selection collapses to a single cell at
             // column 0 (empty — `copy_selection` filters it out).
             let last_content = (0..cols).rev().find(|&i| row[Column(i)].c != ' ');
-            let mut sel =
-                Selection::new(SelectionType::Simple, GridPoint::new(line, Column(0)), Side::Left);
+            let mut sel = Selection::new(
+                SelectionType::Simple,
+                GridPoint::new(line, Column(0)),
+                Side::Left,
+            );
             if let Some(last) = last_content {
                 sel.update(GridPoint::new(line, Column(last)), Side::Right);
             }
@@ -1258,10 +1258,7 @@ impl TerminalView {
     /// `deferred(anchored(pos))` overlay so it sits above the
     /// terminal grid + scrollbar thumb and pins to the cursor
     /// coordinate captured by `handle_right_mouse_down`.
-    fn render_context_menu(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
+    fn render_context_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let pos = self.context_menu_pos?;
         let s = *cx.global::<crate::skin_tokens::SkinTokens>();
         // Disable Copy when there's nothing selected — the action
@@ -1276,12 +1273,8 @@ impl TerminalView {
         // optional dim state. The closure shape matches what
         // `gpui::div().child(...)` expects, so each row is a
         // standalone Div.
-        type ClickHandler =
-            Box<dyn Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static>;
-        let row = move |label: &'static str,
-                        enabled: bool,
-                        on_click: ClickHandler|
-              -> AnyElement {
+        type ClickHandler = Box<dyn Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static>;
+        let row = move |label: &'static str, enabled: bool, on_click: ClickHandler| -> AnyElement {
             let hover_bg = s.bg_hover;
             let d = div()
                 .id(SharedString::from(label))
@@ -1497,10 +1490,7 @@ impl TerminalView {
             return;
         }
         let start = GridPoint::new(Line(-history), Column(0));
-        let end = GridPoint::new(
-            Line(total_lines as i32 - 1),
-            Column(cols.saturating_sub(1)),
-        );
+        let end = GridPoint::new(Line(total_lines as i32 - 1), Column(cols.saturating_sub(1)));
         let mut sel = Selection::new(SelectionType::Simple, start, Side::Left);
         sel.update(end, Side::Right);
         self.term.selection = Some(sel);
@@ -1669,16 +1659,17 @@ impl TerminalView {
         };
         let chrome_w = SIDEBAR_PX;
         let chrome_h = title_bar_h + SESSION_HEADER_PX + STATUS_BAR_PX;
-        let content_w =
-            (f32::from(viewport.width) - chrome_w - GRID_PADDING_PX * 2.0).max(0.0);
-        let content_h =
-            (f32::from(viewport.height) - chrome_h - GRID_PADDING_PX * 2.0).max(0.0);
+        let content_w = (f32::from(viewport.width) - chrome_w - GRID_PADDING_PX * 2.0).max(0.0);
+        let content_h = (f32::from(viewport.height) - chrome_h - GRID_PADDING_PX * 2.0).max(0.0);
         let new_cols = ((content_w / cell_w).floor() as usize).max(MIN_COLS);
         let new_rows = ((content_h / self.grid.cell_h_px()).floor() as usize).max(MIN_ROWS);
         if new_rows == self.grid.rows() && new_cols == self.grid.cols() {
             return;
         }
-        self.term.resize(Dims { rows: new_rows, cols: new_cols });
+        self.term.resize(Dims {
+            rows: new_rows,
+            cols: new_cols,
+        });
         self.grid.resize(new_rows, new_cols);
         // Re-mirror so the freshly-resized grid reflects whatever
         // alacritty did to its own cells (cursor reposition,
@@ -1713,8 +1704,7 @@ impl TerminalView {
         // shared with the right-click context menu so both UX
         // surfaces invoke exactly the same code.
 
-        let Some(serial_bytes) = encode_for_serial(&event.keystroke, &self.profile_settings)
-        else {
+        let Some(serial_bytes) = encode_for_serial(&event.keystroke, &self.profile_settings) else {
             return;
         };
         // Reset the blink phase so the cursor is visible during
@@ -1731,11 +1721,11 @@ impl TerminalView {
         if self.term.grid().display_offset() > 0 {
             self.term.scroll_display(Scroll::Bottom);
             mirror_to_grid(
-            &self.term,
-            &mut self.grid,
-            &self.palette,
-            self.cursor_blink_phase,
-        );
+                &self.term,
+                &mut self.grid,
+                &self.palette,
+                self.cursor_blink_phase,
+            );
             cx.notify();
         }
         if let Some(tx) = &self.serial_tx {
@@ -1820,14 +1810,16 @@ impl Render for TerminalView {
             // mouse_down rather than mouse_up (matches the macOS
             // / Windows / Linux convention of "menu appears on
             // press, not release").
-            .on_mouse_down(MouseButton::Right, cx.listener(Self::handle_right_mouse_down))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(Self::handle_right_mouse_down),
+            )
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
-            .child(self.grid.element(
-                cell_w,
-                self.bell_flash_active(),
-                self.grid_bounds.clone(),
-            ))
+            .child(
+                self.grid
+                    .element(cell_w, self.bell_flash_active(), self.grid_bounds.clone()),
+            )
             // Right-click context menu overlay. Painted only when
             // `context_menu_pos` is `Some`; `deferred` so it draws
             // above sibling chrome (scrollbar thumb, etc.) and

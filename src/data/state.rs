@@ -68,11 +68,7 @@ impl AppState {
     /// state yet. Holds the sessions lock for the duration of `f` —
     /// callers should keep `f` quick (mutate fields and return; do
     /// not perform I/O inside).
-    pub fn with_session<R>(
-        &self,
-        label: &str,
-        f: impl FnOnce(&mut SessionHandle) -> R,
-    ) -> R {
+    pub fn with_session<R>(&self, label: &str, f: impl FnOnce(&mut SessionHandle) -> R) -> R {
         let mut guard = self.sessions.lock().unwrap();
         let handle = guard.entry(label.to_string()).or_default();
         f(handle)

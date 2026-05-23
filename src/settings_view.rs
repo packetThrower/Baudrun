@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::*, px, rgba, AppContext, Context, DismissEvent, ElementId, Entity,
-    FocusHandle, IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton,
-    MouseUpEvent, PathPromptOptions, Render, SharedString, Subscription, Window,
+    div, prelude::*, px, rgba, AppContext, Context, DismissEvent, ElementId, Entity, FocusHandle,
+    IntoElement, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseUpEvent, PathPromptOptions,
+    Render, SharedString, Subscription, Window,
 };
 use gpui_component::{
     button::Button,
@@ -119,7 +119,7 @@ pub struct SettingsView {
     /// local `self.settings` cache which mirrors the bus.
     settings_bus: Entity<SettingsBus>,
     #[allow(dead_code)] // re-read on render via the entity cache; kept
-                        // around for live-apply (skin import etc.)
+    // around for live-apply (skin import etc.)
     skins_store: Rc<skins::Store>,
     /// Highlight pack store. Re-read on every render of the
     /// Highlighting pane so the toggle list reflects packs the user
@@ -132,8 +132,8 @@ pub struct SettingsView {
     /// only the main window would update.
     _bus_sub: Subscription,
     #[allow(dead_code)] // enumerated through `theme_select` today;
-                        // kept around for future "import theme"
-                        // affordance + live-preview hooks.
+    // kept around for future "import theme"
+    // affordance + live-preview hooks.
     themes_store: Rc<themes::Store>,
     settings: Settings,
     tab: SettingsTab,
@@ -254,8 +254,7 @@ impl SettingsView {
         } else {
             current.appearance.as_str()
         };
-        let appearance_select =
-            make_select(appearance_opts, active_appearance, window, cx);
+        let appearance_select = make_select(appearance_opts, active_appearance, window, cx);
         let appearance_sub = cx.subscribe(
             &appearance_select,
             |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
@@ -279,34 +278,33 @@ impl SettingsView {
                 .placeholder("13")
                 .default_value(font_size_initial.as_str())
         });
-        let font_size_sub =
-            cx.subscribe(&font_size, |this, input, event: &InputEvent, cx| {
-                // Commit on Blur (focus loss) AND on Enter so the
-                // user can lock in a value without tabbing away.
-                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
-                    let raw = input.read(cx).value().to_string();
-                    let parsed = raw.trim();
-                    let next_value = if parsed.is_empty() {
-                        // Empty resets to "use default" (stored as 0
-                        // so `skip_serializing_if = "is_zero"` keeps
-                        // settings.json clean).
-                        0
-                    } else {
-                        match parsed.parse::<i32>() {
-                            Ok(n) if n > 0 => n,
-                            _ => {
-                                log::warn!("font size: invalid value {raw:?}");
-                                return;
-                            }
+        let font_size_sub = cx.subscribe(&font_size, |this, input, event: &InputEvent, cx| {
+            // Commit on Blur (focus loss) AND on Enter so the
+            // user can lock in a value without tabbing away.
+            if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                let raw = input.read(cx).value().to_string();
+                let parsed = raw.trim();
+                let next_value = if parsed.is_empty() {
+                    // Empty resets to "use default" (stored as 0
+                    // so `skip_serializing_if = "is_zero"` keeps
+                    // settings.json clean).
+                    0
+                } else {
+                    match parsed.parse::<i32>() {
+                        Ok(n) if n > 0 => n,
+                        _ => {
+                            log::warn!("font size: invalid value {raw:?}");
+                            return;
                         }
-                    };
-                    if next_value != this.settings.font_size {
-                        let mut next = this.settings.clone();
-                        next.font_size = next_value;
-                        this.commit(next, cx);
                     }
+                };
+                if next_value != this.settings.font_size {
+                    let mut next = this.settings.clone();
+                    next.font_size = next_value;
+                    this.commit(next, cx);
                 }
-            });
+            }
+        });
 
         let scrollback_initial = if current.scrollback_lines > 0 {
             current.scrollback_lines.to_string()
@@ -318,33 +316,32 @@ impl SettingsView {
                 .placeholder("10000")
                 .default_value(scrollback_initial.as_str())
         });
-        let scrollback_sub =
-            cx.subscribe(&scrollback, |this, input, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
-                    let raw = input.read(cx).value().to_string();
-                    let parsed = raw.trim();
-                    let next_value = if parsed.is_empty() {
-                        0
-                    } else {
-                        match parsed.parse::<i32>() {
-                            // Sanity cap: 1M lines is already
-                            // multi-gigabyte territory and anything
-                            // higher is a typo. Negative gets
-                            // rejected via the `n > 0` arm.
-                            Ok(n) if (1..=1_000_000).contains(&n) => n,
-                            _ => {
-                                log::warn!("scrollback: invalid value {raw:?}");
-                                return;
-                            }
+        let scrollback_sub = cx.subscribe(&scrollback, |this, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                let raw = input.read(cx).value().to_string();
+                let parsed = raw.trim();
+                let next_value = if parsed.is_empty() {
+                    0
+                } else {
+                    match parsed.parse::<i32>() {
+                        // Sanity cap: 1M lines is already
+                        // multi-gigabyte territory and anything
+                        // higher is a typo. Negative gets
+                        // rejected via the `n > 0` arm.
+                        Ok(n) if (1..=1_000_000).contains(&n) => n,
+                        _ => {
+                            log::warn!("scrollback: invalid value {raw:?}");
+                            return;
                         }
-                    };
-                    if next_value != this.settings.scrollback_lines {
-                        let mut next = this.settings.clone();
-                        next.scrollback_lines = next_value;
-                        this.commit(next, cx);
                     }
+                };
+                if next_value != this.settings.scrollback_lines {
+                    let mut next = this.settings.clone();
+                    next.scrollback_lines = next_value;
+                    this.commit(next, cx);
                 }
-            });
+            }
+        });
 
         // -- Themes tab widgets --
 
@@ -390,36 +387,33 @@ impl SettingsView {
         // Persist log_dir on Blur (focus loss). Live save per
         // keystroke would write the JSON file on every typed
         // character — wasteful, and noisy for `fs::write`.
-        let log_dir_sub =
-            cx.subscribe(&log_dir, |this, input, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
-                    let value = input.read(cx).value().to_string();
-                    if value != this.settings.log_dir {
-                        let mut next = this.settings.clone();
-                        next.log_dir = value;
-                        this.commit(next, cx);
-                    }
+        let log_dir_sub = cx.subscribe(&log_dir, |this, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. }) {
+                let value = input.read(cx).value().to_string();
+                if value != this.settings.log_dir {
+                    let mut next = this.settings.clone();
+                    next.log_dir = value;
+                    this.commit(next, cx);
                 }
-            });
+            }
+        });
 
         // Filter input — lives in the window header, drives the
         // per-section fade and the tab-rail dimming. Subscribed on
         // `Change` (every keystroke) so the dim animates live; no
         // need to wait for Blur the way the saved-setting inputs do.
-        let filter_input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Filter settings\u{2026}")
-        });
-        let filter_sub =
-            cx.subscribe(&filter_input, |this, input, event: &InputEvent, cx| {
-                if matches!(event, InputEvent::Change) {
-                    let value = input.read(cx).value().to_string();
-                    let next = value.trim().to_lowercase();
-                    if next != this.filter_text {
-                        this.filter_text = next;
-                        cx.notify();
-                    }
+        let filter_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Filter settings\u{2026}"));
+        let filter_sub = cx.subscribe(&filter_input, |this, input, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                let value = input.read(cx).value().to_string();
+                let next = value.trim().to_lowercase();
+                if next != this.filter_text {
+                    this.filter_text = next;
+                    cx.notify();
                 }
-            });
+            }
+        });
 
         Self {
             settings_bus,
@@ -528,7 +522,11 @@ impl SettingsView {
     /// dimmed section stays interactive; the user can still tweak
     /// it via keyboard / mouse without clearing the filter first.
     fn filter_opacity(&self, title: &str) -> f32 {
-        if self.section_matches_filter(title) { 1.0 } else { 0.18 }
+        if self.section_matches_filter(title) {
+            1.0
+        } else {
+            0.18
+        }
     }
 
     /// Wrap a section card with the filter-aware opacity. Every
@@ -543,8 +541,7 @@ impl SettingsView {
         description: Option<&'static str>,
         body: impl IntoElement,
     ) -> gpui::Div {
-        section_card_with_desc(s, title, description, body)
-            .opacity(self.filter_opacity(title))
+        section_card_with_desc(s, title, description, body).opacity(self.filter_opacity(title))
     }
 
     fn section_matches_filter(&self, title: &str) -> bool {
@@ -572,7 +569,9 @@ impl SettingsView {
             .iter()
             .find(|(t, _)| *t == tab)
             .map(|(_, titles)| {
-                titles.iter().any(|title| self.section_matches_filter(title))
+                titles
+                    .iter()
+                    .any(|title| self.section_matches_filter(title))
             })
             .unwrap_or(true)
     }
@@ -639,8 +638,12 @@ impl SettingsView {
             prompt: Some("Choose Baudrun config directory".into()),
         });
         cx.spawn(async move |this, cx| {
-            let Ok(Ok(Some(paths))) = receiver.await else { return };
-            let Some(path) = paths.into_iter().next() else { return };
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
             let _ = this.update_in(cx, |this, window, view_cx| {
                 if let Err(err) = appdata::write_override(Some(&path)) {
                     log::error!("write config dir override: {err}");
@@ -699,22 +702,23 @@ impl SettingsView {
             prompt: Some("Choose session log directory".into()),
         });
         cx.spawn(async move |this, cx| {
-            let Ok(Ok(Some(paths))) = receiver.await else { return };
-            let Some(path) = paths.into_iter().next() else { return };
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
             let path_str = path.display().to_string();
             let _ = this.update_in(cx, |this, window, view_cx| {
-                this.log_dir
-                    .update(view_cx, |state, view_cx| {
-                        state.set_value(path_str.clone(), window, view_cx);
-                    });
+                this.log_dir.update(view_cx, |state, view_cx| {
+                    state.set_value(path_str.clone(), window, view_cx);
+                });
                 if this.settings.log_dir != path_str {
                     let mut next = this.settings.clone();
                     next.log_dir = path_str;
                     this.commit(next, view_cx);
                     window.push_notification(
-                        Notification::success(SharedString::from(
-                            "Log directory updated",
-                        )),
+                        Notification::success(SharedString::from("Log directory updated")),
                         view_cx,
                     );
                 }
@@ -735,9 +739,7 @@ impl SettingsView {
             next.log_dir = String::new();
             self.commit(next, cx);
             window.push_notification(
-                Notification::success(SharedString::from(
-                    "Log directory reset to default",
-                )),
+                Notification::success(SharedString::from("Log directory reset to default")),
                 cx,
             );
         }
@@ -748,11 +750,7 @@ impl SettingsView {
     /// Settings window (the one this button lives in) back to its
     /// default centered size. Live resize so the user sees the
     /// effect immediately rather than having to close + reopen.
-    fn reset_settings_window(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn reset_settings_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.settings_window.is_some() {
             let mut next = self.settings.clone();
             next.settings_window = None;
@@ -850,12 +848,7 @@ impl SettingsView {
 
     // -- Shortcuts tab handlers --
 
-    fn start_capture(
-        &mut self,
-        action: &'static str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn start_capture(&mut self, action: &'static str, window: &mut Window, cx: &mut Context<Self>) {
         self.capturing_shortcut = Some(action);
         // Pull focus into the capture div so the very next key
         // press is handled by `handle_capture_key`. Without this
@@ -884,7 +877,10 @@ impl SettingsView {
         // key) report key as the modifier name itself in gpui —
         // ignore so the user can hold modifiers down before
         // pressing the actual key.
-        if matches!(key, "shift" | "ctrl" | "control" | "cmd" | "alt" | "platform") {
+        if matches!(
+            key,
+            "shift" | "ctrl" | "control" | "cmd" | "alt" | "platform"
+        ) {
             return;
         }
         // Bare Escape (no modifiers) cancels the capture; Esc
@@ -1025,13 +1021,10 @@ impl SettingsView {
     /// custom skins. If the skin being deleted is the currently-
     /// selected one, resets `skin_id` to the built-in default so
     /// the live UI doesn't keep pointing at a dead id.
-    fn delete_named_skin(
-        &mut self,
-        id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(skin) = self.skins_store.get(&id) else { return };
+    fn delete_named_skin(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(skin) = self.skins_store.get(&id) else {
+            return;
+        };
         if skin.source != "user" {
             return;
         }
@@ -1040,9 +1033,7 @@ impl SettingsView {
         if let Err(err) = self.skins_store.delete(&id) {
             log::error!("delete skin {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!(
-                    "Couldn't delete skin: {err}"
-                ))),
+                Notification::error(SharedString::from(format!("Couldn't delete skin: {err}"))),
                 cx,
             );
             return;
@@ -1112,9 +1103,7 @@ impl SettingsView {
         if let Err(err) = self.skins_store.restore(skin) {
             log::error!("restore skin {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!(
-                    "Couldn't restore skin: {err}"
-                ))),
+                Notification::error(SharedString::from(format!("Couldn't restore skin: {err}"))),
                 cx,
             );
             return;
@@ -1137,13 +1126,10 @@ impl SettingsView {
     /// If the theme being deleted is the currently-selected default,
     /// also resets `default_theme_id` to the built-in baudrun palette
     /// so the live terminal doesn't end up pointing at a dead id.
-    fn delete_named_theme(
-        &mut self,
-        id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(theme) = self.themes_store.get(&id) else { return };
+    fn delete_named_theme(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(theme) = self.themes_store.get(&id) else {
+            return;
+        };
         if theme.source != "user" {
             return;
         }
@@ -1152,9 +1138,7 @@ impl SettingsView {
         if let Err(err) = self.themes_store.delete(&id) {
             log::error!("delete theme {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!(
-                    "Couldn't delete theme: {err}"
-                ))),
+                Notification::error(SharedString::from(format!("Couldn't delete theme: {err}"))),
                 cx,
             );
             return;
@@ -1212,9 +1196,7 @@ impl SettingsView {
         if let Err(err) = self.themes_store.restore(theme) {
             log::error!("restore theme {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!(
-                    "Couldn't restore theme: {err}"
-                ))),
+                Notification::error(SharedString::from(format!("Couldn't restore theme: {err}"))),
                 cx,
             );
             return;
@@ -1242,7 +1224,9 @@ impl SettingsView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(theme) = self.themes_store.get(&theme_id) else { return };
+        let Some(theme) = self.themes_store.get(&theme_id) else {
+            return;
+        };
         let title = SharedString::from(theme.name.clone());
         let subtitle = SharedString::from(if theme.source == "user" {
             "Imported theme \u{00B7} sample output \u{00B7} last line shows text selection"
@@ -1283,14 +1267,8 @@ impl SettingsView {
     /// rendered for `source == "user"` packs (the trash icon is hidden
     /// on bundled rows). Also strips the id from the enabled list so
     /// the live engine doesn't keep a phantom reference around.
-    fn delete_highlight_pack(
-        &mut self,
-        id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(pack) = self.highlight_store.list().into_iter().find(|p| p.id == id)
-        else {
+    fn delete_highlight_pack(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pack) = self.highlight_store.list().into_iter().find(|p| p.id == id) else {
             return;
         };
         if pack.source != "user" && pack.source != "import" {
@@ -1301,9 +1279,7 @@ impl SettingsView {
         if let Err(err) = self.highlight_store.delete_user_pack(&id) {
             log::error!("delete highlight pack {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!(
-                    "Couldn't delete pack: {err}"
-                ))),
+                Notification::error(SharedString::from(format!("Couldn't delete pack: {err}"))),
                 cx,
             );
             return;
@@ -1334,12 +1310,7 @@ impl SettingsView {
                         let snapshot = snapshot.clone();
                         let notif = notif.clone();
                         app.update(cx, |this, view_cx| {
-                            this.restore_highlight_pack(
-                                snapshot,
-                                was_enabled,
-                                window,
-                                view_cx,
-                            );
+                            this.restore_highlight_pack(snapshot, was_enabled, window, view_cx);
                         });
                         dismiss_notification_after(notif, cx);
                     })
@@ -1362,9 +1333,7 @@ impl SettingsView {
         if let Err(err) = self.highlight_store.restore_user_pack(&pack) {
             log::error!("restore highlight pack {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!(
-                    "Couldn't restore pack: {err}"
-                ))),
+                Notification::error(SharedString::from(format!("Couldn't restore pack: {err}"))),
                 cx,
             );
             return;
@@ -1448,18 +1417,15 @@ impl SettingsView {
             current.skin_id.as_str()
         };
         let new_state = make_select(opts, active, window, cx);
-        let new_sub = cx.subscribe(
-            &new_state,
-            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
-                if let SelectEvent::Confirm(Some(id)) = event {
-                    if &this.settings.skin_id != id {
-                        let mut next = this.settings.clone();
-                        next.skin_id = id.clone();
-                        this.commit(next, cx);
-                    }
+        let new_sub = cx.subscribe(&new_state, |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+            if let SelectEvent::Confirm(Some(id)) = event {
+                if &this.settings.skin_id != id {
+                    let mut next = this.settings.clone();
+                    next.skin_id = id.clone();
+                    this.commit(next, cx);
                 }
-            },
-        );
+            }
+        });
         self.skin_select = new_state;
         self._skin_sub = new_sub;
         cx.notify();
@@ -1475,18 +1441,15 @@ impl SettingsView {
             current.default_theme_id.as_str()
         };
         let new_state = make_select(opts, active, window, cx);
-        let new_sub = cx.subscribe(
-            &new_state,
-            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
-                if let SelectEvent::Confirm(Some(id)) = event {
-                    if &this.settings.default_theme_id != id {
-                        let mut next = this.settings.clone();
-                        next.default_theme_id = id.clone();
-                        this.commit(next, cx);
-                    }
+        let new_sub = cx.subscribe(&new_state, |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+            if let SelectEvent::Confirm(Some(id)) = event {
+                if &this.settings.default_theme_id != id {
+                    let mut next = this.settings.clone();
+                    next.default_theme_id = id.clone();
+                    this.commit(next, cx);
                 }
-            },
-        );
+            }
+        });
         self.theme_select = new_state;
         self._theme_sub = new_sub;
         cx.notify();
@@ -1598,9 +1561,7 @@ impl Render for SettingsView {
                                     .available
                                     .as_ref()
                                     .map(|a| {
-                                        self.settings
-                                            .dismissed_update_version
-                                            .as_deref()
+                                        self.settings.dismissed_update_version.as_deref()
                                             != Some(a.version.as_str())
                                     })
                                     .unwrap_or(false);
@@ -1621,9 +1582,7 @@ impl SettingsView {
             SettingsTab::Themes => self.themes_pane(s, cx).into_any_element(),
             SettingsTab::Shortcuts => self.shortcuts_pane(s, cx).into_any_element(),
             SettingsTab::Highlighting => self.highlighting_pane(s, cx).into_any_element(),
-            SettingsTab::Accessibility => {
-                self.accessibility_pane(s, cx).into_any_element()
-            }
+            SettingsTab::Accessibility => self.accessibility_pane(s, cx).into_any_element(),
             SettingsTab::Updates => self.updates_pane(s, cx).into_any_element(),
             SettingsTab::Advanced => self.advanced_pane(s, cx).into_any_element(),
         }
@@ -1726,23 +1685,19 @@ impl SettingsView {
                 .child(reset)
         });
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(self.filtered_card(
-                s,
-                "Keyboard Shortcuts",
-                Some(
-                    "Click a binding to record a new key combo; Escape \
+        div().flex().flex_col().gap_3().child(self.filtered_card(
+            s,
+            "Keyboard Shortcuts",
+            Some(
+                "Click a binding to record a new key combo; Escape \
                      cancels. Use \u{21BA} to reset that row to the \
                      platform default. macOS uses Cmd-based combos \
                      (Cmd is never a terminal control character so plain \
                      \u{2318}K is safe); Linux/Windows use Ctrl+Shift so \
                      plain Ctrl+letter still passes through to the device.",
-                ),
-                div().flex().flex_col().gap_2().children(rows),
-            ))
+            ),
+            div().flex().flex_col().gap_2().children(rows),
+        ))
     }
 
     fn themes_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1755,7 +1710,12 @@ impl SettingsView {
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().text_size(px(11.0)).text_color(rgba(s.fg_secondary)).child("Theme"))
+                .child(
+                    div()
+                        .text_size(px(11.0))
+                        .text_color(rgba(s.fg_secondary))
+                        .child("Theme"),
+                )
                 .child(Select::new(&self.theme_select)),
         );
 
@@ -1818,12 +1778,7 @@ impl SettingsView {
     /// (for user imports) a trash button followed by a Preview button
     /// on the right. The Preview button opens the modal regardless of
     /// whether the theme is currently set as default.
-    fn theme_row(
-        &self,
-        theme: &themes::Theme,
-        s: SkinTokens,
-        cx: &mut Context<Self>,
-    ) -> gpui::Div {
+    fn theme_row(&self, theme: &themes::Theme, s: SkinTokens, cx: &mut Context<Self>) -> gpui::Div {
         let theme_id = theme.id.clone();
         let theme_id_for_delete = theme.id.clone();
         let is_custom = theme.source == "user";
@@ -1831,10 +1786,7 @@ impl SettingsView {
 
         let mut right = div().flex().flex_row().items_center().gap_2();
         if is_custom {
-            let trash_id = ElementId::Name(SharedString::from(format!(
-                "trash-theme-{}",
-                theme.id
-            )));
+            let trash_id = ElementId::Name(SharedString::from(format!("trash-theme-{}", theme.id)));
             right = right.child(trash_button(
                 s,
                 trash_id,
@@ -1897,72 +1849,58 @@ impl SettingsView {
         // below — a `move` closure on the iterator would pin the
         // mutable borrow of cx across the import_button call and
         // the borrow checker rejects it.
-        let rows: Vec<gpui::Div> = packs.into_iter().map(|p| {
-            let id_for_label = p.id.clone();
-            let id_for_setter = p.id.clone();
-            let id_for_delete = p.id.clone();
-            let is_on = enabled.iter().any(|e| e == &p.id);
-            let is_custom = p.source == "user" || p.source == "import";
-            // Append "(custom)" to user/imported packs so they're
-            // distinguishable from the built-in vendor presets.
-            let label = if is_custom {
-                format!("{} (custom)", p.name)
-            } else {
-                p.name.clone()
-            };
-            // Fall back to the pack's own description; some bundled
-            // packs ship without one — show a quiet "—" rather than
-            // a blank row that looks like the data is missing.
-            let desc = p
-                .description
-                .clone()
-                .filter(|d| !d.is_empty())
-                .unwrap_or_else(|| "\u{2014}".to_string());
+        let rows: Vec<gpui::Div> = packs
+            .into_iter()
+            .map(|p| {
+                let id_for_label = p.id.clone();
+                let id_for_setter = p.id.clone();
+                let id_for_delete = p.id.clone();
+                let is_on = enabled.iter().any(|e| e == &p.id);
+                let is_custom = p.source == "user" || p.source == "import";
+                // Append "(custom)" to user/imported packs so they're
+                // distinguishable from the built-in vendor presets.
+                let label = if is_custom {
+                    format!("{} (custom)", p.name)
+                } else {
+                    p.name.clone()
+                };
+                // Fall back to the pack's own description; some bundled
+                // packs ship without one — show a quiet "—" rather than
+                // a blank row that looks like the data is missing.
+                let desc = p
+                    .description
+                    .clone()
+                    .filter(|d| !d.is_empty())
+                    .unwrap_or_else(|| "\u{2014}".to_string());
 
-            let cb_id = SharedString::from(format!("settings-highlight-{}", id_for_label));
-            let mut top = div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .child(
+                let cb_id = SharedString::from(format!("settings-highlight-{}", id_for_label));
+                let mut top = div().flex().flex_row().items_center().gap_2().child(
                     div().flex_1().child(
                         Checkbox::new(cb_id)
                             .checked(is_on)
                             .label(label)
-                            .on_click(cx.listener(
-                                move |this, checked: &bool, _, cx| {
-                                    this.toggle_highlight_pack(
-                                        id_for_setter.clone(),
-                                        *checked,
-                                        cx,
-                                    );
-                                },
-                            )),
+                            .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                                this.toggle_highlight_pack(id_for_setter.clone(), *checked, cx);
+                            })),
                     ),
                 );
-            if is_custom {
-                let trash_id = ElementId::Name(SharedString::from(format!(
-                    "trash-pack-{}",
-                    id_for_delete
-                )));
-                top = top.child(trash_button(
-                    s,
-                    trash_id,
-                    "Delete imported pack",
-                    cx,
-                    move |this, window, cx| {
-                        this.delete_highlight_pack(id_for_delete.clone(), window, cx);
-                    },
-                ));
-            }
+                if is_custom {
+                    let trash_id = ElementId::Name(SharedString::from(format!(
+                        "trash-pack-{}",
+                        id_for_delete
+                    )));
+                    top = top.child(trash_button(
+                        s,
+                        trash_id,
+                        "Delete imported pack",
+                        cx,
+                        move |this, window, cx| {
+                            this.delete_highlight_pack(id_for_delete.clone(), window, cx);
+                        },
+                    ));
+                }
 
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(top)
-                .child(
+                div().flex().flex_col().gap_1().child(top).child(
                     div()
                         .pl(px(24.0))
                         .text_size(px(12.0))
@@ -1970,7 +1908,8 @@ impl SettingsView {
                         .whitespace_normal()
                         .child(desc),
                 )
-        }).collect();
+            })
+            .collect();
 
         let body = div()
             .flex()
@@ -1983,22 +1922,18 @@ impl SettingsView {
                 |this, window, cx| this.start_highlight_import(window, cx),
             ))
             .child(div().flex().flex_col().gap_3().children(rows));
-        div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(self.filtered_card(
-                s,
-                "Highlight Packs",
-                Some(
-                    "Choose which built-in or imported rule packs colorize \
+        div().flex().flex_col().gap_3().child(self.filtered_card(
+            s,
+            "Highlight Packs",
+            Some(
+                "Choose which built-in or imported rule packs colorize \
                      terminal output. Stack as many as you want — matches \
                      from each pack are merged in order. With every box \
                      unchecked highlighting is off, even if a profile has \
                      it enabled.",
-                ),
-                body,
-            ))
+            ),
+            body,
+        ))
     }
 
     fn appearance_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2025,10 +1960,13 @@ impl SettingsView {
             .filter(|sk| sk.source == "user")
             .collect();
         let installed_body: gpui::Div = if custom_skins.is_empty() {
-            div().text_size(px(12.0)).text_color(rgba(s.fg_secondary)).child(
-                "No custom skins installed. Use Import to add a skin \
+            div()
+                .text_size(px(12.0))
+                .text_color(rgba(s.fg_secondary))
+                .child(
+                    "No custom skins installed. Use Import to add a skin \
                  JSON file.",
-            )
+                )
         } else {
             div()
                 .flex()
@@ -2114,17 +2052,9 @@ impl SettingsView {
     /// skin pinned dark) on the left, trash button on the right.
     /// Built-ins never reach this builder — the caller filters them
     /// out before iterating.
-    fn skin_row(
-        &self,
-        skin: &skins::Skin,
-        s: SkinTokens,
-        cx: &mut Context<Self>,
-    ) -> gpui::Div {
+    fn skin_row(&self, skin: &skins::Skin, s: SkinTokens, cx: &mut Context<Self>) -> gpui::Div {
         let skin_id = skin.id.clone();
-        let trash_id = ElementId::Name(SharedString::from(format!(
-            "trash-skin-{}",
-            skin.id
-        )));
+        let trash_id = ElementId::Name(SharedString::from(format!("trash-skin-{}", skin.id)));
         let tag = if !skin.supports_light {
             "Custom \u{00B7} dark-only".to_string()
         } else {
@@ -2240,13 +2170,7 @@ impl SettingsView {
                     // intrinsic content width and overflow the card
                     // (the visible bug: " are on." spills past the
                     // right edge of the Reduce Motion card).
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .text_sm()
-                            .child(status_label),
-                    ),
+                    .child(div().flex_1().min_w_0().text_sm().child(status_label)),
             )
             .child(
                 div()
@@ -2254,16 +2178,11 @@ impl SettingsView {
                     .text_color(rgba(s.fg_secondary))
                     .child(os_path),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(rgba(s.fg_tertiary))
-                    .child(
-                        "Detected once at app launch. Relaunch Baudrun \
+            .child(div().text_xs().text_color(rgba(s.fg_tertiary)).child(
+                "Detected once at app launch. Relaunch Baudrun \
                          after flipping the system setting if a value here \
                          looks stale.",
-                    ),
-            );
+            ));
         div().flex().flex_col().gap_3().child(self.filtered_card(
             s,
             "Reduce Motion",
@@ -2286,10 +2205,7 @@ impl SettingsView {
         // duration of the render — every `import_button` /
         // `bool_field` call below grabs `cx` for its own listener,
         // which would conflict with a live borrow of the global.
-        let available = cx
-            .global::<crate::updater::UpdateState>()
-            .available
-            .clone();
+        let available = cx.global::<crate::updater::UpdateState>().available.clone();
         let dismissed_match = available
             .as_ref()
             .and_then(|a| {
@@ -2307,31 +2223,26 @@ impl SettingsView {
         //   3. Newer release found → amber dot + version pill +
         //      View Release / Dismiss buttons (or "Dismissed"
         //      label when the user has already clicked Dismiss).
-        let (dot_color, status_label): (u32, SharedString) =
-            if cur.disable_update_check {
-                (s.fg_tertiary, "Update checks are disabled.".into())
-            } else if let Some(a) = available.as_ref() {
-                if dismissed_match {
-                    (
-                        s.fg_tertiary,
-                        format!(
-                            "v{} is available — you've dismissed this version.",
-                            a.version
-                        )
-                        .into(),
+        let (dot_color, status_label): (u32, SharedString) = if cur.disable_update_check {
+            (s.fg_tertiary, "Update checks are disabled.".into())
+        } else if let Some(a) = available.as_ref() {
+            if dismissed_match {
+                (
+                    s.fg_tertiary,
+                    format!(
+                        "v{} is available — you've dismissed this version.",
+                        a.version
                     )
-                } else {
-                    (
-                        s.warn,
-                        format!("v{} is available.", a.version).into(),
-                    )
-                }
+                    .into(),
+                )
             } else {
-                (s.success, "Baudrun is up to date.".into())
-            };
+                (s.warn, format!("v{} is available.", a.version).into())
+            }
+        } else {
+            (s.success, "Baudrun is up to date.".into())
+        };
 
-        let current_line: SharedString =
-            format!("Currently running v{current_version}.").into();
+        let current_line: SharedString = format!("Currently running v{current_version}.").into();
 
         let action_row = available.clone().and_then(|a| {
             if dismissed_match || cur.disable_update_check {
@@ -2343,15 +2254,10 @@ impl SettingsView {
                         .flex_row()
                         .gap_2()
                         .items_center()
-                        .child(import_button(
-                            s,
-                            "View release",
-                            cx,
-                            {
-                                let url = a.html_url.clone();
-                                move |_, _, cx| cx.open_url(&url)
-                            },
-                        ))
+                        .child(import_button(s, "View release", cx, {
+                            let url = a.html_url.clone();
+                            move |_, _, cx| cx.open_url(&url)
+                        }))
                         .child(import_button(s, "Dismiss this version", cx, {
                             let version = a.version.clone();
                             move |this, _, cx| {
@@ -2362,25 +2268,22 @@ impl SettingsView {
             }
         });
 
-        let notes = available
-            .as_ref()
-            .filter(|_| !dismissed_match)
-            .map(|a| {
-                // First ~600 chars of the release notes — enough
-                // for the headline, not the whole changelog.
-                let raw = a.notes.trim();
-                let truncated: String = raw.chars().take(600).collect();
-                let display = if raw.chars().count() > 600 {
-                    format!("{truncated}…")
-                } else {
-                    truncated
-                };
-                div()
-                    .text_sm()
-                    .text_color(rgba(s.fg_secondary))
-                    .whitespace_normal()
-                    .child(SharedString::from(display))
-            });
+        let notes = available.as_ref().filter(|_| !dismissed_match).map(|a| {
+            // First ~600 chars of the release notes — enough
+            // for the headline, not the whole changelog.
+            let raw = a.notes.trim();
+            let truncated: String = raw.chars().take(600).collect();
+            let display = if raw.chars().count() > 600 {
+                format!("{truncated}…")
+            } else {
+                truncated
+            };
+            div()
+                .text_sm()
+                .text_color(rgba(s.fg_secondary))
+                .whitespace_normal()
+                .child(SharedString::from(display))
+        });
 
         let status_body = div()
             .flex()
@@ -2463,36 +2366,35 @@ impl SettingsView {
             .flex()
             .flex_col()
             .gap_3()
-            .child(self.filtered_card(
-                s,
-                "Session Log Directory",
-                Some(
-                    "Where profiles with \"Record session to file\" enabled \
+            .child(
+                self.filtered_card(
+                    s,
+                    "Session Log Directory",
+                    Some(
+                        "Where profiles with \"Record session to file\" enabled \
                      write their logs. Leave blank to use the default.",
+                    ),
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex_1()
+                                .child(Input::new(&self.log_dir).small().appearance(true)),
+                        )
+                        .child(import_button(
+                            s,
+                            "Choose\u{2026}",
+                            cx,
+                            |this, window, cx| this.choose_log_dir(window, cx),
+                        ))
+                        .child(import_button(s, "Reset", cx, |this, window, cx| {
+                            this.reset_log_dir(window, cx)
+                        })),
                 ),
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex_1()
-                            .child(Input::new(&self.log_dir).small().appearance(true)),
-                    )
-                    .child(import_button(
-                        s,
-                        "Choose\u{2026}",
-                        cx,
-                        |this, window, cx| this.choose_log_dir(window, cx),
-                    ))
-                    .child(import_button(
-                        s,
-                        "Reset",
-                        cx,
-                        |this, window, cx| this.reset_log_dir(window, cx),
-                    )),
-            ))
+            )
             .child(self.filtered_card(
                 s,
                 "USB Driver Detection",
@@ -2525,54 +2427,52 @@ impl SettingsView {
                     SettingsView::set_copy_on_select,
                 ),
             ))
-            .child(self.filtered_card(
-                s,
-                "Window State",
-                Some(
-                    "Reopen Baudrun and Settings windows where you left \
+            .child(
+                self.filtered_card(
+                    s,
+                    "Window State",
+                    Some(
+                        "Reopen Baudrun and Settings windows where you left \
                      them. Turn off to land at the centered default \
                      size each launch instead. The Reset buttons clear \
                      the saved geometry and resize the matching live \
                      windows immediately.",
-                ),
-                // Two rows: the on/off toggle on top, then a pair of
-                // Reset buttons (Settings window vs main window) below.
-                // The two-button split lets the user fix just the
-                // window that drifted without touching the other.
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(bool_field(
-                        "settings-restore-window-state",
-                        "Restore window size and position on launch",
-                        !cur.disable_window_state_restore,
-                        cx,
-                        SettingsView::set_restore_window_state,
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .gap_2()
-                            .child(import_button(
-                                s,
-                                "Reset Settings window",
-                                cx,
-                                |this, window, cx| {
-                                    this.reset_settings_window(window, cx)
-                                },
-                            ))
-                            .child(import_button(
-                                s,
-                                "Reset main window",
-                                cx,
-                                |this, window, cx| {
-                                    this.reset_main_window(window, cx)
-                                },
-                            )),
                     ),
-            ))
+                    // Two rows: the on/off toggle on top, then a pair of
+                    // Reset buttons (Settings window vs main window) below.
+                    // The two-button split lets the user fix just the
+                    // window that drifted without touching the other.
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(bool_field(
+                            "settings-restore-window-state",
+                            "Restore window size and position on launch",
+                            !cur.disable_window_state_restore,
+                            cx,
+                            SettingsView::set_restore_window_state,
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_2()
+                                .child(import_button(
+                                    s,
+                                    "Reset Settings window",
+                                    cx,
+                                    |this, window, cx| this.reset_settings_window(window, cx),
+                                ))
+                                .child(import_button(
+                                    s,
+                                    "Reset main window",
+                                    cx,
+                                    |this, window, cx| this.reset_main_window(window, cx),
+                                )),
+                        ),
+                ),
+            )
             // (Updates moved to its own `SettingsTab::Updates`
             // pane — see `updates_pane`.)
             .child(
@@ -2637,12 +2537,9 @@ impl SettingsView {
                                             ),
                                     ),
                             )
-                            .child(import_button(
-                                s,
-                                "Reveal",
-                                cx,
-                                |this, window, cx| this.reveal_config_dir(window, cx),
-                            )),
+                            .child(import_button(s, "Reveal", cx, |this, window, cx| {
+                                this.reveal_config_dir(window, cx)
+                            })),
                     )
                     .child(
                         div()
@@ -2683,22 +2580,18 @@ impl SettingsView {
                             // the flex row is starved — otherwise long
                             // paths could compress the buttons until the
                             // labels truncate or wrap.
-                            .child(
-                                div().flex_shrink_0().child(import_button(
-                                    s,
-                                    "Choose\u{2026}",
-                                    cx,
-                                    |this, window, cx| this.choose_config_dir(window, cx),
-                                )),
-                            )
-                            .child(
-                                div().flex_shrink_0().child(import_button(
-                                    s,
-                                    "Reset",
-                                    cx,
-                                    |this, window, cx| this.reset_config_dir(window, cx),
-                                )),
-                            ),
+                            .child(div().flex_shrink_0().child(import_button(
+                                s,
+                                "Choose\u{2026}",
+                                cx,
+                                |this, window, cx| this.choose_config_dir(window, cx),
+                            )))
+                            .child(div().flex_shrink_0().child(import_button(
+                                s,
+                                "Reset",
+                                cx,
+                                |this, window, cx| this.reset_config_dir(window, cx),
+                            ))),
                     ),
             )
     }
@@ -2801,9 +2694,7 @@ fn window_header(
             div()
                 .relative()
                 .w(px(220.0))
-                .child(
-                    Input::new(filter_input).small().appearance(true),
-                )
+                .child(Input::new(filter_input).small().appearance(true))
                 .when(filter_active, |row| {
                     row.child(
                         div()
@@ -2820,8 +2711,7 @@ fn window_header(
                             .cursor_pointer()
                             .hover(|st| st.text_color(rgba(s.fg_primary)))
                             .tooltip(|window, cx| {
-                                Tooltip::new(SharedString::from("Clear filter"))
-                                    .build(window, cx)
+                                Tooltip::new(SharedString::from("Clear filter")).build(window, cx)
                             })
                             .child("\u{00D7}")
                             .on_mouse_up(
@@ -2922,13 +2812,7 @@ fn rail(
                         // gear-icon indicator — same colour token
                         // (`s.warn`) + same 8px diameter, so the
                         // two surfaces feel like one signal.
-                        this.child(
-                            div()
-                                .w(px(8.0))
-                                .h(px(8.0))
-                                .rounded_full()
-                                .bg(rgba(s.warn)),
-                        )
+                        this.child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(rgba(s.warn)))
                     }),
             )
             .on_mouse_up(
@@ -2950,9 +2834,11 @@ fn rail(
         .flex_col()
         .gap_1()
         .text_size(px(13.0))
-        .children(SettingsTab::ALL.iter().map(|&t| {
-            item(t.label(), t, !lookup_match(t))
-        }))
+        .children(
+            SettingsTab::ALL
+                .iter()
+                .map(|&t| item(t.label(), t, !lookup_match(t))),
+        )
 }
 
 /// Scrollable pane wrapper. Same min_w_0/min_h_0 dance as
@@ -2977,16 +2863,12 @@ fn section_card_with_desc(
     description: Option<&'static str>,
     body: impl IntoElement,
 ) -> gpui::Div {
-    let mut header = div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .text_size(px(s.font_size_section_px))
-                .text_color(rgba(s.fg_primary))
-                .child(title),
-        );
+    let mut header = div().flex().flex_col().gap_1().child(
+        div()
+            .text_size(px(s.font_size_section_px))
+            .text_color(rgba(s.fg_primary))
+            .child(title),
+    );
     if let Some(desc) = description {
         header = header.child(
             div()
@@ -3058,61 +2940,118 @@ where
 /// itself doesn't contain the word. Keep entries lowercase — the
 /// matcher normalises before comparing.
 const SECTION_KEYWORDS: &[(&str, &str)] = &[
-    ("App Skin", "chrome appearance theme accent radius font ui interface look feel \
+    (
+        "App Skin",
+        "chrome appearance theme accent radius font ui interface look feel \
                    style baudrun dracula synthwave crt monokai gruvbox solarized nord \
-                   tokyo night brogrammer terminal panel sidebar widget"),
-    ("Appearance", "light dark auto system mode follow os macos windows night day"),
-    ("Installed Skins", "import custom skin manage delete remove add upload trash \
-                         user imported personalize"),
-    ("Terminal Font Size", "font size monospace terminal text glyph pixel zoom"),
-    ("Scrollback", "scrollback lines buffer history wheel scroll mouse pixels page"),
-    ("Default Theme", "theme palette ansi colour color terminal viewport baudrun \
-                       dracula monokai gruvbox solarized nord onedark tomorrow brogrammer"),
-    ("Installed Themes", "import itermcolors theme manage delete remove preview \
-                          color colour palette terminal user custom"),
-    ("Keyboard Shortcuts", "binding key hotkey shortcut clear send break suspend resume \
+                   tokyo night brogrammer terminal panel sidebar widget",
+    ),
+    (
+        "Appearance",
+        "light dark auto system mode follow os macos windows night day",
+    ),
+    (
+        "Installed Skins",
+        "import custom skin manage delete remove add upload trash \
+                         user imported personalize",
+    ),
+    (
+        "Terminal Font Size",
+        "font size monospace terminal text glyph pixel zoom",
+    ),
+    (
+        "Scrollback",
+        "scrollback lines buffer history wheel scroll mouse pixels page",
+    ),
+    (
+        "Default Theme",
+        "theme palette ansi colour color terminal viewport baudrun \
+                       dracula monokai gruvbox solarized nord onedark tomorrow brogrammer",
+    ),
+    (
+        "Installed Themes",
+        "import itermcolors theme manage delete remove preview \
+                          color colour palette terminal user custom",
+    ),
+    (
+        "Keyboard Shortcuts",
+        "binding key hotkey shortcut clear send break suspend resume \
                             connect disconnect copy paste cmd ctrl meta combo capture \
-                            override default"),
-    ("Highlight Packs", "highlight pack rule regex syntax colour color match \
+                            override default",
+    ),
+    (
+        "Highlight Packs",
+        "highlight pack rule regex syntax colour color match \
                          cisco junos arista mikrotik aruba routeros eos vendor \
-                         network bgp ospf stp interface log error warning"),
-    ("Session Log Directory", "log directory folder record session save path file \
-                               record-to-file logfile capture record"),
-    ("USB Driver Detection", "usb driver detection cp210x ftdi pl2303 ch340 banner \
-                              adapter notice missing driver pop-up alert"),
-    ("Copy on Select", "copy clipboard selection putty mouse drag autoselect auto \
-                        copy on select autocopy"),
-    ("Window State", "window position size remember restore launch persistence \
-                      geometry frame bounds layout"),
-    ("Updates", "update github release version check prerelease alpha beta rc \
-                 changelog new available notification download"),
-    ("Config Directory", "config directory folder path location store dropbox icloud \
-                          override support portable share xdg appdata application support"),
-    ("Reduce Motion", "reduce motion animation pulse blink cursor reconnect dot \
+                         network bgp ospf stp interface log error warning",
+    ),
+    (
+        "Session Log Directory",
+        "log directory folder record session save path file \
+                               record-to-file logfile capture record",
+    ),
+    (
+        "USB Driver Detection",
+        "usb driver detection cp210x ftdi pl2303 ch340 banner \
+                              adapter notice missing driver pop-up alert",
+    ),
+    (
+        "Copy on Select",
+        "copy clipboard selection putty mouse drag autoselect auto \
+                        copy on select autocopy",
+    ),
+    (
+        "Window State",
+        "window position size remember restore launch persistence \
+                      geometry frame bounds layout",
+    ),
+    (
+        "Updates",
+        "update github release version check prerelease alpha beta rc \
+                 changelog new available notification download",
+    ),
+    (
+        "Config Directory",
+        "config directory folder path location store dropbox icloud \
+                          override support portable share xdg appdata application support",
+    ),
+    (
+        "Reduce Motion",
+        "reduce motion animation pulse blink cursor reconnect dot \
                        accessibility a11y wcag prefers prefer system os macos \
-                       windows linux preference disable disabled steady still"),
+                       windows linux preference disable disabled steady still",
+    ),
 ];
 
 const TAB_SECTIONS: &[(SettingsTab, &[&str])] = &[
-    (SettingsTab::Appearance, &[
-        "App Skin",
-        "Appearance",
-        "Installed Skins",
-        "Terminal Font Size",
-        "Scrollback",
-    ]),
+    (
+        SettingsTab::Appearance,
+        &[
+            "App Skin",
+            "Appearance",
+            "Installed Skins",
+            "Terminal Font Size",
+            "Scrollback",
+        ],
+    ),
     (SettingsTab::Themes, &["Default Theme", "Installed Themes"]),
     (SettingsTab::Shortcuts, &["Keyboard Shortcuts"]),
     (SettingsTab::Highlighting, &["Highlight Packs"]),
     (SettingsTab::Accessibility, &["Reduce Motion"]),
-    (SettingsTab::Updates, &["Updates", "Check for updates", "Pre-releases"]),
-    (SettingsTab::Advanced, &[
-        "Session Log Directory",
-        "USB Driver Detection",
-        "Copy on Select",
-        "Window State",
-        "Config Directory",
-    ]),
+    (
+        SettingsTab::Updates,
+        &["Updates", "Check for updates", "Pre-releases"],
+    ),
+    (
+        SettingsTab::Advanced,
+        &[
+            "Session Log Directory",
+            "USB Driver Detection",
+            "Copy on Select",
+            "Window State",
+            "Config Directory",
+        ],
+    ),
 ];
 
 /// Schedule a Notification to dismiss itself ~1.5 s after the user
@@ -3479,9 +3418,7 @@ where
             .text_size(px(12.0))
             .cursor_pointer()
             .hover(move |st| st.border_color(rgba(danger)).text_color(rgba(danger)))
-            .tooltip(move |window, cx| {
-                Tooltip::new(tip_text.clone()).build(window, cx)
-            })
+            .tooltip(move |window, cx| Tooltip::new(tip_text.clone()).build(window, cx))
             .child("\u{1F5D1}")
             .on_mouse_up(
                 MouseButton::Left,

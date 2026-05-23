@@ -27,6 +27,7 @@ use std::rc::Rc;
 
 use std::time::Duration;
 
+use gpui::SharedString;
 use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
     AppContext, Bounds, Context, DismissEvent, Entity, IntoElement, MouseButton, MouseDownEvent,
@@ -41,27 +42,25 @@ use gpui_component::{
     scroll::ScrollableElement,
     select::{Select, SelectItem, SelectState},
     tooltip::Tooltip,
-    Disableable, Icon, IconName, IndexPath, Root, Sizable, Theme, ThemeMode,
-    TitleBar, WindowExt,
+    Disableable, Icon, IconName, IndexPath, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
 };
-use gpui::SharedString;
 
 use crate::data::appdata;
 use crate::data::hex::parse_hex_string;
 use crate::data::highlight;
-use crate::data::transfer::{self, ChannelReader, XModemVariant};
-use crate::serial_io::{ChannelWriter, TransferSink};
 use crate::data::profiles::{self, Profile};
 use crate::data::sanitize::SanitizingLogWriter;
 use crate::data::serial::ports;
 use crate::data::settings;
 use crate::data::skins;
 use crate::data::themes;
+use crate::data::transfer::{self, ChannelReader, XModemVariant};
+use crate::serial_io;
+use crate::serial_io::{ChannelWriter, TransferSink};
 use crate::settings_bus::{SettingsBus, SettingsEvent};
 use crate::settings_view::SettingsView;
 use crate::skin_tokens::{self, SkinFonts, SkinTokens};
 use crate::term_bridge::Palette;
-use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
 
 /// Width of the left sidebar in logical pixels. Matches the main
@@ -285,7 +284,6 @@ enum EditorTab {
     Highlighting,
     Advanced,
 }
-
 
 struct Editor {
     /// `None` = creating a brand-new profile (Save → `Store::create`).
@@ -525,14 +523,11 @@ impl AppView {
         // window persists a change, AND apply theme/font-size/etc.
         // edits to the live terminal pane. Future Phase-4 slices
         // hang skin chrome refresh off the same hook.
-        let settings_sub = cx.subscribe(
-            &settings_bus,
-            |this, _, event: &SettingsEvent, cx| {
-                let SettingsEvent::Updated(next) = event;
-                this.apply_settings(next, cx);
-                cx.notify();
-            },
-        );
+        let settings_sub = cx.subscribe(&settings_bus, |this, _, event: &SettingsEvent, cx| {
+            let SettingsEvent::Updated(next) = event;
+            this.apply_settings(next, cx);
+            cx.notify();
+        });
         // Apply the persisted theme right away so a fresh launch
         // honours the user's `default_theme_id` instead of paying
         // a one-frame flash of the boot Baudrun palette.
@@ -602,20 +597,12 @@ impl AppView {
     /// terminal so PuTTY-style auto-copy on selection release
     /// follows the user's preference immediately — no relaunch,
     /// no reconnect.
-    fn apply_copy_on_select(
-        &mut self,
-        settings: &settings::Settings,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_copy_on_select(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
         let flag = settings.copy_on_select;
         self.terminal.update(cx, |t, _| t.set_copy_on_select(flag));
     }
 
-    fn apply_scrollback(
-        &mut self,
-        settings: &settings::Settings,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_scrollback(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
         let lines = settings.effective_scrollback();
         self.terminal
             .update(cx, |t, cx| t.set_scrollback_lines(lines, cx));
@@ -627,19 +614,14 @@ impl AppView {
     /// `skip_serializing_if = "is_zero"` represents the same
     /// state). Outside a sane range gets clamped so a stray edit
     /// doesn't render unreadable text.
-    fn apply_font_size(
-        &mut self,
-        settings: &settings::Settings,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_font_size(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
         let raw = settings.font_size;
         let size = if raw <= 0 {
             crate::terminal_grid::FONT_SIZE_PX
         } else {
             (raw as f32).clamp(8.0, 48.0)
         };
-        self.terminal
-            .update(cx, |t, cx| t.set_font_size(size, cx));
+        self.terminal.update(cx, |t, cx| t.set_font_size(size, cx));
     }
 
     /// Hook the OS appearance observer onto the main window. Called
@@ -648,11 +630,7 @@ impl AppView {
     /// enough to register the callback. Each callback fire updates
     /// `system_dark` and, if the user is on `Auto`, re-applies the
     /// skin so the chrome flips Light/Dark live.
-    pub fn attach_appearance_observer(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn attach_appearance_observer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let weak = cx.entity().downgrade();
         let sub = window.observe_window_appearance(move |window, app_cx| {
             let dark = matches!(
@@ -660,10 +638,9 @@ impl AppView {
                 gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
             );
             if let Some(strong) = weak.upgrade() {
-                strong
-                    .update(app_cx, |this, view_cx| {
-                        this.set_system_dark(dark, view_cx);
-                    });
+                strong.update(app_cx, |this, view_cx| {
+                    this.set_system_dark(dark, view_cx);
+                });
             }
         });
         self._appearance_sub = Some(sub);
@@ -678,8 +655,7 @@ impl AppView {
         }
         self.system_dark = dark;
         let settings = self.settings_bus.read(cx).current().clone();
-        let on_auto = settings.appearance.is_empty()
-            || settings.appearance.as_str() == "auto";
+        let on_auto = settings.appearance.is_empty() || settings.appearance.as_str() == "auto";
         if on_auto {
             self.apply_settings(&settings, cx);
             cx.notify();
@@ -784,7 +760,11 @@ impl AppView {
         // this the widgets stay in whatever mode `Theme::change`
         // was last called with, so picking Light leaves them
         // showing white-on-white text.
-        let mode = if dark { ThemeMode::Dark } else { ThemeMode::Light };
+        let mode = if dark {
+            ThemeMode::Dark
+        } else {
+            ThemeMode::Light
+        };
         Theme::change(mode, None, cx);
 
         // Now overlay the skin's colour + size tokens onto the
@@ -1017,10 +997,7 @@ impl AppView {
         // timer lets the current render cycle complete first.
         cx.notify();
         cx.spawn_in(window, async move |this, cx_async| {
-            cx_async
-                .background_executor()
-                .timer(Duration::ZERO)
-                .await;
+            cx_async.background_executor().timer(Duration::ZERO).await;
             let _ = this.update_in(cx_async, |this, window, cx| {
                 // Skip if the user clicked a different row in the
                 // interim — chasing a stale selection would blow
@@ -1147,10 +1124,7 @@ impl AppView {
             local_echo: profile.local_echo,
             paste_warn_multiline: profile.paste_warn_multiline,
             paste_slow: profile.paste_slow,
-            paste_char_delay_ms: profile
-                .paste_char_delay_ms
-                .unwrap_or(10)
-                .max(0) as u32,
+            paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0) as u32,
             hex_view: profile.hex_view,
             timestamps: profile.timestamps,
             line_numbers: profile.line_numbers,
@@ -1238,9 +1212,7 @@ impl AppView {
                     break;
                 }
             }
-            weak_app
-                .update(cx, |app, cx| app.on_drain_ended(cx))
-                .ok();
+            weak_app.update(cx, |app, cx| app.on_drain_ended(cx)).ok();
         });
         self.drain_task = Some(task);
         self.serial_disconnect = Some(channels.disconnect);
@@ -1296,7 +1268,11 @@ impl AppView {
     /// Idempotent if already open — re-creates the field state so the
     /// user gets a fresh form rather than whatever they typed before.
     fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let detect = !self.settings_bus.read(cx).current().disable_driver_detection;
+        let detect = !self
+            .settings_bus
+            .read(cx)
+            .current()
+            .disable_driver_detection;
         self.editor = Some(build_editor(
             None,
             &Profile::defaults(),
@@ -1313,16 +1289,15 @@ impl AppView {
     /// values. Silently no-ops if the id has vanished from the store
     /// between row-render and click (rare; the store is the single
     /// source of truth and the sidebar re-reads it every render).
-    fn open_editor_for(
-        &mut self,
-        id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_editor_for(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         let Some(profile) = self.profile_store.get(&id) else {
             return;
         };
-        let detect = !self.settings_bus.read(cx).current().disable_driver_detection;
+        let detect = !self
+            .settings_bus
+            .read(cx)
+            .current()
+            .disable_driver_detection;
         self.editor = Some(build_editor(
             Some(id),
             &profile,
@@ -1507,7 +1482,9 @@ impl AppView {
     /// rather than starting empty. Turning it OFF clears the list
     /// (`apply_editor_to_profile` collapses to `None` anyway).
     fn set_editor_override_highlight(&mut self, on: bool, cx: &mut Context<Self>) {
-        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(ed) = self.editor.as_mut() else {
+            return;
+        };
         if ed.override_highlight_packs == on {
             return;
         }
@@ -1516,25 +1493,20 @@ impl AppView {
             // Seed with the current global pick so the override
             // doesn't silently drop highlighting on first toggle.
             let global = self.settings_bus.read(cx).current().clone();
-            ed.enabled_highlight_packs = global
-                .enabled_highlight_presets
-                .unwrap_or_else(|| {
-                    settings::Settings::default()
-                        .enabled_highlight_presets
-                        .unwrap_or_default()
-                });
+            ed.enabled_highlight_packs = global.enabled_highlight_presets.unwrap_or_else(|| {
+                settings::Settings::default()
+                    .enabled_highlight_presets
+                    .unwrap_or_default()
+            });
         }
         cx.notify();
     }
 
     /// Toggle a single pack id on the editor's per-profile list.
-    fn toggle_editor_highlight_pack(
-        &mut self,
-        id: String,
-        on: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(ed) = self.editor.as_mut() else { return };
+    fn toggle_editor_highlight_pack(&mut self, id: String, on: bool, cx: &mut Context<Self>) {
+        let Some(ed) = self.editor.as_mut() else {
+            return;
+        };
         let already = ed.enabled_highlight_packs.iter().any(|p| p == &id);
         if on && !already {
             ed.enabled_highlight_packs.push(id);
@@ -1648,10 +1620,8 @@ impl AppView {
                             local_echo: profile.local_echo,
                             paste_warn_multiline: profile.paste_warn_multiline,
                             paste_slow: profile.paste_slow,
-                            paste_char_delay_ms: profile
-                                .paste_char_delay_ms
-                                .unwrap_or(10)
-                                .max(0) as u32,
+                            paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0)
+                                as u32,
                             hex_view: profile.hex_view,
                             timestamps: profile.timestamps,
                             line_numbers: profile.line_numbers,
@@ -1670,11 +1640,7 @@ impl AppView {
                     ed.error = Some(msg.clone());
                 }
                 cx.notify();
-                self.log_event(
-                    format!("Save failed: {msg}"),
-                    LogSeverity::Error,
-                    cx,
-                );
+                self.log_event(format!("Save failed: {msg}"), LogSeverity::Error, cx);
                 None
             }
         }
@@ -1775,9 +1741,8 @@ impl AppView {
                             let app = app.clone();
                             let snapshot = snapshot.clone();
                             let notif = ctx.entity();
-                            Button::new("undo-profile-delete")
-                                .label("Undo")
-                                .on_click(move |_, _window, cx| {
+                            Button::new("undo-profile-delete").label("Undo").on_click(
+                                move |_, _window, cx| {
                                     let app = app.clone();
                                     let snapshot = snapshot.clone();
                                     let notif = notif.clone();
@@ -1785,7 +1750,8 @@ impl AppView {
                                         this.restore_profile(snapshot, was_selected, view_cx);
                                     });
                                     dismiss_notification_after(notif, cx);
-                                })
+                                },
+                            )
                         })
                         // See settings_view's matching comment: the
                         // .action() builder defaults autohide to false;
@@ -1852,8 +1818,9 @@ impl AppView {
         self.sidebar_collapsed = !self.sidebar_collapsed;
         let mut next = self.settings_bus.read(cx).current().clone();
         next.sidebar_collapsed = self.sidebar_collapsed;
-        if let Err(err) =
-            self.settings_bus.update(cx, |bus, cx| bus.replace(next, cx))
+        if let Err(err) = self
+            .settings_bus
+            .update(cx, |bus, cx| bus.replace(next, cx))
         {
             log::error!("toggle_sidebar: persist failed: {err}");
         }
@@ -1907,11 +1874,14 @@ impl AppView {
         // (when restore-window-state is on) trumps this; the user
         // can always drag the window bigger and that size sticks.
         let bounds = restore_state
-            .then(|| current_settings.settings_window.as_ref().and_then(geometry_to_bounds))
+            .then(|| {
+                current_settings
+                    .settings_window
+                    .as_ref()
+                    .and_then(geometry_to_bounds)
+            })
             .flatten()
-            .unwrap_or_else(|| {
-                Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx)
-            });
+            .unwrap_or_else(|| Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx));
         let bus_for_close = self.settings_bus.clone();
         // Weak handle so the close callback can clear
         // `self.settings_window` on the AppView when the OS window
@@ -1991,9 +1961,8 @@ impl AppView {
                     });
                     true
                 });
-                let view = cx.new(|cx| {
-                    SettingsView::new(bus, skins, highlight, themes, window, cx)
-                });
+                let view =
+                    cx.new(|cx| SettingsView::new(bus, skins, highlight, themes, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
@@ -2112,9 +2081,7 @@ impl AppView {
         self.session_overflow_open = false;
         if self.transfer_io.is_none() {
             window.push_notification(
-                Notification::error(SharedString::from(
-                    "Connect to a port before sending hex.",
-                )),
+                Notification::error(SharedString::from("Connect to a port before sending hex.")),
                 cx,
             );
             return;
@@ -2122,9 +2089,7 @@ impl AppView {
         if self.send_hex.is_some() {
             return;
         }
-        let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("02 FF AA 55")
-        });
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("02 FF AA 55"));
         let error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
         self.send_hex = Some(SendHexState {
@@ -2151,21 +2116,17 @@ impl AppView {
                         .flex_col()
                         .gap_3()
                         .text_size(px(13.0))
-                        .child(
-                            div().text_color(rgba(0x808080AAu32)).child(
-                                "Space-separated, compact, or 0x-prefixed — all \
+                        .child(div().text_color(rgba(0x808080AAu32)).child(
+                            "Space-separated, compact, or 0x-prefixed — all \
                                  equivalent: 02 FF AA 55, 02FFAA55, \
                                  0x02 0xFF 0xAA 0x55.",
-                            ),
-                        )
+                        ))
                         .child(Input::new(&input).appearance(true))
                         .children(live_err.map(|err| {
                             div()
                                 .text_size(px(12.0))
                                 .text_color(rgba(0xCC4444FFu32))
-                                .child(SharedString::from(format!(
-                                    "Invalid: {err}"
-                                )))
+                                .child(SharedString::from(format!("Invalid: {err}")))
                         }))
                         .child(
                             div()
@@ -2218,8 +2179,7 @@ impl AppView {
             }
             Ok(bytes) => {
                 let Some(io) = self.transfer_io.as_ref() else {
-                    *state.error.lock().unwrap() =
-                        Some("not connected".into());
+                    *state.error.lock().unwrap() = Some("not connected".into());
                     cx.notify();
                     return;
                 };
@@ -2383,15 +2343,15 @@ impl AppView {
         // progress dialog we're about to open.
         window.close_dialog(cx);
 
-        let Some(io) = self.transfer_io.as_ref() else { return };
+        let Some(io) = self.transfer_io.as_ref() else {
+            return;
+        };
 
         let data = match std::fs::read(&path) {
             Ok(d) => d,
             Err(err) => {
                 window.push_notification(
-                    Notification::error(SharedString::from(format!(
-                        "Couldn't read file: {err}"
-                    ))),
+                    Notification::error(SharedString::from(format!("Couldn't read file: {err}"))),
                     cx,
                 );
                 return;
@@ -2420,10 +2380,9 @@ impl AppView {
         let (result_tx, result_rx) = flume::bounded::<TransferResult>(1);
 
         let progress_arc = sent.clone();
-        let progress_fn: transfer::ProgressFn =
-            std::sync::Arc::new(move |s, _t| {
-                progress_arc.store(s, std::sync::atomic::Ordering::Relaxed);
-            });
+        let progress_fn: transfer::ProgressFn = std::sync::Arc::new(move |s, _t| {
+            progress_arc.store(s, std::sync::atomic::Ordering::Relaxed);
+        });
         let opts = transfer::Options {
             progress: Some(progress_fn),
             cancel: Some(cancel.clone()),
@@ -2441,9 +2400,7 @@ impl AppView {
                 let mut reader = ChannelReader::new(in_rx);
                 let mut writer = ChannelWriter::new(writer_tx);
                 let result = match variant {
-                    Some(v) => {
-                        transfer::send_xmodem(&mut reader, &mut writer, &data, v, &opts)
-                    }
+                    Some(v) => transfer::send_xmodem(&mut reader, &mut writer, &data, v, &opts),
                     None => transfer::send_ymodem(
                         &mut reader,
                         &mut writer,
@@ -2611,9 +2568,7 @@ impl AppView {
             }
             TransferResult::Err(msg) => {
                 window.push_notification(
-                    Notification::error(SharedString::from(format!(
-                        "Transfer failed: {msg}"
-                    ))),
+                    Notification::error(SharedString::from(format!("Transfer failed: {msg}"))),
                     cx,
                 );
             }
@@ -2633,8 +2588,12 @@ impl AppView {
             prompt: Some("Choose a file to send".into()),
         });
         cx.spawn(async move |this, cx| {
-            let Ok(Ok(Some(paths))) = receiver.await else { return };
-            let Some(path) = paths.into_iter().next() else { return };
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
             let _ = this.update(cx, |this, cx| {
                 if let Some(state) = this.send_file.as_ref() {
                     *state.selected_path.lock().unwrap() = Some(path);
@@ -2651,7 +2610,9 @@ impl AppView {
     /// the picker dialog is done inside `kick_off_transfer` (it
     /// reuses the same dialog slot for the progress UI).
     fn send_file_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = self.send_file.take() else { return };
+        let Some(state) = self.send_file.take() else {
+            return;
+        };
         let path = state.selected_path.lock().unwrap().clone();
         let Some(path) = path else {
             // No file picked yet — restore state instead of leaving
@@ -2686,9 +2647,8 @@ impl AppView {
     /// starts disconnected with a blank terminal.
     fn open_new_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
-        let new_terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
-        });
+        let new_terminal =
+            cx.new(|cx| TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx));
         if let Err(err) = open_app_window(
             cx,
             WindowInit::Fresh(new_terminal),
@@ -2711,9 +2671,8 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
-        let new_terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
-        });
+        let new_terminal =
+            cx.new(|cx| TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx));
         if let Err(err) = open_app_window(
             cx,
             WindowInit::FreshAutoConnect {
@@ -2740,10 +2699,7 @@ impl AppView {
         pos: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) {
-        self.profile_context_menu = Some(ProfileContextMenu {
-            profile_id,
-            pos,
-        });
+        self.profile_context_menu = Some(ProfileContextMenu { profile_id, pos });
         cx.notify();
     }
 
@@ -2783,11 +2739,7 @@ impl AppView {
     /// re-applies the palette so chrome that depends on the
     /// connected profile (status dot, header, status bar text)
     /// reflects the moved session immediately.
-    pub fn install_session(
-        &mut self,
-        bundle: SessionBundle,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn install_session(&mut self, bundle: SessionBundle, cx: &mut Context<Self>) {
         self.terminal = bundle.terminal;
         self.drain_task = bundle.drain_task;
         self.serial_disconnect = Some(bundle.serial_disconnect);
@@ -2818,9 +2770,7 @@ impl AppView {
     pub(crate) fn suspend_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Only meaningful when actually connected. Reconnecting
         // counts: the user might want to suspend during a flap.
-        if self.connected_profile_id.is_none()
-            && self.auto_reconnect_for.is_none()
-        {
+        if self.connected_profile_id.is_none() && self.auto_reconnect_for.is_none() {
             return;
         }
         if self.suspended {
@@ -2841,11 +2791,7 @@ impl AppView {
             }
         }
         cx.notify();
-        self.log_event(
-            "Session kept alive in background",
-            LogSeverity::Info,
-            cx,
-        );
+        self.log_event("Session kept alive in background", LogSeverity::Info, cx);
     }
 
     /// Resume a suspended session. Closes any open editor (matching
@@ -2868,7 +2814,9 @@ impl AppView {
     /// actual `write_data_terminal_ready` call happens on the write
     /// thread the next time it wakes (worst case ~50ms later).
     pub(crate) fn toggle_dtr(&mut self, cx: &mut Context<Self>) {
-        let Some(io) = self.transfer_io.as_ref() else { return };
+        let Some(io) = self.transfer_io.as_ref() else {
+            return;
+        };
         let next = !self.dtr_asserted;
         if io
             .control_tx
@@ -2880,7 +2828,11 @@ impl AppView {
         }
         self.dtr_asserted = next;
         self.log_event(
-            if next { "DTR asserted" } else { "DTR deasserted" },
+            if next {
+                "DTR asserted"
+            } else {
+                "DTR deasserted"
+            },
             LogSeverity::Info,
             cx,
         );
@@ -2889,7 +2841,9 @@ impl AppView {
 
     /// Flip the live RTS line. Mirror of `toggle_dtr`.
     pub(crate) fn toggle_rts(&mut self, cx: &mut Context<Self>) {
-        let Some(io) = self.transfer_io.as_ref() else { return };
+        let Some(io) = self.transfer_io.as_ref() else {
+            return;
+        };
         let next = !self.rts_asserted;
         if io
             .control_tx
@@ -2901,7 +2855,11 @@ impl AppView {
         }
         self.rts_asserted = next;
         self.log_event(
-            if next { "RTS asserted" } else { "RTS deasserted" },
+            if next {
+                "RTS asserted"
+            } else {
+                "RTS deasserted"
+            },
             LogSeverity::Info,
             cx,
         );
@@ -2965,11 +2923,7 @@ impl AppView {
     /// Paste the system clipboard into the terminal. Routed from
     /// the global `TerminalPaste` action (Cmd+V / Ctrl+V /
     /// Ctrl+Shift+V) and from the right-click menu.
-    pub(crate) fn shortcut_terminal_paste(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn shortcut_terminal_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let terminal = self.terminal.clone();
         terminal.update(cx, |t, cx| t.paste_clipboard(window, cx));
     }
@@ -3070,8 +3024,9 @@ impl AppView {
             return;
         }
         next.font_size = target;
-        if let Err(err) =
-            self.settings_bus.update(cx, |bus, cx| bus.replace(next, cx))
+        if let Err(err) = self
+            .settings_bus
+            .update(cx, |bus, cx| bus.replace(next, cx))
         {
             self.log_event(
                 format!("Font size update failed: {err}"),
@@ -3080,11 +3035,7 @@ impl AppView {
             );
             return;
         }
-        self.log_event(
-            format!("Font size: {target}"),
-            LogSeverity::Info,
-            cx,
-        );
+        self.log_event(format!("Font size: {target}"), LogSeverity::Info, cx);
     }
 
     /// Move the live serial session out of this window into a freshly
@@ -3093,18 +3044,14 @@ impl AppView {
     /// window comes up already connected with the same terminal
     /// contents (scrollback included), the same OS thread, and any
     /// in-flight file transfer intact.
-    fn move_session_to_new_window(
-        &mut self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(bundle) = self.extract_session() else { return };
+    fn move_session_to_new_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(bundle) = self.extract_session() else {
+            return;
+        };
         // Replace this window's terminal with a blank one so the
         // source view doesn't render someone else's connected grid.
         let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
-        self.terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
-        });
+        self.terminal = cx.new(|cx| TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx));
         cx.notify();
 
         if let Err(err) = open_app_window(
@@ -3123,11 +3070,7 @@ impl AppView {
             );
             return;
         }
-        self.log_event(
-            "Session moved to new window",
-            LogSeverity::Info,
-            cx,
-        );
+        self.log_event("Session moved to new window", LogSeverity::Info, cx);
     }
 }
 
@@ -3135,11 +3078,7 @@ impl AppView {
 /// header. The container is `relative` so the menu (positioned
 /// `absolute` below) anchors to it; `deferred` puts the panel above
 /// other toolbar siblings in paint order.
-fn session_overflow_button(
-    s: SkinTokens,
-    open: bool,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
+fn session_overflow_button(s: SkinTokens, open: bool, cx: &mut Context<AppView>) -> gpui::Div {
     // `--shadow-floating` from the active skin for the popup
     // panel below. Empty (skin sets `"none"` or doesn't declare)
     // falls through to the hardcoded `shadow_md()` so flush-
@@ -3228,8 +3167,7 @@ fn session_overflow_button(
                 .cursor_pointer()
                 .hover(move |st| st.bg(rgba(s.bg_hover)))
                 .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from("More actions"))
-                        .build(window, cx)
+                    Tooltip::new(SharedString::from("More actions")).build(window, cx)
                 })
                 .child("\u{22EF}")
                 .on_mouse_up(
@@ -3353,8 +3291,16 @@ fn send_file_primary_button<F>(label: &'static str, enabled: bool, on_click: F) 
 where
     F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
 {
-    let text_color = if enabled { 0xFFFFFFFFu32 } else { 0xFFFFFFAAu32 };
-    let bg = if enabled { 0x4DA6FFFFu32 } else { 0x4DA6FF66u32 };
+    let text_color = if enabled {
+        0xFFFFFFFFu32
+    } else {
+        0xFFFFFFAAu32
+    };
+    let bg = if enabled {
+        0x4DA6FFFFu32
+    } else {
+        0x4DA6FF66u32
+    };
     let mut btn = div()
         .px_4()
         .py(px(6.0))
@@ -3364,7 +3310,9 @@ where
         .text_color(rgba(text_color))
         .child(label);
     if enabled {
-        btn = btn.cursor_pointer().on_mouse_up(MouseButton::Left, on_click);
+        btn = btn
+            .cursor_pointer()
+            .on_mouse_up(MouseButton::Left, on_click);
     }
     btn
 }
@@ -3475,11 +3423,14 @@ pub fn open_app_window(
     let current_settings = settings_bus.read(cx).current().clone();
     let restore_state = !current_settings.disable_window_state_restore;
     let bounds = restore_state
-        .then(|| current_settings.main_window.as_ref().and_then(geometry_to_bounds))
+        .then(|| {
+            current_settings
+                .main_window
+                .as_ref()
+                .and_then(geometry_to_bounds)
+        })
         .flatten()
-        .unwrap_or_else(|| {
-            Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx)
-        });
+        .unwrap_or_else(|| Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx));
     let settings_bus_for_close = settings_bus.clone();
     cx.open_window(
         WindowOptions {
@@ -3586,9 +3537,7 @@ pub fn open_app_window(
                     if let Some(profile) = this.profile_store.get(&id) {
                         this.connect_to(profile, view_cx);
                     } else {
-                        log::warn!(
-                            "auto-connect: profile {id:?} not found in store"
-                        );
+                        log::warn!("auto-connect: profile {id:?} not found in store");
                     }
                 }
             });
@@ -3605,7 +3554,10 @@ impl Render for AppView {
         // right-pane wrapper can call `.shadow(...)` without
         // re-borrowing `cx`. Empty Vec (skin sets `"none"` or
         // doesn't declare) → no shadow painted.
-        let shadow_panel = cx.global::<skin_tokens::SkinShadows>().panel_overlay.clone();
+        let shadow_panel = cx
+            .global::<skin_tokens::SkinShadows>()
+            .panel_overlay
+            .clone();
         // Amber-dot trigger for the sidebar gear icon. `true` when
         // the boot-time update check (`crate::updater`) found a
         // newer release AND the user hasn't already dismissed
@@ -3665,8 +3617,7 @@ impl Render for AppView {
         // True when we're showing the terminal off the reconnect
         // stand-in rather than a live session — drives the amber
         // dot and the "Reconnecting…" labels.
-        let reconnecting =
-            self.connected_profile_id.is_none() && self.auto_reconnect_for.is_some();
+        let reconnecting = self.connected_profile_id.is_none() && self.auto_reconnect_for.is_some();
         let has_profiles = !self.profile_store.list().is_empty();
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
             Some(editor) => {
@@ -3689,8 +3640,7 @@ impl Render for AppView {
                 // terminal viewport.
                 let show_resume = self.suspended
                     && editor.profile_id.is_some()
-                    && editor.profile_id.as_deref()
-                        == self.connected_profile_id.as_deref();
+                    && editor.profile_id.as_deref() == self.connected_profile_id.as_deref();
                 let form = form_pane(render, packs, global_enabled, show_resume, cx);
                 if show_resume {
                     // Wrap so the banner stacks above the form.
@@ -3716,12 +3666,8 @@ impl Render for AppView {
                 // Suspended with no editor open — render the
                 // placeholder so the terminal viewport stays
                 // hidden until the user explicitly resumes.
-                suspended_pane(
-                    s,
-                    connected_profile.clone().expect("checked is_some"),
-                    cx,
-                )
-                .into_any_element()
+                suspended_pane(s, connected_profile.clone().expect("checked is_some"), cx)
+                    .into_any_element()
             }
             None => match connected_profile.clone() {
                 Some(profile) => {
@@ -3760,9 +3706,10 @@ impl Render for AppView {
         // render time so a fresh edit session doesn't show a
         // stale value. `None` for the editor key means "no editor
         // open" — the status bar uses its other arms in that case.
-        let editor_name: Option<String> = self.editor.as_ref().map(|e| {
-            e.name.read(cx).value().to_string()
-        });
+        let editor_name: Option<String> = self
+            .editor
+            .as_ref()
+            .map(|e| e.name.read(cx).value().to_string());
         // Connected profile lookup is reused from above (right_pane
         // computed it for the session header). Cloned for the
         // status bar so both renders can use it.
@@ -4309,8 +4256,7 @@ fn profile_context_menu_overlay(
     // it. Surface "Move to New Window" instead, reusing the same
     // detach/install_session machinery the toolbar Detach button
     // already drives.
-    let is_connected_row =
-        app.connected_profile_id.as_deref() == Some(profile_id.as_str());
+    let is_connected_row = app.connected_profile_id.as_deref() == Some(profile_id.as_str());
 
     let item: gpui::Div = if is_connected_row {
         profile_menu_item(
@@ -4373,11 +4319,7 @@ fn profile_context_menu_overlay(
 /// gpui-component's PopupMenu (which routes through the Action
 /// system) since we have a single click handler that already needs
 /// the per-row profile id baked in.
-fn profile_menu_item<F>(
-    s: SkinTokens,
-    label: &'static str,
-    on_click: F,
-) -> gpui::Div
+fn profile_menu_item<F>(s: SkinTokens, label: &'static str, on_click: F) -> gpui::Div
 where
     F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
 {
@@ -4402,10 +4344,7 @@ where
 /// Thin banner at the top of the editor when the connected profile
 /// is being viewed while suspended. Click Resume to switch back to
 /// the live terminal viewport.
-fn suspended_banner(
-    s: SkinTokens,
-    _cx: &mut Context<AppView>,
-) -> impl IntoElement {
+fn suspended_banner(s: SkinTokens, _cx: &mut Context<AppView>) -> impl IntoElement {
     // Banner is a passive reminder — no Resume button. The two
     // ways to resume are still wired:
     //   * click the connected profile row in the sidebar
@@ -4456,11 +4395,7 @@ fn suspended_banner(
 /// no editor is open. Shows the connected profile's name + port and
 /// a Resume button so the user has a one-click way back to the
 /// live terminal.
-fn suspended_pane(
-    s: SkinTokens,
-    profile: Profile,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
+fn suspended_pane(s: SkinTokens, profile: Profile, cx: &mut Context<AppView>) -> impl IntoElement {
     let port_line = if profile.port_name.is_empty() {
         "(no port)".to_string()
     } else {
@@ -4572,8 +4507,10 @@ fn friendly_open_error(port: &str, err: &serialport::Error) -> String {
     let base = err.to_string();
     #[cfg(target_os = "linux")]
     {
-        let is_perm = matches!(err.kind(), serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied))
-            || base.to_ascii_lowercase().contains("permission denied");
+        let is_perm = matches!(
+            err.kind(),
+            serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied)
+        ) || base.to_ascii_lowercase().contains("permission denied");
         if is_perm {
             return format!(
                 "open {port}: {base} — your user can't access this serial port. \
@@ -4654,11 +4591,7 @@ fn session_header(
     // user knows what the retry is targeting.
     let mut meta = format!(
         "{} · {} /{} {} {}",
-        profile.port_name,
-        profile.baud_rate,
-        profile.data_bits,
-        parity_letter,
-        profile.stop_bits,
+        profile.port_name, profile.baud_rate, profile.data_bits, parity_letter, profile.stop_bits,
     );
     if reconnecting {
         meta.push_str(" · reconnecting…");
@@ -4881,7 +4814,10 @@ fn status_bar(
             if p.log_enabled {
                 tags.push("TO FILE");
             }
-            (tags, scrollback.map(|(filled, max)| format!("{filled}/{max}")))
+            (
+                tags,
+                scrollback.map(|(filled, max)| format!("{filled}/{max}")),
+            )
         }
         None => (Vec::new(), None),
     };
@@ -4920,10 +4856,8 @@ fn status_bar(
                 .id("status-scrollback")
                 .child(t)
                 .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from(
-                        "Scrollback lines: filled / max",
-                    ))
-                    .build(window, cx)
+                    Tooltip::new(SharedString::from("Scrollback lines: filled / max"))
+                        .build(window, cx)
                 })
         }))
 }
@@ -4954,9 +4888,7 @@ fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoE
             .text_color(rgba(s.fg_primary))
             .hover(move |st| st.bg(rgba(hover_bg)))
             .cursor_pointer()
-            .tooltip(move |window, cx| {
-                Tooltip::new(tip_text.clone()).build(window, cx)
-            })
+            .tooltip(move |window, cx| Tooltip::new(tip_text.clone()).build(window, cx))
     };
     div()
         .w_full()
@@ -5092,10 +5024,7 @@ fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoE
 /// is intentionally absent in this mode — profile names wouldn't
 /// fit at 48px wide, and the user expanded the sidebar
 /// specifically to skip the list anyway.
-fn sidebar_icon_strip(
-    update_pending: bool,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
+fn sidebar_icon_strip(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
     let hover_bg = s.bg_hover;
     // Same `icon_btn` recipe as `sidebar_header`, but stretched to
@@ -5114,9 +5043,7 @@ fn sidebar_icon_strip(
             .text_color(rgba(s.fg_primary))
             .hover(move |st| st.bg(rgba(hover_bg)))
             .cursor_pointer()
-            .tooltip(move |window, cx| {
-                Tooltip::new(tip_text.clone()).build(window, cx)
-            })
+            .tooltip(move |window, cx| Tooltip::new(tip_text.clone()).build(window, cx))
     };
     div()
         .w_full()
@@ -5194,7 +5121,6 @@ fn sidebar_icon_strip(
         )
 }
 
-
 // Chrome colours used to live as `const`s here, but Phase 4 slice 3
 // moved them into the `SkinTokens` global so skin picks live-apply.
 // Render code reads `cx.global::<SkinTokens>()`; helpers without a
@@ -5222,7 +5148,12 @@ fn build_editor(
                 .default_value(val)
         })
     };
-    let port = make_select(port_opts(&profile.port_name), &profile.port_name, window, cx);
+    let port = make_select(
+        port_opts(&profile.port_name),
+        &profile.port_name,
+        window,
+        cx,
+    );
     // Per-profile theme picker. Empty-id row "Use global default"
     // is the first option so the override is opt-in — saving an
     // editor with that selected reverts to inheriting from
@@ -5565,7 +5496,10 @@ fn parity_opts() -> Vec<Opt> {
 }
 
 fn stop_bits_opts() -> Vec<Opt> {
-    ["1", "1.5", "2"].into_iter().map(|s| Opt::new(s, s)).collect()
+    ["1", "1.5", "2"]
+        .into_iter()
+        .map(|s| Opt::new(s, s))
+        .collect()
 }
 
 fn flow_control_opts() -> Vec<Opt> {
@@ -5696,7 +5630,11 @@ fn line_pill(s: SkinTokens, label: &'static str, active: bool) -> gpui::Div {
 }
 
 fn pill_button(s: SkinTokens, label: &'static str, danger: bool) -> gpui::Div {
-    let fg = if danger { rgba(s.danger) } else { rgba(s.fg_primary) };
+    let fg = if danger {
+        rgba(s.danger)
+    } else {
+        rgba(s.fg_primary)
+    };
     let hover_bg = s.bg_input_hover;
     div()
         .px_3()
@@ -5875,7 +5813,11 @@ fn form_header(
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
-    let subtitle = if is_edit { "EDIT PROFILE" } else { "NEW PROFILE" };
+    let subtitle = if is_edit {
+        "EDIT PROFILE"
+    } else {
+        "NEW PROFILE"
+    };
     // Save button text-color is the only thing that changes for the
     // dirty state — pill bg stays the same so the button doesn't
     // visually "appear" mid-edit. Tertiary fg (40% white) when
@@ -6182,16 +6124,12 @@ fn section_card_with_desc(
     description: Option<&'static str>,
     body: impl IntoElement,
 ) -> gpui::Div {
-    let mut header = div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .text_size(px(s.font_size_section_px))
-                .text_color(rgba(s.fg_primary))
-                .child(title),
-        );
+    let mut header = div().flex().flex_col().gap_1().child(
+        div()
+            .text_size(px(s.font_size_section_px))
+            .text_color(rgba(s.fg_primary))
+            .child(title),
+    );
     if let Some(desc) = description {
         header = header.child(
             div()
@@ -6431,9 +6369,7 @@ fn connection_card(
         .gap_3()
         .child(labeled(s, "NAME", Input::new(&name).appearance(true)))
         .when(!driver_banners.is_empty(), |this| {
-            this.child(
-                div().flex().flex_col().gap_2().children(driver_banners),
-            )
+            this.child(div().flex().flex_col().gap_2().children(driver_banners))
         })
         .child(port_row)
         // Two-column rows of selects.
@@ -6489,24 +6425,16 @@ fn terminal_card(
                 .flex()
                 .flex_row()
                 .gap_3()
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(
-                            s,
-                            "SEND LINE ENDING",
-                            Select::new(&line_ending),
-                        )),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(
-                            s,
-                            "BACKSPACE SENDS",
-                            Select::new(&backspace_key),
-                        )),
-                ),
+                .child(div().flex_1().child(labeled(
+                    s,
+                    "SEND LINE ENDING",
+                    Select::new(&line_ending),
+                )))
+                .child(div().flex_1().child(labeled(
+                    s,
+                    "BACKSPACE SENDS",
+                    Select::new(&backspace_key),
+                ))),
         )
         .child(bool_field(
             "local-echo",
@@ -6559,12 +6487,7 @@ where
             }
             cx.notify();
         }));
-    let mut row = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_3()
-        .child(cb);
+    let mut row = div().flex().flex_row().items_center().gap_3().child(cb);
     if let Some(h) = hint {
         row = row.child(
             div()
@@ -6622,25 +6545,16 @@ fn highlighting_pane(
                 .disabled(!override_packs || !highlight)
                 .label(label)
                 .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                    this.toggle_editor_highlight_pack(
-                        id_for_setter.clone(),
-                        *checked,
-                        cx,
-                    );
+                    this.toggle_editor_highlight_pack(id_for_setter.clone(), *checked, cx);
                 }));
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(cb)
-                .child(
-                    div()
-                        .pl(px(24.0))
-                        .text_size(px(12.0))
-                        .text_color(rgba(s.fg_secondary))
-                        .whitespace_normal()
-                        .child(desc),
-                )
+            div().flex().flex_col().gap_1().child(cb).child(
+                div()
+                    .pl(px(24.0))
+                    .text_size(px(12.0))
+                    .text_color(rgba(s.fg_secondary))
+                    .whitespace_normal()
+                    .child(desc),
+            )
         })
         .collect();
 
@@ -6922,16 +6836,11 @@ fn paste_safety_card(
             cx,
             |ed, v| ed.paste_slow = v,
         ))
-        .child(
-            div()
-                .pl_6()
-                .w(px(160.0))
-                .child(labeled(
-                    s,
-                    "SLOW-PASTE DELAY (MS)",
-                    Input::new(&paste_char_delay_ms).small().appearance(true),
-                )),
-        );
+        .child(div().pl_6().w(px(160.0)).child(labeled(
+            s,
+            "SLOW-PASTE DELAY (MS)",
+            Input::new(&paste_char_delay_ms).small().appearance(true),
+        )));
     section_card_with_desc(
         s,
         "Paste safety",
@@ -7024,9 +6933,7 @@ fn profile_row(
                 .h(px(STATUS_DOT_PX))
                 .rounded_full()
                 .bg(rgba(st.color(tokens)));
-            if st == RowStatus::Reconnecting
-                && !cx.global::<crate::ReduceMotion>().0
-            {
+            if st == RowStatus::Reconnecting && !cx.global::<crate::ReduceMotion>().0 {
                 // Same 1s pulse as the session header so the two
                 // indicators feel like one signal. Animation name
                 // is per-row-instance to avoid gpui de-duping
@@ -7190,9 +7097,7 @@ fn profile_icon(
             this.hover(move |st| st.bg(rgba(hover_bg)))
         })
         .cursor_pointer()
-        .tooltip(move |window, cx| {
-            Tooltip::new(tip_text.clone()).build(window, cx)
-        })
+        .tooltip(move |window, cx| Tooltip::new(tip_text.clone()).build(window, cx))
         .child(
             Icon::new(IconName::SquareTerminal)
                 .size(px(18.0))

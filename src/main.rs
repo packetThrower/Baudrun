@@ -20,7 +20,10 @@
 // a fresh one) — `cargo run` on Windows still sees stdout/stderr in
 // the terminal it was launched from. The user-visible regression is
 // only on installed Win + double-click launches, which this fixes.
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 mod app_view;
 mod data;
@@ -119,10 +122,9 @@ pub(crate) mod actions {
     }
 }
 use actions::{
-    About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease,
-    FontIncrease, FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings,
-    Quit, Resume, SendBreak, SendFile, Suspend, TerminalCopy, TerminalPaste,
-    TerminalSelectAll, ToggleSidebar,
+    About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease, FontIncrease,
+    FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings, Quit, Resume, SendBreak,
+    SendFile, Suspend, TerminalCopy, TerminalPaste, TerminalSelectAll, ToggleSidebar,
 };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
@@ -206,12 +208,12 @@ fn main() {
         // benefit from the embedded copy.
         #[cfg(target_os = "linux")]
         {
-            const JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!(
-                "../resources/fonts/JetBrainsMono-Regular.ttf"
-            );
-            if let Err(err) = cx.text_system().add_fonts(vec![
-                std::borrow::Cow::Borrowed(JETBRAINS_MONO_REGULAR),
-            ]) {
+            const JETBRAINS_MONO_REGULAR: &[u8] =
+                include_bytes!("../resources/fonts/JetBrainsMono-Regular.ttf");
+            if let Err(err) = cx
+                .text_system()
+                .add_fonts(vec![std::borrow::Cow::Borrowed(JETBRAINS_MONO_REGULAR)])
+            {
                 log::error!("register bundled JetBrains Mono: {err}");
             }
         }
@@ -254,16 +256,12 @@ fn main() {
                 Ok(store) => Rc::new(store),
                 Err(err) => fallback_profile_store(format!("profile store init failed: {err}")),
             },
-            Err(err) => {
-                fallback_profile_store(format!("support dir unavailable: {err}"))
-            }
+            Err(err) => fallback_profile_store(format!("support dir unavailable: {err}")),
         };
         let settings_store = match &support {
             Ok(dir) => match data::settings::Store::new(dir) {
                 Ok(store) => Rc::new(store),
-                Err(err) => fallback_settings_store(format!(
-                    "settings store init failed: {err}"
-                )),
+                Err(err) => fallback_settings_store(format!("settings store init failed: {err}")),
             },
             Err(err) => fallback_settings_store(format!("support dir unavailable: {err}")),
         };
@@ -277,9 +275,7 @@ fn main() {
         let highlight_store = match &support {
             Ok(dir) => match data::highlight::Store::new(dir) {
                 Ok(store) => Rc::new(store),
-                Err(err) => fallback_highlight_store(format!(
-                    "highlight store init failed: {err}"
-                )),
+                Err(err) => fallback_highlight_store(format!("highlight store init failed: {err}")),
             },
             Err(err) => fallback_highlight_store(format!("support dir unavailable: {err}")),
         };
@@ -305,13 +301,7 @@ fn main() {
         // fresh launch lands on the right palette before the first
         // frame paints.
         let terminal = cx.new(|cx| {
-            TerminalView::new(
-                24,
-                80,
-                term_bridge::Palette::baudrun(),
-                boot_scrollback,
-                cx,
-            )
+            TerminalView::new(24, 80, term_bridge::Palette::baudrun(), boot_scrollback, cx)
         });
 
         // Install the macOS application menu (and the keybindings
@@ -437,10 +427,7 @@ fn main() {
                     let result = cx_async
                         .background_executor()
                         .spawn(async move {
-                            updater::check_for_update(
-                                env!("CARGO_PKG_VERSION"),
-                                include_prerelease,
-                            )
+                            updater::check_for_update(env!("CARGO_PKG_VERSION"), include_prerelease)
                         })
                         .await;
                     let available = match result {
@@ -490,10 +477,7 @@ fn main() {
                     let read_rx = channels.read_rx;
                     cx.spawn(async move |cx| {
                         while let Ok(bytes) = read_rx.recv_async().await {
-                            if weak
-                                .update(cx, |v, cx| v.feed_bytes(&bytes, cx))
-                                .is_err()
-                            {
+                            if weak.update(cx, |v, cx| v.feed_bytes(&bytes, cx)).is_err() {
                                 break;
                             }
                         }
@@ -523,9 +507,7 @@ fn main() {
         // (handle invalidated, etc.) log and carry on rather than
         // aborting the whole app; the window is already open and
         // a click into the viewport recovers focus.
-        if let Err(err) = window
-            .update(cx, |_, window, cx| viewport_focus.focus(window, cx))
-        {
+        if let Err(err) = window.update(cx, |_, window, cx| viewport_focus.focus(window, cx)) {
             log::warn!("focus terminal view at boot: {err}");
         }
 
@@ -631,14 +613,10 @@ fn install_app_menu(
         });
     });
     cx.on_action(|_: &FontIncrease, cx| {
-        dispatch_to_app_view(cx, |app, _window, cx| {
-            app.shortcut_bump_font_increase(cx)
-        });
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_increase(cx));
     });
     cx.on_action(|_: &FontDecrease, cx| {
-        dispatch_to_app_view(cx, |app, _window, cx| {
-            app.shortcut_bump_font_decrease(cx)
-        });
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_decrease(cx));
     });
     cx.on_action(|_: &FontReset, cx| {
         dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_reset(cx));
@@ -655,7 +633,9 @@ fn install_app_menu(
         dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_terminal_copy(cx));
     });
     cx.on_action(|_: &TerminalPaste, cx| {
-        dispatch_to_app_view(cx, |app, window, cx| app.shortcut_terminal_paste(window, cx));
+        dispatch_to_app_view(cx, |app, window, cx| {
+            app.shortcut_terminal_paste(window, cx)
+        });
     });
     cx.on_action(|_: &TerminalSelectAll, cx| {
         dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_terminal_select_all(cx));
@@ -668,16 +648,9 @@ fn install_app_menu(
         let highlight_store = highlight_store.clone();
         let themes_store = themes_store.clone();
         cx.on_action(move |_: &NewWindow, cx| {
-            let scrollback =
-                settings_bus.read(cx).current().effective_scrollback();
+            let scrollback = settings_bus.read(cx).current().effective_scrollback();
             let terminal = cx.new(|cx| {
-                TerminalView::new(
-                    24,
-                    80,
-                    term_bridge::Palette::baudrun(),
-                    scrollback,
-                    cx,
-                )
+                TerminalView::new(24, 80, term_bridge::Palette::baudrun(), scrollback, cx)
             });
             if let Err(err) = open_app_window(
                 cx,
@@ -821,7 +794,6 @@ where
 /// emit NoAction unbinds on diff" follow-up if it actually
 /// surfaces.
 fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
-
     let overrides = settings.shortcuts.clone().unwrap_or_default();
     // Static accelerators that don't appear in Settings → Shortcuts.
     // Quit / New Window / Settings are always-on system bindings —
@@ -1016,15 +988,11 @@ fn install_macos_dock_icon() {
     #[allow(deprecated)]
     unsafe {
         let path = NSString::from_str(&icon_path);
-        let Some(source) = NSImage::initWithContentsOfFile(NSImage::alloc(), &path)
-        else {
+        let Some(source) = NSImage::initWithContentsOfFile(NSImage::alloc(), &path) else {
             log::warn!("dock icon: could not load {icon_path}");
             return;
         };
-        let canvas = NSImage::initWithSize(
-            NSImage::alloc(),
-            NSSize::new(CANVAS_PX, CANVAS_PX),
-        );
+        let canvas = NSImage::initWithSize(NSImage::alloc(), NSSize::new(CANVAS_PX, CANVAS_PX));
         canvas.lockFocus();
         // Empty fromRect tells Cocoa to use the source image's
         // natural extent. Operation=copy means we paint the
@@ -1146,7 +1114,10 @@ fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
     let caption = "Baudrun — failed to start";
 
     let to_wide = |s: &str| -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     };
     let body_w = to_wide(&body);
     let caption_w = to_wide(caption);
@@ -1279,15 +1250,18 @@ fn handle_reopen(cx: &mut App) {
         return;
     }
     let shared = cx.global::<AppShared>();
-    let scrollback = shared.settings_bus.read(cx).current().effective_scrollback();
+    let scrollback = shared
+        .settings_bus
+        .read(cx)
+        .current()
+        .effective_scrollback();
     let profile_store = shared.profile_store.clone();
     let settings_bus = shared.settings_bus.clone();
     let skins_store = shared.skins_store.clone();
     let highlight_store = shared.highlight_store.clone();
     let themes_store = shared.themes_store.clone();
-    let terminal = cx.new(|cx| {
-        TerminalView::new(24, 80, term_bridge::Palette::baudrun(), scrollback, cx)
-    });
+    let terminal =
+        cx.new(|cx| TerminalView::new(24, 80, term_bridge::Palette::baudrun(), scrollback, cx));
     if let Err(err) = open_app_window(
         cx,
         WindowInit::Fresh(terminal),
@@ -1334,21 +1308,19 @@ fn confirm_quit_then_quit_inner(cx: &mut App) {
     // Find the first window with a live session. We don't need
     // to enumerate them all — the dialog goes in front of one
     // window, and quit affects every window equally.
-    let live_window: Option<gpui::AnyWindowHandle> =
-        cx.windows().into_iter().find(|handle| {
-            handle
-                .update(cx, |_root, window, cx| {
-                    let Some(Some(root)) = window.root::<Root>() else {
-                        return false;
-                    };
-                    let Ok(app_view) = root.read(cx).view().clone().downcast::<AppView>()
-                    else {
-                        return false;
-                    };
-                    app_view.read(cx).has_live_session()
-                })
-                .unwrap_or(false)
-        });
+    let live_window: Option<gpui::AnyWindowHandle> = cx.windows().into_iter().find(|handle| {
+        handle
+            .update(cx, |_root, window, cx| {
+                let Some(Some(root)) = window.root::<Root>() else {
+                    return false;
+                };
+                let Ok(app_view) = root.read(cx).view().clone().downcast::<AppView>() else {
+                    return false;
+                };
+                app_view.read(cx).has_live_session()
+            })
+            .unwrap_or(false)
+    });
     let Some(handle) = live_window else {
         cx.quit();
         return;
@@ -1391,10 +1363,7 @@ fn confirm_quit_then_quit_inner(cx: &mut App) {
 fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
     eprintln!("{reason}; using empty in-tmpdir profile store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::profiles::Store::new(&tmp)
-            .expect("temp profile store should always init"),
-    )
+    Rc::new(data::profiles::Store::new(&tmp).expect("temp profile store should always init"))
 }
 
 /// Settings-store equivalent of `fallback_profile_store`: lets the
@@ -1406,10 +1375,7 @@ fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
 fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
     eprintln!("{reason}; using default in-tmpdir settings store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::settings::Store::new(&tmp)
-            .expect("temp settings store should always init"),
-    )
+    Rc::new(data::settings::Store::new(&tmp).expect("temp settings store should always init"))
 }
 
 /// Skins-store fallback. Built-in skins are still available — they
@@ -1420,10 +1386,7 @@ fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
 fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
     eprintln!("{reason}; using empty in-tmpdir skins store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::skins::Store::new(&tmp)
-            .expect("temp skins store should always init"),
-    )
+    Rc::new(data::skins::Store::new(&tmp).expect("temp skins store should always init"))
 }
 
 /// Highlight-pack-store fallback. Bundled packs (built-in vendor
@@ -1432,10 +1395,7 @@ fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
 fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
     eprintln!("{reason}; using empty in-tmpdir highlight store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::highlight::Store::new(&tmp)
-            .expect("temp highlight store should always init"),
-    )
+    Rc::new(data::highlight::Store::new(&tmp).expect("temp highlight store should always init"))
 }
 
 /// Themes-store fallback. Built-in themes embed at compile time so
@@ -1444,9 +1404,5 @@ fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
 fn fallback_themes_store(reason: String) -> Rc<data::themes::Store> {
     eprintln!("{reason}; using empty in-tmpdir themes store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::themes::Store::new(&tmp)
-            .expect("temp themes store should always init"),
-    )
+    Rc::new(data::themes::Store::new(&tmp).expect("temp themes store should always init"))
 }
-

@@ -532,12 +532,10 @@ impl SkinTokens {
                 skin.light_vars.get(key).or_else(|| skin.vars.get(key))
             }
         };
-        let pick = |key: &str, default: u32| {
-            raw_var(key).and_then(|s| parse_color(s)).unwrap_or(default)
-        };
-        let pick_px = |key: &str, default: f32| {
-            raw_var(key).and_then(|s| parse_px(s)).unwrap_or(default)
-        };
+        let pick =
+            |key: &str, default: u32| raw_var(key).and_then(|s| parse_color(s)).unwrap_or(default);
+        let pick_px =
+            |key: &str, default: f32| raw_var(key).and_then(|s| parse_px(s)).unwrap_or(default);
         // `--shell-bg` may declare a CSS `linear-gradient(…)` —
         // capture both the solid fallback (first stop) and the
         // optional gradient (first + last stops with the declared
@@ -618,18 +616,12 @@ impl SkinTokens {
             ),
             option_group_fg: pick("--option-group-fg", fb.option_group_fg),
             scrollbar_thumb: pick("--scrollbar-thumb", fb.scrollbar_thumb),
-            scrollbar_thumb_hover: pick(
-                "--scrollbar-thumb-hover",
-                fb.scrollbar_thumb_hover,
-            ),
+            scrollbar_thumb_hover: pick("--scrollbar-thumb-hover", fb.scrollbar_thumb_hover),
             overlay: pick("--overlay", fb.overlay),
 
             // -- typography tokens ----------------------------
             font_size_h1_px: pick_px("--font-size-h1", fb.font_size_h1_px),
-            font_size_section_px: pick_px(
-                "--font-size-section",
-                fb.font_size_section_px,
-            ),
+            font_size_section_px: pick_px("--font-size-section", fb.font_size_section_px),
             font_size_label_px: pick_px("--font-size-label", fb.font_size_label_px),
             label_letter_spacing_em: raw_var("--label-letter-spacing")
                 .and_then(|s| parse_em(s))
@@ -810,7 +802,11 @@ fn contrast_fg_for(packed: u32) -> u32 {
     let g = ((packed >> 16) & 0xFF) as f32 / 255.0;
     let b = ((packed >> 8) & 0xFF) as f32 / 255.0;
     let luma = 0.299 * r + 0.587 * g + 0.114 * b;
-    if luma > 0.55 { 0x000000FF } else { 0xFFFFFFFF }
+    if luma > 0.55 {
+        0x000000FF
+    } else {
+        0xFFFFFFFF
+    }
 }
 
 /// Parse a CSS pixel value (`"10px"`, `"24px"`, `"0"`) into a `f32`.
@@ -869,10 +865,7 @@ fn parse_border_shorthand(raw: &str, default_colour: u32) -> PanelBorder {
     // Tokenize while respecting parentheses (rgba(r, g, b, a) is
     // one token, not four).
     let tokens = split_top_level(s, ' ');
-    let width = tokens
-        .first()
-        .and_then(|t| parse_px(t))
-        .unwrap_or(1.0);
+    let width = tokens.first().and_then(|t| parse_px(t)).unwrap_or(1.0);
     // Find the colour token: the last one that isn't a recognised
     // style keyword.
     let colour = tokens
@@ -1040,9 +1033,7 @@ fn first_font_family(stack: &str) -> SharedString {
         let mut t = raw.trim();
         // Strip surrounding quotes if present (CSS allows `"..."`
         // and `'...'`).
-        if (t.starts_with('"') && t.ends_with('"'))
-            || (t.starts_with('\'') && t.ends_with('\''))
-        {
+        if (t.starts_with('"') && t.ends_with('"')) || (t.starts_with('\'') && t.ends_with('\'')) {
             t = &t[1..t.len() - 1];
         }
         if t.is_empty() {

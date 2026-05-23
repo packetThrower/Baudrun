@@ -71,10 +71,13 @@ pub fn list_ports() -> Result<Vec<PortInfo>, serialport::Error> {
     // the same physical adapter doesn't appear twice when both paths
     // would work.
     for direct_info in direct::list_direct_usb() {
-        if drivered_keys
-            .iter()
-            .any(|k| k == &device_key(&direct_info.vid, &direct_info.pid, &direct_info.serial_number))
-        {
+        if drivered_keys.iter().any(|k| {
+            k == &device_key(
+                &direct_info.vid,
+                &direct_info.pid,
+                &direct_info.serial_number,
+            )
+        }) {
             continue;
         }
         out.push(direct_info);
