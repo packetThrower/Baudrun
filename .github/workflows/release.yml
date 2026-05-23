@@ -650,15 +650,18 @@ jobs:
               echo
             fi
 
-            # Platform-test disclaimer. Honest framing while Windows /
-            # Linux builds catch up — keep this banner until those
-            # platforms are routinely exercised against real hardware,
-            # then drop the block.
-            echo "> ℹ️ **Platform support — early days.**"
+            # Platform-test disclaimer. Honest framing while macOS
+            # stays the primary daily-driver — Windows + Linux are
+            # kept in mind in code and tested periodically (Linux less
+            # often, since gpui's Linux backend is the least-mature
+            # of the three). Mirror this wording in TODO.md when it
+            # shifts. Drop the whole block once all three platforms
+            # are routinely exercised against real hardware.
+            echo "> ℹ️ **Platform support.**"
             echo ">"
-            echo "> macOS builds (arm64 + amd64) are tested with a real serial connection."
-            echo "> Windows and Linux builds are produced by CI but **not yet routinely tested against real hardware**."
-            echo "> If you hit issues on those platforms, please file an issue at <https://github.com/packetThrower/Baudrun/issues>."
+            echo "> macOS (arm64 + amd64) is the primary dev target and tested with real serial hardware on every release."
+            echo "> Windows builds are verified periodically against real hardware; Linux less often, as gpui's Linux backend is the least-mature of the three."
+            echo "> Issues on any platform are welcome at <https://github.com/packetThrower/Baudrun/issues>."
             echo
             echo "## What's Changed"
             echo
