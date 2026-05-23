@@ -16,10 +16,10 @@
 
 [![macOS 11+](https://img.shields.io/badge/macOS-11%2B-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-arm64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
+[![Intel](https://img.shields.io/badge/Intel-x86__64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 
 **Windows** (x64 and ARM64)
 
-[![Intel](https://img.shields.io/badge/Intel-x86__64-333?style=flat-square&logo=apple&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 [![Windows 10 21H2+](https://img.shields.io/badge/Windows%2010%2021H2%2B-x64%20%2F%20arm64-0078D4?style=flat-square&logo=windows&logoColor=white)](https://packetthrower.github.io/Baudrun/reference/requirements/)
 
 **Linux** (amd64 and arm64)
