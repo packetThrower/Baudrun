@@ -82,7 +82,9 @@ fn main() -> ExitCode {
         Ok(p) => p,
         Err(e) => {
             eprintln!("error: {e}");
-            eprintln!("hint:  build it with `(cd scripts/virtual-serial && cargo build --release)`");
+            eprintln!(
+                "hint:  build it with `(cd scripts/virtual-serial && cargo build --release)`"
+            );
             return ExitCode::from(2);
         }
     };
@@ -102,7 +104,10 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
-    println!("running {} test(s)", plan.iter().map(|g| g.cases.len()).sum::<usize>());
+    println!(
+        "running {} test(s)",
+        plan.iter().map(|g| g.cases.len()).sum::<usize>()
+    );
     let mut outcomes: Vec<TestOutcome> = Vec::new();
     let mut bridge: Option<Bridge> = None;
 
@@ -172,7 +177,12 @@ struct TestSelection {
 
 impl TestSelection {
     fn all() -> Self {
-        Self { hex: true, ymodem: true, xmodem: true, cancel: true }
+        Self {
+            hex: true,
+            ymodem: true,
+            xmodem: true,
+            cancel: true,
+        }
     }
     fn any(&self) -> bool {
         self.hex || self.ymodem || self.xmodem || self.cancel
@@ -253,8 +263,14 @@ struct BaudGroup {
 
 fn build_plan(args: &Args) -> Vec<BaudGroup> {
     let s = &args.selected;
-    let mut group_9600 = BaudGroup { baud: 9600, cases: Vec::new() };
-    let mut group_115200 = BaudGroup { baud: 115200, cases: Vec::new() };
+    let mut group_9600 = BaudGroup {
+        baud: 9600,
+        cases: Vec::new(),
+    };
+    let mut group_115200 = BaudGroup {
+        baud: 115200,
+        cases: Vec::new(),
+    };
 
     let hex_1k_path = PathBuf::from(FIXTURE_HEX_1K);
     let payload_4k = PathBuf::from(FIXTURE_PAYLOAD_4K);
@@ -264,34 +280,40 @@ fn build_plan(args: &Args) -> Vec<BaudGroup> {
 
     if s.hex {
         group_9600.cases.push(TestCase {
-            id: "T1", name: "hex ASCII (Hello)",
+            id: "T1",
+            name: "hex ASCII (Hello)",
             run: Box::new(tests::hex_ascii),
         });
         group_9600.cases.push(TestCase {
-            id: "T3", name: "hex binary / non-printable",
+            id: "T3",
+            name: "hex binary / non-printable",
             run: Box::new(tests::hex_binary),
         });
         let p = hex_1k_path.clone();
         group_9600.cases.push(TestCase {
-            id: "T5", name: "hex 1 KiB",
+            id: "T5",
+            name: "hex 1 KiB",
             run: Box::new(move || tests::hex_1k(&p)),
         });
     }
     if s.ymodem {
         let p = payload_512.clone();
         group_9600.cases.push(TestCase {
-            id: "T11", name: "YMODEM 512 B over slow link",
+            id: "T11",
+            name: "YMODEM 512 B over slow link",
             run: Box::new(move || tests::ymodem_slow_512(&p)),
         });
         let p = payload_4k.clone();
         group_115200.cases.push(TestCase {
-            id: "T6", name: "YMODEM 4 KiB",
+            id: "T6",
+            name: "YMODEM 4 KiB",
             run: Box::new(move || tests::ymodem_4k(&p)),
         });
         if !args.quick {
             let p = payload_1m.clone();
             group_115200.cases.push(TestCase {
-                id: "T9", name: "YMODEM 1 MiB (~91s)",
+                id: "T9",
+                name: "YMODEM 1 MiB (~91s)",
                 run: Box::new(move || tests::ymodem_1m(&p)),
             });
         }
@@ -299,29 +321,34 @@ fn build_plan(args: &Args) -> Vec<BaudGroup> {
     if s.xmodem {
         let p = payload_4k.clone();
         group_115200.cases.push(TestCase {
-            id: "T7c", name: "XMODEM classic (128/checksum)",
+            id: "T7c",
+            name: "XMODEM classic (128/checksum)",
             run: Box::new(move || tests::xmodem_classic(&p)),
         });
         let p = payload_4k.clone();
         group_115200.cases.push(TestCase {
-            id: "T7C", name: "XMODEM-CRC (128/CRC-16)",
+            id: "T7C",
+            name: "XMODEM-CRC (128/CRC-16)",
             run: Box::new(move || tests::xmodem_crc(&p)),
         });
         let p = payload_4k.clone();
         group_115200.cases.push(TestCase {
-            id: "T7k", name: "XMODEM-1K (1024/CRC-16)",
+            id: "T7k",
+            name: "XMODEM-1K (1024/CRC-16)",
             run: Box::new(move || tests::xmodem_1k(&p)),
         });
         let p = tiny.clone();
         group_115200.cases.push(TestCase {
-            id: "T8", name: "XMODEM single-block (SUB padding)",
+            id: "T8",
+            name: "XMODEM single-block (SUB padding)",
             run: Box::new(move || tests::xmodem_tiny(&p)),
         });
     }
     if s.cancel {
         let p = payload_1m.clone();
         group_115200.cases.push(TestCase {
-            id: "T10", name: "cancel mid-transfer",
+            id: "T10",
+            name: "cancel mid-transfer",
             run: Box::new(move || tests::cancel_midway(&p)),
         });
     }
@@ -340,7 +367,12 @@ fn build_plan(args: &Args) -> Vec<BaudGroup> {
 
 fn print_outcome(o: &TestOutcome) {
     let status = if o.passed { "ok  " } else { "FAIL" };
-    println!("{status}  ({:>6.2}s, {} baud) {}", o.duration.as_secs_f64(), o.baud, o.detail);
+    println!(
+        "{status}  ({:>6.2}s, {} baud) {}",
+        o.duration.as_secs_f64(),
+        o.baud,
+        o.detail
+    );
 }
 
 fn print_summary(outcomes: &[TestOutcome]) {

@@ -116,9 +116,18 @@ jobs:
       # and gates the rest of the matrix on fast-fail — placing this
       # before the platform deps install means a fmt regression
       # surfaces in seconds rather than after an apt-get pass.
-      - name: cargo fmt --check
+      #
+      # Covers the root crate plus each scripts/* helper crate
+      # (virtual-serial, transfer-tests). Those crates aren't part of
+      # cargo's workspace so the root fmt invocation skips them; loop
+      # over the directories to bring them under the same gate.
+      - name: cargo fmt --check (root + scripts/*)
         if: matrix.runner == 'ubuntu-latest'
-        run: cargo fmt --check
+        run: |
+          cargo fmt --check
+          for d in scripts/*/; do
+            (cd "$d" && cargo fmt --check)
+          done
 
       # cargo-deny reads Cargo.lock + deny.toml only — fully platform-
       # independent, so the same one-runner gating as the fmt check

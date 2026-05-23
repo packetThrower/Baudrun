@@ -43,10 +43,30 @@ pub struct TestOutcome {
 
 impl TestOutcome {
     fn ok(id: &'static str, name: &'static str, baud: u32, start: Instant, detail: String) -> Self {
-        Self { id, name, baud, passed: true, detail, duration: start.elapsed() }
+        Self {
+            id,
+            name,
+            baud,
+            passed: true,
+            detail,
+            duration: start.elapsed(),
+        }
     }
-    fn fail(id: &'static str, name: &'static str, baud: u32, start: Instant, detail: String) -> Self {
-        Self { id, name, baud, passed: false, detail, duration: start.elapsed() }
+    fn fail(
+        id: &'static str,
+        name: &'static str,
+        baud: u32,
+        start: Instant,
+        detail: String,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            baud,
+            passed: false,
+            detail,
+            duration: start.elapsed(),
+        }
     }
 }
 
@@ -72,7 +92,15 @@ pub fn hex_1k(fixture: &Path) -> TestOutcome {
     let start = Instant::now();
     let input = match std::fs::read_to_string(fixture) {
         Ok(s) => s,
-        Err(e) => return TestOutcome::fail(id, name, baud, start, format!("read {}: {e}", fixture.display())),
+        Err(e) => {
+            return TestOutcome::fail(
+                id,
+                name,
+                baud,
+                start,
+                format!("read {}: {e}", fixture.display()),
+            )
+        }
     };
     let expected = match parse_hex_string(&input) {
         Ok(b) => b,
@@ -80,7 +108,10 @@ pub fn hex_1k(fixture: &Path) -> TestOutcome {
     };
     if expected.len() != 1024 {
         return TestOutcome::fail(
-            id, name, baud, start,
+            id,
+            name,
+            baud,
+            start,
             format!("fixture decoded to {} bytes, expected 1024", expected.len()),
         );
     }
@@ -94,7 +125,13 @@ fn run_hex_case(id: &'static str, name: &'static str, input: &str, expected: &[u
     let baud = 9600;
     let start = Instant::now();
     match hex_roundtrip(input, expected, baud) {
-        Ok(()) => TestOutcome::ok(id, name, baud, start, format!("{} bytes round-tripped", expected.len())),
+        Ok(()) => TestOutcome::ok(
+            id,
+            name,
+            baud,
+            start,
+            format!("{} bytes round-tripped", expected.len()),
+        ),
         Err(e) => TestOutcome::fail(id, name, baud, start, e),
     }
 }
@@ -112,7 +149,9 @@ fn hex_roundtrip(input: &str, expected: &[u8], baud: u32) -> Result<(), String> 
     let mut port_a = open_port(LINK_A)?;
     let mut port_b = open_port(LINK_B)?;
 
-    port_a.write_all(&parsed).map_err(|e| format!("write A: {e}"))?;
+    port_a
+        .write_all(&parsed)
+        .map_err(|e| format!("write A: {e}"))?;
     port_a.flush().map_err(|e| format!("flush A: {e}"))?;
 
     let (received, err) = read_until(&mut port_b, parsed.len(), wire_timeout(baud, parsed.len()));
@@ -159,7 +198,15 @@ fn file_test_ymodem(
     let start = Instant::now();
     let data = match std::fs::read(fixture) {
         Ok(d) => d,
-        Err(e) => return TestOutcome::fail(id, name, baud, start, format!("read {}: {e}", fixture.display())),
+        Err(e) => {
+            return TestOutcome::fail(
+                id,
+                name,
+                baud,
+                start,
+                format!("read {}: {e}", fixture.display()),
+            )
+        }
     };
     let basename = fixture.file_name().unwrap().to_string_lossy().into_owned();
     let received_path = Path::new(RX_DIR).join(&basename);
@@ -178,7 +225,10 @@ fn file_test_ymodem(
     let mut writer = write_file;
 
     let want_cancel = cancel.is_some();
-    let opts = Options { progress: None, cancel };
+    let opts = Options {
+        progress: None,
+        cancel,
+    };
     let send_result = send_ymodem(&mut reader, &mut writer, &basename, &data, &opts);
     drop(writer);
     drop(read_file);
@@ -202,11 +252,23 @@ fn file_test_ymodem(
 // -- File tests (XMODEM) ----------------------------------------------
 
 pub fn xmodem_classic(fixture: &Path) -> TestOutcome {
-    file_test_xmodem("T7c", "XMODEM classic (128/checksum)", XModemVariant::Classic, &[], fixture)
+    file_test_xmodem(
+        "T7c",
+        "XMODEM classic (128/checksum)",
+        XModemVariant::Classic,
+        &[],
+        fixture,
+    )
 }
 
 pub fn xmodem_crc(fixture: &Path) -> TestOutcome {
-    file_test_xmodem("T7C", "XMODEM-CRC (128/CRC-16)", XModemVariant::Crc, &["-c"], fixture)
+    file_test_xmodem(
+        "T7C",
+        "XMODEM-CRC (128/CRC-16)",
+        XModemVariant::Crc,
+        &["-c"],
+        fixture,
+    )
 }
 
 pub fn xmodem_1k(fixture: &Path) -> TestOutcome {
@@ -214,11 +276,23 @@ pub fn xmodem_1k(fixture: &Path) -> TestOutcome {
     // sender's STX (0x02) block header instead of SOH (0x01). The
     // receiver only needs to be in CRC mode; the block-size byte tells
     // it whether to expect 128 or 1024 data bytes per block.
-    file_test_xmodem("T7k", "XMODEM-1K (1024/CRC-16)", XModemVariant::OneKilo, &["-c"], fixture)
+    file_test_xmodem(
+        "T7k",
+        "XMODEM-1K (1024/CRC-16)",
+        XModemVariant::OneKilo,
+        &["-c"],
+        fixture,
+    )
 }
 
 pub fn xmodem_tiny(fixture: &Path) -> TestOutcome {
-    file_test_xmodem("T8", "XMODEM single-block (SUB padding)", XModemVariant::Classic, &[], fixture)
+    file_test_xmodem(
+        "T8",
+        "XMODEM single-block (SUB padding)",
+        XModemVariant::Classic,
+        &[],
+        fixture,
+    )
 }
 
 fn file_test_xmodem(
@@ -232,7 +306,15 @@ fn file_test_xmodem(
     let start = Instant::now();
     let data = match std::fs::read(fixture) {
         Ok(d) => d,
-        Err(e) => return TestOutcome::fail(id, name, baud, start, format!("read {}: {e}", fixture.display())),
+        Err(e) => {
+            return TestOutcome::fail(
+                id,
+                name,
+                baud,
+                start,
+                format!("read {}: {e}", fixture.display()),
+            )
+        }
     };
     let received_path = Path::new(RX_DIR).join("out.bin");
     let _ = std::fs::remove_file(&received_path);
@@ -282,7 +364,9 @@ fn open_port(path: &str) -> Result<File, String> {
 /// needs `&mut R` and `&mut W` simultaneously.
 fn open_port_pair(path: &str) -> Result<(File, File), String> {
     let read_side = open_port(path)?;
-    let write_side = read_side.try_clone().map_err(|e| format!("clone {path} fd: {e}"))?;
+    let write_side = read_side
+        .try_clone()
+        .map_err(|e| format!("clone {path} fd: {e}"))?;
     Ok((read_side, write_side))
 }
 
@@ -292,7 +376,11 @@ fn open_port_pair(path: &str) -> Result<(File, File), String> {
 /// early (timeout, EOF, syscall error). Used by the hex tests where a
 /// forwarder thread would leak across test boundaries and steal the
 /// first byte of the next stream — see the comment in Cargo.toml.
-fn read_until(file: &mut File, expected: usize, total_timeout: Duration) -> (Vec<u8>, Option<String>) {
+fn read_until(
+    file: &mut File,
+    expected: usize,
+    total_timeout: Duration,
+) -> (Vec<u8>, Option<String>) {
     let fd = file.as_raw_fd();
     let deadline = Instant::now() + total_timeout;
     let mut out = Vec::with_capacity(expected);
@@ -301,14 +389,28 @@ fn read_until(file: &mut File, expected: usize, total_timeout: Duration) -> (Vec
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             let got = out.len();
-            return (out, Some(format!("read timed out: got {got}/{expected} bytes within {total_timeout:?}")));
+            return (
+                out,
+                Some(format!(
+                    "read timed out: got {got}/{expected} bytes within {total_timeout:?}"
+                )),
+            );
         }
         let millis = remaining.as_millis().min(i32::MAX as u128) as libc::c_int;
-        let mut pfd = libc::pollfd { fd, events: libc::POLLIN, revents: 0 };
+        let mut pfd = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
         let rc = unsafe { libc::poll(&mut pfd, 1, millis) };
         if rc == 0 {
             let got = out.len();
-            return (out, Some(format!("read timed out: got {got}/{expected} bytes within {total_timeout:?}")));
+            return (
+                out,
+                Some(format!(
+                    "read timed out: got {got}/{expected} bytes within {total_timeout:?}"
+                )),
+            );
         }
         if rc < 0 {
             let e = std::io::Error::last_os_error();
@@ -339,7 +441,11 @@ fn wire_timeout(baud: u32, n_bytes: usize) -> Duration {
 
 fn diff_summary(expected: &[u8], got: &[u8]) -> String {
     if expected.len() != got.len() {
-        return format!("length mismatch: expected {}, got {}", expected.len(), got.len());
+        return format!(
+            "length mismatch: expected {}, got {}",
+            expected.len(),
+            got.len()
+        );
     }
     for (i, (e, g)) in expected.iter().zip(got.iter()).enumerate() {
         if e != g {
@@ -385,7 +491,9 @@ fn spawn_receiver(cmd: &str, args: &[&str]) -> Result<Child, String> {
         .write(true)
         .open(LINK_B)
         .map_err(|e| format!("open {LINK_B}: {e}"))?;
-    let port_dup = port.try_clone().map_err(|e| format!("clone {LINK_B} fd: {e}"))?;
+    let port_dup = port
+        .try_clone()
+        .map_err(|e| format!("clone {LINK_B} fd: {e}"))?;
     Command::new(cmd)
         .args(args)
         .current_dir(RX_DIR)
@@ -414,7 +522,10 @@ fn finish_with_receiver(
     }
 }
 
-fn wait_with_timeout(child: &mut Child, timeout: Duration) -> Result<std::process::ExitStatus, String> {
+fn wait_with_timeout(
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
