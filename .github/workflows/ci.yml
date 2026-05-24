@@ -64,14 +64,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS — arm64 (M-series) and amd64 (Intel) on Sequoia.
-          # macos-26 is GitHub's Apple-Silicon-only runner; macos-15-intel
-          # replaced the retired macos-13 image and stays available
-          # through 2027 while Apple's Intel transition wraps up.
+          # macOS — Apple Silicon only on Sequoia (macos-26).
+          # x86_64 macOS isn't in the matrix because release.yml
+          # cross-compiles the x86_64 macOS binary from macos-26
+          # since commit e3a4d28 (cargo-packager's create-dmg step
+          # bombed on the Intel image with no recoverable
+          # diagnostic). Testing natively on macos-15-intel while
+          # shipping a cross-compiled binary would test one path
+          # and ship another — keeping CI aligned with what release
+          # actually produces. macos-15-intel can return when
+          # native Intel builds do (unlikely, given the Apple
+          # transition timeline).
           - runner: macos-26
             arch: arm64
-          - runner: macos-15-intel
-            arch: amd64
           # Windows — x64 + arm64. windows-11-arm landed in 2025 and
           # gives us a native runner; no Prism cross-compile dance.
           - runner: windows-latest
