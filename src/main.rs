@@ -1111,39 +1111,28 @@ fn detect_reduce_motion() -> bool {
     false
 }
 
-/// Pop a modal Windows error dialog when `open_app_window` fails.
+/// Pop a modal Windows error dialog with the given caption + body.
+/// Used by the two startup-failure paths
+/// (`show_window_open_error_dialog`, `show_dxgi_unavailable_dialog`)
+/// so the wide-string encoding + `MessageBoxW` FFI live in one place.
+///
 /// Release builds set `windows_subsystem = "windows"` (no attached
-/// console), so a plain `log::error!` is invisible to the user — a
-/// `MessageBoxW` is the only feedback path that actually surfaces a
-/// startup-time failure on Windows. The dialog blocks the calling
-/// thread until the user clicks OK, which also keeps the process
-/// alive long enough that the winget validator's launch test sees a
-/// normal "GUI app waiting on user input" outcome instead of an
-/// instant crash with `STATUS_STACK_BUFFER_OVERRUN`.
+/// console), so `log::error!` is invisible to the user — `MessageBoxW`
+/// is the only feedback path that actually surfaces a startup-time
+/// failure. The dialog blocks the calling thread until the user
+/// clicks OK, which also keeps the process alive long enough that
+/// the winget validator's launch test sees a normal "GUI app waiting
+/// on user input" outcome instead of an instant crash with
+/// `STATUS_STACK_BUFFER_OVERRUN`.
 ///
 /// Inline FFI on `MessageBoxW` (user32.dll) for the same reason
 /// `detect_reduce_motion` uses inline `SystemParametersInfoW`:
 /// avoids a direct `windows-sys` dep that'd conflict with
 /// gpui_windows's transitive version on every gpui bump.
 #[cfg(target_os = "windows")]
-fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
+fn show_windows_error_dialog(caption: &str, body: &str) {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
-
-    // Body carries the full anyhow chain via `{err:?}` so the user
-    // (or a support thread) sees the underlying HRESULT, not just
-    // "couldn't open window". Wrapping copy explains the most
-    // common cause we've observed (DXGI device not currently
-    // available) without committing to that being the only one.
-    let body = format!(
-        "Baudrun couldn't initialize its window.\n\n\
-         {err:?}\n\n\
-         This usually means the graphics adapter isn't currently \
-         available — paused driver, headless session, or GPU \
-         exhaustion. Try restarting Windows, or sign into a \
-         desktop session before launching Baudrun."
-    );
-    let caption = "Baudrun — failed to start";
 
     let to_wide = |s: &str| -> Vec<u16> {
         OsStr::new(s)
@@ -1151,7 +1140,7 @@ fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
             .chain(std::iter::once(0))
             .collect()
     };
-    let body_w = to_wide(&body);
+    let body_w = to_wide(body);
     let caption_w = to_wide(caption);
 
     // MB_OK | MB_ICONERROR = "[ OK ]" button + red-X icon. No need
@@ -1178,6 +1167,29 @@ fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
     }
 }
 
+/// Pop a modal Windows error dialog when `open_app_window` fails.
+/// Fires from the `Err(err)` arm of the `open_app_window` match in
+/// `main`; on the same code path as `dxgi_probe`'s fallback dialog
+/// (see `show_dxgi_unavailable_dialog`) but reached only when the
+/// probe passed AND the actual gpui-side `open_window` still failed.
+#[cfg(target_os = "windows")]
+fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
+    // Body carries the full anyhow chain via `{err:?}` so the user
+    // (or a support thread) sees the underlying HRESULT, not just
+    // "couldn't open window". Wrapping copy explains the most
+    // common cause we've observed (DXGI device not currently
+    // available) without committing to that being the only one.
+    let body = format!(
+        "Baudrun couldn't initialize its window.\n\n\
+         {err:?}\n\n\
+         This usually means the graphics adapter isn't currently \
+         available — paused driver, headless session, or GPU \
+         exhaustion. Try restarting Windows, or sign into a \
+         desktop session before launching Baudrun."
+    );
+    show_windows_error_dialog("Baudrun — failed to start", &body);
+}
+
 /// Pre-flight check for an available Direct3D-capable graphics
 /// adapter, called from `main` before any gpui state exists.
 ///
@@ -1196,7 +1208,7 @@ fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
 /// renderer can't initialize" regardless of the underlying reason.
 ///
 /// Inline FFI on `D3D11CreateDevice` (d3d11.dll) matches the shape
-/// of `show_window_open_error_dialog`'s `MessageBoxW` FFI and
+/// of `show_windows_error_dialog`'s `MessageBoxW` FFI and
 /// `detect_reduce_motion`'s `SystemParametersInfoW` FFI for the
 /// same reason: avoids a direct `windows-sys` dep that'd conflict
 /// with `gpui_windows`'s transitive version on every gpui bump.
@@ -1255,21 +1267,10 @@ fn dxgi_probe() -> Result<(), u32> {
 
 /// Pop a modal Windows error dialog explaining a `dxgi_probe`
 /// failure, then return so the caller can `std::process::exit(0)`.
-///
-/// Shape mirrors `show_window_open_error_dialog`: wide-string
-/// encoding, `MessageBoxW` with `MB_OK | MB_ICONERROR`. The body
-/// surfaces the raw HRESULT so a support thread can correlate
-/// against the underlying Windows error.
-///
-/// Duplicates the `MessageBoxW` FFI declaration in
-/// `show_window_open_error_dialog` rather than extracting a shared
-/// helper. Two call sites is on the edge — if a third lands, the
-/// FFI should move into a private `show_error_dialog` helper.
+/// The body surfaces the raw HRESULT so a support thread can
+/// correlate against the underlying Windows error.
 #[cfg(target_os = "windows")]
 fn show_dxgi_unavailable_dialog(hr: u32) {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-
     let body = format!(
         "Baudrun couldn't initialize a graphics adapter (HRESULT 0x{hr:08X}).\n\n\
          Direct3D reported no adapter is currently available — usually a paused \
@@ -1277,35 +1278,7 @@ fn show_dxgi_unavailable_dialog(hr: u32) {
          restarting Windows, or sign into a desktop session before launching \
          Baudrun."
     );
-    let caption = "Baudrun — failed to start";
-
-    let to_wide = |s: &str| -> Vec<u16> {
-        OsStr::new(s)
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect()
-    };
-    let body_w = to_wide(&body);
-    let caption_w = to_wide(caption);
-
-    const MB_OK: u32 = 0x0;
-    const MB_ICONERROR: u32 = 0x10;
-    unsafe extern "system" {
-        fn MessageBoxW(
-            hwnd: *mut core::ffi::c_void,
-            text: *const u16,
-            caption: *const u16,
-            utype: u32,
-        ) -> i32;
-    }
-    unsafe {
-        MessageBoxW(
-            std::ptr::null_mut(),
-            body_w.as_ptr(),
-            caption_w.as_ptr(),
-            MB_OK | MB_ICONERROR,
-        );
-    }
+    show_windows_error_dialog("Baudrun — failed to start", &body);
 }
 
 /// Right-click menu on the macOS dock icon (no-op on other
