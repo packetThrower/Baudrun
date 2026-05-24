@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-05-24
+
 ### Fixed
 
 - **Windows-arm winget launches no longer hit the cleanup-time
@@ -23,17 +25,25 @@ final stable entry at tag time.
   exposed a deeper panic in `AsyncApp::update_entity` firing during
   cleanup of the gpui state we set up before the failed window
   open (`gpui_component::init`, settings-bus subscribe, theme
-  global). The `[Unreleased]` build adds a Direct3D adapter probe
-  via inline `D3D11CreateDevice` FFI before any gpui state exists:
-  if the OS can't hand back a graphics adapter, Baudrun pops the
-  same "failed to start" dialog and exits cleanly with code `0`
-  — zero gpui state to clean up means zero cleanup-time panic.
-  The winget validator's 10-second launch test accepts either a
-  clean exit or a still-running process, so both real-user
-  broken-GPU machines and the validator's headless sandbox now
-  behave the same way. Unblocks re-adding arm64 to the winget
-  manifest after the v0.12.4 submission shipped x64-only
+  global). v0.13.0 adds a Direct3D adapter probe via inline
+  `D3D11CreateDevice` FFI before any gpui state exists: if the OS
+  can't hand back a graphics adapter, Baudrun pops the same
+  "failed to start" dialog and exits cleanly with code `0` —
+  zero gpui state to clean up means zero cleanup-time panic. The
+  winget validator's 10-second launch test accepts either a clean
+  exit or a still-running process, so both real-user broken-GPU
+  machines and the validator's headless sandbox now behave the
+  same way. Unblocks re-adding arm64 to the winget manifest after
+  the v0.12.4 submission shipped x64-only
   ([microsoft/winget-pkgs#377461](https://github.com/microsoft/winget-pkgs/pull/377461)).
+
+### Changed
+
+- **gpui + gpui_platform bumped to upstream Zed rev `13e7c11`.**
+  Carries forward four weeks of Zed-side improvements to the
+  windowing + event-loop paths since the v0.12-line pin
+  (`0042fb5`). No public API changes on our side; the bump is
+  transparent on macOS, Windows, and Linux desktops.
 
 ## [0.12.4] — 2026-05-21
 
