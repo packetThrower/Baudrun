@@ -15,6 +15,26 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows-arm winget launches no longer hit the cleanup-time
+  RefCell panic.** v0.12.4's `cx.quit()` removal fixed the direct
+  fast-fail on the winget validator's headless arm64 sandbox but
+  exposed a deeper panic in `AsyncApp::update_entity` firing during
+  cleanup of the gpui state we set up before the failed window
+  open (`gpui_component::init`, settings-bus subscribe, theme
+  global). The `[Unreleased]` build adds a Direct3D adapter probe
+  via inline `D3D11CreateDevice` FFI before any gpui state exists:
+  if the OS can't hand back a graphics adapter, Baudrun pops the
+  same "failed to start" dialog and exits cleanly with code `0`
+  — zero gpui state to clean up means zero cleanup-time panic.
+  The winget validator's 10-second launch test accepts either a
+  clean exit or a still-running process, so both real-user
+  broken-GPU machines and the validator's headless sandbox now
+  behave the same way. Unblocks re-adding arm64 to the winget
+  manifest after the v0.12.4 submission shipped x64-only
+  ([microsoft/winget-pkgs#377461](https://github.com/microsoft/winget-pkgs/pull/377461)).
+
 ## [0.12.4] — 2026-05-21
 
 ### Fixed
