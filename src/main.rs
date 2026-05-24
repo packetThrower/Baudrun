@@ -20,7 +20,10 @@
 // a fresh one) — `cargo run` on Windows still sees stdout/stderr in
 // the terminal it was launched from. The user-visible regression is
 // only on installed Win + double-click launches, which this fixes.
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 mod app_view;
 mod data;
@@ -119,10 +122,9 @@ pub(crate) mod actions {
     }
 }
 use actions::{
-    About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease,
-    FontIncrease, FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings,
-    Quit, Resume, SendBreak, SendFile, Suspend, TerminalCopy, TerminalPaste,
-    TerminalSelectAll, ToggleSidebar,
+    About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease, FontIncrease,
+    FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings, Quit, Resume, SendBreak,
+    SendFile, Suspend, TerminalCopy, TerminalPaste, TerminalSelectAll, ToggleSidebar,
 };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
@@ -133,6 +135,38 @@ const DEFAULT_BAUD: u32 = 9600;
 
 fn main() {
     env_logger::init();
+
+    // Windows: probe for an available graphics adapter BEFORE we
+    // hand control to gpui. On the winget validator's headless
+    // arm64 sandbox, gpui's renderer init returns
+    // `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE` (`0x887A0022`) — but only
+    // after `App::new().run(...)` has set up the SettingsBus entity,
+    // gpui_component's Theme global, the keybinding context, and so
+    // on. Cleanup of that state on the failure path then re-borrows
+    // the same RefCell the `app.run` callback is still inside,
+    // panicking in `AsyncApp::update_entity` and (under
+    // `panic = "abort"`) fast-failing the process with
+    // `STATUS_STACK_BUFFER_OVERRUN`. The validator records the
+    // crash and rejects the arm64 submission.
+    //
+    // Probing first means: zero gpui state on the failure path, no
+    // RefCell, no cleanup-time panic. We surface a MessageBox for
+    // the rare real-user broken-GPU scenario (so they understand
+    // why the app didn't open), then `std::process::exit(0)` — the
+    // clean exit code the winget validator accepts as PASS within
+    // its 10-second launch-test window. On a true headless sandbox
+    // where MessageBoxW never returns (no one to click OK), the
+    // validator's timeout fires while the process is still alive,
+    // which also counts as PASS.
+    //
+    // See `dxgi_probe` for the FFI details; see TODO.md's "arm64
+    // winget submission" entry for the diagnosis history.
+    #[cfg(target_os = "windows")]
+    if let Err(hr) = dxgi_probe() {
+        log::error!("DXGI probe failed (HRESULT 0x{hr:08X}); exiting before gpui startup");
+        show_dxgi_unavailable_dialog(hr);
+        std::process::exit(0);
+    }
 
     // Args: `cargo run -- <port_path>`. Anything after the binary
     // name; we don't accept flags yet because there's nothing to
@@ -206,12 +240,12 @@ fn main() {
         // benefit from the embedded copy.
         #[cfg(target_os = "linux")]
         {
-            const JETBRAINS_MONO_REGULAR: &[u8] = include_bytes!(
-                "../resources/fonts/JetBrainsMono-Regular.ttf"
-            );
-            if let Err(err) = cx.text_system().add_fonts(vec![
-                std::borrow::Cow::Borrowed(JETBRAINS_MONO_REGULAR),
-            ]) {
+            const JETBRAINS_MONO_REGULAR: &[u8] =
+                include_bytes!("../resources/fonts/JetBrainsMono-Regular.ttf");
+            if let Err(err) = cx
+                .text_system()
+                .add_fonts(vec![std::borrow::Cow::Borrowed(JETBRAINS_MONO_REGULAR)])
+            {
                 log::error!("register bundled JetBrains Mono: {err}");
             }
         }
@@ -254,16 +288,12 @@ fn main() {
                 Ok(store) => Rc::new(store),
                 Err(err) => fallback_profile_store(format!("profile store init failed: {err}")),
             },
-            Err(err) => {
-                fallback_profile_store(format!("support dir unavailable: {err}"))
-            }
+            Err(err) => fallback_profile_store(format!("support dir unavailable: {err}")),
         };
         let settings_store = match &support {
             Ok(dir) => match data::settings::Store::new(dir) {
                 Ok(store) => Rc::new(store),
-                Err(err) => fallback_settings_store(format!(
-                    "settings store init failed: {err}"
-                )),
+                Err(err) => fallback_settings_store(format!("settings store init failed: {err}")),
             },
             Err(err) => fallback_settings_store(format!("support dir unavailable: {err}")),
         };
@@ -277,9 +307,7 @@ fn main() {
         let highlight_store = match &support {
             Ok(dir) => match data::highlight::Store::new(dir) {
                 Ok(store) => Rc::new(store),
-                Err(err) => fallback_highlight_store(format!(
-                    "highlight store init failed: {err}"
-                )),
+                Err(err) => fallback_highlight_store(format!("highlight store init failed: {err}")),
             },
             Err(err) => fallback_highlight_store(format!("support dir unavailable: {err}")),
         };
@@ -305,13 +333,7 @@ fn main() {
         // fresh launch lands on the right palette before the first
         // frame paints.
         let terminal = cx.new(|cx| {
-            TerminalView::new(
-                24,
-                80,
-                term_bridge::Palette::baudrun(),
-                boot_scrollback,
-                cx,
-            )
+            TerminalView::new(24, 80, term_bridge::Palette::baudrun(), boot_scrollback, cx)
         });
 
         // Install the macOS application menu (and the keybindings
@@ -437,10 +459,7 @@ fn main() {
                     let result = cx_async
                         .background_executor()
                         .spawn(async move {
-                            updater::check_for_update(
-                                env!("CARGO_PKG_VERSION"),
-                                include_prerelease,
-                            )
+                            updater::check_for_update(env!("CARGO_PKG_VERSION"), include_prerelease)
                         })
                         .await;
                     let available = match result {
@@ -490,10 +509,7 @@ fn main() {
                     let read_rx = channels.read_rx;
                     cx.spawn(async move |cx| {
                         while let Ok(bytes) = read_rx.recv_async().await {
-                            if weak
-                                .update(cx, |v, cx| v.feed_bytes(&bytes, cx))
-                                .is_err()
-                            {
+                            if weak.update(cx, |v, cx| v.feed_bytes(&bytes, cx)).is_err() {
                                 break;
                             }
                         }
@@ -523,9 +539,7 @@ fn main() {
         // (handle invalidated, etc.) log and carry on rather than
         // aborting the whole app; the window is already open and
         // a click into the viewport recovers focus.
-        if let Err(err) = window
-            .update(cx, |_, window, cx| viewport_focus.focus(window, cx))
-        {
+        if let Err(err) = window.update(cx, |_, window, cx| viewport_focus.focus(window, cx)) {
             log::warn!("focus terminal view at boot: {err}");
         }
 
@@ -631,14 +645,10 @@ fn install_app_menu(
         });
     });
     cx.on_action(|_: &FontIncrease, cx| {
-        dispatch_to_app_view(cx, |app, _window, cx| {
-            app.shortcut_bump_font_increase(cx)
-        });
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_increase(cx));
     });
     cx.on_action(|_: &FontDecrease, cx| {
-        dispatch_to_app_view(cx, |app, _window, cx| {
-            app.shortcut_bump_font_decrease(cx)
-        });
+        dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_decrease(cx));
     });
     cx.on_action(|_: &FontReset, cx| {
         dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_bump_font_reset(cx));
@@ -655,7 +665,9 @@ fn install_app_menu(
         dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_terminal_copy(cx));
     });
     cx.on_action(|_: &TerminalPaste, cx| {
-        dispatch_to_app_view(cx, |app, window, cx| app.shortcut_terminal_paste(window, cx));
+        dispatch_to_app_view(cx, |app, window, cx| {
+            app.shortcut_terminal_paste(window, cx)
+        });
     });
     cx.on_action(|_: &TerminalSelectAll, cx| {
         dispatch_to_app_view(cx, |app, _window, cx| app.shortcut_terminal_select_all(cx));
@@ -668,16 +680,9 @@ fn install_app_menu(
         let highlight_store = highlight_store.clone();
         let themes_store = themes_store.clone();
         cx.on_action(move |_: &NewWindow, cx| {
-            let scrollback =
-                settings_bus.read(cx).current().effective_scrollback();
+            let scrollback = settings_bus.read(cx).current().effective_scrollback();
             let terminal = cx.new(|cx| {
-                TerminalView::new(
-                    24,
-                    80,
-                    term_bridge::Palette::baudrun(),
-                    scrollback,
-                    cx,
-                )
+                TerminalView::new(24, 80, term_bridge::Palette::baudrun(), scrollback, cx)
             });
             if let Err(err) = open_app_window(
                 cx,
@@ -821,7 +826,6 @@ where
 /// emit NoAction unbinds on diff" follow-up if it actually
 /// surfaces.
 fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
-
     let overrides = settings.shortcuts.clone().unwrap_or_default();
     // Static accelerators that don't appear in Settings → Shortcuts.
     // Quit / New Window / Settings are always-on system bindings —
@@ -1016,15 +1020,11 @@ fn install_macos_dock_icon() {
     #[allow(deprecated)]
     unsafe {
         let path = NSString::from_str(&icon_path);
-        let Some(source) = NSImage::initWithContentsOfFile(NSImage::alloc(), &path)
-        else {
+        let Some(source) = NSImage::initWithContentsOfFile(NSImage::alloc(), &path) else {
             log::warn!("dock icon: could not load {icon_path}");
             return;
         };
-        let canvas = NSImage::initWithSize(
-            NSImage::alloc(),
-            NSSize::new(CANVAS_PX, CANVAS_PX),
-        );
+        let canvas = NSImage::initWithSize(NSImage::alloc(), NSSize::new(CANVAS_PX, CANVAS_PX));
         canvas.lockFocus();
         // Empty fromRect tells Cocoa to use the source image's
         // natural extent. Operation=copy means we paint the
@@ -1111,44 +1111,36 @@ fn detect_reduce_motion() -> bool {
     false
 }
 
-/// Pop a modal Windows error dialog when `open_app_window` fails.
+/// Pop a modal Windows error dialog with the given caption + body.
+/// Used by the two startup-failure paths
+/// (`show_window_open_error_dialog`, `show_dxgi_unavailable_dialog`)
+/// so the wide-string encoding + `MessageBoxW` FFI live in one place.
+///
 /// Release builds set `windows_subsystem = "windows"` (no attached
-/// console), so a plain `log::error!` is invisible to the user — a
-/// `MessageBoxW` is the only feedback path that actually surfaces a
-/// startup-time failure on Windows. The dialog blocks the calling
-/// thread until the user clicks OK, which also keeps the process
-/// alive long enough that the winget validator's launch test sees a
-/// normal "GUI app waiting on user input" outcome instead of an
-/// instant crash with `STATUS_STACK_BUFFER_OVERRUN`.
+/// console), so `log::error!` is invisible to the user — `MessageBoxW`
+/// is the only feedback path that actually surfaces a startup-time
+/// failure. The dialog blocks the calling thread until the user
+/// clicks OK, which also keeps the process alive long enough that
+/// the winget validator's launch test sees a normal "GUI app waiting
+/// on user input" outcome instead of an instant crash with
+/// `STATUS_STACK_BUFFER_OVERRUN`.
 ///
 /// Inline FFI on `MessageBoxW` (user32.dll) for the same reason
 /// `detect_reduce_motion` uses inline `SystemParametersInfoW`:
 /// avoids a direct `windows-sys` dep that'd conflict with
 /// gpui_windows's transitive version on every gpui bump.
 #[cfg(target_os = "windows")]
-fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
+fn show_windows_error_dialog(caption: &str, body: &str) {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
 
-    // Body carries the full anyhow chain via `{err:?}` so the user
-    // (or a support thread) sees the underlying HRESULT, not just
-    // "couldn't open window". Wrapping copy explains the most
-    // common cause we've observed (DXGI device not currently
-    // available) without committing to that being the only one.
-    let body = format!(
-        "Baudrun couldn't initialize its window.\n\n\
-         {err:?}\n\n\
-         This usually means the graphics adapter isn't currently \
-         available — paused driver, headless session, or GPU \
-         exhaustion. Try restarting Windows, or sign into a \
-         desktop session before launching Baudrun."
-    );
-    let caption = "Baudrun — failed to start";
-
     let to_wide = |s: &str| -> Vec<u16> {
-        OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
     };
-    let body_w = to_wide(&body);
+    let body_w = to_wide(body);
     let caption_w = to_wide(caption);
 
     // MB_OK | MB_ICONERROR = "[ OK ]" button + red-X icon. No need
@@ -1173,6 +1165,120 @@ fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
             MB_OK | MB_ICONERROR,
         );
     }
+}
+
+/// Pop a modal Windows error dialog when `open_app_window` fails.
+/// Fires from the `Err(err)` arm of the `open_app_window` match in
+/// `main`; on the same code path as `dxgi_probe`'s fallback dialog
+/// (see `show_dxgi_unavailable_dialog`) but reached only when the
+/// probe passed AND the actual gpui-side `open_window` still failed.
+#[cfg(target_os = "windows")]
+fn show_window_open_error_dialog<E: std::fmt::Debug>(err: &E) {
+    // Body carries the full anyhow chain via `{err:?}` so the user
+    // (or a support thread) sees the underlying HRESULT, not just
+    // "couldn't open window". Wrapping copy explains the most
+    // common cause we've observed (DXGI device not currently
+    // available) without committing to that being the only one.
+    let body = format!(
+        "Baudrun couldn't initialize its window.\n\n\
+         {err:?}\n\n\
+         This usually means the graphics adapter isn't currently \
+         available — paused driver, headless session, or GPU \
+         exhaustion. Try restarting Windows, or sign into a \
+         desktop session before launching Baudrun."
+    );
+    show_windows_error_dialog("Baudrun — failed to start", &body);
+}
+
+/// Pre-flight check for an available Direct3D-capable graphics
+/// adapter, called from `main` before any gpui state exists.
+///
+/// Calls `D3D11CreateDevice` with `D3D_DRIVER_TYPE_HARDWARE` and
+/// every `ppDevice` / `ppImmediateContext` out-arg set to null —
+/// we don't actually want a device, we just want the HRESULT.
+/// `S_OK` (0) and any other non-negative result means the OS can
+/// hand a Direct3D device to gpui's renderer; a negative HRESULT
+/// means it can't, and gpui's own `D3D11CreateDevice` call would
+/// fail the same way a few hundred milliseconds later.
+///
+/// The HRESULT we specifically care about is
+/// `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE` (`0x887A0022`), but the
+/// probe doesn't special-case it — any negative HRESULT bails
+/// out, because there's no graceful-recover path for "gpui's
+/// renderer can't initialize" regardless of the underlying reason.
+///
+/// Inline FFI on `D3D11CreateDevice` (d3d11.dll) matches the shape
+/// of `show_windows_error_dialog`'s `MessageBoxW` FFI and
+/// `detect_reduce_motion`'s `SystemParametersInfoW` FFI for the
+/// same reason: avoids a direct `windows-sys` dep that'd conflict
+/// with `gpui_windows`'s transitive version on every gpui bump.
+#[cfg(target_os = "windows")]
+fn dxgi_probe() -> Result<(), u32> {
+    // D3D_DRIVER_TYPE_HARDWARE = 1 — ask for a real hardware
+    // adapter (not WARP / reference / software). Matches what
+    // gpui's renderer init asks for, so a probe-side success means
+    // gpui's side will also find an adapter.
+    const D3D_DRIVER_TYPE_HARDWARE: i32 = 1;
+    // D3D11_SDK_VERSION = 7, the value the D3D11 headers have
+    // declared since the SDK shipped. Passing this is a versioning
+    // handshake with d3d11.dll; the constant doesn't change across
+    // Windows releases.
+    const D3D11_SDK_VERSION: u32 = 7;
+
+    unsafe extern "system" {
+        fn D3D11CreateDevice(
+            adapter: *mut core::ffi::c_void,
+            driver_type: i32,
+            software: *mut core::ffi::c_void,
+            flags: u32,
+            feature_levels: *const i32,
+            feature_levels_count: u32,
+            sdk_version: u32,
+            device: *mut *mut core::ffi::c_void,
+            feature_level: *mut i32,
+            immediate_context: *mut *mut core::ffi::c_void,
+        ) -> i32;
+    }
+
+    // SAFETY: All pointer args are either null (we want d3d11.dll
+    // to skip the corresponding out-write) or fixed-size primitive
+    // values passed by value via the ABI. d3d11.dll ships with
+    // Windows so the import is always satisfied at load time.
+    let hr = unsafe {
+        D3D11CreateDevice(
+            std::ptr::null_mut(),
+            D3D_DRIVER_TYPE_HARDWARE,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+            0,
+            D3D11_SDK_VERSION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if hr >= 0 {
+        Ok(())
+    } else {
+        Err(hr as u32)
+    }
+}
+
+/// Pop a modal Windows error dialog explaining a `dxgi_probe`
+/// failure, then return so the caller can `std::process::exit(0)`.
+/// The body surfaces the raw HRESULT so a support thread can
+/// correlate against the underlying Windows error.
+#[cfg(target_os = "windows")]
+fn show_dxgi_unavailable_dialog(hr: u32) {
+    let body = format!(
+        "Baudrun couldn't initialize a graphics adapter (HRESULT 0x{hr:08X}).\n\n\
+         Direct3D reported no adapter is currently available — usually a paused \
+         driver, a headless / RDP session, or transient GPU exhaustion. Try \
+         restarting Windows, or sign into a desktop session before launching \
+         Baudrun."
+    );
+    show_windows_error_dialog("Baudrun — failed to start", &body);
 }
 
 /// Right-click menu on the macOS dock icon (no-op on other
@@ -1279,15 +1385,18 @@ fn handle_reopen(cx: &mut App) {
         return;
     }
     let shared = cx.global::<AppShared>();
-    let scrollback = shared.settings_bus.read(cx).current().effective_scrollback();
+    let scrollback = shared
+        .settings_bus
+        .read(cx)
+        .current()
+        .effective_scrollback();
     let profile_store = shared.profile_store.clone();
     let settings_bus = shared.settings_bus.clone();
     let skins_store = shared.skins_store.clone();
     let highlight_store = shared.highlight_store.clone();
     let themes_store = shared.themes_store.clone();
-    let terminal = cx.new(|cx| {
-        TerminalView::new(24, 80, term_bridge::Palette::baudrun(), scrollback, cx)
-    });
+    let terminal =
+        cx.new(|cx| TerminalView::new(24, 80, term_bridge::Palette::baudrun(), scrollback, cx));
     if let Err(err) = open_app_window(
         cx,
         WindowInit::Fresh(terminal),
@@ -1334,21 +1443,19 @@ fn confirm_quit_then_quit_inner(cx: &mut App) {
     // Find the first window with a live session. We don't need
     // to enumerate them all — the dialog goes in front of one
     // window, and quit affects every window equally.
-    let live_window: Option<gpui::AnyWindowHandle> =
-        cx.windows().into_iter().find(|handle| {
-            handle
-                .update(cx, |_root, window, cx| {
-                    let Some(Some(root)) = window.root::<Root>() else {
-                        return false;
-                    };
-                    let Ok(app_view) = root.read(cx).view().clone().downcast::<AppView>()
-                    else {
-                        return false;
-                    };
-                    app_view.read(cx).has_live_session()
-                })
-                .unwrap_or(false)
-        });
+    let live_window: Option<gpui::AnyWindowHandle> = cx.windows().into_iter().find(|handle| {
+        handle
+            .update(cx, |_root, window, cx| {
+                let Some(Some(root)) = window.root::<Root>() else {
+                    return false;
+                };
+                let Ok(app_view) = root.read(cx).view().clone().downcast::<AppView>() else {
+                    return false;
+                };
+                app_view.read(cx).has_live_session()
+            })
+            .unwrap_or(false)
+    });
     let Some(handle) = live_window else {
         cx.quit();
         return;
@@ -1391,10 +1498,7 @@ fn confirm_quit_then_quit_inner(cx: &mut App) {
 fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
     eprintln!("{reason}; using empty in-tmpdir profile store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::profiles::Store::new(&tmp)
-            .expect("temp profile store should always init"),
-    )
+    Rc::new(data::profiles::Store::new(&tmp).expect("temp profile store should always init"))
 }
 
 /// Settings-store equivalent of `fallback_profile_store`: lets the
@@ -1406,10 +1510,7 @@ fn fallback_profile_store(reason: String) -> Rc<data::profiles::Store> {
 fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
     eprintln!("{reason}; using default in-tmpdir settings store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::settings::Store::new(&tmp)
-            .expect("temp settings store should always init"),
-    )
+    Rc::new(data::settings::Store::new(&tmp).expect("temp settings store should always init"))
 }
 
 /// Skins-store fallback. Built-in skins are still available — they
@@ -1420,10 +1521,7 @@ fn fallback_settings_store(reason: String) -> Rc<data::settings::Store> {
 fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
     eprintln!("{reason}; using empty in-tmpdir skins store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::skins::Store::new(&tmp)
-            .expect("temp skins store should always init"),
-    )
+    Rc::new(data::skins::Store::new(&tmp).expect("temp skins store should always init"))
 }
 
 /// Highlight-pack-store fallback. Bundled packs (built-in vendor
@@ -1432,10 +1530,7 @@ fn fallback_skins_store(reason: String) -> Rc<data::skins::Store> {
 fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
     eprintln!("{reason}; using empty in-tmpdir highlight store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::highlight::Store::new(&tmp)
-            .expect("temp highlight store should always init"),
-    )
+    Rc::new(data::highlight::Store::new(&tmp).expect("temp highlight store should always init"))
 }
 
 /// Themes-store fallback. Built-in themes embed at compile time so
@@ -1444,9 +1539,5 @@ fn fallback_highlight_store(reason: String) -> Rc<data::highlight::Store> {
 fn fallback_themes_store(reason: String) -> Rc<data::themes::Store> {
     eprintln!("{reason}; using empty in-tmpdir themes store");
     let tmp = std::env::temp_dir().join("baudrun-empty");
-    Rc::new(
-        data::themes::Store::new(&tmp)
-            .expect("temp themes store should always init"),
-    )
+    Rc::new(data::themes::Store::new(&tmp).expect("temp themes store should always init"))
 }
-

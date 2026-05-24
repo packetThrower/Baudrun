@@ -6,6 +6,15 @@
 //! split the underlying FD into independent read and write handles,
 //! so command invocations (send, set_dtr, send_break, ...) don't
 //! contend with the 100ms blocking read loop.
+//!
+//! **Status:** orphaned post-gpui-migration. The gpui code path in
+//! `src/serial_io.rs` runs its own thread-pump pattern directly
+//! against `serialport`, so this module's `Session` type and the
+//! associated `SessionError` variants aren't constructed from
+//! anywhere live. Kept compiled because the trait shape is a
+//! useful reference for the next round of session-handle work.
+//! Narrowed replacement for the module-wide allow in `data/mod.rs`.
+#![allow(dead_code)]
 
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,7 +27,9 @@ use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
 use thiserror::Error;
 
 use super::direct;
-use crate::data::usbserial::{self, FlowControl as UsbFlow, Framing as UsbFraming, Parity as UsbParity};
+use crate::data::usbserial::{
+    self, FlowControl as UsbFlow, Framing as UsbFraming, Parity as UsbParity,
+};
 
 /// Kernel/driver read block. 100ms is the same budget go.bug.st uses
 /// and is small enough that Close() observes `closed = true` promptly.
@@ -276,7 +287,9 @@ impl Session {
             .flow_control(to_flow(&cfg.flow_control)?)
             .timeout(READ_TIMEOUT);
 
-        let port = settings.open().map_err(|e| enrich_open_error(&cfg.port_name, e))?;
+        let port = settings
+            .open()
+            .map_err(|e| enrich_open_error(&cfg.port_name, e))?;
         let read_handle = port.try_clone().map_err(|e| {
             enrich_open_error(
                 &cfg.port_name,
@@ -294,8 +307,7 @@ impl Session {
         let rts = apply_line(|v| write.set_rts(v), &cfg.rts_on_connect, true);
 
         let closed = Arc::new(AtomicBool::new(false));
-        let log_writer: Arc<Mutex<Option<Box<dyn Write + Send>>>> =
-            Arc::new(Mutex::new(None));
+        let log_writer: Arc<Mutex<Option<Box<dyn Write + Send>>>> = Arc::new(Mutex::new(None));
         let transfer_rx: Arc<Mutex<Option<TransferSink>>> = Arc::new(Mutex::new(None));
 
         let thread = spawn_read_pump(
@@ -619,7 +631,9 @@ fn looks_like_permission_denied(err: &serialport::Error) -> bool {
             return true;
         }
     }
-    err.to_string().to_ascii_lowercase().contains("permission denied")
+    err.to_string()
+        .to_ascii_lowercase()
+        .contains("permission denied")
 }
 
 #[cfg(test)]
@@ -677,6 +691,9 @@ mod tests {
     fn to_data_bits_range() {
         assert!(matches!(to_data_bits(8), Ok(DataBits::Eight)));
         assert!(matches!(to_data_bits(7), Ok(DataBits::Seven)));
-        assert!(matches!(to_data_bits(4), Err(SessionError::InvalidDataBits(4))));
+        assert!(matches!(
+            to_data_bits(4),
+            Err(SessionError::InvalidDataBits(4))
+        ));
     }
 }

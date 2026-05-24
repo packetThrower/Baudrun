@@ -57,14 +57,9 @@ pub fn detect_missing_drivers() -> Result<Vec<USBSerialCandidate>, String> {
     let mut cmd = Command::new("powershell.exe");
     cmd.args(["-NoProfile", "-NonInteractive", "-Command", script]);
     hide_console(&mut cmd);
-    let out = cmd
-        .output()
-        .map_err(|e| format!("Get-PnpDevice: {}", e))?;
+    let out = cmd.output().map_err(|e| format!("Get-PnpDevice: {}", e))?;
     if !out.status.success() {
-        return Err(format!(
-            "Get-PnpDevice exited {:?}",
-            out.status.code()
-        ));
+        return Err(format!("Get-PnpDevice exited {:?}", out.status.code()));
     }
 
     let text = String::from_utf8_lossy(&out.stdout);
@@ -242,7 +237,8 @@ mod tests {
 
     #[test]
     fn pnp_line_both_null() {
-        let json = r#"{"InstanceId":"USB\\VID_067B&PID_2303","FriendlyName":null,"Manufacturer":null}"#;
+        let json =
+            r#"{"InstanceId":"USB\\VID_067B&PID_2303","FriendlyName":null,"Manufacturer":null}"#;
         let line: PnpLine = serde_json::from_str(json).expect("should accept both null");
         assert_eq!(line.friendly_name, "");
         assert_eq!(line.manufacturer, "");
@@ -273,7 +269,9 @@ mod tests {
     fn arm64_retargeting_prolific_points_at_adapters_guide() {
         let mut c = fixture("067b");
         apply_arm64_retargeting(&mut c, true);
-        assert!(c.driver_url.contains("packetthrower.github.io/Baudrun/usage/adapters"));
+        assert!(c
+            .driver_url
+            .contains("packetthrower.github.io/Baudrun/usage/adapters"));
         assert!(c.reason.contains("Windows 11 ARM"));
         assert!(c.reason.to_lowercase().contains("ftdi"));
     }

@@ -12,6 +12,12 @@
 //!
 //! VID and PID are lowercase 4-hex-digit strings; Serial is the
 //! iSerial descriptor value with NUL / whitespace padding stripped.
+//!
+//! **Status:** orphaned post-gpui-migration alongside its
+//! `crate::data::usbserial` siblings — the new serial path goes
+//! `serialport`-only. Narrowed replacement for `data/mod.rs`'s
+//! blanket allow.
+#![allow(dead_code)]
 
 use std::io;
 use std::sync::Arc;
@@ -47,16 +53,27 @@ pub fn format_direct_usb_port_name(device: &usbserial::Device) -> String {
 /// Split `usb:VID:PID[:Serial]` into its fields. Returns an error
 /// if the prefix is missing or the hex fields don't parse.
 pub fn parse_direct_usb_port_name(name: &str) -> io::Result<(u16, u16, String)> {
-    let tail = name
-        .strip_prefix(DIRECT_USB_PREFIX)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, format!("not a direct-USB port name: {:?}", name)))?;
+    let tail = name.strip_prefix(DIRECT_USB_PREFIX).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("not a direct-USB port name: {:?}", name),
+        )
+    })?;
     let mut parts = tail.splitn(3, ':');
     let vid_s = parts.next().ok_or_else(|| malformed(name))?;
     let pid_s = parts.next().ok_or_else(|| malformed(name))?;
-    let vid = u16::from_str_radix(vid_s, 16)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("vid in {:?}: {}", name, e)))?;
-    let pid = u16::from_str_radix(pid_s, 16)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, format!("pid in {:?}: {}", name, e)))?;
+    let vid = u16::from_str_radix(vid_s, 16).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("vid in {:?}: {}", name, e),
+        )
+    })?;
+    let pid = u16::from_str_radix(pid_s, 16).map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("pid in {:?}: {}", name, e),
+        )
+    })?;
     let serial = parts.next().unwrap_or("").to_string();
     Ok((vid, pid, serial))
 }
@@ -64,7 +81,10 @@ pub fn parse_direct_usb_port_name(name: &str) -> io::Result<(u16, u16, String)> 
 fn malformed(name: &str) -> io::Error {
     io::Error::new(
         io::ErrorKind::InvalidInput,
-        format!("malformed direct-USB port name {:?}: want usb:VID:PID[:Serial]", name),
+        format!(
+            "malformed direct-USB port name {:?}: want usb:VID:PID[:Serial]",
+            name
+        ),
     )
 }
 
@@ -96,10 +116,13 @@ pub fn list_direct_usb() -> Vec<PortInfo> {
 /// (libusb allows only one active claim per device).
 pub fn open_direct_usb(port_name: &str) -> io::Result<Arc<dyn UsbPort>> {
     let (vid, pid, serial) = parse_direct_usb_port_name(port_name)?;
-    let devices = usbserial::list().map_err(|e| io::Error::other(format!("enumerate USB: {}", e)))?;
+    let devices =
+        usbserial::list().map_err(|e| io::Error::other(format!("enumerate USB: {}", e)))?;
     let device = devices
         .into_iter()
-        .find(|d| d.vendor_id == vid && d.product_id == pid && (serial.is_empty() || d.serial == serial))
+        .find(|d| {
+            d.vendor_id == vid && d.product_id == pid && (serial.is_empty() || d.serial == serial)
+        })
         .ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::NotFound,

@@ -113,7 +113,18 @@ pub struct Cell {
 
 impl Cell {
     pub const fn blank(fg: Rgb, bg: Rgb) -> Self {
-        Self { ch: ' ', fg, bg, flags: CellFlags { bold: false, italic: false, underline: false, strikethrough: false, dim: false } }
+        Self {
+            ch: ' ',
+            fg,
+            bg,
+            flags: CellFlags {
+                bold: false,
+                italic: false,
+                underline: false,
+                strikethrough: false,
+                dim: false,
+            },
+        }
     }
 }
 
@@ -506,7 +517,10 @@ impl Element for GridElement {
                 origin.y + cell_h * r.row as f32,
             );
             let rect_size = size(cell_w * r.cells as f32, cell_h);
-            window.paint_quad(fill(Bounds::new(rect_origin, rect_size), rgb(pack(r.color))));
+            window.paint_quad(fill(
+                Bounds::new(rect_origin, rect_size),
+                rgb(pack(r.color)),
+            ));
         }
 
         // 3. Text. `shape_line` per run with `force_width =

@@ -21,48 +21,68 @@
 //! TerminalView so keystrokes still reach the grid; sidebar is
 //! pointer-driven.
 
+mod buttons;
+mod chrome;
+mod editor;
+mod opts;
+mod session;
+mod transfer_ui;
+mod window;
+
 use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
 
 use std::time::Duration;
 
+use gpui::SharedString;
 use gpui::{
-    anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
-    AppContext, Bounds, Context, DismissEvent, Entity, IntoElement, MouseButton, MouseDownEvent,
-    MouseUpEvent, PathPromptOptions, Pixels, Render, ScrollHandle, Task, TitlebarOptions, Window,
-    WindowBounds, WindowHandle, WindowOptions,
+    div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt, AppContext, Bounds,
+    Context, DismissEvent, Entity, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent,
+    PathPromptOptions, Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds,
+    WindowHandle, WindowOptions,
 };
 use gpui_component::{
     button::Button,
-    checkbox::Checkbox,
     input::{Input, InputState},
     notification::Notification,
     scroll::ScrollableElement,
-    select::{Select, SelectItem, SelectState},
+    select::{Select, SelectState},
     tooltip::Tooltip,
-    Disableable, Icon, IconName, IndexPath, Root, Sizable, Theme, ThemeMode,
-    TitleBar, WindowExt,
+    Icon, IconName, Root, Theme, ThemeMode, TitleBar, WindowExt,
 };
-use gpui::SharedString;
 
 use crate::data::appdata;
 use crate::data::hex::parse_hex_string;
 use crate::data::highlight;
-use crate::data::transfer::{self, ChannelReader, XModemVariant};
-use crate::serial_io::{ChannelWriter, TransferSink};
 use crate::data::profiles::{self, Profile};
 use crate::data::sanitize::SanitizingLogWriter;
-use crate::data::serial::ports;
 use crate::data::settings;
 use crate::data::skins;
 use crate::data::themes;
+use crate::data::transfer::{self, ChannelReader, XModemVariant};
+use crate::serial_io;
+use crate::serial_io::{ChannelWriter, TransferSink};
 use crate::settings_bus::{SettingsBus, SettingsEvent};
 use crate::settings_view::SettingsView;
 use crate::skin_tokens::{self, SkinFonts, SkinTokens};
 use crate::term_bridge::Palette;
-use crate::serial_io;
 use crate::terminal_view::{ProfileSettings, TerminalView};
+
+use chrome::{
+    about_dialog_body, friendly_open_error, profile_context_menu_overlay, session_header,
+    sidebar_header, sidebar_icon_strip, status_bar, suspended_banner, suspended_pane, welcome_pane,
+};
+use editor::{apply_editor_to_profile, build_editor, form_pane, EditorRender};
+use opts::{make_select, port_opts, read_select, Opt};
+use session::{bounds_to_geometry, geometry_to_bounds};
+pub use session::{SessionBundle, WindowInit};
+use transfer_ui::{
+    send_file_choose_button, send_file_field_label, send_file_path_pill, send_file_primary_button,
+    send_file_secondary_button, transfer_protocol_opts, YMODEM_PROTOCOL_ID,
+};
+pub use window::open_app_window;
+use window::TRAFFIC_LIGHT_POSITION_PX;
 
 /// Width of the left sidebar in logical pixels. Matches the main
 /// app's sidebar width — wide enough for two-line profile rows
@@ -285,7 +305,6 @@ enum EditorTab {
     Highlighting,
     Advanced,
 }
-
 
 struct Editor {
     /// `None` = creating a brand-new profile (Save → `Store::create`).
@@ -525,14 +544,11 @@ impl AppView {
         // window persists a change, AND apply theme/font-size/etc.
         // edits to the live terminal pane. Future Phase-4 slices
         // hang skin chrome refresh off the same hook.
-        let settings_sub = cx.subscribe(
-            &settings_bus,
-            |this, _, event: &SettingsEvent, cx| {
-                let SettingsEvent::Updated(next) = event;
-                this.apply_settings(next, cx);
-                cx.notify();
-            },
-        );
+        let settings_sub = cx.subscribe(&settings_bus, |this, _, event: &SettingsEvent, cx| {
+            let SettingsEvent::Updated(next) = event;
+            this.apply_settings(next, cx);
+            cx.notify();
+        });
         // Apply the persisted theme right away so a fresh launch
         // honours the user's `default_theme_id` instead of paying
         // a one-frame flash of the boot Baudrun palette.
@@ -602,20 +618,12 @@ impl AppView {
     /// terminal so PuTTY-style auto-copy on selection release
     /// follows the user's preference immediately — no relaunch,
     /// no reconnect.
-    fn apply_copy_on_select(
-        &mut self,
-        settings: &settings::Settings,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_copy_on_select(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
         let flag = settings.copy_on_select;
         self.terminal.update(cx, |t, _| t.set_copy_on_select(flag));
     }
 
-    fn apply_scrollback(
-        &mut self,
-        settings: &settings::Settings,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_scrollback(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
         let lines = settings.effective_scrollback();
         self.terminal
             .update(cx, |t, cx| t.set_scrollback_lines(lines, cx));
@@ -627,19 +635,14 @@ impl AppView {
     /// `skip_serializing_if = "is_zero"` represents the same
     /// state). Outside a sane range gets clamped so a stray edit
     /// doesn't render unreadable text.
-    fn apply_font_size(
-        &mut self,
-        settings: &settings::Settings,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_font_size(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
         let raw = settings.font_size;
         let size = if raw <= 0 {
             crate::terminal_grid::FONT_SIZE_PX
         } else {
             (raw as f32).clamp(8.0, 48.0)
         };
-        self.terminal
-            .update(cx, |t, cx| t.set_font_size(size, cx));
+        self.terminal.update(cx, |t, cx| t.set_font_size(size, cx));
     }
 
     /// Hook the OS appearance observer onto the main window. Called
@@ -648,11 +651,7 @@ impl AppView {
     /// enough to register the callback. Each callback fire updates
     /// `system_dark` and, if the user is on `Auto`, re-applies the
     /// skin so the chrome flips Light/Dark live.
-    pub fn attach_appearance_observer(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn attach_appearance_observer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let weak = cx.entity().downgrade();
         let sub = window.observe_window_appearance(move |window, app_cx| {
             let dark = matches!(
@@ -660,10 +659,9 @@ impl AppView {
                 gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
             );
             if let Some(strong) = weak.upgrade() {
-                strong
-                    .update(app_cx, |this, view_cx| {
-                        this.set_system_dark(dark, view_cx);
-                    });
+                strong.update(app_cx, |this, view_cx| {
+                    this.set_system_dark(dark, view_cx);
+                });
             }
         });
         self._appearance_sub = Some(sub);
@@ -678,8 +676,7 @@ impl AppView {
         }
         self.system_dark = dark;
         let settings = self.settings_bus.read(cx).current().clone();
-        let on_auto = settings.appearance.is_empty()
-            || settings.appearance.as_str() == "auto";
+        let on_auto = settings.appearance.is_empty() || settings.appearance.as_str() == "auto";
         if on_auto {
             self.apply_settings(&settings, cx);
             cx.notify();
@@ -784,7 +781,11 @@ impl AppView {
         // this the widgets stay in whatever mode `Theme::change`
         // was last called with, so picking Light leaves them
         // showing white-on-white text.
-        let mode = if dark { ThemeMode::Dark } else { ThemeMode::Light };
+        let mode = if dark {
+            ThemeMode::Dark
+        } else {
+            ThemeMode::Light
+        };
         Theme::change(mode, None, cx);
 
         // Now overlay the skin's colour + size tokens onto the
@@ -1017,10 +1018,7 @@ impl AppView {
         // timer lets the current render cycle complete first.
         cx.notify();
         cx.spawn_in(window, async move |this, cx_async| {
-            cx_async
-                .background_executor()
-                .timer(Duration::ZERO)
-                .await;
+            cx_async.background_executor().timer(Duration::ZERO).await;
             let _ = this.update_in(cx_async, |this, window, cx| {
                 // Skip if the user clicked a different row in the
                 // interim — chasing a stale selection would blow
@@ -1147,10 +1145,7 @@ impl AppView {
             local_echo: profile.local_echo,
             paste_warn_multiline: profile.paste_warn_multiline,
             paste_slow: profile.paste_slow,
-            paste_char_delay_ms: profile
-                .paste_char_delay_ms
-                .unwrap_or(10)
-                .max(0) as u32,
+            paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0) as u32,
             hex_view: profile.hex_view,
             timestamps: profile.timestamps,
             line_numbers: profile.line_numbers,
@@ -1238,9 +1233,7 @@ impl AppView {
                     break;
                 }
             }
-            weak_app
-                .update(cx, |app, cx| app.on_drain_ended(cx))
-                .ok();
+            weak_app.update(cx, |app, cx| app.on_drain_ended(cx)).ok();
         });
         self.drain_task = Some(task);
         self.serial_disconnect = Some(channels.disconnect);
@@ -1296,7 +1289,11 @@ impl AppView {
     /// Idempotent if already open — re-creates the field state so the
     /// user gets a fresh form rather than whatever they typed before.
     fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let detect = !self.settings_bus.read(cx).current().disable_driver_detection;
+        let detect = !self
+            .settings_bus
+            .read(cx)
+            .current()
+            .disable_driver_detection;
         self.editor = Some(build_editor(
             None,
             &Profile::defaults(),
@@ -1313,16 +1310,15 @@ impl AppView {
     /// values. Silently no-ops if the id has vanished from the store
     /// between row-render and click (rare; the store is the single
     /// source of truth and the sidebar re-reads it every render).
-    fn open_editor_for(
-        &mut self,
-        id: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_editor_for(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         let Some(profile) = self.profile_store.get(&id) else {
             return;
         };
-        let detect = !self.settings_bus.read(cx).current().disable_driver_detection;
+        let detect = !self
+            .settings_bus
+            .read(cx)
+            .current()
+            .disable_driver_detection;
         self.editor = Some(build_editor(
             Some(id),
             &profile,
@@ -1507,7 +1503,9 @@ impl AppView {
     /// rather than starting empty. Turning it OFF clears the list
     /// (`apply_editor_to_profile` collapses to `None` anyway).
     fn set_editor_override_highlight(&mut self, on: bool, cx: &mut Context<Self>) {
-        let Some(ed) = self.editor.as_mut() else { return };
+        let Some(ed) = self.editor.as_mut() else {
+            return;
+        };
         if ed.override_highlight_packs == on {
             return;
         }
@@ -1516,25 +1514,20 @@ impl AppView {
             // Seed with the current global pick so the override
             // doesn't silently drop highlighting on first toggle.
             let global = self.settings_bus.read(cx).current().clone();
-            ed.enabled_highlight_packs = global
-                .enabled_highlight_presets
-                .unwrap_or_else(|| {
-                    settings::Settings::default()
-                        .enabled_highlight_presets
-                        .unwrap_or_default()
-                });
+            ed.enabled_highlight_packs = global.enabled_highlight_presets.unwrap_or_else(|| {
+                settings::Settings::default()
+                    .enabled_highlight_presets
+                    .unwrap_or_default()
+            });
         }
         cx.notify();
     }
 
     /// Toggle a single pack id on the editor's per-profile list.
-    fn toggle_editor_highlight_pack(
-        &mut self,
-        id: String,
-        on: bool,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(ed) = self.editor.as_mut() else { return };
+    fn toggle_editor_highlight_pack(&mut self, id: String, on: bool, cx: &mut Context<Self>) {
+        let Some(ed) = self.editor.as_mut() else {
+            return;
+        };
         let already = ed.enabled_highlight_packs.iter().any(|p| p == &id);
         if on && !already {
             ed.enabled_highlight_packs.push(id);
@@ -1648,10 +1641,8 @@ impl AppView {
                             local_echo: profile.local_echo,
                             paste_warn_multiline: profile.paste_warn_multiline,
                             paste_slow: profile.paste_slow,
-                            paste_char_delay_ms: profile
-                                .paste_char_delay_ms
-                                .unwrap_or(10)
-                                .max(0) as u32,
+                            paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0)
+                                as u32,
                             hex_view: profile.hex_view,
                             timestamps: profile.timestamps,
                             line_numbers: profile.line_numbers,
@@ -1670,11 +1661,7 @@ impl AppView {
                     ed.error = Some(msg.clone());
                 }
                 cx.notify();
-                self.log_event(
-                    format!("Save failed: {msg}"),
-                    LogSeverity::Error,
-                    cx,
-                );
+                self.log_event(format!("Save failed: {msg}"), LogSeverity::Error, cx);
                 None
             }
         }
@@ -1775,9 +1762,8 @@ impl AppView {
                             let app = app.clone();
                             let snapshot = snapshot.clone();
                             let notif = ctx.entity();
-                            Button::new("undo-profile-delete")
-                                .label("Undo")
-                                .on_click(move |_, _window, cx| {
+                            Button::new("undo-profile-delete").label("Undo").on_click(
+                                move |_, _window, cx| {
                                     let app = app.clone();
                                     let snapshot = snapshot.clone();
                                     let notif = notif.clone();
@@ -1785,7 +1771,8 @@ impl AppView {
                                         this.restore_profile(snapshot, was_selected, view_cx);
                                     });
                                     dismiss_notification_after(notif, cx);
-                                })
+                                },
+                            )
                         })
                         // See settings_view's matching comment: the
                         // .action() builder defaults autohide to false;
@@ -1852,8 +1839,9 @@ impl AppView {
         self.sidebar_collapsed = !self.sidebar_collapsed;
         let mut next = self.settings_bus.read(cx).current().clone();
         next.sidebar_collapsed = self.sidebar_collapsed;
-        if let Err(err) =
-            self.settings_bus.update(cx, |bus, cx| bus.replace(next, cx))
+        if let Err(err) = self
+            .settings_bus
+            .update(cx, |bus, cx| bus.replace(next, cx))
         {
             log::error!("toggle_sidebar: persist failed: {err}");
         }
@@ -1907,11 +1895,14 @@ impl AppView {
         // (when restore-window-state is on) trumps this; the user
         // can always drag the window bigger and that size sticks.
         let bounds = restore_state
-            .then(|| current_settings.settings_window.as_ref().and_then(geometry_to_bounds))
+            .then(|| {
+                current_settings
+                    .settings_window
+                    .as_ref()
+                    .and_then(geometry_to_bounds)
+            })
             .flatten()
-            .unwrap_or_else(|| {
-                Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx)
-            });
+            .unwrap_or_else(|| Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx));
         let bus_for_close = self.settings_bus.clone();
         // Weak handle so the close callback can clear
         // `self.settings_window` on the AppView when the OS window
@@ -1991,9 +1982,8 @@ impl AppView {
                     });
                     true
                 });
-                let view = cx.new(|cx| {
-                    SettingsView::new(bus, skins, highlight, themes, window, cx)
-                });
+                let view =
+                    cx.new(|cx| SettingsView::new(bus, skins, highlight, themes, window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
@@ -2112,9 +2102,7 @@ impl AppView {
         self.session_overflow_open = false;
         if self.transfer_io.is_none() {
             window.push_notification(
-                Notification::error(SharedString::from(
-                    "Connect to a port before sending hex.",
-                )),
+                Notification::error(SharedString::from("Connect to a port before sending hex.")),
                 cx,
             );
             return;
@@ -2122,9 +2110,7 @@ impl AppView {
         if self.send_hex.is_some() {
             return;
         }
-        let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("02 FF AA 55")
-        });
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder("02 FF AA 55"));
         let error: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
         self.send_hex = Some(SendHexState {
@@ -2151,21 +2137,17 @@ impl AppView {
                         .flex_col()
                         .gap_3()
                         .text_size(px(13.0))
-                        .child(
-                            div().text_color(rgba(0x808080AAu32)).child(
-                                "Space-separated, compact, or 0x-prefixed — all \
+                        .child(div().text_color(rgba(0x808080AAu32)).child(
+                            "Space-separated, compact, or 0x-prefixed — all \
                                  equivalent: 02 FF AA 55, 02FFAA55, \
                                  0x02 0xFF 0xAA 0x55.",
-                            ),
-                        )
+                        ))
                         .child(Input::new(&input).appearance(true))
                         .children(live_err.map(|err| {
                             div()
                                 .text_size(px(12.0))
                                 .text_color(rgba(0xCC4444FFu32))
-                                .child(SharedString::from(format!(
-                                    "Invalid: {err}"
-                                )))
+                                .child(SharedString::from(format!("Invalid: {err}")))
                         }))
                         .child(
                             div()
@@ -2218,8 +2200,7 @@ impl AppView {
             }
             Ok(bytes) => {
                 let Some(io) = self.transfer_io.as_ref() else {
-                    *state.error.lock().unwrap() =
-                        Some("not connected".into());
+                    *state.error.lock().unwrap() = Some("not connected".into());
                     cx.notify();
                     return;
                 };
@@ -2383,15 +2364,15 @@ impl AppView {
         // progress dialog we're about to open.
         window.close_dialog(cx);
 
-        let Some(io) = self.transfer_io.as_ref() else { return };
+        let Some(io) = self.transfer_io.as_ref() else {
+            return;
+        };
 
         let data = match std::fs::read(&path) {
             Ok(d) => d,
             Err(err) => {
                 window.push_notification(
-                    Notification::error(SharedString::from(format!(
-                        "Couldn't read file: {err}"
-                    ))),
+                    Notification::error(SharedString::from(format!("Couldn't read file: {err}"))),
                     cx,
                 );
                 return;
@@ -2420,10 +2401,9 @@ impl AppView {
         let (result_tx, result_rx) = flume::bounded::<TransferResult>(1);
 
         let progress_arc = sent.clone();
-        let progress_fn: transfer::ProgressFn =
-            std::sync::Arc::new(move |s, _t| {
-                progress_arc.store(s, std::sync::atomic::Ordering::Relaxed);
-            });
+        let progress_fn: transfer::ProgressFn = std::sync::Arc::new(move |s, _t| {
+            progress_arc.store(s, std::sync::atomic::Ordering::Relaxed);
+        });
         let opts = transfer::Options {
             progress: Some(progress_fn),
             cancel: Some(cancel.clone()),
@@ -2441,9 +2421,7 @@ impl AppView {
                 let mut reader = ChannelReader::new(in_rx);
                 let mut writer = ChannelWriter::new(writer_tx);
                 let result = match variant {
-                    Some(v) => {
-                        transfer::send_xmodem(&mut reader, &mut writer, &data, v, &opts)
-                    }
+                    Some(v) => transfer::send_xmodem(&mut reader, &mut writer, &data, v, &opts),
                     None => transfer::send_ymodem(
                         &mut reader,
                         &mut writer,
@@ -2611,9 +2589,7 @@ impl AppView {
             }
             TransferResult::Err(msg) => {
                 window.push_notification(
-                    Notification::error(SharedString::from(format!(
-                        "Transfer failed: {msg}"
-                    ))),
+                    Notification::error(SharedString::from(format!("Transfer failed: {msg}"))),
                     cx,
                 );
             }
@@ -2633,8 +2609,12 @@ impl AppView {
             prompt: Some("Choose a file to send".into()),
         });
         cx.spawn(async move |this, cx| {
-            let Ok(Ok(Some(paths))) = receiver.await else { return };
-            let Some(path) = paths.into_iter().next() else { return };
+            let Ok(Ok(Some(paths))) = receiver.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
             let _ = this.update(cx, |this, cx| {
                 if let Some(state) = this.send_file.as_ref() {
                     *state.selected_path.lock().unwrap() = Some(path);
@@ -2651,7 +2631,9 @@ impl AppView {
     /// the picker dialog is done inside `kick_off_transfer` (it
     /// reuses the same dialog slot for the progress UI).
     fn send_file_confirm(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = self.send_file.take() else { return };
+        let Some(state) = self.send_file.take() else {
+            return;
+        };
         let path = state.selected_path.lock().unwrap().clone();
         let Some(path) = path else {
             // No file picked yet — restore state instead of leaving
@@ -2686,9 +2668,8 @@ impl AppView {
     /// starts disconnected with a blank terminal.
     fn open_new_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
-        let new_terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
-        });
+        let new_terminal =
+            cx.new(|cx| TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx));
         if let Err(err) = open_app_window(
             cx,
             WindowInit::Fresh(new_terminal),
@@ -2711,9 +2692,8 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
-        let new_terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
-        });
+        let new_terminal =
+            cx.new(|cx| TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx));
         if let Err(err) = open_app_window(
             cx,
             WindowInit::FreshAutoConnect {
@@ -2740,10 +2720,7 @@ impl AppView {
         pos: gpui::Point<gpui::Pixels>,
         cx: &mut Context<Self>,
     ) {
-        self.profile_context_menu = Some(ProfileContextMenu {
-            profile_id,
-            pos,
-        });
+        self.profile_context_menu = Some(ProfileContextMenu { profile_id, pos });
         cx.notify();
     }
 
@@ -2783,11 +2760,7 @@ impl AppView {
     /// re-applies the palette so chrome that depends on the
     /// connected profile (status dot, header, status bar text)
     /// reflects the moved session immediately.
-    pub fn install_session(
-        &mut self,
-        bundle: SessionBundle,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn install_session(&mut self, bundle: SessionBundle, cx: &mut Context<Self>) {
         self.terminal = bundle.terminal;
         self.drain_task = bundle.drain_task;
         self.serial_disconnect = Some(bundle.serial_disconnect);
@@ -2818,9 +2791,7 @@ impl AppView {
     pub(crate) fn suspend_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Only meaningful when actually connected. Reconnecting
         // counts: the user might want to suspend during a flap.
-        if self.connected_profile_id.is_none()
-            && self.auto_reconnect_for.is_none()
-        {
+        if self.connected_profile_id.is_none() && self.auto_reconnect_for.is_none() {
             return;
         }
         if self.suspended {
@@ -2841,11 +2812,7 @@ impl AppView {
             }
         }
         cx.notify();
-        self.log_event(
-            "Session kept alive in background",
-            LogSeverity::Info,
-            cx,
-        );
+        self.log_event("Session kept alive in background", LogSeverity::Info, cx);
     }
 
     /// Resume a suspended session. Closes any open editor (matching
@@ -2868,7 +2835,9 @@ impl AppView {
     /// actual `write_data_terminal_ready` call happens on the write
     /// thread the next time it wakes (worst case ~50ms later).
     pub(crate) fn toggle_dtr(&mut self, cx: &mut Context<Self>) {
-        let Some(io) = self.transfer_io.as_ref() else { return };
+        let Some(io) = self.transfer_io.as_ref() else {
+            return;
+        };
         let next = !self.dtr_asserted;
         if io
             .control_tx
@@ -2880,7 +2849,11 @@ impl AppView {
         }
         self.dtr_asserted = next;
         self.log_event(
-            if next { "DTR asserted" } else { "DTR deasserted" },
+            if next {
+                "DTR asserted"
+            } else {
+                "DTR deasserted"
+            },
             LogSeverity::Info,
             cx,
         );
@@ -2889,7 +2862,9 @@ impl AppView {
 
     /// Flip the live RTS line. Mirror of `toggle_dtr`.
     pub(crate) fn toggle_rts(&mut self, cx: &mut Context<Self>) {
-        let Some(io) = self.transfer_io.as_ref() else { return };
+        let Some(io) = self.transfer_io.as_ref() else {
+            return;
+        };
         let next = !self.rts_asserted;
         if io
             .control_tx
@@ -2901,7 +2876,11 @@ impl AppView {
         }
         self.rts_asserted = next;
         self.log_event(
-            if next { "RTS asserted" } else { "RTS deasserted" },
+            if next {
+                "RTS asserted"
+            } else {
+                "RTS deasserted"
+            },
             LogSeverity::Info,
             cx,
         );
@@ -2965,11 +2944,7 @@ impl AppView {
     /// Paste the system clipboard into the terminal. Routed from
     /// the global `TerminalPaste` action (Cmd+V / Ctrl+V /
     /// Ctrl+Shift+V) and from the right-click menu.
-    pub(crate) fn shortcut_terminal_paste(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn shortcut_terminal_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let terminal = self.terminal.clone();
         terminal.update(cx, |t, cx| t.paste_clipboard(window, cx));
     }
@@ -3070,8 +3045,9 @@ impl AppView {
             return;
         }
         next.font_size = target;
-        if let Err(err) =
-            self.settings_bus.update(cx, |bus, cx| bus.replace(next, cx))
+        if let Err(err) = self
+            .settings_bus
+            .update(cx, |bus, cx| bus.replace(next, cx))
         {
             self.log_event(
                 format!("Font size update failed: {err}"),
@@ -3080,11 +3056,7 @@ impl AppView {
             );
             return;
         }
-        self.log_event(
-            format!("Font size: {target}"),
-            LogSeverity::Info,
-            cx,
-        );
+        self.log_event(format!("Font size: {target}"), LogSeverity::Info, cx);
     }
 
     /// Move the live serial session out of this window into a freshly
@@ -3093,18 +3065,14 @@ impl AppView {
     /// window comes up already connected with the same terminal
     /// contents (scrollback included), the same OS thread, and any
     /// in-flight file transfer intact.
-    fn move_session_to_new_window(
-        &mut self,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(bundle) = self.extract_session() else { return };
+    fn move_session_to_new_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(bundle) = self.extract_session() else {
+            return;
+        };
         // Replace this window's terminal with a blank one so the
         // source view doesn't render someone else's connected grid.
         let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
-        self.terminal = cx.new(|cx| {
-            TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx)
-        });
+        self.terminal = cx.new(|cx| TerminalView::new(24, 80, Palette::baudrun(), scrollback, cx));
         cx.notify();
 
         if let Err(err) = open_app_window(
@@ -3123,478 +3091,8 @@ impl AppView {
             );
             return;
         }
-        self.log_event(
-            "Session moved to new window",
-            LogSeverity::Info,
-            cx,
-        );
+        self.log_event("Session moved to new window", LogSeverity::Info, cx);
     }
-}
-
-/// `⋯` button + drop-down menu rendered inline in the session
-/// header. The container is `relative` so the menu (positioned
-/// `absolute` below) anchors to it; `deferred` puts the panel above
-/// other toolbar siblings in paint order.
-fn session_overflow_button(
-    s: SkinTokens,
-    open: bool,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    // `--shadow-floating` from the active skin for the popup
-    // panel below. Empty (skin sets `"none"` or doesn't declare)
-    // falls through to the hardcoded `shadow_md()` so flush-
-    // edged skins keep their existing soft drop shadow.
-    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
-    let panel: Option<gpui::AnyElement> = if open {
-        Some(
-            deferred(
-                // Two-layer paint: opaque `bg_window` base + the
-                // translucent skin overlay on top. See the matching
-                // comment in `profile_context_menu_overlay` — same
-                // see-through issue when a popup floats over the
-                // terminal viewport instead of sitting inside the
-                // layered chrome.
-                div()
-                    .absolute()
-                    .top_full()
-                    .right_0()
-                    .mt_1()
-                    .min_w(px(180.0))
-                    .bg(rgba(s.bg_window))
-                    .border_1()
-                    .border_color(rgba(s.border_subtle))
-                    .rounded(px(s.radius_md))
-                    .map(|this| {
-                        if shadow_floating.is_empty() {
-                            this.shadow_md()
-                        } else {
-                            this.shadow(shadow_floating.clone())
-                        }
-                    })
-                    .child(
-                        div()
-                            .w_full()
-                            .bg(rgba(s.bg_panel))
-                            .rounded(px(s.radius_md))
-                            .py_1()
-                            .child(profile_menu_item(
-                                s,
-                                "Send Break",
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.send_break_now(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                "Send Hex\u{2026}",
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.open_send_hex(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                "Send File\u{2026}",
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.start_send_file(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                "Move to New Window",
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.move_session_to_new_window(window, cx);
-                                }),
-                            )),
-                    ),
-            )
-            .into_any_element(),
-        )
-    } else {
-        None
-    };
-    div()
-        .relative()
-        .child(
-            div()
-                .id("session-overflow-btn")
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(rgba(s.border_subtle))
-                .bg(rgba(s.bg_input))
-                .text_color(rgba(s.fg_primary))
-                .text_size(px(13.0))
-                .cursor_pointer()
-                .hover(move |st| st.bg(rgba(s.bg_hover)))
-                .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from("More actions"))
-                        .build(window, cx)
-                })
-                .child("\u{22EF}")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _, cx| {
-                        // Without `stop_propagation`, the AppView
-                        // root's mouse-up listener (which dismisses
-                        // any open popup) fires immediately after
-                        // and closes the menu we just opened.
-                        cx.stop_propagation();
-                        this.toggle_session_overflow(cx);
-                    }),
-                ),
-        )
-        .children(panel)
-}
-
-/// Stable id used as the YMODEM Select option (the default pick).
-const YMODEM_PROTOCOL_ID: &str = "ymodem";
-
-/// Option list for the Send file dialog's Protocol select. Order +
-/// labels mirror the Tauri dialog so the muscle memory transfers.
-fn transfer_protocol_opts() -> Vec<Opt> {
-    vec![
-        Opt::new(
-            YMODEM_PROTOCOL_ID,
-            "YMODEM \u{2014} 1024-byte blocks with filename + size",
-        ),
-        Opt::new(
-            "xmodem-crc",
-            "XMODEM-CRC \u{2014} 128-byte blocks with CRC-16",
-        ),
-        Opt::new(
-            "xmodem-1k",
-            "XMODEM-1K \u{2014} 1024-byte blocks with CRC-16",
-        ),
-        Opt::new(
-            "xmodem-classic",
-            "XMODEM-Classic \u{2014} 128-byte blocks with checksum",
-        ),
-    ]
-}
-
-/// Small uppercase-ish field label above an input row.
-fn send_file_field_label(label: &'static str) -> gpui::Div {
-    div()
-        .text_size(px(11.0))
-        .text_color(rgba(0x808080CCu32))
-        .child(label)
-}
-
-/// Read-only path display — input-styled pill that shows the chosen
-/// filename (or a muted "No file selected" placeholder).
-fn send_file_path_pill(label: String) -> gpui::Div {
-    let placeholder = label.is_empty();
-    let text: SharedString = if placeholder {
-        SharedString::from("No file selected")
-    } else {
-        SharedString::from(label)
-    };
-    div()
-        .flex_1()
-        .px_3()
-        .py(px(6.0))
-        .rounded_md()
-        .border_1()
-        .border_color(rgba(0x80808055u32))
-        .bg(rgba(0x80808014u32))
-        .text_size(px(13.0))
-        .text_color(rgba(if placeholder {
-            0x808080AAu32
-        } else {
-            0xE4E4E7FFu32
-        }))
-        .child(text)
-}
-
-/// "Choose…" — secondary pill button next to the path display.
-fn send_file_choose_button<F>(on_click: F) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    div()
-        .px_3()
-        .py(px(6.0))
-        .rounded_md()
-        .border_1()
-        .border_color(rgba(0x80808055u32))
-        .bg(rgba(0x80808022u32))
-        .text_size(px(13.0))
-        .cursor_pointer()
-        .hover(|st| st.bg(rgba(0x4DA6FF22u32)))
-        .child("Choose\u{2026}")
-        .on_mouse_up(MouseButton::Left, on_click)
-}
-
-/// Cancel-style button at the bottom of the dialog. Quiet styling
-/// (matches Tauri's secondary button) so it doesn't compete with
-/// the primary Send button.
-fn send_file_secondary_button<F>(label: &'static str, on_click: F) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    div()
-        .px_4()
-        .py(px(6.0))
-        .rounded_md()
-        .border_1()
-        .border_color(rgba(0x80808055u32))
-        .text_size(px(13.0))
-        .cursor_pointer()
-        .hover(|st| st.bg(rgba(0x80808033u32)))
-        .child(label)
-        .on_mouse_up(MouseButton::Left, on_click)
-}
-
-/// Send-style primary button. Disabled state (when `enabled` is
-/// false) still renders but ignores clicks and dims out, matching
-/// Tauri's "you must pick a file first" affordance.
-fn send_file_primary_button<F>(label: &'static str, enabled: bool, on_click: F) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    let text_color = if enabled { 0xFFFFFFFFu32 } else { 0xFFFFFFAAu32 };
-    let bg = if enabled { 0x4DA6FFFFu32 } else { 0x4DA6FF66u32 };
-    let mut btn = div()
-        .px_4()
-        .py(px(6.0))
-        .rounded_md()
-        .bg(rgba(bg))
-        .text_size(px(13.0))
-        .text_color(rgba(text_color))
-        .child(label);
-    if enabled {
-        btn = btn.cursor_pointer().on_mouse_up(MouseButton::Left, on_click);
-    }
-    btn
-}
-
-/// Bundle of live serial-session state that can be moved from one
-/// window's `AppView` to another. Captures everything the source
-/// AppView held about the live connection — the TerminalView entity
-/// (bytes already on screen and in scrollback), the OS-side
-/// disconnect token, the read-loop drain task, transfer I/O, and
-/// any in-flight transfer + auto-reconnect bookkeeping. Built by
-/// [`AppView::extract_session`] on the source side and consumed by
-/// [`AppView::install_session`] on the destination side.
-pub struct SessionBundle {
-    terminal: Entity<TerminalView>,
-    drain_task: Option<Task<()>>,
-    serial_disconnect: serial_io::Disconnect,
-    transfer_io: TransferIo,
-    transfer: Option<TransferState>,
-    connected_profile_id: String,
-    auto_reconnect_for: Option<String>,
-    auto_reconnect_task: Option<Task<()>>,
-    last_highlight_sig: Option<Vec<(String, String, bool)>>,
-}
-
-/// What kind of window to open via [`open_app_window`]. `Fresh`
-/// takes a caller-built TerminalView (so main.rs can still hold the
-/// handle for the CLI serial-port attach path) and lands on the
-/// welcome screen. `WithSession` accepts a moved [`SessionBundle`]
-/// and installs it after construction so the destination window
-/// comes up already connected, with the source window's terminal
-/// contents intact. `FreshAutoConnect` opens a fresh window and
-/// immediately connects to a named profile — used by the
-/// right-click "Connect in New Window" path on the sidebar.
-pub enum WindowInit {
-    Fresh(Entity<TerminalView>),
-    // Boxed to keep `WindowInit`'s stack footprint small —
-    // SessionBundle carries the whole live-session state machine
-    // (terminal entity, serial channels, transfer state, …) so
-    // inlining it bloats the other variants too.
-    WithSession(Box<SessionBundle>),
-    FreshAutoConnect {
-        terminal: Entity<TerminalView>,
-        profile_id: String,
-    },
-}
-
-/// Open a new top-level Baudrun window with a fresh `AppView`. The
-/// stores + `SettingsBus` are shared (cloned `Rc`/`Entity`) so each
-/// window's settings live-update in lockstep with the others, but
-/// the `TerminalView`, sidebar, profile editor, and transfer state
-/// are per-window — connecting in one window doesn't touch the
-/// terminal in another. Used both at startup (one window) and from
-/// `AppView::open_new_window` / `move_session_to_new_window`.
-/// Convert a saved geometry record into the bounds shape
-/// `WindowOptions` wants. Returns `None` when the saved record is
-/// missing dimensions — caller falls back to the centered default.
-fn geometry_to_bounds(g: &settings::WindowGeometry) -> Option<Bounds<Pixels>> {
-    if g.width <= 0 || g.height <= 0 {
-        return None;
-    }
-    Some(Bounds {
-        origin: gpui::point(px(g.x as f32), px(g.y as f32)),
-        size: gpui::size(px(g.width as f32), px(g.height as f32)),
-    })
-}
-
-/// Snapshot the live window bounds into the serializable form used
-/// for on-disk persistence. Float pixels round-trip to `i32` since
-/// the underlying OS APIs all return integer-pixel rects anyway.
-fn bounds_to_geometry(b: Bounds<Pixels>) -> settings::WindowGeometry {
-    settings::WindowGeometry {
-        x: f32::from(b.origin.x) as i32,
-        y: f32::from(b.origin.y) as i32,
-        width: f32::from(b.size.width) as i32,
-        height: f32::from(b.size.height) as i32,
-    }
-}
-
-/// Universal macOS traffic-light position used for every window
-/// we open. `(16, 16)` is a compromise between the two layouts:
-///
-///   - Floating-card skins (macOS-26): the lights sit visibly
-///     inset into the sidebar card's top-left rather than hugging
-///     the very window corner. (16, 16) clears the 18px sidebar
-///     `panel_radius` curve.
-///   - Flush-edged skins (every other built-in): the lights sit
-///     within the 34px in-flex title-bar strip — at y=16 they're
-///     roughly centered vertically (lights are ~12px tall, so
-///     they span y=16-28 within the strip).
-///
-/// We don't resolve per-skin because gpui's macOS backend only
-/// reads `WindowOptions.titlebar.traffic_light_position` at window
-/// creation — there's no runtime setter to react to a live skin
-/// swap. One fixed position keeps the lights from getting stuck in
-/// the wrong spot when a user switches between flush and floating-
-/// card skins without restarting.
-const TRAFFIC_LIGHT_POSITION_PX: f32 = 16.0;
-
-pub fn open_app_window(
-    cx: &mut gpui::App,
-    init: WindowInit,
-    profile_store: Rc<profiles::Store>,
-    settings_bus: Entity<SettingsBus>,
-    skins_store: Rc<skins::Store>,
-    highlight_store: Rc<highlight::Store>,
-    themes_store: Rc<themes::Store>,
-) -> gpui::Result<WindowHandle<Root>> {
-    let current_settings = settings_bus.read(cx).current().clone();
-    let restore_state = !current_settings.disable_window_state_restore;
-    let bounds = restore_state
-        .then(|| current_settings.main_window.as_ref().and_then(geometry_to_bounds))
-        .flatten()
-        .unwrap_or_else(|| {
-            Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx)
-        });
-    let settings_bus_for_close = settings_bus.clone();
-    cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            // `appears_transparent` + `traffic_light_position`
-            // come from `TitleBar::title_bar_options()`; we
-            // preserve `title` so the OS taskbar / dock /
-            // window-list still labels the window. The custom
-            // `TitleBar` widget (added at the top of the AppView
-            // render) draws the visible chrome — on macOS the
-            // native title bar paints transparently so the
-            // traffic lights float over the widget; on
-            // Windows / Linux the native chrome is hidden and
-            // the widget draws its own min/max/close controls.
-            // Required for GNOME-Wayland, where the compositor
-            // refuses xdg-decoration and a server-side title bar
-            // is never rendered.
-            titlebar: Some(TitlebarOptions {
-                title: Some("Baudrun".into()),
-                // Fixed (16, 16) for every skin — see
-                // `TRAFFIC_LIGHT_POSITION_PX`. macOS doesn't let
-                // gpui re-position the lights at runtime, so we
-                // can't track skin swaps live; one universal
-                // position avoids stuck-in-the-wrong-place lights
-                // when the user changes skins without restarting.
-                traffic_light_position: Some(gpui::point(
-                    px(TRAFFIC_LIGHT_POSITION_PX),
-                    px(TRAFFIC_LIGHT_POSITION_PX),
-                )),
-                ..TitleBar::title_bar_options()
-            }),
-            // app_id matches `StartupWMClass=Baudrun` in
-            // packaging/linux/baudrun.desktop so GNOME / KDE can
-            // associate the live window with the installed
-            // .desktop entry and show the Baudrun dock / taskbar
-            // icon. No-op on macOS (CFBundleIdentifier handles
-            // this) and on Windows (PE resource icon).
-            app_id: Some("Baudrun".into()),
-            ..Default::default()
-        },
-        move |window, cx| {
-            // Resize hit-test margin for the WM/compositor. See the
-            // matching comment in `AppView::open_settings_window`
-            // — fixes the unreachably-thin diagonal resize zone on
-            // Linux Wayland client-side decorations. No-op on
-            // macOS / Windows.
-            window.set_client_inset(px(10.0));
-            // Snapshot bounds when the OS asks the window to close.
-            // Reads the live `disable_window_state_restore` flag so a
-            // user who turned the feature off after open doesn't get
-            // their pin overwritten on quit.
-            window.on_window_should_close(cx, move |window, cx| {
-                let geom = bounds_to_geometry(window.bounds());
-                settings_bus_for_close.update(cx, |bus, cx| {
-                    let mut next = bus.current().clone();
-                    if !next.disable_window_state_restore {
-                        next.main_window = Some(geom);
-                        if let Err(err) = bus.replace(next, cx) {
-                            log::error!("save window state: {err}");
-                        }
-                    }
-                });
-                true
-            });
-            // Snapshot the OS appearance for the picker's "Auto" pick;
-            // the appearance observer below picks up live changes.
-            let system_dark = matches!(
-                window.appearance(),
-                gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark
-            );
-            let (terminal, session, auto_connect_id) = match init {
-                WindowInit::Fresh(t) => (t, None, None),
-                WindowInit::WithSession(bundle) => {
-                    // Unbox here so downstream `install_session`
-                    // doesn't need to know about the Box; the
-                    // variant's box exists purely to keep
-                    // `WindowInit`'s stack footprint small.
-                    let bundle = *bundle;
-                    (bundle.terminal.clone(), Some(bundle), None)
-                }
-                WindowInit::FreshAutoConnect {
-                    terminal,
-                    profile_id,
-                } => (terminal, None, Some(profile_id)),
-            };
-            let app_view = cx.new(|cx| {
-                AppView::new(
-                    terminal,
-                    profile_store,
-                    settings_bus,
-                    skins_store,
-                    highlight_store,
-                    themes_store,
-                    system_dark,
-                    cx,
-                )
-            });
-            app_view.update(cx, |this, view_cx| {
-                this.attach_appearance_observer(window, view_cx);
-                if let Some(bundle) = session {
-                    this.install_session(bundle, view_cx);
-                }
-                if let Some(id) = auto_connect_id {
-                    if let Some(profile) = this.profile_store.get(&id) {
-                        this.connect_to(profile, view_cx);
-                    } else {
-                        log::warn!(
-                            "auto-connect: profile {id:?} not found in store"
-                        );
-                    }
-                }
-            });
-            cx.new(|cx| Root::new(app_view, window, cx))
-        },
-    )
 }
 
 impl Render for AppView {
@@ -3605,7 +3103,10 @@ impl Render for AppView {
         // right-pane wrapper can call `.shadow(...)` without
         // re-borrowing `cx`. Empty Vec (skin sets `"none"` or
         // doesn't declare) → no shadow painted.
-        let shadow_panel = cx.global::<skin_tokens::SkinShadows>().panel_overlay.clone();
+        let shadow_panel = cx
+            .global::<skin_tokens::SkinShadows>()
+            .panel_overlay
+            .clone();
         // Amber-dot trigger for the sidebar gear icon. `true` when
         // the boot-time update check (`crate::updater`) found a
         // newer release AND the user hasn't already dismissed
@@ -3665,8 +3166,7 @@ impl Render for AppView {
         // True when we're showing the terminal off the reconnect
         // stand-in rather than a live session — drives the amber
         // dot and the "Reconnecting…" labels.
-        let reconnecting =
-            self.connected_profile_id.is_none() && self.auto_reconnect_for.is_some();
+        let reconnecting = self.connected_profile_id.is_none() && self.auto_reconnect_for.is_some();
         let has_profiles = !self.profile_store.list().is_empty();
         let right_pane: gpui::AnyElement = match self.editor.as_ref() {
             Some(editor) => {
@@ -3689,8 +3189,7 @@ impl Render for AppView {
                 // terminal viewport.
                 let show_resume = self.suspended
                     && editor.profile_id.is_some()
-                    && editor.profile_id.as_deref()
-                        == self.connected_profile_id.as_deref();
+                    && editor.profile_id.as_deref() == self.connected_profile_id.as_deref();
                 let form = form_pane(render, packs, global_enabled, show_resume, cx);
                 if show_resume {
                     // Wrap so the banner stacks above the form.
@@ -3716,12 +3215,8 @@ impl Render for AppView {
                 // Suspended with no editor open — render the
                 // placeholder so the terminal viewport stays
                 // hidden until the user explicitly resumes.
-                suspended_pane(
-                    s,
-                    connected_profile.clone().expect("checked is_some"),
-                    cx,
-                )
-                .into_any_element()
+                suspended_pane(s, connected_profile.clone().expect("checked is_some"), cx)
+                    .into_any_element()
             }
             None => match connected_profile.clone() {
                 Some(profile) => {
@@ -3760,9 +3255,10 @@ impl Render for AppView {
         // render time so a fresh edit session doesn't show a
         // stale value. `None` for the editor key means "no editor
         // open" — the status bar uses its other arms in that case.
-        let editor_name: Option<String> = self.editor.as_ref().map(|e| {
-            e.name.read(cx).value().to_string()
-        });
+        let editor_name: Option<String> = self
+            .editor
+            .as_ref()
+            .map(|e| e.name.read(cx).value().to_string());
         // Connected profile lookup is reused from above (right_pane
         // computed it for the session header). Cloned for the
         // status bar so both renders can use it.
@@ -4292,1089 +3788,6 @@ impl Render for AppView {
     }
 }
 
-/// Build the deferred + anchored overlay that renders the profile-
-/// row right-click context menu. Returns `None` when no menu is
-/// open. Lives outside `Render::render` to keep the body readable.
-fn profile_context_menu_overlay(
-    app: &AppView,
-    cx: &mut Context<AppView>,
-) -> Option<gpui::AnyElement> {
-    let menu = app.profile_context_menu.as_ref()?;
-    let s = *cx.global::<SkinTokens>();
-    let profile_id = menu.profile_id.clone();
-    let pos = menu.pos;
-    // When the right-clicked profile is the one this window is
-    // already connected to, "Connect in New Window" would either
-    // race the existing session for the same port or quietly steal
-    // it. Surface "Move to New Window" instead, reusing the same
-    // detach/install_session machinery the toolbar Detach button
-    // already drives.
-    let is_connected_row =
-        app.connected_profile_id.as_deref() == Some(profile_id.as_str());
-
-    let item: gpui::Div = if is_connected_row {
-        profile_menu_item(
-            s,
-            "Move Session to New Window",
-            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
-                this.profile_context_menu = None;
-                this.move_session_to_new_window(window, cx);
-            }),
-        )
-    } else {
-        profile_menu_item(
-            s,
-            "Connect in New Window",
-            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
-                let id = profile_id.clone();
-                this.profile_context_menu = None;
-                this.connect_profile_in_new_window(id, window, cx);
-            }),
-        )
-    };
-
-    // Two-layer paint: opaque `bg_window` base, then the
-    // translucent `bg_panel` skin overlay on top — same frosted
-    // look the sidebar / main pane use, except this popup floats
-    // in `deferred(anchored(...))` so there's no opaque chrome
-    // beneath it. Without the base layer the menu sees right
-    // through to whatever's anchored under (terminal grid, editor
-    // pane, sidebar) and the text bleeds into the content
-    // behind. Border + shadow stay on the outer wrapper so they
-    // hug the popup outline. `--shadow-floating` from the active
-    // skin overrides `shadow_md()` when present.
-    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
-    let panel = div()
-        .min_w(px(220.0))
-        .bg(rgba(s.bg_window))
-        .border_1()
-        .border_color(rgba(s.border_subtle))
-        .rounded(px(s.radius_md))
-        .map(|this| {
-            if shadow_floating.is_empty() {
-                this.shadow_md()
-            } else {
-                this.shadow(shadow_floating.clone())
-            }
-        })
-        .child(
-            div()
-                .w_full()
-                .bg(rgba(s.bg_panel))
-                .rounded(px(s.radius_md))
-                .py_1()
-                .child(item),
-        );
-    Some(deferred(anchored().position(pos).child(panel)).into_any_element())
-}
-
-/// One row inside the profile right-click menu. Plain hover-styled
-/// div — keeping it hand-rolled rather than reaching for
-/// gpui-component's PopupMenu (which routes through the Action
-/// system) since we have a single click handler that already needs
-/// the per-row profile id baked in.
-fn profile_menu_item<F>(
-    s: SkinTokens,
-    label: &'static str,
-    on_click: F,
-) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    let hover_bg = s.bg_hover;
-    div()
-        .px_3()
-        .py(px(6.0))
-        .text_size(px(13.0))
-        .text_color(rgba(s.fg_primary))
-        .cursor_pointer()
-        .hover(move |st| st.bg(rgba(hover_bg)))
-        .child(label)
-        .on_mouse_up(MouseButton::Left, on_click)
-}
-
-/// Idle splash screen — shown when the app is launched with no
-/// connected profile and the user hasn't opened the editor yet.
-/// Mirrors the Tauri version's "no terminal until you pick a
-/// profile" default. Wording adapts to whether any profiles
-/// exist: with profiles, prompt to pick one; without, prompt to
-/// click the `+` to create one.
-/// Thin banner at the top of the editor when the connected profile
-/// is being viewed while suspended. Click Resume to switch back to
-/// the live terminal viewport.
-fn suspended_banner(
-    s: SkinTokens,
-    _cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    // Banner is a passive reminder — no Resume button. The two
-    // ways to resume are still wired:
-    //   * click the connected profile row in the sidebar
-    //     (handled by `select_profile` at the suspended branch
-    //     around line 960).
-    //   * close the editor by other means (Escape, ⋯ → Discard).
-    // The footer pill the suspend action fires
-    // ("Session kept alive in background") gives the initial
-    // confirmation; this banner is the steady-state reminder
-    // for as long as the editor is on screen.
-    div()
-        .w_full()
-        .px_4()
-        .py_2()
-        .bg(rgba(s.bg_active))
-        .border_b_1()
-        .border_color(rgba(s.border_subtle))
-        // Floating-card skins (`panel_radius_px > 0`) — macOS 26,
-        // Tokyo Night, etc. — wrap the right pane in a rounded
-        // container with `overflow_hidden`, but gpui's
-        // `overflow_hidden` clips to the bounding box, not the
-        // rounded shape. The banner's `bg_active` rectangle would
-        // poke past the wrapper's rounded curve as visible sharp
-        // top corners. Round our own top corners to match so the
-        // banner's fill ends inside the panel's curve. Bottom stays
-        // sharp because the form pane continues immediately below.
-        .when(s.panel_radius_px > 0.0, |this| {
-            let r = px(s.panel_radius_px);
-            this.rounded_tl(r).rounded_tr(r)
-        })
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(rgba(s.fg_primary))
-                .child("Session suspended"),
-        )
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgba(s.fg_secondary))
-                .child("Port still open. Bytes keep flowing into scrollback."),
-        )
-}
-
-/// Right-pane placeholder shown when the session is suspended and
-/// no editor is open. Shows the connected profile's name + port and
-/// a Resume button so the user has a one-click way back to the
-/// live terminal.
-fn suspended_pane(
-    s: SkinTokens,
-    profile: Profile,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let port_line = if profile.port_name.is_empty() {
-        "(no port)".to_string()
-    } else {
-        format!("{} @ {}", profile.port_name, profile.baud_rate)
-    };
-    // See the matching comment in `welcome_pane`: skip the bg
-    // when the floating-card wrapper is painting it.
-    let paint_bg = s.panel_radius_px == 0.0;
-    div()
-        .flex_1()
-        .w_full()
-        .h_full()
-        .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap_3()
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgba(s.fg_tertiary))
-                .child("SESSION SUSPENDED"),
-        )
-        .child(
-            div()
-                .text_size(px(20.0))
-                .text_color(rgba(s.fg_primary))
-                .child(profile.name.clone()),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(rgba(s.fg_secondary))
-                .child(port_line),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(rgba(s.fg_tertiary))
-                .child("Port stays open; bytes keep flowing into scrollback."),
-        )
-        .child(primary_button(s, "Resume").on_mouse_up(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                this.resume_session(window, cx);
-            }),
-        ))
-}
-
-/// Body content for the About dialog: app name, version, one-line
-/// description, copyright, and a GitHub link. The Dialog wrapper
-/// supplies the title bar and Close button; we just hand back the
-/// flex column that sits below the title.
-fn about_dialog_body() -> impl IntoElement {
-    const GITHUB_URL: &str = "https://github.com/packetThrower/Baudrun";
-    let version = env!("CARGO_PKG_VERSION");
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .pt_2()
-        .child(
-            div()
-                .text_xl()
-                .font_weight(gpui::FontWeight::BOLD)
-                .child("Baudrun"),
-        )
-        .child(
-            div()
-                .text_sm()
-                .opacity(0.75)
-                .child(format!("Version {version} (prototype)")),
-        )
-        .child(
-            // Tagline pulls from the same source-of-truth as
-            // Cargo.toml's `description` so a future product-copy
-            // change doesn't have to remember to update two files.
-            div()
-                .text_sm()
-                .child(env!("CARGO_PKG_DESCRIPTION").to_string()),
-        )
-        .child(
-            div()
-                .text_sm()
-                .opacity(0.65)
-                .child("© 2025–2026 packetThrower / Baudrun contributors"),
-        )
-        .child(
-            div()
-                .id("about-github-link")
-                .text_sm()
-                .text_color(gpui::rgba(0x3b82f6ffu32))
-                .cursor_pointer()
-                .hover(|s| s.text_color(gpui::rgba(0x60a5faffu32)))
-                .on_click(|_evt, _window, cx| cx.open_url(GITHUB_URL))
-                .child("View on GitHub"),
-        )
-}
-
-/// Turn a `serialport::Error` from the open path into a string the
-/// UI can render directly. On Linux a permission-denied error is
-/// almost always a missing-udev-rule / dialout-group situation,
-/// so we append a concrete fix-up hint there rather than just
-/// showing the bare "Permission denied" text — the same enrich
-/// the legacy `data::serial::session::enrich_open_error` did,
-/// but at the right call site for the live serial-io path.
-fn friendly_open_error(port: &str, err: &serialport::Error) -> String {
-    let base = err.to_string();
-    #[cfg(target_os = "linux")]
-    {
-        let is_perm = matches!(err.kind(), serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied))
-            || base.to_ascii_lowercase().contains("permission denied");
-        if is_perm {
-            return format!(
-                "open {port}: {base} — your user can't access this serial port. \
-                 Fix: install Baudrun's udev rule (already done if you used the \
-                 .deb / .rpm / .pkg.tar.zst installer; rerun the installer if it \
-                 didn't take), then unplug + replug the USB adapter. \
-                 As a one-off workaround: `sudo chmod 666 {port}` opens it for \
-                 the current plug-in. The legacy dialout-group flow \
-                 (`sudo usermod -aG dialout $USER` + log out + log in) also \
-                 works."
-            );
-        }
-    }
-    format!("open {port}: {base}")
-}
-
-fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
-    let prompt = if has_profiles {
-        "Pick a profile from the sidebar to start a session."
-    } else {
-        "Click the + above the profile list to create one."
-    };
-    // Paint `bg_main` here only when the AppView right-pane
-    // wrapper isn't already doing so. Floating-card skins
-    // (panel_radius_px > 0) get the bg from the wrapper which
-    // also handles the rounded clip; flush-edged skins still
-    // need the welcome pane itself to lay down the overlay.
-    let paint_bg = s.panel_radius_px == 0.0;
-    div()
-        .flex_1()
-        .w_full()
-        .h_full()
-        .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
-        .flex()
-        .flex_col()
-        .items_center()
-        .justify_center()
-        .gap_3()
-        .child(
-            // `--font-size-h1` from the active skin (default
-            // 24, macOS-26 ships 26).
-            div()
-                .text_size(px(s.font_size_h1_px))
-                .text_color(rgba(s.fg_primary))
-                .child("Baudrun"),
-        )
-        .child(
-            div()
-                .text_size(px(13.0))
-                .text_color(rgba(s.fg_secondary))
-                .child(prompt),
-        )
-}
-
-/// Session header above the terminal viewport. Shows status dot +
-/// profile name + connection meta on the left, and Clear /
-/// Disconnect buttons on the right. Only rendered when a profile
-/// is actually connected — loopback / no-device modes hide the
-/// header so the prototype's no-profile path stays minimal.
-fn session_header(
-    profile: Profile,
-    reconnecting: bool,
-    overflow_open: bool,
-    dtr_asserted: bool,
-    rts_asserted: bool,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let parity_letter = match profile.parity.as_str() {
-        "odd" => "O",
-        "even" => "E",
-        "mark" => "M",
-        "space" => "S",
-        _ => "N",
-    };
-    // Mirror the Tauri header: full session line always, with
-    // " · reconnecting…" appended during a retry window. The
-    // appended phrase keeps the port/baud/8N1 info visible so the
-    // user knows what the retry is targeting.
-    let mut meta = format!(
-        "{} · {} /{} {} {}",
-        profile.port_name,
-        profile.baud_rate,
-        profile.data_bits,
-        parity_letter,
-        profile.stop_bits,
-    );
-    if reconnecting {
-        meta.push_str(" · reconnecting…");
-    }
-    let s = *cx.global::<SkinTokens>();
-    let dot_color = if reconnecting { s.warn } else { s.success };
-    // Skip `bg_main` when the floating-card right-pane wrapper
-    // already paints it. gpui's `overflow_hidden` only clips to
-    // the bounding box, not the rounded shape, so this header's
-    // sharp top-left corner pokes past the wrapper's rounded
-    // curve as a visible "square inside the round" on macOS-26.
-    // The `border_b_1` still draws the divider line between
-    // header and terminal area in both modes.
-    let paint_bg = s.panel_radius_px == 0.0;
-    div()
-        .w_full()
-        .px_4()
-        .py_2()
-        .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
-        .border_b_1()
-        .border_color(rgba(s.border_subtle))
-        .text_size(px(13.0))
-        .text_color(rgba(s.fg_primary))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_3()
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .child({
-                    let dot = div()
-                        .w(px(STATUS_DOT_PX))
-                        .h(px(STATUS_DOT_PX))
-                        .rounded_full()
-                        .bg(rgba(dot_color));
-                    if reconnecting && !cx.global::<crate::ReduceMotion>().0 {
-                        // Match the Tauri `.dot.reconnecting`
-                        // pulse: 1s ease-in-out, opacity bounces
-                        // between roughly 0.35 and 1.0. gpui's
-                        // `pulsating_between` returns the easing
-                        // curve; the per-frame closure applies the
-                        // current alpha. Skipped under prefers-
-                        // reduced-motion — the orange dot's colour
-                        // alone is enough signal that we're in
-                        // the reconnecting state.
-                        dot.with_animation(
-                            "session-header-reconnect-pulse",
-                            Animation::new(Duration::from_secs(1))
-                                .repeat()
-                                .with_easing(pulsating_between(0.35, 1.0)),
-                            |el, delta| el.opacity(delta),
-                        )
-                        .into_any_element()
-                    } else {
-                        dot.into_any_element()
-                    }
-                })
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .child(
-                            div()
-                                .text_size(px(13.0))
-                                .text_color(rgba(s.fg_primary))
-                                .child(profile.name),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(11.0))
-                                .text_color(rgba(s.fg_secondary))
-                                .child(meta),
-                        ),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .gap_2()
-                .child(session_overflow_button(s, overflow_open, cx))
-                .child(
-                    div()
-                        .id("session-dtr")
-                        .child(line_pill(s, "DTR", dtr_asserted))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(SharedString::from(if dtr_asserted {
-                                "DTR is asserted — click to deassert"
-                            } else {
-                                "DTR is deasserted — click to assert"
-                            }))
-                            .build(window, cx)
-                        })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_dtr(cx);
-                            }),
-                        ),
-                )
-                .child(
-                    div()
-                        .id("session-rts")
-                        .child(line_pill(s, "RTS", rts_asserted))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(SharedString::from(if rts_asserted {
-                                "RTS is asserted — click to deassert"
-                            } else {
-                                "RTS is deasserted — click to assert"
-                            }))
-                            .build(window, cx)
-                        })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_rts(cx);
-                            }),
-                        ),
-                )
-                .child(pill_button(s, "Clear", false).on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                        this.terminal.update(cx, |t, cx| t.clear_screen(cx));
-                    }),
-                ))
-                .child(
-                    div()
-                        .id("session-suspend")
-                        .child(pill_button(s, "Suspend", false))
-                        .tooltip(|window, cx| {
-                            Tooltip::new(SharedString::from(
-                                "Keep session alive; return to profile",
-                            ))
-                            .build(window, cx)
-                        })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.suspend_session(window, cx);
-                            }),
-                        ),
-                )
-                .child(primary_button(s, "Disconnect").on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.disconnect_current(window, cx);
-                    }),
-                )),
-        )
-}
-
-/// Bottom-of-window status bar — single-line muted text, full
-/// window width (sits under both the sidebar and the right pane).
-/// Mirrors the Tauri version's footer status: shows the live
-/// connection target when connected, the profile being edited
-/// when the editor is open, and a neutral "Not connected" when
-/// idle. Future slices will hang scan indicators, update toasts,
-/// and the undo-delete countdown off this same row.
-fn status_bar(
-    s: SkinTokens,
-    connected: Option<&Profile>,
-    reconnecting: bool,
-    editing_profile_name: Option<&str>,
-    scrollback: Option<(usize, usize)>,
-    event: Option<&FooterEvent>,
-) -> impl IntoElement {
-    // Transient event log takes priority over the default
-    // connection-state text. When set, the bar shows the event
-    // tinted by severity; when None it falls back to the steady-
-    // state text below.
-    let (text, text_color) = match event {
-        Some(ev) => {
-            let colour = match ev.severity {
-                LogSeverity::Info => rgba(s.fg_secondary),
-                LogSeverity::Warn => rgba(s.warn),
-                LogSeverity::Error => rgba(s.danger),
-            };
-            (ev.text.to_string(), colour)
-        }
-        None => {
-            let text = match (connected, editing_profile_name) {
-                (Some(p), _) if reconnecting => {
-                    format!("Reconnecting to {} @ {}…", p.port_name, p.baud_rate)
-                }
-                (Some(p), _) => format!("Connected to {} @ {}", p.port_name, p.baud_rate),
-                (None, Some(name)) if !name.is_empty() => format!("Editing {name}"),
-                (None, Some(_)) => "Editing new profile".to_string(),
-                (None, None) => "Not connected".to_string(),
-            };
-            (text, rgba(s.fg_secondary))
-        }
-    };
-    // Right-side indicators — only when a profile is actually
-    // connected (so the bar doesn't show stale chips after
-    // disconnect and doesn't reveal flags that haven't taken
-    // effect yet on an idle window).
-    //
-    // Each active flag (`hex_view` / `timestamps` /
-    // `line_numbers`) renders as a small uppercase chip. The
-    // user gets a quick at-a-glance read of which formatters
-    // the live byte stream is going through without having to
-    // open the profile editor.
-    let (indicators, scrollback_text): (Vec<&'static str>, Option<String>) = match connected {
-        Some(p) => {
-            let mut tags: Vec<&'static str> = Vec::new();
-            if p.hex_view {
-                tags.push("HEX");
-            }
-            if p.timestamps {
-                tags.push("TIME");
-            }
-            if p.line_numbers {
-                tags.push("LINE#");
-            }
-            if p.log_enabled {
-                tags.push("TO FILE");
-            }
-            (tags, scrollback.map(|(filled, max)| format!("{filled}/{max}")))
-        }
-        None => (Vec::new(), None),
-    };
-    let bg_input = s.bg_input;
-    let fg_secondary = s.fg_secondary;
-    let chip = move |label: &'static str| {
-        // Flat pill — no border + no vertical padding so the
-        // status bar's overall height stays the same as the
-        // text-only baseline. A taller bar steals a row from
-        // the terminal viewport and the last line gets clipped.
-        div()
-            .px(px(6.0))
-            .rounded_md()
-            .bg(rgba(bg_input))
-            .text_color(rgba(fg_secondary))
-            .text_size(px(10.0))
-            .child(label)
-    };
-    div()
-        .w_full()
-        .px_4()
-        .py_1()
-        .bg(rgba(s.bg_sidebar))
-        .border_t_1()
-        .border_color(rgba(s.border_subtle))
-        .text_size(px(11.0))
-        .text_color(rgba(s.fg_secondary))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .child(div().flex_1().text_color(text_color).child(text))
-        .children(indicators.into_iter().map(chip))
-        .children(scrollback_text.map(|t| {
-            div()
-                .id("status-scrollback")
-                .child(t)
-                .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from(
-                        "Scrollback lines: filled / max",
-                    ))
-                    .build(window, cx)
-                })
-        }))
-}
-
-/// Sidebar header row: muted "PROFILES" label on the left, "+"
-/// affordance on the right that opens the new-profile form. The
-/// "+" is a div-with-click rather than a real button widget — same
-/// reasoning as the rest of the sidebar (less surface area than
-/// adopting `gpui_component::button` for one element).
-///
-/// `update_pending` is `true` when the boot-time update check
-/// (`crate::updater`) found a newer release the user hasn't
-/// dismissed yet. The gear icon gets a small amber dot in the
-/// top-right corner — mirrors the dot painted on the Settings
-/// rail's "Updates" row so both surfaces feel like one signal.
-fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-    let hover_bg = s.bg_hover;
-    // Shared chrome for the inline icon-buttons. Each button needs
-    // its own stable id so the tooltip layer can disambiguate hover
-    // targets, and a label string for the tooltip itself.
-    let icon_btn = move |id: &'static str, tip: &'static str| {
-        let tip_text = SharedString::from(tip);
-        div()
-            .id(SharedString::from(id))
-            .px_2()
-            .rounded_sm()
-            .text_color(rgba(s.fg_primary))
-            .hover(move |st| st.bg(rgba(hover_bg)))
-            .cursor_pointer()
-            .tooltip(move |window, cx| {
-                Tooltip::new(tip_text.clone()).build(window, cx)
-            })
-    };
-    div()
-        .w_full()
-        .flex()
-        .flex_row()
-        .items_center()
-        .justify_between()
-        .py_1()
-        .child(
-            // Left group: collapse-chevron + PROFILES label.
-            // Click the chevron (or hit Cmd+B / Ctrl+B) to fold
-            // the sidebar into the 48px icon strip.
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_1()
-                .child(
-                    // `‹` (U+2039) is the leftward single-angle
-                    // quotation mark — same chrome-glyph aesthetic
-                    // as the other inline buttons (+ / ⧉ / ⚙), so
-                    // the four read as one cluster.
-                    icon_btn("nav-collapse-sidebar", "Collapse sidebar")
-                        .text_size(px(15.0))
-                        .child("\u{2039}")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_sidebar(cx);
-                            }),
-                        ),
-                )
-                .child(
-                    // PROFILES header. Font size + weight + text
-                    // transform come from the skin so authors can
-                    // tune the label aesthetic without code changes:
-                    //   - macOS-26 sets `--label-transform: none` for
-                    //     sentence-case ("Profiles");
-                    //   - High Contrast / Cyberpunk bump
-                    //     `--label-weight` to 600 for chunkier UI.
-                    div()
-                        .text_size(px(s.font_size_label_px))
-                        .text_color(rgba(s.fg_tertiary))
-                        .font_weight(gpui::FontWeight(s.label_weight as f32))
-                        .child(s.label_transform.apply("PROFILES")),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_1()
-                .child(
-                    icon_btn("nav-add-profile", "New profile")
-                        .text_size(px(16.0))
-                        .child("+")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.open_editor(window, cx);
-                            }),
-                        ),
-                )
-                // Unicode "two joined squares" (`⧉`) — the new-window
-                // glyph. Same icon-button chrome as `+` and `⚙` so
-                // the trio reads as one cluster. macOS users who
-                // expect Cmd+N can still use it once Phase 8 wires
-                // the application menu.
-                .child(
-                    icon_btn("nav-new-window", "New window")
-                        .text_size(px(15.0))
-                        .child("\u{29C9}")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.open_new_window(window, cx);
-                            }),
-                        ),
-                )
-                // Unicode gear (`⚙`). Avoids pulling in an icon
-                // crate for a single chrome glyph; we can swap to
-                // gpui-component's `Icon` later if more accents
-                // arrive. Sized one px smaller than the `+` so the
-                // two glyphs visually balance — `+` is a thin stroke,
-                // the gear is a denser shape.
-                //
-                // When the boot-time update check has a newer
-                // release pending (`update_pending`) we paint a
-                // small amber dot in the gear's top-right corner.
-                // Wrapping in a `.relative()` div anchors the
-                // `.absolute()` dot to the button rather than to
-                // the sidebar — the dot rides the gear glyph and
-                // disappears with it if the row ever re-flows.
-                // Same colour (`s.warn`) + same 8px diameter as
-                // the Settings rail's Updates-row dot so both
-                // indicators feel like one signal.
-                .child(
-                    div()
-                        .relative()
-                        .child(
-                            icon_btn("nav-settings", "Settings")
-                                .text_size(px(15.0))
-                                .child("\u{2699}")
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                        this.open_settings(window, cx);
-                                    }),
-                                ),
-                        )
-                        .when(update_pending, |this| {
-                            this.child(
-                                div()
-                                    .absolute()
-                                    .top(px(-1.0))
-                                    .right(px(-1.0))
-                                    .w(px(8.0))
-                                    .h(px(8.0))
-                                    .rounded_full()
-                                    .bg(rgba(s.warn)),
-                            )
-                        }),
-                ),
-        )
-}
-
-/// Collapsed-mode sidebar contents: the chrome buttons stacked
-/// vertically in a 48px strip, with an expand chevron at the top.
-/// Mirrors what `sidebar_header` would render in expanded mode
-/// (same hover-bg, same tooltip wiring, same actions) but with a
-/// vertical layout that fits the narrow strip. The profile list
-/// is intentionally absent in this mode — profile names wouldn't
-/// fit at 48px wide, and the user expanded the sidebar
-/// specifically to skip the list anyway.
-fn sidebar_icon_strip(
-    update_pending: bool,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-    let hover_bg = s.bg_hover;
-    // Same `icon_btn` recipe as `sidebar_header`, but stretched to
-    // fill the strip's width so the hover-bg rect reads as a
-    // proper button target rather than a small glyph-only chip.
-    let icon_btn = move |id: &'static str, tip: &'static str| {
-        let tip_text = SharedString::from(tip);
-        div()
-            .id(SharedString::from(id))
-            .w_full()
-            .py(px(6.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_sm()
-            .text_color(rgba(s.fg_primary))
-            .hover(move |st| st.bg(rgba(hover_bg)))
-            .cursor_pointer()
-            .tooltip(move |window, cx| {
-                Tooltip::new(tip_text.clone()).build(window, cx)
-            })
-    };
-    div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap_1()
-        .child(
-            // Expand chevron — `›` (U+203A), mirror of the
-            // collapse glyph in `sidebar_header`.
-            icon_btn("nav-expand-sidebar", "Expand sidebar")
-                .text_size(px(16.0))
-                .child("\u{203A}")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                        this.toggle_sidebar(cx);
-                    }),
-                ),
-        )
-        .child(
-            icon_btn("nav-add-profile-collapsed", "New profile")
-                .text_size(px(16.0))
-                .child("+")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.open_editor(window, cx);
-                    }),
-                ),
-        )
-        .child(
-            icon_btn("nav-new-window-collapsed", "New window")
-                .text_size(px(15.0))
-                .child("\u{29C9}")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.open_new_window(window, cx);
-                    }),
-                ),
-        )
-        .child(
-            // Settings with the same amber update-pending dot as
-            // expanded mode — `.relative()` wrapper anchors the
-            // `.absolute()` dot to the gear glyph rather than the
-            // strip itself, so the dot rides the icon if the
-            // layout ever reflows.
-            div()
-                .relative()
-                .w_full()
-                .child(
-                    icon_btn("nav-settings-collapsed", "Settings")
-                        .text_size(px(15.0))
-                        .child("\u{2699}")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.open_settings(window, cx);
-                            }),
-                        ),
-                )
-                .when(update_pending, |this| {
-                    this.child(
-                        div()
-                            .absolute()
-                            .top(px(2.0))
-                            .right(px(10.0))
-                            .w(px(8.0))
-                            .h(px(8.0))
-                            .rounded_full()
-                            .bg(rgba(s.warn)),
-                    )
-                }),
-        )
-}
-
-
-// Chrome colours used to live as `const`s here, but Phase 4 slice 3
-// moved them into the `SkinTokens` global so skin picks live-apply.
-// Render code reads `cx.global::<SkinTokens>()`; helpers without a
-// Context take the `SkinTokens` value as a parameter (Copy, 64
-// bytes, cheap to pass).
-
-/// Construct a fresh `Editor` whose every widget (text inputs +
-/// selects + checkbox bool) is seeded from `profile`. Shared by
-/// the new-profile path (`profile = Profile::defaults()`) and the
-/// edit-profile path (`profile = store.get(id).unwrap()`) so the
-/// initialisation logic for each field exists in exactly one place.
-fn build_editor(
-    profile_id: Option<String>,
-    profile: &Profile,
-    themes_store: &themes::Store,
-    detect_drivers: bool,
-    window: &mut Window,
-    cx: &mut Context<AppView>,
-) -> Editor {
-    let name = {
-        let val = profile.name.clone();
-        cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("My switch")
-                .default_value(val)
-        })
-    };
-    let port = make_select(port_opts(&profile.port_name), &profile.port_name, window, cx);
-    // Per-profile theme picker. Empty-id row "Use global default"
-    // is the first option so the override is opt-in — saving an
-    // editor with that selected reverts to inheriting from
-    // settings.default_theme_id.
-    let theme = {
-        let mut opts = Vec::with_capacity(themes_store.list().len() + 1);
-        opts.push(Opt::new("", "Use global default"));
-        for t in themes_store.list() {
-            let title = if t.source == "user" {
-                format!("{} (custom)", t.name)
-            } else {
-                t.name
-            };
-            opts.push(Opt::new(&t.id, &title));
-        }
-        make_select(opts, &profile.theme_id, window, cx)
-    };
-    let paste_delay_val = profile.paste_char_delay_ms.unwrap_or(10).to_string();
-    let paste_char_delay_ms = cx.new(|cx| {
-        InputState::new(window, cx)
-            .placeholder("10")
-            .default_value(paste_delay_val)
-    });
-    // Empty `dtr/rts` strings on a freshly-loaded profile fall back
-    // to "default" for the select — the store accepts both, but
-    // showing "default" in the dropdown is the same intent and
-    // avoids a blank-looking field.
-    fn policy_or_default(s: &str) -> &str {
-        if s.is_empty() {
-            "default"
-        } else {
-            s
-        }
-    }
-    Editor {
-        profile_id,
-        tab: EditorTab::Connection,
-        name,
-        port,
-        baud: make_select(baud_opts(), &profile.baud_rate.to_string(), window, cx),
-        data_bits: make_select(data_bits_opts(), &profile.data_bits.to_string(), window, cx),
-        parity: make_select(parity_opts(), &profile.parity, window, cx),
-        stop_bits: make_select(stop_bits_opts(), &profile.stop_bits, window, cx),
-        flow_control: make_select(flow_control_opts(), &profile.flow_control, window, cx),
-        line_ending: make_select(line_ending_opts(), &profile.line_ending, window, cx),
-        backspace_key: make_select(backspace_opts(), &profile.backspace_key, window, cx),
-        local_echo: profile.local_echo,
-        dtr_on_connect: make_select(
-            line_policy_opts(),
-            policy_or_default(&profile.dtr_on_connect),
-            window,
-            cx,
-        ),
-        rts_on_connect: make_select(
-            line_policy_opts(),
-            policy_or_default(&profile.rts_on_connect),
-            window,
-            cx,
-        ),
-        dtr_on_disconnect: make_select(
-            line_policy_opts(),
-            policy_or_default(&profile.dtr_on_disconnect),
-            window,
-            cx,
-        ),
-        rts_on_disconnect: make_select(
-            line_policy_opts(),
-            policy_or_default(&profile.rts_on_disconnect),
-            window,
-            cx,
-        ),
-        hex_view: profile.hex_view,
-        timestamps: profile.timestamps,
-        line_numbers: profile.line_numbers,
-        log_enabled: profile.log_enabled,
-        auto_reconnect: profile.auto_reconnect,
-        theme,
-        // `None` on the saved profile becomes "inherit global"; the
-        // override flag stays false until the user explicitly opts
-        // into a per-profile pack list.
-        highlight: profile.highlight,
-        override_highlight_packs: profile.enabled_highlight_presets.is_some(),
-        enabled_highlight_packs: profile
-            .enabled_highlight_presets
-            .clone()
-            .unwrap_or_default(),
-        missing_drivers: if detect_drivers {
-            detect_missing_drivers()
-        } else {
-            Vec::new()
-        },
-        paste_warn_multiline: profile.paste_warn_multiline,
-        paste_slow: profile.paste_slow,
-        paste_char_delay_ms,
-        error: None,
-        scroll_handle: ScrollHandle::new(),
-        baseline: profile.clone(),
-    }
-}
-
-/// Read every widget in `editor` and write the values onto `profile`,
-/// in place. Fields the form doesn't expose (theme, paste settings,
-/// auto-reconnect, …) are left untouched, which is what makes the
-/// edit-path safe to round-trip.
-fn apply_editor_to_profile(editor: &Editor, profile: &mut Profile, cx: &Context<AppView>) {
-    profile.name = editor.name.read(cx).value().to_string();
-    profile.port_name = read_select(&editor.port, cx);
-    // Empty / non-numeric → 0, which `validate` rejects with
-    // `InvalidBaud`; `Profile::data_bits` is i32 too. Let the store
-    // be the single source of truth for what counts as valid rather
-    // than duplicating its rules in the UI.
-    profile.baud_rate = read_select(&editor.baud, cx).trim().parse().unwrap_or(0);
-    profile.data_bits = read_select(&editor.data_bits, cx)
-        .trim()
-        .parse()
-        .unwrap_or(0);
-    profile.parity = read_select(&editor.parity, cx);
-    profile.stop_bits = read_select(&editor.stop_bits, cx);
-    profile.flow_control = read_select(&editor.flow_control, cx);
-    profile.line_ending = read_select(&editor.line_ending, cx);
-    profile.backspace_key = read_select(&editor.backspace_key, cx);
-    profile.local_echo = editor.local_echo;
-    profile.dtr_on_connect = read_select(&editor.dtr_on_connect, cx);
-    profile.rts_on_connect = read_select(&editor.rts_on_connect, cx);
-    profile.dtr_on_disconnect = read_select(&editor.dtr_on_disconnect, cx);
-    profile.rts_on_disconnect = read_select(&editor.rts_on_disconnect, cx);
-    profile.hex_view = editor.hex_view;
-    profile.timestamps = editor.timestamps;
-    profile.line_numbers = editor.line_numbers;
-    profile.log_enabled = editor.log_enabled;
-    profile.auto_reconnect = editor.auto_reconnect;
-    // Empty id is the explicit "Use global default" pick — store
-    // it as-is so `compute_palette` falls through to the global.
-    profile.theme_id = read_select(&editor.theme, cx);
-    profile.paste_warn_multiline = editor.paste_warn_multiline;
-    profile.paste_slow = editor.paste_slow;
-    // Empty / non-numeric → None (rolls back to the store's default
-    // of 10ms via `Profile::defaults` on next load). Negative values
-    // collapse to 0, which the store accepts.
-    let delay_str = editor.paste_char_delay_ms.read(cx).value().to_string();
-    profile.paste_char_delay_ms = delay_str.trim().parse::<i32>().ok().map(|v| v.max(0));
-    profile.highlight = editor.highlight;
-    // The override flag → `Option` shape: false collapses to None
-    // (inherit global); true persists the current vec, even if it's
-    // empty (an explicit "no packs at all for this profile" state).
-    profile.enabled_highlight_presets = if editor.override_highlight_packs {
-        Some(editor.enabled_highlight_packs.clone())
-    } else {
-        None
-    };
-}
-
 /// How long the auto-reconnect poll waits between
 /// `serial_io::open` retries. 2s × 15 attempts = ~30s budget,
 /// matching the Tauri profile form's "poll for the port to
@@ -5424,1523 +3837,6 @@ fn slugify_name(name: &str) -> String {
     } else {
         trimmed
     }
-}
-
-/// Compare two profiles on the fields the editor actually exposes
-/// — drives the Save button's "dirty" state. Skipping `id` /
-/// `created_at` / `updated_at` because those aren't user-editable
-/// (id is set by the store on create, timestamps update on save)
-/// and would otherwise spuriously flag every edited profile as
-/// "dirty" right after save.
-fn editor_fields_match(a: &Profile, b: &Profile) -> bool {
-    a.name == b.name
-        && a.port_name == b.port_name
-        && a.baud_rate == b.baud_rate
-        && a.data_bits == b.data_bits
-        && a.parity == b.parity
-        && a.stop_bits == b.stop_bits
-        && a.flow_control == b.flow_control
-        && a.line_ending == b.line_ending
-        && a.backspace_key == b.backspace_key
-        && a.local_echo == b.local_echo
-        && a.dtr_on_connect == b.dtr_on_connect
-        && a.rts_on_connect == b.rts_on_connect
-        && a.dtr_on_disconnect == b.dtr_on_disconnect
-        && a.rts_on_disconnect == b.rts_on_disconnect
-        && a.hex_view == b.hex_view
-        && a.timestamps == b.timestamps
-        && a.line_numbers == b.line_numbers
-        && a.log_enabled == b.log_enabled
-        && a.auto_reconnect == b.auto_reconnect
-        && a.paste_warn_multiline == b.paste_warn_multiline
-        && a.paste_slow == b.paste_slow
-        && a.paste_char_delay_ms == b.paste_char_delay_ms
-        && a.theme_id == b.theme_id
-        && a.highlight == b.highlight
-        && a.enabled_highlight_presets == b.enabled_highlight_presets
-}
-
-/// One choice in a select widget. `id` is the canonical value
-/// stored on the `Profile` (e.g. `"none"`, `"9600"`, `"crlf"`);
-/// `title` is the human-readable label shown in the menu and as
-/// the closed-state value (e.g. `"None"`, `"9600 (default)"`,
-/// `"CRLF (\\r\\n) — modems"`). Cheap to clone (two `String`s) —
-/// the option lists are tiny and built once per editor open.
-#[derive(Clone)]
-struct Opt {
-    id: String,
-    title: SharedString,
-}
-
-impl Opt {
-    fn new(id: &str, title: &str) -> Self {
-        Self {
-            id: id.to_string(),
-            title: SharedString::from(title.to_string()),
-        }
-    }
-}
-
-impl SelectItem for Opt {
-    type Value = String;
-
-    fn title(&self) -> SharedString {
-        self.title.clone()
-    }
-
-    fn value(&self) -> &Self::Value {
-        &self.id
-    }
-}
-
-/// Build a `SelectState<Vec<Opt>>` pre-selected to whichever option
-/// in `opts` has `id == selected`. If `selected` doesn't match
-/// anything, no option is pre-selected (the closed-state shows the
-/// placeholder, if any). Wraps the gpui-component constructor so
-/// caller sites don't have to deal with `IndexPath` directly.
-fn make_select(
-    opts: Vec<Opt>,
-    selected: &str,
-    window: &mut Window,
-    cx: &mut Context<AppView>,
-) -> Entity<SelectState<Vec<Opt>>> {
-    let idx = opts
-        .iter()
-        .position(|o| o.id == selected)
-        .map(IndexPath::new);
-    cx.new(|cx| SelectState::new(opts, idx, window, cx))
-}
-
-/// Read the currently-selected id from a `SelectState<Vec<Opt>>`.
-/// Falls back to an empty string if nothing is selected — the
-/// `Profile` validator rejects empty strings for these fields, so
-/// the user gets a clear error rather than a silent bad save.
-fn read_select(state: &Entity<SelectState<Vec<Opt>>>, cx: &Context<AppView>) -> String {
-    state.read(cx).selected_value().cloned().unwrap_or_default()
-}
-
-// --- Option lists --------------------------------------------------
-//
-// Mirrors the Tauri ProfileForm.svelte option arrays. Labels are
-// hand-written to match: short id + parenthetical hint where the
-// raw id alone (e.g. "cr", "del") would be opaque to a user who
-// hasn't shipped serial-console code before. Wrapping each in a
-// fn keeps the borrowed-vec ergonomics simple — gpui-component
-// takes the `Vec<Opt>` by value into the SelectState.
-
-fn baud_opts() -> Vec<Opt> {
-    [
-        ("9600", "9600 (default)"),
-        ("19200", "19200"),
-        ("38400", "38400"),
-        ("57600", "57600"),
-        ("115200", "115200"),
-        ("230400", "230400"),
-        ("460800", "460800"),
-        ("921600", "921600"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn data_bits_opts() -> Vec<Opt> {
-    ["5", "6", "7", "8"]
-        .into_iter()
-        .map(|s| Opt::new(s, s))
-        .collect()
-}
-
-fn parity_opts() -> Vec<Opt> {
-    [
-        ("none", "None"),
-        ("odd", "Odd"),
-        ("even", "Even"),
-        ("mark", "Mark"),
-        ("space", "Space"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn stop_bits_opts() -> Vec<Opt> {
-    ["1", "1.5", "2"].into_iter().map(|s| Opt::new(s, s)).collect()
-}
-
-fn flow_control_opts() -> Vec<Opt> {
-    [
-        ("none", "None"),
-        ("rtscts", "RTS/CTS"),
-        ("xonxoff", "XON/XOFF"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn line_ending_opts() -> Vec<Opt> {
-    [
-        ("cr", "CR (\\r) — switches, routers"),
-        ("lf", "LF (\\n) — Linux consoles"),
-        ("crlf", "CRLF (\\r\\n) — legacy / Windows"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-/// Line-policy options for DTR/RTS on connect/disconnect — pulled
-/// verbatim from `src/lib/api.ts` (LINE_POLICIES). Empty-string id
-/// is allowed by `Profile::validate` but isn't useful in the UI;
-/// "default" carries the same semantics ("leave as-is").
-fn line_policy_opts() -> Vec<Opt> {
-    [
-        ("default", "Default (leave as-is)"),
-        ("assert", "Assert (high)"),
-        ("deassert", "Deassert (low)"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-fn backspace_opts() -> Vec<Opt> {
-    [
-        ("del", "DEL (0x7F) — VT100, xterm, modern"),
-        ("bs", "BS (0x08) — older Cisco, Foundry"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
-}
-
-/// Build the Serial Port select options from the current OS port
-/// list. Each detected port becomes one option; the title bundles
-/// the device path with whatever the enumerator found
-/// (`/dev/cu.usbserial-XYZ — FT232R USB UART · FTDI`) — same shape
-/// the Tauri form uses, so the user gets enough info to identify
-/// the right adapter without opening System Settings.
-///
-/// If `keep_selected` is non-empty and isn't in the detected list,
-/// it's prepended as an "(not connected)" option so the saved
-/// profile still shows its port even when the device is unplugged.
-/// On port enumeration failure we still want a usable form, so we
-/// fall back to the keep_selected (if any) and otherwise an empty
-/// list — the user can rescan later.
-fn port_opts(keep_selected: &str) -> Vec<Opt> {
-    let detected = ports::list_ports().unwrap_or_default();
-    let mut opts: Vec<Opt> = detected
-        .iter()
-        .map(|p| {
-            let mut title = p.name.clone();
-            if !p.product.is_empty() {
-                title.push_str(" — ");
-                title.push_str(&p.product);
-            }
-            if !p.chipset.is_empty() {
-                title.push_str(" · ");
-                title.push_str(&p.chipset);
-            }
-            Opt::new(&p.name, &title)
-        })
-        .collect();
-    if !keep_selected.is_empty() && !detected.iter().any(|p| p.name == keep_selected) {
-        // Prepend so the user's saved port shows up first when
-        // it isn't currently detected (cable unplugged, etc.).
-        let title = format!("{keep_selected} (not connected)");
-        opts.insert(0, Opt::new(keep_selected, &title));
-    }
-    opts
-}
-
-/// Pill button styled per the Baudrun skin. Neutral translucent
-/// fill by default; `danger=true` swaps the foreground to system
-/// red for destructive actions like Delete. Returns a bare `Div`
-/// so the call site can attach `.on_mouse_up` etc. — the helper
-/// just owns the visual styling.
-/// Toggle pill for the session header's mid-session DTR / RTS
-/// indicators. Visually a `pill_button` with a small status dot in
-/// front of the label — green (`--success`, same colour as the
-/// session-header connection dot at the left of the row) when the
-/// line is asserted, muted (`--fg-tertiary`) when it's deasserted.
-/// The pill background itself stays the same muted shape in both
-/// states so the eye reads the dot as the state, not the pill fill.
-/// Tooltip + click handler live on the wrapping div in
-/// `session_header` rather than here so the helper stays a pure
-/// styled child.
-fn line_pill(s: SkinTokens, label: &'static str, active: bool) -> gpui::Div {
-    let dot_color = if active { s.success } else { s.fg_tertiary };
-    let hover_bg = s.bg_input_hover;
-    div()
-        .px_3()
-        .py_1()
-        .bg(rgba(s.bg_input))
-        .text_color(rgba(s.fg_primary))
-        .text_size(px(13.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .gap_2()
-        .rounded_md()
-        .cursor_pointer()
-        .hover(move |st| st.bg(rgba(hover_bg)))
-        .child(
-            div()
-                .w(px(STATUS_DOT_PX))
-                .h(px(STATUS_DOT_PX))
-                .rounded_full()
-                .bg(rgba(dot_color)),
-        )
-        .child(label)
-}
-
-fn pill_button(s: SkinTokens, label: &'static str, danger: bool) -> gpui::Div {
-    let fg = if danger { rgba(s.danger) } else { rgba(s.fg_primary) };
-    let hover_bg = s.bg_input_hover;
-    div()
-        .px_3()
-        .py_1()
-        .bg(rgba(s.bg_input))
-        .text_color(fg)
-        .text_size(px(13.0))
-        // Flex + items_center centers the glyph line-box within
-        // the pill's padding box. Without this the text sits at
-        // the top of the box because gpui's default line-height
-        // is taller than the glyph itself and the leading
-        // accumulates above rather than around the cap height.
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_md()
-        .cursor_pointer()
-        .hover(move |st| st.bg(rgba(hover_bg)))
-        .child(label)
-}
-
-/// Primary action button — solid `--accent` blue, white text. Used
-/// for the form's Connect button (the call-to-action). Same shape
-/// as `pill_button` so they line up flush in a button row.
-fn primary_button(s: SkinTokens, label: &'static str) -> gpui::Div {
-    div()
-        .px_3()
-        .py_1()
-        .bg(rgba(s.accent))
-        .text_color(rgba(s.accent_fg))
-        .text_size(px(13.0))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded_md()
-        .cursor_pointer()
-        .child(label)
-}
-
-/// All Editor fields a render needs, cloned out so the call site
-/// can hand `cx: &mut Context<AppView>` to the form helpers without
-/// keeping `&self.editor` borrowed at the same time. Cloning is
-/// cheap — `Entity<T>` is `Arc`-shaped — and it's only done once
-/// per render.
-struct EditorRender {
-    is_edit: bool,
-    is_dirty: bool,
-    tab: EditorTab,
-    name: Entity<InputState>,
-    port: Entity<SelectState<Vec<Opt>>>,
-    baud: Entity<SelectState<Vec<Opt>>>,
-    data_bits: Entity<SelectState<Vec<Opt>>>,
-    parity: Entity<SelectState<Vec<Opt>>>,
-    stop_bits: Entity<SelectState<Vec<Opt>>>,
-    flow_control: Entity<SelectState<Vec<Opt>>>,
-    line_ending: Entity<SelectState<Vec<Opt>>>,
-    backspace_key: Entity<SelectState<Vec<Opt>>>,
-    local_echo: bool,
-    dtr_on_connect: Entity<SelectState<Vec<Opt>>>,
-    rts_on_connect: Entity<SelectState<Vec<Opt>>>,
-    dtr_on_disconnect: Entity<SelectState<Vec<Opt>>>,
-    rts_on_disconnect: Entity<SelectState<Vec<Opt>>>,
-    hex_view: bool,
-    timestamps: bool,
-    line_numbers: bool,
-    log_enabled: bool,
-    auto_reconnect: bool,
-    paste_warn_multiline: bool,
-    paste_slow: bool,
-    paste_char_delay_ms: Entity<InputState>,
-    theme: Entity<SelectState<Vec<Opt>>>,
-    highlight: bool,
-    override_highlight_packs: bool,
-    enabled_highlight_packs: Vec<String>,
-    missing_drivers: Vec<crate::data::serial::chipsets::USBSerialCandidate>,
-    error: Option<String>,
-    scroll_handle: ScrollHandle,
-}
-
-impl EditorRender {
-    fn from(e: &Editor, cx: &Context<AppView>) -> Self {
-        // Derive a hypothetical "what would Save persist right now"
-        // Profile by applying the live widget values onto a clone of
-        // the saved baseline; any field difference flags the form
-        // as dirty (drives the Save button's brightness).
-        let mut current = e.baseline.clone();
-        apply_editor_to_profile(e, &mut current, cx);
-        let is_dirty = !editor_fields_match(&current, &e.baseline);
-        Self {
-            is_edit: e.profile_id.is_some(),
-            is_dirty,
-            tab: e.tab,
-            name: e.name.clone(),
-            port: e.port.clone(),
-            baud: e.baud.clone(),
-            data_bits: e.data_bits.clone(),
-            parity: e.parity.clone(),
-            stop_bits: e.stop_bits.clone(),
-            flow_control: e.flow_control.clone(),
-            line_ending: e.line_ending.clone(),
-            backspace_key: e.backspace_key.clone(),
-            local_echo: e.local_echo,
-            dtr_on_connect: e.dtr_on_connect.clone(),
-            rts_on_connect: e.rts_on_connect.clone(),
-            dtr_on_disconnect: e.dtr_on_disconnect.clone(),
-            rts_on_disconnect: e.rts_on_disconnect.clone(),
-            hex_view: e.hex_view,
-            timestamps: e.timestamps,
-            line_numbers: e.line_numbers,
-            log_enabled: e.log_enabled,
-            auto_reconnect: e.auto_reconnect,
-            paste_warn_multiline: e.paste_warn_multiline,
-            paste_slow: e.paste_slow,
-            paste_char_delay_ms: e.paste_char_delay_ms.clone(),
-            theme: e.theme.clone(),
-            highlight: e.highlight,
-            override_highlight_packs: e.override_highlight_packs,
-            enabled_highlight_packs: e.enabled_highlight_packs.clone(),
-            missing_drivers: e.missing_drivers.clone(),
-            error: e.error.clone(),
-            scroll_handle: e.scroll_handle.clone(),
-        }
-    }
-}
-
-fn form_pane(
-    er: EditorRender,
-    packs: Vec<crate::data::highlight::HighlightPack>,
-    global_enabled: Vec<String>,
-    connected_session: bool,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-    div()
-        .flex_1()
-        // `min_w_0` lets the pane shrink below its intrinsic
-        // content min-width so long card descriptions wrap to
-        // fit instead of pushing the Connect button off-screen.
-        // `min_h_0` is the same idea for height: in the parent
-        // flex_row, cross-axis stretch tries to fit the pane to
-        // the row's height, but without min_h_0 the form's
-        // intrinsic content min-height keeps it tall, the
-        // scrollable body never sees an overflow, and the
-        // Scrollbar widget has nothing to render.
-        .min_w_0()
-        .min_h_0()
-        // No bg_main here — the cards inside paint `bg_panel`
-        // directly over `bg_window` (the opaque shell), matching
-        // Settings window's two-layer composition. With bg_main
-        // here the panels would stack alpha and the form pane
-        // ended up brighter / less grey than the rest of the
-        // chrome.
-        .text_color(rgba(s.fg_primary))
-        .text_size(px(13.0))
-        .flex()
-        .flex_col()
-        .child(form_header(
-            er.is_edit,
-            er.is_dirty,
-            er.name.clone(),
-            connected_session,
-            cx,
-        ))
-        .child(form_body(er, packs, global_enabled, cx))
-}
-
-/// Header bar: editable profile name as the visible title (no
-/// input chrome — `appearance(false)` strips the border/bg so it
-/// reads as a heading rather than a form field), uppercase mode
-/// tag underneath, action buttons on the right.
-fn form_header(
-    is_edit: bool,
-    is_dirty: bool,
-    name: Entity<InputState>,
-    connected_session: bool,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-    let subtitle = if is_edit { "EDIT PROFILE" } else { "NEW PROFILE" };
-    // Save button text-color is the only thing that changes for the
-    // dirty state — pill bg stays the same so the button doesn't
-    // visually "appear" mid-edit. Tertiary fg (40% white) when
-    // clean reads as "no-op available," primary fg (95% white)
-    // when dirty reads as "click me to persist your changes."
-    let save_fg = if is_dirty {
-        rgba(s.fg_primary)
-    } else {
-        rgba(s.fg_tertiary)
-    };
-    let delete_btn = is_edit.then(|| {
-        pill_button(s, "Delete", true).on_mouse_up(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                this.delete_from_editor(window, cx);
-            }),
-        )
-    });
-    // Render the heading as a plain div instead of an Input —
-    // gpui-component's Input fixes its own height to a small
-    // `h_6` regardless of `Size::Size(_)`, which clipped 24px
-    // text. Settings window's window_header uses the same plain-
-    // div approach. Editing happens through a labeled "NAME"
-    // field at the top of the Connection card now.
-    let title_text = name.read(cx).value().to_string();
-    let title_text = if title_text.is_empty() {
-        "(unnamed)".to_string()
-    } else {
-        title_text
-    };
-    div()
-        .w_full()
-        .px_6()
-        .py_3()
-        .border_b_1()
-        .border_color(rgba(s.border_subtle))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_4()
-        .child(
-            div()
-                .flex_1()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .text_size(px(24.0))
-                        .text_color(rgba(s.fg_primary))
-                        .child(title_text),
-                )
-                .child(
-                    div()
-                        .text_size(px(10.0))
-                        .text_color(rgba(s.fg_tertiary))
-                        .child(subtitle),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .children(delete_btn)
-                .child(
-                    pill_button(s, "Save", false)
-                        .text_color(save_fg)
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.save_editor(cx);
-                            }),
-                        ),
-                )
-                .child(pill_button(s, "Cancel", false).on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                        this.cancel_editor(cx);
-                    }),
-                ))
-                .when(connected_session, |row| {
-                    // Suspended on the connected profile — swap the
-                    // Connect button for the Disconnect + Resume
-                    // pair Tauri shows in the same state. Connect on
-                    // an already-connected profile would either
-                    // race for its own port or re-open a session
-                    // the user already has, neither of which is
-                    // what they're after.
-                    row.child(pill_button(s, "Disconnect", false).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.disconnect_current(window, cx);
-                        }),
-                    ))
-                    .child(primary_button(s, "Resume").on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.resume_session(window, cx);
-                        }),
-                    ))
-                })
-                .when(!connected_session, |row| {
-                    row.child(primary_button(s, "Connect").on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.save_and_connect(window, cx);
-                        }),
-                    ))
-                }),
-        )
-}
-
-/// Form body: a left rail of sub-tabs (Connection / Advanced) +
-/// the active tab's content. Tab content is capped to a fixed
-/// width so the cards keep form-shaped proportions on a wide
-/// window. Mirrors the Tauri form's layout one-for-one.
-fn form_body(
-    er: EditorRender,
-    packs: Vec<crate::data::highlight::HighlightPack>,
-    global_enabled: Vec<String>,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-    let active = er.tab;
-    let content: gpui::AnyElement = match er.tab {
-        EditorTab::Connection => div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(connection_card(
-                er.name.clone(),
-                er.port,
-                er.baud,
-                er.data_bits,
-                er.parity,
-                er.stop_bits,
-                er.flow_control,
-                er.missing_drivers.clone(),
-                cx,
-            ))
-            .child(terminal_card(
-                er.line_ending,
-                er.backspace_key,
-                er.local_echo,
-                cx,
-            ))
-            .child(theme_card(s, er.theme))
-            .into_any_element(),
-        EditorTab::Highlighting => highlighting_pane(
-            er.highlight,
-            er.override_highlight_packs,
-            er.enabled_highlight_packs.clone(),
-            packs,
-            global_enabled,
-            cx,
-        )
-        .into_any_element(),
-        EditorTab::Advanced => advanced_pane(
-            er.dtr_on_connect,
-            er.rts_on_connect,
-            er.dtr_on_disconnect,
-            er.rts_on_disconnect,
-            er.hex_view,
-            er.timestamps,
-            er.line_numbers,
-            er.log_enabled,
-            er.auto_reconnect,
-            er.paste_warn_multiline,
-            er.paste_slow,
-            er.paste_char_delay_ms,
-            cx,
-        )
-        .into_any_element(),
-    };
-
-    div()
-        .flex_1()
-        .min_h_0()
-        .flex()
-        .flex_row()
-        .child(form_tab_nav(active, cx))
-        .child(
-            // Bare `gpui::overflow_y_scroll` (no widget wrap) is
-            // what actually scrolls — gpui-component's `Scrollable`
-            // wrapper measures the scroll area incorrectly inside
-            // our nested flex layout and ends up reporting "fits,
-            // no scrollbar needed." So we wire the ScrollHandle
-            // ourselves: scroll content tracks it via
-            // `track_scroll`, and a sibling
-            // `vertical_scrollbar(&handle)` paints the visible
-            // bar. The parent div is `relative` so the scrollbar
-            // (positioned absolutely internally) anchors to it.
-            // Padding lives INSIDE the scrollable child, not on
-            // the viewport — otherwise the bottom padding gets
-            // eaten and the user can't scroll past the last card.
-            div()
-                .relative()
-                .flex_1()
-                .h_full()
-                .min_w_0()
-                .min_h_0()
-                .child(
-                    div()
-                        .id("form-body-scroll")
-                        .size_full()
-                        .min_w_0()
-                        .min_h_0()
-                        .track_scroll(&er.scroll_handle)
-                        .overflow_y_scroll()
-                        .child(
-                            div()
-                                .w_full()
-                                .min_w_0()
-                                .px_6()
-                                .py_4()
-                                .flex()
-                                .flex_col()
-                                .gap_3()
-                                .child(content)
-                                .children(er.error.map(|err| {
-                                    div()
-                                        .px_3()
-                                        .py_2()
-                                        .text_size(px(12.0))
-                                        .text_color(rgba(s.sidebar_error))
-                                        .child(err)
-                                })),
-                        ),
-                )
-                .vertical_scrollbar(&er.scroll_handle),
-        )
-}
-
-/// Left-rail sub-tab navigation. Each entry is a clickable row;
-/// the active one paints `--bg-active` (translucent blue) so the
-/// selected state reads instantly.
-fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-    let item = move |label: &'static str, tab: EditorTab| {
-        let is_active = tab == active;
-        let bg = if is_active {
-            rgba(s.bg_active)
-        } else {
-            rgba(0x00000000)
-        };
-        let fg = if is_active {
-            rgba(s.fg_primary)
-        } else {
-            rgba(s.fg_secondary)
-        };
-        let hover_bg = s.bg_input;
-        div()
-            .w_full()
-            .px_3()
-            .py(px(6.0))
-            .rounded_md()
-            .bg(bg)
-            .text_color(fg)
-            .cursor_pointer()
-            // Hover bg only when NOT active — see the matching
-            // comment in `profile_row`.
-            .when(!is_active, |this| {
-                this.hover(move |st| st.bg(rgba(hover_bg)))
-            })
-            .child(label)
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
-                    this.set_editor_tab(tab, cx);
-                }),
-            )
-    };
-
-    div()
-        .w(px(160.0))
-        .h_full()
-        .px_3()
-        .py_4()
-        .border_r_1()
-        .border_color(rgba(s.border_subtle))
-        .flex()
-        .flex_col()
-        .gap_1()
-        .text_size(px(13.0))
-        .child(item("Connection", EditorTab::Connection))
-        .child(item("Highlighting", EditorTab::Highlighting))
-        .child(item("Advanced", EditorTab::Advanced))
-}
-
-/// One section of the form — a translucent panel with a heading,
-/// optional description, and a body. Section title size is
-/// `--font-size-section` (15px); description is the muted
-/// `--fg-secondary`. Panel uses `--radius-lg` (10px) and
-/// `--bg-panel` / `--border-subtle`.
-fn section_card(s: SkinTokens, title: &'static str, body: impl IntoElement) -> gpui::Div {
-    section_card_with_desc(s, title, None, body)
-}
-
-fn section_card_with_desc(
-    s: SkinTokens,
-    title: &'static str,
-    description: Option<&'static str>,
-    body: impl IntoElement,
-) -> gpui::Div {
-    let mut header = div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .text_size(px(s.font_size_section_px))
-                .text_color(rgba(s.fg_primary))
-                .child(title),
-        );
-    if let Some(desc) = description {
-        header = header.child(
-            div()
-                .text_size(px(12.0))
-                .text_color(rgba(s.fg_secondary))
-                // gpui's text default is `whitespace: nowrap` — a
-                // long description like the Control Lines blurb
-                // would otherwise render as a single line and run
-                // off the right edge of the window.
-                .whitespace_normal()
-                .child(desc),
-        );
-    }
-    div()
-        .w_full()
-        .bg(rgba(s.bg_panel))
-        // `--panel-border` from the skin. `Solid(w, c)` paints a
-        // border; `None` paints nothing. Default (when the skin
-        // doesn't declare the var) is `Solid(1, border_subtle)`
-        // so legacy / partially-authored skins keep their outline.
-        .map(|this| match s.panel_border {
-            skin_tokens::PanelBorder::None => this,
-            skin_tokens::PanelBorder::Solid(w, colour) => {
-                this.border(px(w)).border_color(rgba(colour))
-            }
-        })
-        .rounded(px(s.radius_lg))
-        // macOS 26 / Tahoe-style raised card. Matches the same
-        // shadow_sm used by `settings_view::section_card_with_desc`
-        // so the profile editor and the Settings window read at
-        // the same elevation. `--panel-shadow` from the skin is
-        // parsed into `SkinShadows.panel` but not yet threaded
-        // through each card site — most skins ship
-        // `--panel-shadow: none` anyway, and macOS-26's inset
-        // entries can't render in gpui, so the visible delta
-        // would be tiny vs the signature surface needed. Future
-        // pass can replace `shadow_sm()` here once the wiring
-        // is worth the cost.
-        .shadow_sm()
-        .px_4()
-        .py_3()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(header)
-        .child(body)
-}
-
-/// Per-field label + widget pair. Label uses Baudrun's
-/// `--font-size-label` (11px), `--label-transform: uppercase`
-/// (passed in already shouted by the caller), and `--fg-secondary`.
-/// Label is `whitespace_nowrap` because gpui defaults to wrap, and
-/// short fixed strings like "SLOW-PASTE DELAY (MS)" wrapping mid-
-/// label inside a narrow container looks broken.
-fn labeled(s: SkinTokens, label: &'static str, widget: impl IntoElement) -> gpui::Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgba(s.fg_secondary))
-                .whitespace_nowrap()
-                .child(label),
-        )
-        .child(widget)
-}
-
-/// Detect unenrolled USB-serial adapters on platforms that need
-/// vendor drivers. macOS / Windows have a real implementation in
-/// `data::serial::detect`; Linux relies on kernel-side driver
-/// loading (`pl2303.ko`, `ftdi_sio.ko`, `cp210x.ko`, …) and has no
-/// equivalent missing-driver scenario, so it returns empty.
-fn detect_missing_drivers() -> Vec<crate::data::serial::chipsets::USBSerialCandidate> {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    {
-        crate::data::serial::detect::detect_suspect_enumerated_ports()
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        Vec::new()
-    }
-}
-
-/// One driver-not-loaded banner row. Matches the Tauri layout:
-/// yellow `!` icon on the left, chipset + reason / product / serial
-/// in the middle, and an "Install driver…" pill on the right when
-/// the chipset entry carries a vendor URL. Clicking the pill opens
-/// the URL in the user's default browser via `cx.open_url`.
-fn driver_banner_row(
-    s: SkinTokens,
-    candidate: crate::data::serial::chipsets::USBSerialCandidate,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    // Secondary line: prefer real product strings, but skip the
-    // "please install…" / counterfeit placeholders the suspect-
-    // product detector keys off — they're noise once we've already
-    // resolved a chipset name above.
-    let lower = candidate.product.to_lowercase();
-    let product_is_placeholder = lower.contains("please install")
-        || lower.contains("please download")
-        || lower.contains("support windows")
-        || lower.contains("counterfeit")
-        || lower.contains("not support");
-    let mut meta = if !candidate.product.is_empty() && !product_is_placeholder {
-        candidate.product.clone()
-    } else if !candidate.manufacturer.is_empty() {
-        candidate.manufacturer.clone()
-    } else {
-        "USB device".to_string()
-    };
-    if !candidate.serial_number.is_empty() {
-        meta.push_str(" \u{00B7} serial ");
-        meta.push_str(&candidate.serial_number);
-    }
-    let title = format!("{} detected \u{2014} driver not loaded", candidate.chipset);
-
-    let mut text_col = div().flex_1().min_w_0().flex().flex_col().gap_1().child(
-        div()
-            .text_size(px(13.0))
-            .text_color(rgba(s.fg_primary))
-            .child(title),
-    );
-    if !candidate.reason.is_empty() {
-        text_col = text_col.child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgba(s.fg_secondary))
-                .whitespace_normal()
-                .child(candidate.reason.clone()),
-        );
-    }
-    text_col = text_col.child(
-        div()
-            .text_size(px(11.0))
-            .text_color(rgba(s.fg_tertiary))
-            .whitespace_normal()
-            .child(meta),
-    );
-
-    let mut row = div()
-        .w_full()
-        .px_3()
-        .py_2()
-        .rounded_md()
-        .border_1()
-        .border_color(rgba(0xE3A93A55u32))
-        .bg(rgba(0xE3A93A18u32))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_3()
-        .child(
-            div()
-                .w(px(22.0))
-                .h(px(22.0))
-                .rounded_full()
-                .bg(rgba(0xE3A93AFFu32))
-                .text_color(rgba(0x1A1A1AFFu32))
-                .text_size(px(14.0))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child("!"),
-        )
-        .child(text_col);
-    if !candidate.driver_url.is_empty() {
-        let url = candidate.driver_url.clone();
-        row = row.child(pill_button(s, "Install driver\u{2026}", false).on_mouse_up(
-            MouseButton::Left,
-            cx.listener(move |_, _: &MouseUpEvent, _, cx| {
-                cx.open_url(&url);
-            }),
-        ));
-    }
-    row
-}
-
-#[allow(clippy::too_many_arguments)]
-fn connection_card(
-    name: Entity<InputState>,
-    port: Entity<SelectState<Vec<Opt>>>,
-    baud: Entity<SelectState<Vec<Opt>>>,
-    data_bits: Entity<SelectState<Vec<Opt>>>,
-    parity: Entity<SelectState<Vec<Opt>>>,
-    stop_bits: Entity<SelectState<Vec<Opt>>>,
-    flow_control: Entity<SelectState<Vec<Opt>>>,
-    missing_drivers: Vec<crate::data::serial::chipsets::USBSerialCandidate>,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    let s = *cx.global::<SkinTokens>();
-    let hover_bg = s.bg_input_hover;
-    // Serial port row: select on the left (flex_1), rescan icon
-    // on the right. Click rescans the OS port list and reapplies
-    // the current selection.
-    let port_row = div()
-        .flex()
-        .flex_row()
-        .items_end()
-        .gap_2()
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(labeled(s, "SERIAL PORT", Select::new(&port))),
-        )
-        .child(
-            div()
-                .px_2()
-                .py_1()
-                .bg(rgba(s.bg_input))
-                .text_color(rgba(s.fg_primary))
-                .rounded_md()
-                .cursor_pointer()
-                .hover(move |st| st.bg(rgba(hover_bg)))
-                .child("↻")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.rescan_ports(window, cx);
-                    }),
-                ),
-        );
-    // Build a "driver not loaded" banner per detected candidate so
-    // an unenrolled CP210x / FTDI / PL2303 / CH340 shows up RIGHT
-    // ABOVE the Serial Port picker — same shape the Tauri version
-    // uses. Hidden when `Settings::disable_driver_detection` is on
-    // (build_editor passes an empty Vec).
-    let driver_banners: Vec<gpui::Div> = missing_drivers
-        .into_iter()
-        .map(|d| driver_banner_row(s, d, cx))
-        .collect();
-    let body = div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(labeled(s, "NAME", Input::new(&name).appearance(true)))
-        .when(!driver_banners.is_empty(), |this| {
-            this.child(
-                div().flex().flex_col().gap_2().children(driver_banners),
-            )
-        })
-        .child(port_row)
-        // Two-column rows of selects.
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .gap_3()
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "BAUD RATE", Select::new(&baud))),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "DATA BITS", Select::new(&data_bits))),
-                ),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .gap_3()
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "PARITY", Select::new(&parity))),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "STOP BITS", Select::new(&stop_bits))),
-                ),
-        )
-        .child(labeled(s, "FLOW CONTROL", Select::new(&flow_control)));
-    section_card(s, "Connection", body)
-}
-
-fn terminal_card(
-    line_ending: Entity<SelectState<Vec<Opt>>>,
-    backspace_key: Entity<SelectState<Vec<Opt>>>,
-    local_echo: bool,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    let s = *cx.global::<SkinTokens>();
-    let body = div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .gap_3()
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(
-                            s,
-                            "SEND LINE ENDING",
-                            Select::new(&line_ending),
-                        )),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(
-                            s,
-                            "BACKSPACE SENDS",
-                            Select::new(&backspace_key),
-                        )),
-                ),
-        )
-        .child(bool_field(
-            "local-echo",
-            "Local echo",
-            local_echo,
-            cx,
-            |ed, v| ed.local_echo = v,
-        ));
-    section_card(s, "Terminal", body)
-}
-
-/// Generic checkbox row that writes back to the open editor when
-/// toggled. The closure parameter (`F`) is how we get a typed
-/// `&mut Editor` lookup at the right field — passing the field
-/// name as a string would force runtime dispatch for no benefit.
-fn bool_field<F>(
-    id: &'static str,
-    label: &'static str,
-    checked: bool,
-    cx: &mut Context<AppView>,
-    set: F,
-) -> gpui::Div
-where
-    F: Fn(&mut Editor, bool) + 'static,
-{
-    bool_field_hinted(id, label, None, checked, cx, set)
-}
-
-/// Like `bool_field`, but also renders a small muted hint string
-/// to the right of the checkbox. Mirrors the Tauri form's "Hex
-/// view ┄ show incoming bytes as hex dump" pattern.
-fn bool_field_hinted<F>(
-    id: &'static str,
-    label: &'static str,
-    hint: Option<&'static str>,
-    checked: bool,
-    cx: &mut Context<AppView>,
-    set: F,
-) -> gpui::Div
-where
-    F: Fn(&mut Editor, bool) + 'static,
-{
-    let s = *cx.global::<SkinTokens>();
-    let cb = Checkbox::new(id)
-        .checked(checked)
-        .label(label)
-        .on_click(cx.listener(move |this, checked: &bool, _window, cx| {
-            if let Some(ed) = this.editor.as_mut() {
-                set(ed, *checked);
-            }
-            cx.notify();
-        }));
-    let mut row = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_3()
-        .child(cb);
-    if let Some(h) = hint {
-        row = row.child(
-            div()
-                .text_size(px(12.0))
-                .text_color(rgba(s.fg_secondary))
-                .child(h),
-        );
-    }
-    row
-}
-
-/// Profile-level Highlighting tab. Two cards: the master toggle that
-/// enables/disables highlighting for this profile (mirrors
-/// `Profile::highlight`), and the per-pack list with an "Override
-/// global" switch on top. When the override is off, the per-pack
-/// rows are still shown but read-only, so the user can see what
-/// they're inheriting from Settings without flipping the switch.
-fn highlighting_pane(
-    highlight: bool,
-    override_packs: bool,
-    enabled_packs: Vec<String>,
-    packs: Vec<crate::data::highlight::HighlightPack>,
-    global_enabled: Vec<String>,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-
-    // When override is off, the rows mirror the global pick; when
-    // on, they reflect the per-profile working list. Disabled state
-    // is the same in either case — toggling needs override + master.
-    let effective: &Vec<String> = if override_packs {
-        &enabled_packs
-    } else {
-        &global_enabled
-    };
-
-    let rows: Vec<gpui::Div> = packs
-        .into_iter()
-        .map(|p| {
-            let id_for_setter = p.id.clone();
-            let cb_id = SharedString::from(format!("profile-highlight-{}", p.id));
-            let is_on = effective.iter().any(|e| e == &p.id);
-            let label = if p.source == "user" || p.source == "import" {
-                format!("{} (custom)", p.name)
-            } else {
-                p.name.clone()
-            };
-            let desc = p
-                .description
-                .clone()
-                .filter(|d| !d.is_empty())
-                .unwrap_or_else(|| "\u{2014}".to_string());
-            let cb = Checkbox::new(cb_id)
-                .checked(is_on)
-                .disabled(!override_packs || !highlight)
-                .label(label)
-                .on_click(cx.listener(move |this, checked: &bool, _, cx| {
-                    this.toggle_editor_highlight_pack(
-                        id_for_setter.clone(),
-                        *checked,
-                        cx,
-                    );
-                }));
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(cb)
-                .child(
-                    div()
-                        .pl(px(24.0))
-                        .text_size(px(12.0))
-                        .text_color(rgba(s.fg_secondary))
-                        .whitespace_normal()
-                        .child(desc),
-                )
-        })
-        .collect();
-
-    let master_card = section_card_with_desc(
-        s,
-        "Highlighting",
-        Some(
-            "Master switch for this profile. When off, incoming \
-             output is rendered without any rule-based colouring \
-             regardless of which packs are enabled below.",
-        ),
-        bool_field(
-            "profile-highlight-master",
-            "Highlight terminal output for this profile",
-            highlight,
-            cx,
-            |ed, on| ed.highlight = on,
-        ),
-    );
-
-    // Override toggle goes directly to AppView so it can seed the
-    // per-profile list from the global on first-on (otherwise the
-    // user flips the switch and silently loses their inherited
-    // selection).
-    let override_row = div().flex().flex_row().items_center().gap_3().child(
-        Checkbox::new("profile-highlight-override")
-            .checked(override_packs)
-            .disabled(!highlight)
-            .label("Override global pack selection")
-            .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                this.set_editor_override_highlight(*checked, cx);
-            })),
-    );
-
-    let packs_card = section_card_with_desc(
-        s,
-        "Highlight Packs",
-        Some(
-            "Inherit the global selection from Settings, or override \
-             it for this profile. With override off, the rows show \
-             what the global is currently broadcasting (read-only).",
-        ),
-        div()
-            .flex()
-            .flex_col()
-            .gap_3()
-            .child(override_row)
-            .child(div().flex().flex_col().gap_2().children(rows)),
-    );
-
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(master_card)
-        .child(packs_card)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn advanced_pane(
-    dtr_on_connect: Entity<SelectState<Vec<Opt>>>,
-    rts_on_connect: Entity<SelectState<Vec<Opt>>>,
-    dtr_on_disconnect: Entity<SelectState<Vec<Opt>>>,
-    rts_on_disconnect: Entity<SelectState<Vec<Opt>>>,
-    hex_view: bool,
-    timestamps: bool,
-    line_numbers: bool,
-    log_enabled: bool,
-    auto_reconnect: bool,
-    paste_warn_multiline: bool,
-    paste_slow: bool,
-    paste_char_delay_ms: Entity<InputState>,
-    cx: &mut Context<AppView>,
-) -> impl IntoElement {
-    let s = *cx.global::<SkinTokens>();
-    div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(
-            // Top-of-tab heading + description, mirroring the Tauri
-            // form. Lives outside the cards so it groups them
-            // visually under one umbrella concern.
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .text_size(px(18.0))
-                        .text_color(rgba(s.fg_primary))
-                        .child("Advanced"),
-                )
-                .child(
-                    div()
-                        .text_size(px(12.0))
-                        .text_color(rgba(s.fg_secondary))
-                        .whitespace_normal()
-                        .child("Control lines, hex view, timestamps, session logging."),
-                ),
-        )
-        .child(control_lines_card(
-            s,
-            dtr_on_connect,
-            rts_on_connect,
-            dtr_on_disconnect,
-            rts_on_disconnect,
-        ))
-        .child(output_card(
-            hex_view,
-            timestamps,
-            line_numbers,
-            log_enabled,
-            auto_reconnect,
-            cx,
-        ))
-        .child(paste_safety_card(
-            paste_warn_multiline,
-            paste_slow,
-            paste_char_delay_ms,
-            cx,
-        ))
-}
-
-/// Per-profile theme override card. The `theme` Select's first
-/// option is "Use global default" with an empty id; saving with
-/// that selected leaves `Profile::theme_id` empty, which
-/// `compute_palette` treats as fall-through to
-/// `Settings::default_theme_id`. The same Select otherwise lists
-/// every theme `themes_store` knows about.
-fn theme_card(s: SkinTokens, theme: Entity<SelectState<Vec<Opt>>>) -> gpui::Div {
-    section_card_with_desc(
-        s,
-        "Terminal Theme",
-        Some(
-            "Override the global default theme just for this profile. \
-             Useful for keeping different palettes on different \
-             devices (e.g. red-tinged for production routers, calm \
-             green for the lab switch). Leave on \"Use global \
-             default\" to inherit from Settings \u{2192} Themes.",
-        ),
-        Select::new(&theme),
-    )
-}
-
-fn control_lines_card(
-    s: SkinTokens,
-    dtr_on_connect: Entity<SelectState<Vec<Opt>>>,
-    rts_on_connect: Entity<SelectState<Vec<Opt>>>,
-    dtr_on_disconnect: Entity<SelectState<Vec<Opt>>>,
-    rts_on_disconnect: Entity<SelectState<Vec<Opt>>>,
-) -> gpui::Div {
-    let row = |left_label, left, right_label, right| {
-        div()
-            .flex()
-            .flex_row()
-            .gap_3()
-            .child(div().flex_1().child(labeled(s, left_label, left)))
-            .child(div().flex_1().child(labeled(s, right_label, right)))
-    };
-    let body = div()
-        .flex()
-        .flex_col()
-        .gap_3()
-        .child(row(
-            "DTR ON CONNECT",
-            Select::new(&dtr_on_connect),
-            "RTS ON CONNECT",
-            Select::new(&rts_on_connect),
-        ))
-        .child(row(
-            "DTR ON DISCONNECT",
-            Select::new(&dtr_on_disconnect),
-            "RTS ON DISCONNECT",
-            Select::new(&rts_on_disconnect),
-        ));
-    section_card_with_desc(
-        s,
-        "Control Lines",
-        Some(
-            "Only needed for specific adapters or devices (RS-485 direction, \
-             Arduino DTR-reset, firmwares that key off DTR for session lifecycle).",
-        ),
-        body,
-    )
-}
-
-fn output_card(
-    hex_view: bool,
-    timestamps: bool,
-    line_numbers: bool,
-    log_enabled: bool,
-    auto_reconnect: bool,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    let s = *cx.global::<SkinTokens>();
-    // Single column. The 2-col grid for Hex view + Line timestamps
-    // produced an awkward orphan-feel where the right-hand "Line
-    // timestamps" hint wrapped while the others were full-width;
-    // stacking reads cleaner and matches the rest of the card's
-    // vertical rhythm.
-    let body = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(bool_field_hinted(
-            "timestamps",
-            "Line timestamps",
-            Some("prefix each line with wall-clock time"),
-            timestamps,
-            cx,
-            |ed, v| ed.timestamps = v,
-        ))
-        .child(bool_field_hinted(
-            "line-numbers",
-            "Line numbers",
-            Some("prefix each line with a session-local counter (resets on reconnect)"),
-            line_numbers,
-            cx,
-            |ed, v| ed.line_numbers = v,
-        ))
-        .child(bool_field_hinted(
-            "hex-view",
-            "Hex view",
-            Some("show incoming bytes as hex dump"),
-            hex_view,
-            cx,
-            |ed, v| ed.hex_view = v,
-        ))
-        .child(bool_field_hinted(
-            "log-enabled",
-            "Record session to file",
-            Some("raw bytes; destination set in Settings → Advanced"),
-            log_enabled,
-            cx,
-            |ed, v| ed.log_enabled = v,
-        ))
-        .child(bool_field_hinted(
-            "auto-reconnect",
-            "Auto-reconnect on drop",
-            Some("poll for the port to reappear (up to 30s) and reopen transparently"),
-            auto_reconnect,
-            cx,
-            |ed, v| ed.auto_reconnect = v,
-        ));
-    section_card(s, "Output", body)
-}
-
-fn paste_safety_card(
-    paste_warn_multiline: bool,
-    paste_slow: bool,
-    paste_char_delay_ms: Entity<InputState>,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    let s = *cx.global::<SkinTokens>();
-    // Slow-paste delay input gets its own row, indented under the
-    // checkbox. Sharing a flex_row with the "Slow paste" hint made
-    // the input visibly shrink as the window grew because the hint
-    // text claimed more horizontal space at the input's expense.
-    // 120px is enough for the largest sane delay (3 digits) plus
-    // the small chevron padding the Input draws internally.
-    let body = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(bool_field_hinted(
-            "paste-warn",
-            "Confirm multi-line pastes",
-            Some("prompt before sending pasted text that contains line breaks"),
-            paste_warn_multiline,
-            cx,
-            |ed, v| ed.paste_warn_multiline = v,
-        ))
-        .child(bool_field_hinted(
-            "paste-slow",
-            "Slow paste",
-            Some("send one char at a time with a delay"),
-            paste_slow,
-            cx,
-            |ed, v| ed.paste_slow = v,
-        ))
-        .child(
-            div()
-                .pl_6()
-                .w(px(160.0))
-                .child(labeled(
-                    s,
-                    "SLOW-PASTE DELAY (MS)",
-                    Input::new(&paste_char_delay_ms).small().appearance(true),
-                )),
-        );
-    section_card_with_desc(
-        s,
-        "Paste safety",
-        Some(
-            "Catch the \"I pasted into the wrong window\" mistake, and pace pastes so \
-             UARTs on slower devices don't drop bytes.",
-        ),
-        body,
-    )
 }
 
 /// Diameter of the round status dot in the row header. 8px reads
@@ -7024,9 +3920,7 @@ fn profile_row(
                 .h(px(STATUS_DOT_PX))
                 .rounded_full()
                 .bg(rgba(st.color(tokens)));
-            if st == RowStatus::Reconnecting
-                && !cx.global::<crate::ReduceMotion>().0
-            {
+            if st == RowStatus::Reconnecting && !cx.global::<crate::ReduceMotion>().0 {
                 // Same 1s pulse as the session header so the two
                 // indicators feel like one signal. Animation name
                 // is per-row-instance to avoid gpui de-duping
@@ -7190,9 +4084,7 @@ fn profile_icon(
             this.hover(move |st| st.bg(rgba(hover_bg)))
         })
         .cursor_pointer()
-        .tooltip(move |window, cx| {
-            Tooltip::new(tip_text.clone()).build(window, cx)
-        })
+        .tooltip(move |window, cx| Tooltip::new(tip_text.clone()).build(window, cx))
         .child(
             Icon::new(IconName::SquareTerminal)
                 .size(px(18.0))

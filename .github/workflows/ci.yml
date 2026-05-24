@@ -102,14 +102,46 @@ jobs:
       # `dtolnay/rust-toolchain` selects the channel from the ref
       # name (`@stable`), so a SHA pin loses that signal — the
       # `toolchain:` input carries it explicitly instead.
-      - name: Setup Rust (stable + clippy)
+      - name: Setup Rust (stable + clippy + rustfmt)
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: stable
-          components: clippy
+          components: clippy, rustfmt
 
       - name: Cache cargo registry + target
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      # Formatting is platform-independent, so the check only needs to
+      # run on one matrix entry. ubuntu-latest is the fastest to boot
+      # and gates the rest of the matrix on fast-fail — placing this
+      # before the platform deps install means a fmt regression
+      # surfaces in seconds rather than after an apt-get pass.
+      #
+      # Covers the root crate plus each scripts/* helper crate
+      # (virtual-serial, transfer-tests). Those crates aren't part of
+      # cargo's workspace so the root fmt invocation skips them; loop
+      # over the directories to bring them under the same gate.
+      - name: cargo fmt --check (root + scripts/*)
+        if: matrix.runner == 'ubuntu-latest'
+        run: |
+          cargo fmt --check
+          for d in scripts/*/; do
+            (cd "$d" && cargo fmt --check)
+          done
+
+      # cargo-deny reads Cargo.lock + deny.toml only — fully platform-
+      # independent, so the same one-runner gating as the fmt check
+      # applies. taiki-e/install-action fetches a prebuilt binary
+      # rather than building cargo-deny from source (~3 min savings).
+      - name: Install cargo-deny
+        if: matrix.runner == 'ubuntu-latest'
+        uses: taiki-e/install-action@65851e10cd6c377f11a60e600abc07cb08643468 # v2.79.3
+        with:
+          tool: cargo-deny
+
+      - name: cargo deny check
+        if: matrix.runner == 'ubuntu-latest'
+        run: cargo deny check
 
       # Linux: libudev for serialport's tty enumerator. libusb is
       # compiled statically into the binary by rusb's `vendored`
@@ -161,3 +193,19 @@ jobs:
       # pass `--lib` — that errors with "no library targets found".
       - name: cargo test
         run: cargo test
+
+      # scripts/* are dev-only helper crates (virtual-serial test
+      # rig, transfer-tests wire harness) that aren't part of
+      # cargo's workspace — the root `cargo clippy` / `cargo test`
+      # skip them entirely. Without this step, a shared type change
+      # in `src/data/transfer.rs` could break `scripts/transfer-tests`
+      # silently. Cold compile is ~30s per crate (small dep trees,
+      # no gpui); incremental is a few seconds. Ubuntu-only — these
+      # crates target Unix and the libudev install above satisfies
+      # their serialport dep.
+      - name: cargo build scripts/*
+        if: matrix.runner == 'ubuntu-latest'
+        run: |
+          for d in scripts/*/; do
+            (cd "$d" && cargo build)
+          done

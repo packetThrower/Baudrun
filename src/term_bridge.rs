@@ -343,7 +343,9 @@ pub fn make_term(
     scrolling_history: usize,
 ) -> (Term<TerminalListener>, Processor, Rc<ListenerState>) {
     let state = Rc::new(ListenerState::default());
-    let listener = TerminalListener { state: state.clone() };
+    let listener = TerminalListener {
+        state: state.clone(),
+    };
     let config = Config {
         scrolling_history,
         ..Config::default()
@@ -436,13 +438,21 @@ pub fn mirror_to_grid(
         let flags = CellFlags {
             bold: term_flags.contains(TermFlags::BOLD),
             italic: term_flags.contains(TermFlags::ITALIC),
-            underline: term_flags
-                .intersects(TermFlags::ALL_UNDERLINES),
+            underline: term_flags.intersects(TermFlags::ALL_UNDERLINES),
             strikethrough: term_flags.contains(TermFlags::STRIKEOUT),
             dim: term_flags.contains(TermFlags::DIM),
         };
 
-        out.set_cell(row, col, GridCell { ch: term_cell.c, fg, bg, flags });
+        out.set_cell(
+            row,
+            col,
+            GridCell {
+                ch: term_cell.c,
+                fg,
+                bg,
+                flags,
+            },
+        );
     }
 }
 
@@ -476,11 +486,25 @@ mod tests {
         // 16 = first cube cell = (0,0,0) → pure black.
         assert_eq!(indexed_to_rgb(16, &p), Rgb { r: 0, g: 0, b: 0 });
         // 231 = last cube cell = (5,5,5) → pure white.
-        assert_eq!(indexed_to_rgb(231, &p), Rgb { r: 255, g: 255, b: 255 });
+        assert_eq!(
+            indexed_to_rgb(231, &p),
+            Rgb {
+                r: 255,
+                g: 255,
+                b: 255
+            }
+        );
         // A mid-cube index proves the r/g/b decomposition:
         // 113 = 16 + 36·2 + 6·4 + 1 → (r=2, g=4, b=1)
         //     → ramp steps (135, 215, 95).
-        assert_eq!(indexed_to_rgb(113, &p), Rgb { r: 135, g: 215, b: 95 });
+        assert_eq!(
+            indexed_to_rgb(113, &p),
+            Rgb {
+                r: 135,
+                g: 215,
+                b: 95
+            }
+        );
     }
 
     #[test]
@@ -489,7 +513,14 @@ mod tests {
         // 232 = darkest gray = 8 + 0·10 = #080808.
         assert_eq!(indexed_to_rgb(232, &p), Rgb { r: 8, g: 8, b: 8 });
         // 255 = lightest gray = 8 + 23·10 = 238 = #eeeeee.
-        assert_eq!(indexed_to_rgb(255, &p), Rgb { r: 238, g: 238, b: 238 });
+        assert_eq!(
+            indexed_to_rgb(255, &p),
+            Rgb {
+                r: 238,
+                g: 238,
+                b: 238
+            }
+        );
     }
 
     #[test]

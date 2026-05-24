@@ -92,6 +92,7 @@ impl Store {
             .cloned()
     }
 
+    #[allow(dead_code)]
     pub fn resolve(&self, id: &str) -> Skin {
         self.get(id)
             .or_else(|| self.get(DEFAULT_SKIN_ID))
@@ -124,7 +125,11 @@ impl Store {
         // This branch handled the empty-id case before; we now also
         // run it on declared ids so they can't traverse out of
         // `self.dir`.
-        let source = if skin.id.is_empty() { &skin.name } else { &skin.id };
+        let source = if skin.id.is_empty() {
+            &skin.name
+        } else {
+            &skin.id
+        };
         let slug = crate::data::themes::slugify(source, "skin");
         skin.id = slug.clone();
         let base = slug;
@@ -165,7 +170,11 @@ impl Store {
     /// that bypasses `import` shouldn't be allowed to write a
     /// traversing path through `restore`.
     pub fn restore(&self, mut skin: Skin) -> Result<()> {
-        let source = if skin.id.is_empty() { &skin.name } else { &skin.id };
+        let source = if skin.id.is_empty() {
+            &skin.name
+        } else {
+            &skin.id
+        };
         skin.id = crate::data::themes::slugify(source, "skin");
         persist_user(&self.dir, &skin)?;
         self.user.write().unwrap().push(skin);
@@ -198,11 +207,7 @@ fn load_user(dir: &Path) -> Vec<Skin> {
         let data = match fs::read(&path) {
             Ok(d) => d,
             Err(err) => {
-                log::warn!(
-                    "skin: skipping unreadable file {}: {}",
-                    path.display(),
-                    err
-                );
+                log::warn!("skin: skipping unreadable file {}: {}", path.display(), err);
                 continue;
             }
         };

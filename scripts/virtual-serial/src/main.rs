@@ -31,10 +31,10 @@ use nix::sys::termios::{cfmakeraw, tcgetattr, tcsetattr, SetArg};
 fn main() {
     let args = Args::parse_or_exit();
 
-    let (master_a, slave_a, slave_a_path) = open_pty_pair()
-        .unwrap_or_else(|e| die(&format!("open pty A: {e}")));
-    let (master_b, slave_b, slave_b_path) = open_pty_pair()
-        .unwrap_or_else(|e| die(&format!("open pty B: {e}")));
+    let (master_a, slave_a, slave_a_path) =
+        open_pty_pair().unwrap_or_else(|e| die(&format!("open pty A: {e}")));
+    let (master_b, slave_b, slave_b_path) =
+        open_pty_pair().unwrap_or_else(|e| die(&format!("open pty B: {e}")));
 
     // Symlinks (best-effort cleanup on exit).
     let mut cleanup_links: Vec<String> = Vec::new();
@@ -118,8 +118,8 @@ fn main() {
 /// discovered via `ptsname_r` and then opened with `O_NOCTTY` so this
 /// process doesn't accidentally take it as its controlling terminal.
 fn open_pty_pair() -> Result<(File, File, String), String> {
-    let master_pty = posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY)
-        .map_err(|e| format!("posix_openpt: {e}"))?;
+    let master_pty =
+        posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY).map_err(|e| format!("posix_openpt: {e}"))?;
     grantpt(&master_pty).map_err(|e| format!("grantpt: {e}"))?;
     unlockpt(&master_pty).map_err(|e| format!("unlockpt: {e}"))?;
     // SAFETY: `ptsname` uses a static buffer and is not thread-safe.
@@ -127,8 +127,7 @@ fn open_pty_pair() -> Result<(File, File, String), String> {
     // either throttle thread is spawned, so the racy buffer is only
     // ever read by the main thread. `ptsname_r` would be safer but
     // is Linux-only; macOS exposes only the legacy `ptsname`.
-    let slave_path =
-        unsafe { ptsname(&master_pty) }.map_err(|e| format!("ptsname: {e}"))?;
+    let slave_path = unsafe { ptsname(&master_pty) }.map_err(|e| format!("ptsname: {e}"))?;
 
     let slave = OpenOptions::new()
         .read(true)
@@ -146,8 +145,7 @@ fn open_pty_pair() -> Result<(File, File, String), String> {
     // benefit from raw-by-default.
     let mut termios = tcgetattr(&slave).map_err(|e| format!("tcgetattr: {e}"))?;
     cfmakeraw(&mut termios);
-    tcsetattr(&slave, SetArg::TCSANOW, &termios)
-        .map_err(|e| format!("tcsetattr: {e}"))?;
+    tcsetattr(&slave, SetArg::TCSANOW, &termios).map_err(|e| format!("tcsetattr: {e}"))?;
 
     // Convert the master into a plain `File` for ergonomic std::io.
     // PtyMaster wraps an `OwnedFd` internally; `into_raw_fd` peels

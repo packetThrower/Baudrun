@@ -56,8 +56,20 @@ fn extract_word_alternation(pattern: &str) -> Option<Vec<String>> {
         if alt.bytes().any(|b| {
             matches!(
                 b,
-                b'\\' | b'|' | b'(' | b')' | b'[' | b']' | b'{' | b'}'
-                    | b'?' | b'*' | b'+' | b'.' | b'^' | b'$'
+                b'\\'
+                    | b'|'
+                    | b'('
+                    | b')'
+                    | b'['
+                    | b']'
+                    | b'{'
+                    | b'}'
+                    | b'?'
+                    | b'*'
+                    | b'+'
+                    | b'.'
+                    | b'^'
+                    | b'$'
             )
         }) {
             return None;
@@ -244,9 +256,7 @@ impl HighlightEngine {
             staging.clear();
             rule.find_into(line, &mut staging);
             for &(start, end, open) in &staging {
-                let overlaps = matches
-                    .iter()
-                    .any(|(s, e, _)| !(end <= *s || start >= *e));
+                let overlaps = matches.iter().any(|(s, e, _)| !(end <= *s || start >= *e));
                 if !overlaps {
                     matches.push((start, end, open));
                 }

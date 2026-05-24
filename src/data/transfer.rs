@@ -150,7 +150,15 @@ where
             return Err(TransferError::Cancelled);
         }
         let end = (offset + block_size).min(data.len());
-        match send_block(r, w, header, block_num, &data[offset..end], block_size, use_crc) {
+        match send_block(
+            r,
+            w,
+            header,
+            block_num,
+            &data[offset..end],
+            block_size,
+            use_crc,
+        ) {
             Ok(()) => {}
             Err(err) => {
                 abort(w);
@@ -391,9 +399,7 @@ mod tests {
 
     impl TransferReader for MockReader {
         fn next_byte(&mut self, _timeout: Duration) -> Result<u8> {
-            self.queue
-                .pop_front()
-                .ok_or(TransferError::Timeout)
+            self.queue.pop_front().ok_or(TransferError::Timeout)
         }
     }
 

@@ -10,11 +10,22 @@
 //!  3. Manufacturer-string heuristic as a last resort — the chip's
 //!     own iManufacturer descriptor often outs the underlying silicon
 //!     even when the enclosing device has its own VID.
+//!
+//! **Status:** every public item here is called only from
+//! `serial::detect` / `serial::usb_darwin` / `serial::usb_windows`,
+//! all of which are `#[cfg(any(target_os = "macos", target_os =
+//! "windows"))]`. On Linux the entire missing-driver-detection
+//! path is a `Vec::new()` stub (kernel-side driver loading covers
+//! the same need), so on Linux every item in this module is
+//! unreachable — dead-code under `-D warnings`. File-level allow
+//! matches the pattern used by `usb_darwin`, `direct`, `cp210x`,
+//! `usbserial`, the other modules in the same platform-conditional
+//! cluster.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 
-const SILABS_DRIVER_URL: &str =
-    "https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers";
+const SILABS_DRIVER_URL: &str = "https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers";
 
 /// USB device whose VID/manufacturer points at a known serial
 /// chipset but which isn't currently accessible as a serial port —
@@ -211,7 +222,10 @@ mod tests {
     fn identify_ftdi_has_no_driver_url() {
         let info = identify("0403", "6001", "");
         assert_eq!(info.name, "FTDI");
-        assert!(!info.needs_driver(), "FTDI uses kernel CDC — no user driver");
+        assert!(
+            !info.needs_driver(),
+            "FTDI uses kernel CDC — no user driver"
+        );
     }
 
     #[test]
@@ -236,7 +250,9 @@ mod tests {
 
     #[test]
     fn suspect_product_detection() {
-        assert!(is_suspect_product("Please install corresponding PL2303 driver"));
+        assert!(is_suspect_product(
+            "Please install corresponding PL2303 driver"
+        ));
         assert!(is_suspect_product("DEVICE NOT SUPPORT on newer driver"));
         assert!(!is_suspect_product("USB Serial Converter"));
     }

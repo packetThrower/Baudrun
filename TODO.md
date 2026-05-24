@@ -626,6 +626,27 @@ are deferred until someone actually asks — useful but high-effort or
 niche enough that priority tracks real demand. All of these will be
 implemented in the new stack post-migration.
 
+- [ ] **Re-wire `data::usbserial::cp210x` as a fallback in
+      `serial_io::open`.** The Tauri build dropped through to the
+      libusb-direct CP210x backend when the OS didn't surface the
+      port (most common case: macOS without SiLabs' VCP kext
+      installed). The gpui rewrite went `serialport`-only and
+      never restored the fallback — so on a fresh macOS install,
+      a Siemens RuggedCom RST2228 (CP210x rebrand at VID 0x0908,
+      PID 0x01FF — already in `cp210x.rs::REBRANDS`) doesn't
+      enumerate and the user can't connect. The full driver code
+      already exists at `src/data/usbserial/cp210x.rs` (carrying
+      the AN571 control-transfer dance + the `Cp210xPort` Read /
+      Write / control-line surface) under a file-level
+      `#![allow(dead_code)]` so it builds; the missing piece is
+      wiring it into `serial_io::open`'s "OS port not found"
+      branch, plus surfacing the libusb-direct ports under the
+      same `usb:VID:PID:Serial` name scheme `data::serial::direct`
+      already defines. Verification target: connect to a
+      RuggedCom RST2228 on a macOS host that hasn't installed
+      the SiLabs VCP kext. Once wired, drop the file-level
+      `allow(dead_code)` on `cp210x.rs`, `usbserial/mod.rs`, and
+      `serial/direct.rs` so future drift surfaces.
 - [ ] **Macros / quick-send buttons.** **[on request]** Profile-level
       canned strings bound to session-header buttons — `show
       running-config`, `AT+RST`, vendor-specific reboot commands,
@@ -713,6 +734,36 @@ landed in commit TODO; the items below are the remaining feature work.
       HKLM, MajorUpgrade for clean version-to-version replacement).
       Signing-friendly when the certs land — one MSI to sign per
       arch, no per-tool dance.
+- [ ] **Re-include arm64 in the winget submission.** v0.12.4
+      shipped x64-only on winget
+      ([microsoft/winget-pkgs#377461](https://github.com/microsoft/winget-pkgs/pull/377461))
+      because the validator's headless arm64 sandbox hit a
+      cleanup-time `RefCell` reentrancy panic inside gpui after
+      `D3D11CreateDevice` returned
+      `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`. The
+      `chore/audit-2026-05-22` branch landed a pre-flight
+      `D3D11CreateDevice` probe in `src/main.rs::dxgi_probe` that
+      runs BEFORE any gpui state exists — failure path pops the
+      same Windows error dialog flavour and exits 0, with zero
+      cleanup-time `AsyncApp::update_entity` panic because there's
+      no gpui state to clean up. Probe verified happy-path on a
+      real Windows-arm UTM VM; failure path can't be reproduced
+      locally (any user-mode Windows install always has Microsoft
+      Basic Display Driver as a fallback that satisfies
+      `D3D11CreateDevice(HARDWARE)`), so the actual validator-side
+      verification has to come from the next submission. Sequence:
+      1. Merge `chore/audit-2026-05-22` to main.
+      2. Re-add the `Architecture: arm64` block to
+         `packaging/windows/winget/packetThrower.Baudrun.installer.yaml.template`
+         (undo fde581f's deletion).
+      3. Bump to v0.12.5, tag, let release.yml ship the arm64 .msi.
+      4. `wingetcreate update packetThrower.Baudrun --version 0.12.5
+         --urls $X64,$ARM64 --submit` — validator runs both, probe
+         fires on the arm64 sandbox, exits 0, validation passes.
+      If the validator still rejects: capture the actual HRESULT
+      from the launch test log and iterate. The previous failure
+      mode (cleanup panic) is structurally fixed; any new
+      rejection would be on a different code path.
 - [ ] **Public downloads for a private source repo.** Shared
       downloads repo serving both Baudrun and get_switch_info:
       1. Create public `packetThrower/downloads` (empty, README listing

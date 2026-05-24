@@ -4,6 +4,12 @@
 //! that already have a serial driver bound — the whole point of
 //! missing-driver detection is to find devices the driver HASN'T
 //! bound to yet.
+//!
+//! **Status:** the public entry point is unused (no caller hits
+//! `detect_missing_drivers` from the gpui UI yet). Tests still
+//! exercise the parser. Narrowed replacement for `data/mod.rs`'s
+//! blanket allow.
+#![allow(dead_code)]
 
 use std::collections::HashSet;
 use std::process::Command;
@@ -21,10 +27,7 @@ pub fn detect_missing_drivers() -> Result<Vec<USBSerialCandidate>, String> {
     if let Ok(ports) = serialport::available_ports() {
         for entry in ports {
             if let serialport::SerialPortType::UsbPort(u) = entry.port_type {
-                drivered.insert(format!(
-                    "{:04x}:{:04x}",
-                    u.vid, u.pid
-                ));
+                drivered.insert(format!("{:04x}:{:04x}", u.vid, u.pid));
             }
         }
     }
@@ -98,10 +101,7 @@ fn read_ioreg_usb() -> Result<Vec<IoregDevice>, String> {
         .output()
         .map_err(|e| format!("ioreg: {}", e))?;
     if !out.status.success() {
-        return Err(format!(
-            "ioreg exited {:?}",
-            out.status.code()
-        ));
+        return Err(format!("ioreg exited {:?}", out.status.code()));
     }
     Ok(parse_ioreg_usb(&String::from_utf8_lossy(&out.stdout)))
 }
@@ -183,7 +183,10 @@ fn parse_ioreg_usb(text: &str) -> Vec<IoregDevice> {
 /// "0x908") and returns a lowercase 4-digit hex string.
 fn numeric_to_hex(s: &str) -> String {
     let trimmed = s.trim();
-    let n = if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| trimmed.strip_prefix("0X")) {
+    let n = if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
         i64::from_str_radix(hex, 16).ok()
     } else {
         trimmed.parse::<i64>().ok()

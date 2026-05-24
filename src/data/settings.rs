@@ -186,10 +186,7 @@ impl Default for Settings {
             disable_update_check: false,
             include_prerelease_updates: false,
             dismissed_update_version: None,
-            enabled_highlight_presets: Some(vec![
-                "baudrun-default".into(),
-                "user".into(),
-            ]),
+            enabled_highlight_presets: Some(vec!["baudrun-default".into(), "user".into()]),
             settings_window: None,
             main_window: None,
             disable_window_state_restore: false,

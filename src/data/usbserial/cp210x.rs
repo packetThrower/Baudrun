@@ -5,6 +5,17 @@
 //! Reference: SiLabs AN571 "CP210x/CP211x USB to UART Bridge VCP
 //! Interface Specification".
 //! <https://www.silabs.com/documents/public/application-notes/AN571.pdf>
+//!
+//! **Status:** orphaned post-gpui-migration. The new serial I/O path
+//! in `src/serial_io.rs` uses the `serialport` crate uniformly
+//! across platforms, so the direct-libusb fallback this module
+//! implements isn't called from anywhere. Kept compiled (rather
+//! than gated behind a feature or deleted) so the chipset tests
+//! still run and the code stays buildable for whenever we wire
+//! the libusb path back in. The `#![allow(dead_code)]` below is
+//! the narrowed replacement for the module-wide allow that used
+//! to live on `data/mod.rs`.
+#![allow(dead_code)]
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,8 +25,8 @@ use std::time::Duration;
 use rusb::{Direction, GlobalContext, TransferType};
 
 use super::{
-    register as register_driver, trim_descriptor, Device, Driver, FlowControl, Framing, ModemStatus,
-    Parity, Pid, Port, Vid, CHIPSET_CP210X,
+    register as register_driver, trim_descriptor, Device, Driver, FlowControl, Framing,
+    ModemStatus, Parity, Pid, Port, Vid, CHIPSET_CP210X,
 };
 
 // --- USB identifiers -----------------------------------------------------
@@ -166,9 +177,7 @@ fn open_port_inner(target: Device) -> io::Result<Cp210xPort> {
     let iface = iface_desc.interface_number() as u16;
     let (in_ep, out_ep) = find_bulk_endpoints(&iface_desc)?;
 
-    handle
-        .claim_interface(iface as u8)
-        .map_err(rusb_to_io)?;
+    handle.claim_interface(iface as u8).map_err(rusb_to_io)?;
 
     let port = Cp210xPort {
         handle,
@@ -236,7 +245,10 @@ impl Cp210xPort {
             other => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    format!("cp210x: stop bits must be 1, 15 (=1.5), or 2; got {}", other),
+                    format!(
+                        "cp210x: stop bits must be 1, 15 (=1.5), or 2; got {}",
+                        other
+                    ),
                 ));
             }
         };
@@ -332,9 +344,10 @@ impl Port for Cp210xPort {
         }
         match self.handle.read_bulk(self.in_endpoint, buf, READ_TIMEOUT) {
             Ok(n) => Ok(n),
-            Err(rusb::Error::Timeout) => {
-                Err(io::Error::new(io::ErrorKind::TimedOut, "cp210x read timeout"))
-            }
+            Err(rusb::Error::Timeout) => Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "cp210x read timeout",
+            )),
             Err(_) if self.closed.load(Ordering::Acquire) => {
                 Err(io::Error::new(io::ErrorKind::UnexpectedEof, "port closed"))
             }
