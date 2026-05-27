@@ -44,6 +44,35 @@ Update with `brew upgrade --cask baudrun` (or `baudrun@alpha`). The tap's
 auto-bump workflow polls upstream every 6 hours, so a new tag is normally
 installable within a quarter day.
 
+## Windows (winget)
+
+[winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+is Microsoft's own package manager, preinstalled on Windows 10 1809+ and
+Windows 11. The [packetThrower.Baudrun manifest](https://github.com/microsoft/winget-pkgs/tree/master/manifests/p/packetThrower/Baudrun)
+ships per-arch MSI installers and resolves either by the full
+`PackageIdentifier` or the short moniker:
+
+```powershell
+winget install packetThrower.Baudrun        # full identifier
+winget install baudrun                      # short moniker (same result)
+```
+
+winget picks the right architecture automatically (x64 or arm64) based on
+the host. The MSI installs to `Program Files\Baudrun\`, registers under
+Apps & Features with the Baudrun icon, and adds a Start menu shortcut.
+Silent install is the default for winget (no SmartScreen prompt, no
+clicks).
+
+winget carries **stable only** — no pre-release channel. If you want to
+ride pre-release builds on Windows, use Scoop below (which has a
+`baudrun-prerelease` manifest) or grab the artifact directly from the
+[Releases](https://github.com/packetThrower/Baudrun/releases) page.
+
+Update with `winget upgrade packetThrower.Baudrun` (or
+`winget upgrade --all`). winget polls Microsoft's centralized manifest
+index every few hours, so a new stable tag is normally installable
+within a quarter day of release.
+
 ## Windows (Scoop)
 
 The bucket [`packetThrower/scoop-bucket`](https://github.com/packetThrower/scoop-bucket)
@@ -165,19 +194,21 @@ are on the near-term roadmap before that becomes an auto-install path.
 
 Pre-release tags (`vX.Y.Z-alpha.N`, `-beta.N`, `-rc.N`) trigger the same
 release workflow as stable but publish under GitHub's "Pre-release" badge
-and don't displace the "Latest release" pointer. Both Homebrew and Scoop
-expose a separate manifest for that channel. Installs land side-by-side
-with stable so both can run on the same machine:
+and don't displace the "Latest release" pointer. Homebrew and Scoop both
+expose a separate manifest for that channel; winget is stable-only.
+Installs land side-by-side with stable so both can run on the same
+machine:
 
 | Channel | macOS install | Windows install |
 |---|---|---|
-| Stable | `brew install --cask baudrun` | `scoop install baudrun` |
+| Stable | `brew install --cask baudrun` | `winget install packetThrower.Baudrun` or `scoop install baudrun` |
 | Pre-release | `brew install --cask baudrun@alpha` | `scoop install baudrun-prerelease` |
 
 Linux users grab a pre-release tag's artifact directly from the
 [Releases](https://github.com/packetThrower/Baudrun/releases) page. The
 "latest/download/" shortcut always tracks stable so it isn't useful for
-pre-release downloads.
+pre-release downloads. Windows pre-release users likewise need Scoop or a
+direct download — winget doesn't have a pre-release equivalent.
 
 The in-app update check can also follow the pre-release channel:
 **Settings → Updates → "Include pre-releases"** makes the boot-time
@@ -189,6 +220,7 @@ next pre-release just like it does on stable.
 | Install path | Update command |
 |---|---|
 | Homebrew | `brew upgrade --cask baudrun` (or `baudrun@alpha`) |
+| winget | `winget upgrade packetThrower.Baudrun` |
 | Scoop | `scoop update baudrun` (or `baudrun-prerelease`) |
 | `.deb` | `sudo apt install ./Baudrun_<new>_amd64.deb` |
 | `.rpm` | `sudo dnf install ./Baudrun-<new>-1.x86_64.rpm` |
@@ -200,6 +232,7 @@ next pre-release just like it does on stable.
 | Install path | Uninstall command |
 |---|---|
 | Homebrew | `brew uninstall --cask baudrun baudrun@alpha` |
+| winget | `winget uninstall packetThrower.Baudrun` |
 | Scoop | `scoop uninstall baudrun baudrun-prerelease` |
 | Linux package | `sudo apt remove baudrun` / `sudo dnf remove baudrun` / `sudo pacman -R baudrun` |
 | Direct download | drag `Baudrun.app` to Trash, run the uninstaller `Baudrun_<version>_x64-setup.exe /S` with `--uninstall`, or just delete the AppImage |
