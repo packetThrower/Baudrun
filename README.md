@@ -7,6 +7,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/packetThrower/Baudrun/ci.yml?branch=main&style=flat-square&logo=github&label=CI)](https://github.com/packetThrower/Baudrun/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/packetThrower/Baudrun?style=flat-square&logo=github&label=release&include_prereleases)](https://github.com/packetThrower/Baudrun/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/packetThrower/Baudrun/total?style=flat-square&logo=github&label=downloads)](https://github.com/packetThrower/Baudrun/releases)
+[![winget](https://img.shields.io/badge/winget-packetThrower.Baudrun-0078D4?style=flat-square&logo=windows&logoColor=white)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/p/packetThrower/Baudrun)
 [![Rust](https://img.shields.io/badge/Rust-stable-CE422B?style=flat-square&logo=rust&logoColor=white)](Cargo.toml)
 [![License: GPL v3+](https://img.shields.io/badge/license-GPLv3%2B-blue?style=flat-square)](LICENSE)
 
@@ -104,14 +105,18 @@ Sample JSON for authoring your own skins, themes, and highlight packs is on the
 ## Install
 
 On macOS and Windows, the package managers track the latest stable tag and get
-you past the first-launch Gatekeeper and SmartScreen warnings. Both also have a
-pre-release channel that installs alongside stable.
+you past the first-launch Gatekeeper and SmartScreen warnings. Homebrew, Scoop,
+and winget also bypass the SmartScreen prompt; winget is Microsoft's own and
+ships built-in on Windows 10 1809+ and Windows 11.
 
 ```sh
 # macOS — Homebrew
 brew tap packetThrower/tap
 brew install --cask baudrun                 # stable
 brew install --cask baudrun@alpha           # pre-release
+
+# Windows — winget (Microsoft's package manager, preinstalled)
+winget install packetThrower.Baudrun        # or: winget install baudrun
 
 # Windows — Scoop
 scoop install git                           # if you don't already have git
@@ -120,9 +125,13 @@ scoop install baudrun                       # stable
 scoop install baudrun-prerelease            # pre-release
 ```
 
-The taps also hold related tools. Repos:
+The Homebrew and Scoop taps also hold related tools, and Scoop has a separate
+manifest for the pre-release channel. winget only carries stable; for
+pre-release builds on Windows, use Scoop or download from
+[Releases](https://github.com/packetThrower/Baudrun/releases) directly. Repos:
 [packetThrower/homebrew-tap](https://github.com/packetThrower/homebrew-tap),
-[packetThrower/scoop-bucket](https://github.com/packetThrower/scoop-bucket).
+[packetThrower/scoop-bucket](https://github.com/packetThrower/scoop-bucket),
+[microsoft/winget-pkgs `packetThrower/Baudrun`](https://github.com/microsoft/winget-pkgs/tree/master/manifests/p/packetThrower/Baudrun).
 
 Linux users grab the matching `.deb` / `.rpm` / `.AppImage` /
 `.pkg.tar.zst` directly from the
