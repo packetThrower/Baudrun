@@ -18,11 +18,41 @@ to hand-write the YAML each release.
 | `packetThrower.Baudrun.installer.yaml.template` | Installer manifest. Substitute `${VERSION}`, `${RELEASE_DATE}`, `${SHA256_AMD64_MSI}`, `${SHA256_ARM64_MSI}`, `${PRODUCT_CODE_AMD64}`, `${PRODUCT_CODE_ARM64}`. |
 | `rendered/<version>/` | Archived copy of the YAMLs submitted upstream for each version. Mirrors what's at `manifests/p/packetThrower/Baudrun/<version>/` in `microsoft/winget-pkgs`. |
 
-## The submission, via wingetcreate (preferred)
+## The submission, automated via CI (preferred)
 
-`wingetcreate` is Microsoft's CLI for the winget-pkgs repo. It
-forks the upstream repo, commits the rendered manifests, and
-opens the PR for us.
+Stable tags fire `.github/workflows/after_release.yml::publish_winget`,
+which submits the winget-pkgs PR for us:
+
+  1. release.yml publishes the GitHub Release (stable tag only —
+     pre-release tags skip the MSI build and the winget submission).
+  2. The Release-published event fires `after_release.yml`.
+  3. The `publish_winget` job syncs the maintainer's
+     `packetThrower/winget-pkgs` fork against upstream master, then
+     runs `vedantmgoyal9/winget-releaser` to render the templates,
+     commit them under `manifests/p/packetThrower/Baudrun/<version>/`
+     on the fork, and open the PR against `microsoft/winget-pkgs`.
+  4. The winget-pkgs validator runs on the PR; on success a
+     moderator merges it.
+
+The flow is hands-off after the tag push. If the release-event
+trigger doesn't fire (rare GitHub Actions slow-publish race), use
+the `workflow_dispatch` trigger from the Actions UI with the tag
+name to re-run just the winget submission.
+
+**One-time setup** (already done as of v0.13.0):
+
+  * Personal access token (fine-grained) with **Contents: read +
+    write** and **Pull requests: read + write** on the maintainer's
+    `winget-pkgs` fork, stored as the `WINGET_TOKEN` repo secret.
+  * The fork at `packetThrower/winget-pkgs` exists and is current
+    enough for GitHub's `/merge-upstream` endpoint to fast-forward
+    against upstream master.
+
+## The submission, manually via wingetcreate
+
+Fallback path if the automation is offline or for a non-release
+emergency submission. `wingetcreate` is Microsoft's CLI for the
+winget-pkgs repo:
 
 ```powershell
 # Windows host. winget install Microsoft.WingetCreate (one-time).
@@ -48,7 +78,7 @@ wingetcreate update packetThrower.Baudrun `
 The `--submit` flag opens the PR for you. Without it, the YAMLs
 land in a temp directory for review.
 
-## The submission, manually
+## The submission, manually via in-repo render
 
 Targets the `winget-pkgs` fork's `manifests/p/packetThrower/Baudrun/<version>/` layout.
 
