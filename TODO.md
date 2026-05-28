@@ -740,30 +740,59 @@ landed in commit TODO; the items below are the remaining feature work.
       because the validator's headless arm64 sandbox hit a
       cleanup-time `RefCell` reentrancy panic inside gpui after
       `D3D11CreateDevice` returned
-      `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`. The
-      `chore/audit-2026-05-22` branch landed a pre-flight
-      `D3D11CreateDevice` probe in `src/main.rs::dxgi_probe` that
-      runs BEFORE any gpui state exists — failure path pops the
-      same Windows error dialog flavour and exits 0, with zero
-      cleanup-time `AsyncApp::update_entity` panic because there's
-      no gpui state to clean up. Probe verified happy-path on a
-      real Windows-arm UTM VM; failure path can't be reproduced
-      locally (any user-mode Windows install always has Microsoft
-      Basic Display Driver as a fallback that satisfies
-      `D3D11CreateDevice(HARDWARE)`), so the actual validator-side
-      verification has to come from the next submission. Sequence:
-      1. Merge `chore/audit-2026-05-22` to main.
-      2. Re-add the `Architecture: arm64` block to
-         `packaging/windows/winget/packetThrower.Baudrun.installer.yaml.template`
-         (undo fde581f's deletion).
-      3. Bump to v0.12.5, tag, let release.yml ship the arm64 .msi.
-      4. `wingetcreate update packetThrower.Baudrun --version 0.12.5
-         --urls $X64,$ARM64 --submit` — validator runs both, probe
-         fires on the arm64 sandbox, exits 0, validation passes.
-      If the validator still rejects: capture the actual HRESULT
-      from the launch test log and iterate. The previous failure
-      mode (cleanup panic) is structurally fixed; any new
-      rejection would be on a different code path.
+      `DXGI_ERROR_NOT_CURRENTLY_AVAILABLE`. v0.13.0 added a
+      pre-flight `D3D11CreateDevice` probe in `src/main.rs::dxgi_probe`
+      that runs BEFORE any gpui state exists — failure path pops a
+      Windows error dialog and exits 0, with zero cleanup-time
+      `AsyncApp::update_entity` panic because no gpui state exists
+      to clean up. arm64 was re-added to v0.13.0's winget submission
+      ([microsoft/winget-pkgs#380519](https://github.com/microsoft/winget-pkgs/pull/380519))
+      and **still hit `Validation-Executable-Error`** with
+      `STATUS_STACK_BUFFER_OVERRUN` (`-1073740791` / `0xC0000409`,
+      Rust's panic-abort signature). The probe didn't fire on the
+      validator's arm64 sandbox because the sandbox has a fallback
+      adapter (Microsoft Basic Render Driver / WARP) that satisfies
+      `D3D11CreateDevice(HARDWARE)` — the probe said "all good" and
+      the process continued into gpui init where the original
+      cleanup-time panic still fires (see line 59 of the validator's
+      `Log_InstallationClient` — Baudrun "ran for less than 10
+      seconds: True" five times in a row with the panic-abort exit
+      code, ruling out the probe path which would have left a
+      blocking MessageBox alive past the 10s timeout). v0.13.0 was
+      reverted to x64-only on the PR to unblock the submission.
+
+      Two paths forward, in order of preference:
+
+      1. **Structural fix — adopt Zed's `fail_to_open_window_async`
+         pattern.** Move window creation into a `cx.spawn` deferred
+         continuation so the initial `app.run` borrow releases before
+         the failure path runs. Eliminates the RefCell-still-held
+         panic regardless of which D3D11 call satisfies what — no
+         probe needed. Multi-hour refactor of `src/main.rs::main`'s
+         init order. Best done with a Windows-arm dev environment
+         (UTM VM, native arm64 build for fast iteration) since the
+         validator round-trip is 30+ min per attempt.
+
+      2. **Stricter probe.** Move from
+         `D3D11CreateDevice(HARDWARE, NULL adapter, ...)` to
+         enumerate adapters via `CreateDXGIFactory1` +
+         `IDXGIFactory1::EnumAdapters1`, reject any adapter with
+         `DXGI_ADAPTER_FLAG_SOFTWARE` set, then try
+         `D3D11CreateDevice` with that explicit adapter pointer and
+         gpui's feature level array. ~80 lines of additional FFI on
+         top of the current 30. Less reliable than (1) — the
+         validator's sandbox might have a "real-looking" software
+         adapter that doesn't trip the SOFTWARE flag, or have a
+         WDDM hardware adapter that's nonetheless inadequate for
+         gpui's higher feature levels. Worth attempting only if (1)
+         turns out to be much harder than expected.
+
+      When attempting either fix, the verification round-trip via
+      the actual winget validator is the only definitive test —
+      local reproduction is unreliable because every Windows install
+      has *some* fallback D3D11 adapter that satisfies a naive
+      probe. Reserve a half-day budget per attempt for the validator
+      round-trip + log analysis.
 - [ ] **Public downloads for a private source repo.** Shared
       downloads repo serving both Baudrun and get_switch_info:
       1. Create public `packetThrower/downloads` (empty, README listing
