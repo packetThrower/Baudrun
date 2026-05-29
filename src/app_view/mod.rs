@@ -3950,7 +3950,21 @@ fn profile_row(
     // on the port text below, long port strings wrap inside
     // the row instead of stretching it.
     let row_width_px = SIDEBAR_WIDTH_PX - 24.0;
+    // Stable element id keyed off the profile UUID. Without an id,
+    // gpui's `div::request_paint` skips the `cx.notify(current_view)`
+    // it would otherwise fire when the mouse enters/leaves the
+    // hitbox of an element with a `.hover()` style — see
+    // `gpui/src/elements/div.rs` around the
+    // `if let Some(hover_state) = &hover_state` branch in the
+    // mouse-move handler. The hover style itself is paint-time, but
+    // without a notify the window never repaints in response to the
+    // hover change, so the grey background only paints when some
+    // unrelated event (cursor blink, settings tick, …) happens to
+    // dirty AppView — which read as a >200 ms hover lag. `profile_icon`
+    // (collapsed-mode counterpart) already has an id for the same
+    // reason; this brings the expanded row in line.
     let mut row = div()
+        .id(SharedString::from(format!("profile-row-{}", id)))
         .w(px(row_width_px))
         .overflow_hidden()
         .px_3()
