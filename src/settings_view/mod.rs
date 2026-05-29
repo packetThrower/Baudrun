@@ -1637,6 +1637,9 @@ impl SettingsView {
                 };
                 let accent = s.accent;
                 div()
+                    // Stable per-action id so gpui notifies on hover
+                    // transitions — same fix as `profile_row`.
+                    .id(SharedString::from(format!("shortcut-capture-{action}")))
                     .min_w(px(150.0))
                     .px_3()
                     .py(px(6.0))
@@ -1665,6 +1668,9 @@ impl SettingsView {
                 let hover_bg = s.bg_input;
                 let hover_fg = s.fg_primary;
                 div()
+                    // Stable per-action id so gpui notifies on hover
+                    // transitions — same fix as `profile_row`.
+                    .id(SharedString::from(format!("shortcut-reset-{action}")))
                     .px_2()
                     .py(px(4.0))
                     .rounded_sm()
@@ -1768,6 +1774,7 @@ impl SettingsView {
                     )
                     .child(import_button(
                         s,
+                        "import-theme",
                         "Import .itermcolors\u{2026}",
                         cx,
                         |this, window, cx| this.start_theme_import(window, cx),
@@ -1808,8 +1815,10 @@ impl SettingsView {
                 },
             ));
         }
+        let preview_id = ElementId::Name(SharedString::from(format!("preview-theme-{}", theme.id)));
         right = right.child(import_button(
             s,
+            preview_id,
             // The shape of import_button (pill, accent hover) is also
             // what we want for Preview — reuse rather than duplicate
             // a near-identical helper.
@@ -1928,6 +1937,7 @@ impl SettingsView {
             .gap_3()
             .child(import_button(
                 s,
+                "import-highlight",
                 "Import pack\u{2026}",
                 cx,
                 |this, window, cx| this.start_highlight_import(window, cx),
@@ -2011,6 +2021,7 @@ impl SettingsView {
                     )
                     .child(import_button(
                         s,
+                        "import-skin",
                         "Import skin\u{2026}",
                         cx,
                         |this, window, cx| this.start_skin_import(window, cx),
@@ -2265,16 +2276,28 @@ impl SettingsView {
                         .flex_row()
                         .gap_2()
                         .items_center()
-                        .child(import_button(s, "View release", cx, {
-                            let url = a.html_url.clone();
-                            move |_, _, cx| cx.open_url(&url)
-                        }))
-                        .child(import_button(s, "Dismiss this version", cx, {
-                            let version = a.version.clone();
-                            move |this, _, cx| {
-                                this.dismiss_update(version.clone(), cx);
-                            }
-                        })),
+                        .child(import_button(
+                            s,
+                            "updates-view-release",
+                            "View release",
+                            cx,
+                            {
+                                let url = a.html_url.clone();
+                                move |_, _, cx| cx.open_url(&url)
+                            },
+                        ))
+                        .child(import_button(
+                            s,
+                            "updates-dismiss",
+                            "Dismiss this version",
+                            cx,
+                            {
+                                let version = a.version.clone();
+                                move |this, _, cx| {
+                                    this.dismiss_update(version.clone(), cx);
+                                }
+                            },
+                        )),
                 )
             }
         });
@@ -2397,13 +2420,18 @@ impl SettingsView {
                         )
                         .child(import_button(
                             s,
+                            "log-dir-choose",
                             "Choose\u{2026}",
                             cx,
                             |this, window, cx| this.choose_log_dir(window, cx),
                         ))
-                        .child(import_button(s, "Reset", cx, |this, window, cx| {
-                            this.reset_log_dir(window, cx)
-                        })),
+                        .child(import_button(
+                            s,
+                            "log-dir-reset",
+                            "Reset",
+                            cx,
+                            |this, window, cx| this.reset_log_dir(window, cx),
+                        )),
                 ),
             )
             .child(self.filtered_card(
@@ -2471,12 +2499,14 @@ impl SettingsView {
                                 .gap_2()
                                 .child(import_button(
                                     s,
+                                    "reset-settings-window",
                                     "Reset Settings window",
                                     cx,
                                     |this, window, cx| this.reset_settings_window(window, cx),
                                 ))
                                 .child(import_button(
                                     s,
+                                    "reset-main-window",
                                     "Reset main window",
                                     cx,
                                     |this, window, cx| this.reset_main_window(window, cx),
@@ -2548,9 +2578,13 @@ impl SettingsView {
                                             ),
                                     ),
                             )
-                            .child(import_button(s, "Reveal", cx, |this, window, cx| {
-                                this.reveal_config_dir(window, cx)
-                            })),
+                            .child(import_button(
+                                s,
+                                "config-dir-reveal",
+                                "Reveal",
+                                cx,
+                                |this, window, cx| this.reveal_config_dir(window, cx),
+                            )),
                     )
                     .child(
                         div()
@@ -2593,12 +2627,14 @@ impl SettingsView {
                             // labels truncate or wrap.
                             .child(div().flex_shrink_0().child(import_button(
                                 s,
+                                "config-dir-choose",
                                 "Choose\u{2026}",
                                 cx,
                                 |this, window, cx| this.choose_config_dir(window, cx),
                             )))
                             .child(div().flex_shrink_0().child(import_button(
                                 s,
+                                "config-dir-reset",
                                 "Reset",
                                 cx,
                                 |this, window, cx| this.reset_config_dir(window, cx),

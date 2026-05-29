@@ -209,6 +209,12 @@ pub(super) fn rail(
         let opacity = if dimmed { 0.35 } else { 1.0 };
         let show_dot = update_pending && tab == SettingsTab::Updates;
         div()
+            // Stable id so gpui's mouse-move handler actually notifies
+            // on hover-state transitions — without it the `.hover()`
+            // style only paints when some unrelated event happens to
+            // dirty SettingsView. Same fix as `profile_row`. The label
+            // is unique within the rail so it works as a stable key.
+            .id(label)
             .w_full()
             .px_3()
             .py(px(6.0))
@@ -423,8 +429,18 @@ pub(super) fn resolve_config_dir_display() -> SharedString {
 /// chrome — slightly raised on the panel's translucent bg, accent
 /// border on hover for affordance. The on-click handler lives in
 /// `SettingsView::start_*_import`.
+///
+/// `id` is required (not derived from `label`) because the Advanced
+/// tab carries two pairs of "Choose…" / "Reset" buttons (log dir
+/// and config dir) — auto-deriving from label would collide. The id
+/// also satisfies gpui's `.hover()` requirement: without a stable
+/// id, gpui's mouse-move handler skips the `cx.notify` that would
+/// otherwise repaint the window on hover-state transitions, so the
+/// accent-border swap only paints when an unrelated event happens
+/// to dirty SettingsView.
 pub(super) fn import_button<F>(
     s: SkinTokens,
+    id: impl Into<ElementId>,
     label: &'static str,
     cx: &mut Context<SettingsView>,
     on_click: F,
@@ -435,6 +451,7 @@ where
     let accent = s.accent;
     div().child(
         div()
+            .id(id)
             .px_3()
             .py_1()
             .rounded_md()

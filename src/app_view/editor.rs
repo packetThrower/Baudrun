@@ -664,6 +664,11 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
         };
         let hover_bg = s.bg_input;
         div()
+            // Stable id so gpui notifies on hover-state transitions —
+            // without it the `.hover()` style only paints when some
+            // unrelated event happens to dirty AppView. Same fix as
+            // `profile_row`. Labels here are unique within the rail.
+            .id(label)
             .w_full()
             .px_3()
             .py(px(6.0))
@@ -931,6 +936,9 @@ fn connection_card(
         )
         .child(
             div()
+                // Stable id so gpui notifies on hover transitions —
+                // same fix as `profile_row`.
+                .id("editor-rescan-ports")
                 .px_2()
                 .py_1()
                 .bg(rgba(s.bg_input))
