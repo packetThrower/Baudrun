@@ -205,7 +205,11 @@ pub(super) fn rail(
         } else {
             rgba(s.fg_secondary)
         };
-        let hover_bg = s.bg_input;
+        // Match the main app's sidebar hover (profile_row uses bg_hover).
+        // bg_input is too close to the panel bg on warm dark skins like
+        // Foundry — the hover tint reads as "barely there"; bg_hover is
+        // tuned to be visible against the panel.
+        let hover_bg = s.bg_hover;
         let opacity = if dimmed { 0.35 } else { 1.0 };
         let show_dot = update_pending && tab == SettingsTab::Updates;
         div()

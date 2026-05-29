@@ -662,7 +662,10 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
         } else {
             rgba(s.fg_secondary)
         };
-        let hover_bg = s.bg_input;
+        // Match the main app's sidebar hover (profile_row uses bg_hover).
+        // bg_input is too close to the panel bg on warm dark skins like
+        // Foundry, where the hover tint reads as "barely there".
+        let hover_bg = s.bg_hover;
         div()
             // Stable id so gpui notifies on hover-state transitions —
             // without it the `.hover()` style only paints when some
@@ -919,7 +922,10 @@ fn connection_card(
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
     let s = *cx.global::<SkinTokens>();
-    let hover_bg = s.bg_input_hover;
+    // bg_hover (matching the main sidebar) tints more reliably on warm
+    // dark skins like Foundry where bg_input_hover stays close to the
+    // panel bg.
+    let hover_bg = s.bg_hover;
     // Serial port row: select on the left (flex_1), rescan icon
     // on the right. Click rescans the OS port list and reapplies
     // the current selection.

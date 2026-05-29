@@ -1665,7 +1665,10 @@ impl SettingsView {
             // override to clear — otherwise the row is already at
             // its default and the button would be a no-op.
             let reset: gpui::AnyElement = if is_overridden {
-                let hover_bg = s.bg_input;
+                // Match the main app's sidebar hover (bg_hover) so the
+                // reset glyph tints visibly on warm dark skins like
+                // Foundry where bg_input is essentially panel-bg.
+                let hover_bg = s.bg_hover;
                 let hover_fg = s.fg_primary;
                 div()
                     // Stable per-action id so gpui notifies on hover
