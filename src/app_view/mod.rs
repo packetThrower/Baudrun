@@ -3299,19 +3299,36 @@ impl Render for AppView {
                     .flex_col()
                     // Flush-edged skins keep the gpui-component
                     // `TitleBar` as a flex_col sibling at the
-                    // top, with its default theme bg + border
-                    // — that's the visible title bar strip the
-                    // Baudrun / classic / etc. skins expect.
-                    // `.h(...)` overrides gpui-component's hard-
-                    // coded 34px so skins can opt into a taller
-                    // (or shorter) strip via `--titlebar-height`.
+                    // top — transparent bg so the skin's
+                    // `window_background` (the outer wrapper's
+                    // bg, painted below) reads through, plus a
+                    // `border_subtle` bottom rule so dark-on-
+                    // dark skins where `--bg-window` ==
+                    // `--bg-main` (High Contrast, CRT,
+                    // Cyberpunk) still get a visible separator
+                    // from the content. `.h(...)` overrides
+                    // gpui-component's hard-coded 34px so skins
+                    // can opt into a taller (or shorter) strip
+                    // via `--titlebar-height`.
                     // Floating-card skins (panel_radius_px > 0)
                     // move the title bar to an absolute overlay
                     // (added at the outermost div below) so the
                     // panes can claim the full window height and
                     // traffic lights float over the sidebar.
+                    //
+                    // Previously this branch let gpui-component's
+                    // default dark-grey bg + border paint — that
+                    // read fine on grey/neutral skins but clashed
+                    // on warm dark skins like Foundry where the
+                    // "wrong colour at the top of the window" was
+                    // visible.
                     .when(s.panel_radius_px == 0.0, |this| {
-                        this.child(TitleBar::new().h(px(s.titlebar_height_px)))
+                        this.child(
+                            TitleBar::new()
+                                .h(px(s.titlebar_height_px))
+                                .bg(gpui::transparent_black())
+                                .border_color(rgba(s.border_subtle)),
+                        )
                     })
                     .child(
                         div()

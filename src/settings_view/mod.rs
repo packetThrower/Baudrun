@@ -1527,21 +1527,27 @@ impl Render for SettingsView {
                     .size_full()
                     .flex()
                     .flex_col()
-                    // Title bar — flush-edged skins get gpui-
-                    // component's default with its theme bg +
-                    // bottom border, height from
-                    // `--titlebar-height`. Floating-card skins
-                    // override to transparent + no border so
-                    // the shell colour reads continuously from
-                    // the top edge. See the matching branch in
+                    // Title bar — transparent bg so the skin's
+                    // `window_background` (painted on the outer
+                    // wrapper) reads through, plus a `border_subtle`
+                    // bottom rule. Was previously split — flush skins
+                    // kept gpui-component's default dark-grey bg
+                    // while floating-card skins went transparent —
+                    // but the grey clashed with warm dark skins
+                    // (Foundry, etc.). The border is per-skin (its
+                    // own `--border-subtle`), so dark-on-dark skins
+                    // where `--bg-window` == `--bg-main` (High
+                    // Contrast, CRT, Cyberpunk) get a visible
+                    // separator while skins with distinguishable bg
+                    // tones get a subtle accent that doesn't fight
+                    // the design. See the matching branch in
                     // `app_view.rs`.
-                    .child(if s.panel_radius_px > 0.0 {
+                    .child(
                         TitleBar::new()
+                            .h(px(s.titlebar_height_px))
                             .bg(gpui::transparent_black())
-                            .border_color(gpui::transparent_black())
-                    } else {
-                        TitleBar::new().h(px(s.titlebar_height_px))
-                    })
+                            .border_color(rgba(s.border_subtle)),
+                    )
                     .child(window_header(
                         s,
                         &self.filter_input,
