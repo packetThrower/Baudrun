@@ -952,6 +952,11 @@ fn parse_single_box_shadow(raw: &str) -> Option<gpui::BoxShadow> {
         offset: gpui::point(gpui::px(x), gpui::px(y)),
         blur_radius: gpui::px(blur),
         spread_radius: gpui::px(spread),
+        // Always `false` — `inset` shadows are rejected earlier in
+        // this function (see the `inset` early-return above). gpui
+        // grew this field in commit b3bc83b; before that the struct
+        // had no `inset` slot.
+        inset: false,
     })
 }
 
