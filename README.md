@@ -110,8 +110,9 @@ and winget also bypass the SmartScreen prompt; winget is Microsoft's own and
 ships built-in on Windows 10 1809+ and Windows 11.
 
 ```sh
-# macOS — Homebrew
+# macOS — Homebrew (6.0.0+ requires trusting the tap first)
 brew tap packetThrower/tap
+brew trust packetThrower/tap
 brew install --cask baudrun                 # stable
 brew install --cask baudrun@alpha           # pre-release
 
