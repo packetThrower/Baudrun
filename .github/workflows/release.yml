@@ -51,6 +51,11 @@ on:
 # through correctly without per-step plumbing.
 env:
   EFFECTIVE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+  # Fetch git deps (the large zed monorepo especially) with the system
+  # git binary instead of libgit2 — more robust against transient
+  # network hiccups and avoids cargo-packager's silent
+  # "no configuration" error. Pairs with the per-job "Pre-fetch" steps.
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
 # Queue, don't cancel: a mid-flight release shouldn't be interrupted
 # by a retag of the same version — risk of half-uploaded artifacts.
@@ -133,6 +138,18 @@ jobs:
         uses: taiki-e/install-action@15449e3094499af05d8d964a1c884208e4b8b595 # v2.81.11
         with:
           tool: cargo-packager
+
+      # cargo-packager runs `cargo metadata` for config discovery and
+      # SILENTLY treats any failure as "no config" — a transient
+      # registry/git fetch error (the large gpui/zed git dep
+      # especially) surfaces as a bogus "Couldn't detect a valid
+      # configuration file" instead of a network error. Fetching here
+      # warms the cache so metadata runs offline, and fails loudly
+      # with the real error otherwise. Before version patching on
+      # purpose: `--locked` checks Cargo.lock against the unpatched
+      # Cargo.toml.
+      - name: Pre-fetch dependencies
+        run: cargo fetch --locked
 
       - name: Patch version from tag
         run: |
@@ -295,6 +312,12 @@ jobs:
             exit 1
           }
 
+      # See the macOS job's Pre-fetch comment — warms the cargo cache
+      # so cargo-packager's silent `cargo metadata` can't eat a
+      # transient fetch failure. Before version patching on purpose.
+      - name: Pre-fetch dependencies
+        run: cargo fetch --locked
+
       - name: Patch version from tag
         shell: pwsh
         run: |
@@ -446,6 +469,12 @@ jobs:
 
       - name: Install fpm (for .rpm + .pkg.tar.zst)
         run: sudo gem install --no-document fpm
+
+      # See the macOS job's Pre-fetch comment — warms the cargo cache
+      # so cargo-packager's silent `cargo metadata` can't eat a
+      # transient fetch failure. Before version patching on purpose.
+      - name: Pre-fetch dependencies
+        run: cargo fetch --locked
 
       - name: Patch version from tag
         run: |

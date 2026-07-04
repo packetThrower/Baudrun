@@ -94,21 +94,24 @@ jobs:
       # the tree doesn't accumulate every historical version. 5 gives
       # users 4-5 releases of "downgrade target" surface before old
       # versions roll off.
-      # `installers-regex`: narrow the asset glob to MSIs only. The
-      # action's default regex (`.(exe|msi|msix|appx)(bundle){0,1}$`)
-      # also matches the NSIS `*-setup.exe` installers in our Release
-      # artifacts, which the winget manifest doesn't declare. Feeding
-      # both NSIS and MSI URLs to komac produced four `--urls` entries
-      # against two declared architectures, and the resulting PR
-      # creation step failed with "failed to create pull request"
-      # (the malformed manifest evidently doesn't validate on komac's
-      # pre-submission check). MSI-only matches what the manifest
-      # template declares (`InstallerType: wix`).
+      # `installers-regex`: narrow the asset glob to the amd64 MSI
+      # only. Two failure modes this guards against:
+      #   * The action's default regex (`.(exe|msi|msix|appx)(bundle){0,1}$`)
+      #     also matches the NSIS `*-setup.exe` installers in our
+      #     Release artifacts, which the winget manifest doesn't
+      #     declare — komac got four `--urls` against two declared
+      #     architectures and the PR creation failed.
+      #   * A bare `\.msi$` also matches the arm64 MSI. The x64-only
+      #     winget stance (see TODO.md's arm64 retro — the validator's
+      #     GPU-less sandbox crashes GPUI apps) only held because
+      #     komac templates from the previous version's x64-only
+      #     manifest; anchoring on `_amd64_` makes it deterministic
+      #     instead of accidental.
       - name: Open winget-pkgs PR
         uses: vedantmgoyal9/winget-releaser@7bd472be23763def6e16bd06cc8b1cdfab0e2fd5 # v2
         with:
           identifier: packetThrower.Baudrun
           release-tag: ${{ github.event.release.tag_name || inputs.tag_name }}
           max-versions-to-keep: 5
-          installers-regex: '\.msi$'
+          installers-regex: '_amd64_en-US\.msi$'
           token: ${{ secrets.WINGET_TOKEN }}
