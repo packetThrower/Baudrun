@@ -215,6 +215,38 @@ impl Store {
         Ok(())
     }
 
+    /// Move profile `id` so it sits immediately before the profile
+    /// with id `before`; `None` moves it to the end of the list.
+    /// profiles.json's array order IS the sidebar order, so saving
+    /// the vec persists the ordering. Dropping a row onto itself
+    /// (`before == Some(id)`) is a no-op; a `before` id that no
+    /// longer exists (deleted mid-drag by another window) degrades
+    /// to move-to-end rather than erroring.
+    pub fn reorder(&self, id: &str, before: Option<&str>) -> Result<()> {
+        if before == Some(id) {
+            return Ok(());
+        }
+        let mut guard = self.inner.write().unwrap();
+        let from = guard
+            .iter()
+            .position(|p| p.id == id)
+            .ok_or_else(|| ProfileError::NotFound(id.to_string()))?;
+        let profile = guard.remove(from);
+        let dest = match before {
+            Some(b) => guard.iter().position(|p| p.id == b).unwrap_or(guard.len()),
+            None => guard.len(),
+        };
+        guard.insert(dest, profile);
+        if let Err(err) = save(&self.path, &guard) {
+            // Undo the move so the in-memory order still matches
+            // what's on disk.
+            let profile = guard.remove(dest);
+            guard.insert(from, profile);
+            return Err(err);
+        }
+        Ok(())
+    }
+
     /// Re-insert a previously-deleted profile, preserving its id +
     /// `created_at` + `updated_at`. Used by the Undo path on the
     /// session-header / sidebar profile-delete toast within the
@@ -305,4 +337,54 @@ fn validate(p: &Profile) -> Result<()> {
         other => return Err(ProfileError::InvalidBackspaceKey(other.to_string())),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn store_with(names: &[&str]) -> (tempfile::TempDir, Store) {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::new(dir.path()).unwrap();
+        for n in names {
+            let mut p = Profile::defaults();
+            p.name = n.to_string();
+            p.port_name = "/dev/null".into();
+            store.create(p).unwrap();
+        }
+        (dir, store)
+    }
+
+    fn order(store: &Store) -> Vec<String> {
+        store.list().into_iter().map(|p| p.name).collect()
+    }
+
+    #[test]
+    fn reorder_moves_before_and_to_end() {
+        let (_dir, store) = store_with(&["a", "b", "c"]);
+        let ids: Vec<String> = store.list().into_iter().map(|p| p.id).collect();
+
+        // c before a → [c, a, b]
+        store.reorder(&ids[2], Some(&ids[0])).unwrap();
+        assert_eq!(order(&store), ["c", "a", "b"]);
+
+        // c to end → [a, b, c]
+        store.reorder(&ids[2], None).unwrap();
+        assert_eq!(order(&store), ["a", "b", "c"]);
+
+        // self-drop is a no-op
+        store.reorder(&ids[0], Some(&ids[0])).unwrap();
+        assert_eq!(order(&store), ["a", "b", "c"]);
+
+        // vanished `before` degrades to move-to-end
+        store.reorder(&ids[0], Some("gone")).unwrap();
+        assert_eq!(order(&store), ["b", "c", "a"]);
+
+        // unknown moved id errors
+        assert!(store.reorder("gone", None).is_err());
+
+        // order survives a reload from disk
+        let reloaded = Store::new(_dir.path()).unwrap();
+        assert_eq!(order(&reloaded), ["b", "c", "a"]);
+    }
 }

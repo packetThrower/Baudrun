@@ -112,6 +112,14 @@ pub struct AppView {
     /// Held to keep the settings subscription alive for AppView's
     /// lifetime. Drop = unsubscribe.
     _settings_sub: gpui::Subscription,
+    /// App-wide "profiles changed" signal (see profiles_bus.rs).
+    /// Every profile mutation in THIS window emits on it; the
+    /// subscription below re-renders this window when any OTHER
+    /// window mutates. Render reads `profile_store.list()` fresh,
+    /// so a bare notify is all cross-window sync takes.
+    profiles_bus: Entity<crate::profiles_bus::ProfilesBus>,
+    /// Keeps the profiles subscription alive. Drop = unsubscribe.
+    _profiles_sub: gpui::Subscription,
     /// Skin store (built-in + user). Cloned into the SettingsView
     /// so the Appearance tab can enumerate all skins for its
     /// picker. AppView holds its own handle for the future live-
@@ -549,6 +557,20 @@ impl AppView {
             this.apply_settings(next, cx);
             cx.notify();
         });
+        // Re-render when ANY window mutates the profile store —
+        // create / edit / delete / reorder in window A must refresh
+        // window B's sidebar. The mutating window also receives its
+        // own event; the extra notify is harmless.
+        let profiles_bus = cx
+            .global::<crate::profiles_bus::GlobalProfilesBus>()
+            .0
+            .clone();
+        let profiles_sub = cx.subscribe(
+            &profiles_bus,
+            |_, _, _: &crate::profiles_bus::ProfilesChanged, cx| {
+                cx.notify();
+            },
+        );
         // Apply the persisted theme right away so a fresh launch
         // honours the user's `default_theme_id` instead of paying
         // a one-frame flash of the boot Baudrun palette.
@@ -558,6 +580,8 @@ impl AppView {
             profile_store,
             settings_bus,
             _settings_sub: settings_sub,
+            profiles_bus,
+            _profiles_sub: profiles_sub,
             skins_store,
             highlight_store,
             themes_store,
@@ -1652,6 +1676,7 @@ impl AppView {
                     }
                 }
                 cx.notify();
+                self.signal_profiles_changed(cx);
                 self.log_event("Saved", LogSeverity::Info, cx);
                 Some(id)
             }
@@ -1746,6 +1771,7 @@ impl AppView {
                 }
                 self.editor = None;
                 cx.notify();
+                self.signal_profiles_changed(cx);
                 // Undo toast — gpui-component autohides after ~5s.
                 // The Undo path re-inserts the profile via
                 // `profile_store.restore`, restores selection if it
@@ -1793,6 +1819,33 @@ impl AppView {
         }
     }
 
+    /// Broadcast "the profile store changed" to every window (this
+    /// one included — the duplicate notify is harmless). Call after
+    /// every successful `profile_store` mutation; forgetting one
+    /// leaves other windows' sidebars stale until their next
+    /// unrelated re-render.
+    fn signal_profiles_changed(&self, cx: &mut Context<Self>) {
+        self.profiles_bus.update(cx, |_, cx| {
+            cx.emit(crate::profiles_bus::ProfilesChanged);
+        });
+    }
+
+    /// Sidebar drag-drop landed: move `id` so it sits before
+    /// `before` (`None` = end of list), then broadcast so every
+    /// window's sidebar re-sorts.
+    fn reorder_profile(&mut self, id: String, before: Option<String>, cx: &mut Context<Self>) {
+        if let Err(err) = self.profile_store.reorder(&id, before.as_deref()) {
+            self.log_event(
+                format!("Couldn't reorder profile: {err}"),
+                LogSeverity::Error,
+                cx,
+            );
+            return;
+        }
+        cx.notify();
+        self.signal_profiles_changed(cx);
+    }
+
     /// Re-insert a profile snapshot held by the post-delete Undo
     /// toast. Restores selection if the deleted profile had been
     /// the selected one; does NOT auto-reconnect — restore is
@@ -1818,6 +1871,7 @@ impl AppView {
             self.connect_error = None;
         }
         cx.notify();
+        self.signal_profiles_changed(cx);
         self.log_event(
             format!("Restored profile \u{201C}{name}\u{201D}"),
             LogSeverity::Info,
@@ -3579,7 +3633,37 @@ impl Render for AppView {
                                                     row_error,
                                                     cx,
                                                 )
-                                            })),
+                                            }))
+                                            // Tail drop target. Row drops
+                                            // insert BEFORE the target, so
+                                            // without this strip the final
+                                            // slot is unreachable. Invisible
+                                            // outside a drag; paints the
+                                            // same accent rule as row
+                                            // targets while a profile drag
+                                            // hovers it.
+                                            .child(
+                                                div()
+                                                    .id("sidebar-profile-drop-end")
+                                                    .h(px(24.0))
+                                                    .w_full()
+                                                    .drag_over::<ProfileDrag>(
+                                                        move |style, _drag, _window, _cx| {
+                                                            style
+                                                                .border_t_2()
+                                                                .border_color(rgba(s.accent))
+                                                        },
+                                                    )
+                                                    .on_drop(cx.listener(
+                                                        |this, drag: &ProfileDrag, _window, cx| {
+                                                            this.reorder_profile(
+                                                                drag.id.clone(),
+                                                                None,
+                                                                cx,
+                                                            );
+                                                        },
+                                                    )),
+                                            ),
                                     ),
                             )
                             .vertical_scrollbar(&self.sidebar_scroll),
@@ -3880,6 +3964,30 @@ impl RowStatus {
     }
 }
 
+/// Drag payload for sidebar profile reordering. Doubles as the
+/// drag-ghost view rendered under the cursor — `on_drag`'s
+/// constructor returns an entity of this same type (zorite's
+/// TabDrag does the same).
+#[derive(Clone)]
+struct ProfileDrag {
+    id: String,
+    name: SharedString,
+}
+
+impl Render for ProfileDrag {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tokens = *cx.global::<SkinTokens>();
+        div()
+            .px_3()
+            .py(px(4.0))
+            .rounded(px(tokens.radius_md))
+            .bg(rgba(tokens.bg_active))
+            .text_size(px(13.0))
+            .text_color(rgba(tokens.fg_primary))
+            .child(self.name.clone())
+    }
+}
+
 fn profile_row(
     profile: Profile,
     is_selected: bool,
@@ -3898,6 +4006,11 @@ fn profile_row(
         "no port set".to_string()
     } else {
         profile.port_name.clone()
+    };
+    // Built before `name` moves into the header child below.
+    let drag_payload = ProfileDrag {
+        id: id.clone(),
+        name: SharedString::from(name.clone()),
     };
 
     // Profile-row bg follows the same pattern as the Settings
@@ -4032,19 +4145,39 @@ fn profile_row(
         );
     }
     let id_for_left = id.clone();
-    let id_for_right = id;
-    row.on_mouse_up(
-        MouseButton::Left,
-        cx.listener(move |this, _: &MouseUpEvent, window, cx| {
-            this.select_profile(id_for_left.clone(), window, cx);
-        }),
-    )
+    let id_for_right = id.clone();
+    let id_for_drop = id;
+    let accent = tokens.accent;
+    // Selection is `on_click` (not raw `on_mouse_up`) on purpose:
+    // a click needs mouse-down AND -up on the same element, so
+    // releasing a profile drag over this row can't also select it
+    // — the drag started with the down on a different row. gpui
+    // likewise cancels the click on the SOURCE row when the drag
+    // threshold trips, so dragging a row and dropping it back on
+    // itself doesn't open the editor either.
+    row.on_click(cx.listener(move |this, _: &gpui::ClickEvent, window, cx| {
+        this.select_profile(id_for_left.clone(), window, cx);
+    }))
     .on_mouse_down(
         MouseButton::Right,
         cx.listener(move |this, evt: &MouseDownEvent, _, cx| {
             this.open_profile_context_menu(id_for_right.clone(), evt.position, cx);
         }),
     )
+    // Drag-to-reorder (zorite's tab recipe): the payload becomes
+    // the ghost pill under the cursor; a matching drag hovering
+    // this row paints a 2px accent rule at its top edge ("will
+    // insert before me"); the drop routes through
+    // `reorder_profile`, which persists and broadcasts.
+    .on_drag(drag_payload, |drag, _offset, _window, cx| {
+        cx.new(|_| drag.clone())
+    })
+    .drag_over::<ProfileDrag>(move |style, _drag, _window, _cx| {
+        style.border_t_2().border_color(rgba(accent))
+    })
+    .on_drop(cx.listener(move |this, drag: &ProfileDrag, _window, cx| {
+        this.reorder_profile(drag.id.clone(), Some(id_for_drop.clone()), cx);
+    }))
 }
 
 /// Collapsed-mode counterpart to `profile_row`: a single Lucide

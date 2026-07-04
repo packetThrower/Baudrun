@@ -89,6 +89,11 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSImage", "NSWorkspace", "NSAccessibility"] }
 objc2-foundation = { version = "0.3", features = ["NSString"] }
 
+# Test-only. tempfile is already in the dependency tree
+# transitively (gpui), so this adds nothing to the build graph.
+[dev-dependencies]
+tempfile = "3"
+
 # Embed Windows icon (resources/icon.rc) into Baudrun.exe's PE
 # resource section. Auto-no-ops on non-Windows.
 [build-dependencies]
