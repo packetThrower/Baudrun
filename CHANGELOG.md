@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-07-03
+
 ### Added
 
 - **Drag-to-reorder profiles.** Drag a sidebar profile row onto
@@ -57,7 +59,7 @@ final stable entry at tag time.
 
 ### Changed
 
-- **gpui refreshed** (Zed `13e7c11` → `14f9b9d`, ~6 weeks of
+- **gpui refreshed** (Zed `13e7c11` → `d753a31`, ~6 weeks of
   upstream) along with gpui-component, picking up the new
   `BoxShadow` inset support and assorted upstream fixes.
 
