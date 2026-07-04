@@ -15,6 +15,52 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Added
+
+- **Drag-to-reorder profiles.** Drag a sidebar profile row onto
+  another row to insert it before that row, or below the last row
+  to move it to the end. The order persists — `profiles.json`'s
+  array order is the sidebar order, so hand-edits and bulk
+  provisioning scripts control ordering the same way.
+- **Drag a profile out to a new window.** Release a profile drag
+  anywhere outside the sidebar — over the terminal pane or past any
+  window edge — and the profile opens in a new window at the drop
+  point, already connected. Tearing off the currently-connected
+  profile moves the live session instead (scrollback, port, and
+  DTR/RTS state intact), same as the context menu's "Move Session
+  to New Window".
+
+### Fixed
+
+- **Sidebars stay in sync across windows.** Creating, editing,
+  deleting, restoring, or reordering a profile in one window now
+  updates every other open window's sidebar immediately. Previously
+  the other windows showed a stale list until something else
+  happened to re-render them.
+- **Hover highlights respond instantly.** Sidebar profile rows,
+  Settings rail tabs, profile-editor sub-tabs, and the pill buttons
+  across Settings all repaint the moment the cursor enters them.
+  Previously the hover tint waited for an unrelated event (cursor
+  blink, settings write) to trigger a repaint — reading as a
+  200 ms-plus lag.
+- **Hover tints are visible on warm dark skins.** The Settings rail,
+  editor sub-tabs, rescan-ports button, and shortcut-reset glyph
+  now use the same hover token as the main sidebar. On skins like
+  Foundry the old token sat so close to the panel colour the hover
+  was barely perceptible.
+- **The title bar follows the skin.** Flush-edged skins previously
+  painted the title bar in a hard-coded dark grey that clashed with
+  warm dark skins (most visibly Foundry). The bar is now
+  transparent over the skin's own window background, with a
+  per-skin subtle border keeping the separator visible on
+  dark-on-dark skins (High Contrast, CRT, Cyberpunk).
+
+### Changed
+
+- **gpui refreshed** (Zed `13e7c11` → `14f9b9d`, ~6 weeks of
+  upstream) along with gpui-component, picking up the new
+  `BoxShadow` inset support and assorted upstream fixes.
+
 ## [0.13.0] — 2026-05-24
 
 ### Fixed

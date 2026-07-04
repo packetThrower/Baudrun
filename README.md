@@ -63,6 +63,7 @@ Sample JSON for authoring your own skins, themes, and highlight packs is on the
 
 - **Profiles.** Each device gets a saved profile — its port, baud, framing,
   flow control, line ending, and control-line policy — stored as plain JSON.
+  Drag rows in the sidebar to reorder them.
   See [Profiles](https://packetthrower.github.io/Baudrun/usage/profiles/).
 - **USB chipset detection.** A VID/PID lookup recognises CP210x, FTDI, PL2303,
   CH340, MCP2221, and others, and links to the vendor driver when one is
@@ -81,9 +82,12 @@ Sample JSON for authoring your own skins, themes, and highlight packs is on the
   slow-paste mode so UARTs with small buffers don't drop bytes.
 - **Suspend and resume.** Step away from a live session without closing the
   port; the backlog is waiting when you come back.
-- **Multi-window.** Right-click a profile to open it in a new window, or drag
-  a live session out — the port, scrollback, and DTR/RTS state move with it.
-  Run sessions to several devices side by side.
+- **Multi-window.** Drag a profile out of the sidebar — past any window edge
+  or onto the terminal pane — and it opens in its own window at the drop
+  point, already connected. Dragging the connected profile moves the live
+  session: port, scrollback, and DTR/RTS state travel with it. Right-click
+  menus do the same without the mouse gesture, and profile edits or
+  reordering in one window show up in every other window immediately.
 - **Vendor-aware syntax highlighting.** Bundled rule packs for Cisco IOS,
   Juniper Junos, Aruba AOS-CX, Arista EOS, and MikroTik RouterOS, plus a
   vendor-neutral default. Write your own and test them against real captures

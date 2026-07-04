@@ -18,10 +18,34 @@ All profiles live in one file:
 - **Linux**: `$XDG_CONFIG_HOME/Baudrun/profiles.json` (usually
   `~/.config/Baudrun/profiles.json`)
 
-The file is a JSON array. Baudrun loads it once at startup; changes
-made while the app is running are not picked up until the next
-launch. Use the app UI for interactive edits, hand-edit only while
-the app is closed.
+The file is a JSON array, and the array order is the sidebar order —
+drag rows in the sidebar to reorder (the file is rewritten on drop),
+or rearrange the array in a hand-edit. Baudrun loads the file once at
+startup; changes made while the app is running are not picked up
+until the next launch. Use the app UI for interactive edits,
+hand-edit only while the app is closed.
+
+## Sidebar
+
+The sidebar is more than a list:
+
+- **Click** a profile to open its editor; the editor's **Connect**
+  button starts the session.
+- **Right-click** for the context menu — connect in a new window,
+  move a live session to a new window, delete.
+- **Drag to reorder.** Drop a row on another row to insert before
+  it, or below the last row to move it to the end. The new order
+  persists to `profiles.json`.
+- **Drag to tear off.** Drop a row anywhere outside the sidebar —
+  onto the terminal pane or past any window edge — and the profile
+  opens in a new window at the drop point, already connected.
+  Tearing off the profile you're connected to moves the live
+  session instead: scrollback, port, and DTR/RTS state travel with
+  it, and the source window returns to the welcome screen.
+
+With several windows open, profile edits, additions, deletions, and
+reordering made in any window appear in every other window's sidebar
+immediately.
 
 ## JSON schema
 
