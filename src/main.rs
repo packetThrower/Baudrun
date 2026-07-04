@@ -28,6 +28,7 @@
 mod app_view;
 mod data;
 mod highlight_runtime;
+mod profiles_bus;
 mod serial_io;
 mod settings_bus;
 mod settings_view;
@@ -373,6 +374,12 @@ fn main() {
             highlight_store: highlight_store.clone(),
             themes_store: themes_store.clone(),
         });
+
+        // One app-scoped "profiles changed" signal shared by every
+        // window — see profiles_bus.rs. Installed before the first
+        // window so AppView::new can always read the global.
+        let profiles_bus_entity = cx.new(|_| profiles_bus::ProfilesBus);
+        cx.set_global(profiles_bus::GlobalProfilesBus(profiles_bus_entity));
 
         let window = match open_app_window(
             cx,
