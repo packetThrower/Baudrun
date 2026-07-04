@@ -14,10 +14,11 @@
 ignore = [
     { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 unmaintained. Transitive via gpui-component, gpui (Zed-git), and image/rav1e. Can't fix without upstream bumps; revisit at each gpui pull." },
     { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile 2.2.0 unmaintained. Transitive via gpui-component-assets -> zed-reqwest. Upstream Zed tracks rustls; clears when their pemfile usage migrates to rustls-pki-types." },
-    { id = "RUSTSEC-2025-0052", reason = "async-std discontinued. Transitive via gpui -> http_client -> async-tar. Upstream Zed will eventually migrate off; revisit at each gpui pull." },
     { id = "RUSTSEC-2024-0384", reason = "instant 0.1.13 unmaintained. Transitive via gpui-component and notify -> notify-types. Both upstream; revisit at each gpui-component rev bump." },
     { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2 2.0.1 unmaintained (upstream author confirmed in GnomedDev/proc-macro-error-2#17). Transitive via stacksafe-macro -> stacksafe -> gpui. Suggested replacements (manyhow / proc-macro2-diagnostics) require an upstream stacksafe rewrite; revisit at each gpui pull." },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained. Transitive via fontdb -> usvg -> gpui (SVG rendering). Clears when upstream migrates fontdb/usvg off ttf-parser (skrifa is the successor); revisit at each gpui pull." },
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml quadratic duplicate-attribute check (DoS-class). Two pulls: plist (our .itermcolors theme import — worst case a user-chosen hostile file hangs the import) and Linux-only wayland-scanner build codegen. No code-execution risk; fixed in quick-xml >= 0.41 but plist 1.9 (latest) still pins 0.39. Clears when plist releases against 0.41; revisit at each dep sweep." },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml unbounded NsReader namespace allocation (DoS-class). Same two pulls and same reasoning as RUSTSEC-2026-0194 above; clears with the same plist upgrade." },
 ]
 
 [licenses]
