@@ -46,9 +46,14 @@ pub(super) const TRAFFIC_LIGHT_POSITION_PX: f32 = 16.0;
 /// are per-window — connecting in one window doesn't touch the
 /// terminal in another. Used both at startup (one window) and from
 /// `AppView::open_new_window` / `move_session_to_new_window`.
+// 8 args: five of them are the shared store handles every window
+// clones. A params struct would just relocate the noise to six
+// call sites; revisit if the list grows again.
+#[allow(clippy::too_many_arguments)]
 pub fn open_app_window(
     cx: &mut gpui::App,
     init: WindowInit,
+    origin: Option<gpui::Point<gpui::Pixels>>,
     profile_store: Rc<profiles::Store>,
     settings_bus: Entity<SettingsBus>,
     skins_store: Rc<skins::Store>,
@@ -57,7 +62,7 @@ pub fn open_app_window(
 ) -> gpui::Result<WindowHandle<Root>> {
     let current_settings = settings_bus.read(cx).current().clone();
     let restore_state = !current_settings.disable_window_state_restore;
-    let bounds = restore_state
+    let mut bounds = restore_state
         .then(|| {
             current_settings
                 .main_window
@@ -66,6 +71,18 @@ pub fn open_app_window(
         })
         .flatten()
         .unwrap_or_else(|| Bounds::centered(None, gpui::size(px(1100.0), px(720.0)), cx));
+    // Tear-off drops pass the release point (global screen coords)
+    // so the new window lands under the cursor instead of at the
+    // remembered position. Only the origin is overridden — the size
+    // still honours the restored geometry. Offset mirrors zorite's
+    // tear-off: the cursor ends up over the new window's title
+    // area rather than its top-left corner. No clamping — negative
+    // coords are legal on multi-monitor layouts (screens left of /
+    // above the primary), and the OS constrains genuinely
+    // off-screen windows itself.
+    if let Some(p) = origin {
+        bounds.origin = gpui::point(p.x - px(160.0), p.y - px(12.0));
+    }
     let settings_bus_for_close = settings_bus.clone();
     cx.open_window(
         WindowOptions {

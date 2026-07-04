@@ -56,19 +56,19 @@ pub(super) fn profile_context_menu_overlay(
         profile_menu_item(
             s,
             "Move Session to New Window",
-            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+            cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
                 this.profile_context_menu = None;
-                this.move_session_to_new_window(window, cx);
+                this.move_session_to_new_window(None, cx);
             }),
         )
     } else {
         profile_menu_item(
             s,
             "Connect in New Window",
-            cx.listener(move |this, _: &MouseUpEvent, window, cx| {
+            cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
                 let id = profile_id.clone();
                 this.profile_context_menu = None;
-                this.connect_profile_in_new_window(id, window, cx);
+                this.connect_profile_in_new_window(id, None, cx);
             }),
         )
     };
@@ -997,8 +997,8 @@ pub(super) fn session_overflow_button(
                             .child(profile_menu_item(
                                 s,
                                 "Move to New Window",
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.move_session_to_new_window(window, cx);
+                                cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                                    this.move_session_to_new_window(None, cx);
                                 }),
                             )),
                     ),

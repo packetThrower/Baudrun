@@ -2727,6 +2727,7 @@ impl AppView {
         if let Err(err) = open_app_window(
             cx,
             WindowInit::Fresh(new_terminal),
+            None,
             self.profile_store.clone(),
             self.settings_bus.clone(),
             self.skins_store.clone(),
@@ -2738,11 +2739,13 @@ impl AppView {
     }
 
     /// Open a fresh window and immediately connect it to the named
-    /// profile. Used by the right-click context menu on profile rows.
+    /// profile. Used by the right-click context menu on profile rows
+    /// (`at: None`) and by drag tear-off (`at: Some(drop point)` so
+    /// the window lands under the cursor).
     pub(crate) fn connect_profile_in_new_window(
         &mut self,
         profile_id: String,
-        _window: &mut Window,
+        at: Option<gpui::Point<gpui::Pixels>>,
         cx: &mut Context<Self>,
     ) {
         let scrollback = self.settings_bus.read(cx).current().effective_scrollback();
@@ -2754,6 +2757,7 @@ impl AppView {
                 terminal: new_terminal,
                 profile_id,
             },
+            at,
             self.profile_store.clone(),
             self.settings_bus.clone(),
             self.skins_store.clone(),
@@ -3060,7 +3064,7 @@ impl AppView {
         cx: &mut Context<Self>,
     ) {
         match self.selected_profile_id.clone() {
-            Some(id) => self.connect_profile_in_new_window(id, window, cx),
+            Some(id) => self.connect_profile_in_new_window(id, None, cx),
             None => self.open_new_window(window, cx),
         }
     }
@@ -3119,7 +3123,11 @@ impl AppView {
     /// window comes up already connected with the same terminal
     /// contents (scrollback included), the same OS thread, and any
     /// in-flight file transfer intact.
-    fn move_session_to_new_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    fn move_session_to_new_window(
+        &mut self,
+        at: Option<gpui::Point<gpui::Pixels>>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(bundle) = self.extract_session() else {
             return;
         };
@@ -3132,6 +3140,7 @@ impl AppView {
         if let Err(err) = open_app_window(
             cx,
             WindowInit::WithSession(Box::new(bundle)),
+            at,
             self.profile_store.clone(),
             self.settings_bus.clone(),
             self.skins_store.clone(),
@@ -3146,6 +3155,61 @@ impl AppView {
             return;
         }
         self.log_event("Session moved to new window", LogSeverity::Info, cx);
+    }
+
+    /// Complete (or cancel) a profile-drag tear-off. Fired by the
+    /// root-level mouse-up listeners — both the in-window one and
+    /// the `_out` variant that catches releases past any window
+    /// edge. A no-op unless `GlobalProfileDrag` is still armed,
+    /// i.e. no row / tail-strip drop consumed the release first
+    /// (those handlers disarm it and stop propagation).
+    ///
+    /// Releases landing inside the sidebar column (but not on a
+    /// drop target — the header, gaps, below the tail strip)
+    /// cancel rather than tear off: the user was aiming at a
+    /// reorder, and spawning a window over the list they were
+    /// sorting reads as a misfire. Everywhere else — terminal
+    /// pane, or off the window in any direction — opens a new
+    /// window at the release point: connected-profile drags
+    /// migrate the live session (scrollback, OS threads, transfer
+    /// intact); everything else opens fresh and auto-connects.
+    /// Mirrors the right-click context menu's Move-vs-Connect
+    /// branch.
+    fn finish_profile_tear_off(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(id) = cx.default_global::<GlobalProfileDrag>().0.take() else {
+            return;
+        };
+        let s = *cx.global::<SkinTokens>();
+        let sidebar_w = if self.sidebar_collapsed {
+            SIDEBAR_COLLAPSED_WIDTH_PX
+        } else {
+            SIDEBAR_WIDTH_PX
+        };
+        // Shell padding + gap shift the sidebar right on floating-
+        // card skins; include them so the exclusion zone tracks the
+        // visible column, not just x < width.
+        let sidebar_zone = px(s.shell_padding_px + sidebar_w + s.shell_gap_px);
+        let vp = window.viewport_size();
+        let inside_window = position.x >= px(0.0)
+            && position.y >= px(0.0)
+            && position.x <= vp.width
+            && position.y <= vp.height;
+        if inside_window && position.x <= sidebar_zone {
+            return;
+        }
+        // Window-relative → global screen coords for the new
+        // window's origin (same combination zorite uses).
+        let origin = window.bounds().origin + position;
+        if self.connected_profile_id.as_deref() == Some(id.as_str()) {
+            self.move_session_to_new_window(Some(origin), cx);
+        } else {
+            self.connect_profile_in_new_window(id, Some(origin), cx);
+        }
     }
 }
 
@@ -3656,6 +3720,8 @@ impl Render for AppView {
                                                     )
                                                     .on_drop(cx.listener(
                                                         |this, drag: &ProfileDrag, _window, cx| {
+                                                            cx.default_global::<GlobalProfileDrag>()
+                                                                .0 = None;
                                                             this.reorder_profile(
                                                                 drag.id.clone(),
                                                                 None,
@@ -3871,10 +3937,16 @@ impl Render for AppView {
             // Any mouse-up anywhere dismisses open popup menus.
             // Menu items run their own `on_mouse_up` first (because
             // gpui dispatches inside-out); this is the catch-all
-            // for clicks outside the menu panels.
+            // for clicks outside the menu panels. It doubles as the
+            // in-window half of profile tear-off: if a profile drag
+            // releases here (no row / tail drop consumed it — those
+            // stop propagation), `finish_profile_tear_off` decides
+            // between "cancel" (inside the sidebar column) and
+            // "open a new window at the drop point".
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, _, cx| {
+                cx.listener(|this, evt: &MouseUpEvent, window, cx| {
+                    this.finish_profile_tear_off(evt.position, window, cx);
                     this.dismiss_profile_context_menu(cx);
                     this.dismiss_session_overflow(cx);
                     // Also dismiss the terminal's right-click
@@ -3884,6 +3956,19 @@ impl Render for AppView {
                     // so we just forward through the entity.
                     let terminal = this.terminal.clone();
                     terminal.update(cx, |t, cx| t.close_context_menu(cx));
+                }),
+            )
+            // Out-of-window half of tear-off: the platform keeps
+            // routing mouse events to this window while the button
+            // is held, so dragging a profile past any window edge
+            // (up / down / left / right) and releasing lands here.
+            // `finish_profile_tear_off`'s inside-window check
+            // auto-passes for these positions, so the release point
+            // always spawns the window.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, evt: &MouseUpEvent, window, cx| {
+                    this.finish_profile_tear_off(evt.position, window, cx);
                 }),
             )
     }
@@ -3963,6 +4048,21 @@ impl RowStatus {
         }
     }
 }
+
+/// Marker for a profile drag in flight, keyed by profile id. Set
+/// when the drag starts (in `on_drag`'s constructor); cleared by
+/// whichever release path consumes it — a row / tail-strip drop
+/// (reorder), or `finish_profile_tear_off` (release outside the
+/// sidebar → new window). Without the marker the root-level
+/// mouse-up listeners couldn't tell "drag released over nothing"
+/// from an ordinary click release. App-scoped because gpui's
+/// `active_drag` is taken by the drop machinery before our
+/// listeners run — zorite's `GlobalDraggingTab` exists for the
+/// same reason.
+#[derive(Default)]
+struct GlobalProfileDrag(Option<String>);
+
+impl gpui::Global for GlobalProfileDrag {}
 
 /// Drag payload for sidebar profile reordering. Doubles as the
 /// drag-ghost view rendered under the cursor — `on_drag`'s
@@ -4168,14 +4268,19 @@ fn profile_row(
     // the ghost pill under the cursor; a matching drag hovering
     // this row paints a 2px accent rule at its top edge ("will
     // insert before me"); the drop routes through
-    // `reorder_profile`, which persists and broadcasts.
+    // `reorder_profile`, which persists and broadcasts. The
+    // constructor also arms the tear-off marker — see
+    // `GlobalProfileDrag`.
     .on_drag(drag_payload, |drag, _offset, _window, cx| {
+        cx.default_global::<GlobalProfileDrag>().0 = Some(drag.id.clone());
         cx.new(|_| drag.clone())
     })
     .drag_over::<ProfileDrag>(move |style, _drag, _window, _cx| {
         style.border_t_2().border_color(rgba(accent))
     })
     .on_drop(cx.listener(move |this, drag: &ProfileDrag, _window, cx| {
+        // Reorder consumed the release — disarm tear-off.
+        cx.default_global::<GlobalProfileDrag>().0 = None;
         this.reorder_profile(drag.id.clone(), Some(id_for_drop.clone()), cx);
     }))
 }

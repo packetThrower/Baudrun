@@ -384,6 +384,7 @@ fn main() {
         let window = match open_app_window(
             cx,
             WindowInit::Fresh(terminal.clone()),
+            None,
             profile_store.clone(),
             settings_bus.clone(),
             skins_store.clone(),
@@ -592,8 +593,8 @@ fn install_app_menu(
     });
     cx.on_action(|action: &ConnectToProfile, cx| {
         let profile_id = action.profile_id.clone();
-        dispatch_to_app_view(cx, move |app, window, cx| {
-            app.connect_profile_in_new_window(profile_id, window, cx);
+        dispatch_to_app_view(cx, move |app, _window, cx| {
+            app.connect_profile_in_new_window(profile_id, None, cx);
         });
     });
 
@@ -694,6 +695,7 @@ fn install_app_menu(
             if let Err(err) = open_app_window(
                 cx,
                 WindowInit::Fresh(terminal),
+                None,
                 profile_store.clone(),
                 settings_bus.clone(),
                 skins_store.clone(),
@@ -1407,6 +1409,7 @@ fn handle_reopen(cx: &mut App) {
     if let Err(err) = open_app_window(
         cx,
         WindowInit::Fresh(terminal),
+        None,
         profile_store,
         settings_bus,
         skins_store,
