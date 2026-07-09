@@ -1306,7 +1306,7 @@ impl AppView {
         let connect_message = if was_reconnecting {
             "Reconnected".to_string()
         } else {
-            format!("Connected to {} @ {}", &port, baud)
+            format!("Connected to {port} @ {baud}")
         };
         self.connected_profile_id = Some(profile.id);
         // A successful (re)connect ends any auto-reconnect window —
