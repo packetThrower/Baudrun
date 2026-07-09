@@ -110,6 +110,7 @@ export default defineConfig({
 						{ label: 'Terminal themes', slug: 'authoring/themes' },
 						{ label: 'App skins', slug: 'authoring/skins' },
 						{ label: 'Syntax highlighting', slug: 'authoring/highlighting' },
+						{ label: 'Translations', slug: 'authoring/translations' },
 						// Standalone HTML page in public/. The `attrs` field
 						// gives it the same external-link affordance as the
 						// GitHub social link.

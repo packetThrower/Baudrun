@@ -67,7 +67,7 @@ pub(super) fn build_editor(
         let val = profile.name.clone();
         cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("My switch")
+                .placeholder(t!("editor.name_placeholder"))
                 .default_value(val)
         })
     };
@@ -83,10 +83,10 @@ pub(super) fn build_editor(
     // settings.default_theme_id.
     let theme = {
         let mut opts = Vec::with_capacity(themes_store.list().len() + 1);
-        opts.push(Opt::new("", "Use global default"));
+        opts.push(Opt::new("", &t!("editor.theme.use_global_default")));
         for t in themes_store.list() {
             let title = if t.source == "user" {
-                format!("{} (custom)", t.name)
+                t!("editor.custom_suffix", name = t.name).into_owned()
             } else {
                 t.name
             };
@@ -406,9 +406,9 @@ fn form_header(
 ) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
     let subtitle = if is_edit {
-        "EDIT PROFILE"
+        t!("editor.subtitle_edit")
     } else {
-        "NEW PROFILE"
+        t!("editor.subtitle_new")
     };
     // Save button text-color is the only thing that changes for the
     // dirty state — pill bg stays the same so the button doesn't
@@ -421,7 +421,7 @@ fn form_header(
         rgba(s.fg_tertiary)
     };
     let delete_btn = is_edit.then(|| {
-        pill_button(s, "Delete", true).on_mouse_up(
+        pill_button(s, t!("editor.delete_button"), true).on_mouse_up(
             MouseButton::Left,
             cx.listener(|this, _: &MouseUpEvent, window, cx| {
                 this.delete_from_editor(window, cx);
@@ -436,7 +436,7 @@ fn form_header(
     // field at the top of the Connection card now.
     let title_text = name.read(cx).value().to_string();
     let title_text = if title_text.is_empty() {
-        "(unnamed)".to_string()
+        t!("editor.unnamed_title").to_string()
     } else {
         title_text
     };
@@ -477,7 +477,7 @@ fn form_header(
                 .gap_2()
                 .children(delete_btn)
                 .child(
-                    pill_button(s, "Save", false)
+                    pill_button(s, t!("editor.save_button"), false)
                         .text_color(save_fg)
                         .on_mouse_up(
                             MouseButton::Left,
@@ -486,12 +486,14 @@ fn form_header(
                             }),
                         ),
                 )
-                .child(pill_button(s, "Cancel", false).on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                        this.cancel_editor(cx);
-                    }),
-                ))
+                .child(
+                    pill_button(s, t!("editor.cancel_button"), false).on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                            this.cancel_editor(cx);
+                        }),
+                    ),
+                )
                 .when(connected_session, |row| {
                     // Suspended on the connected profile — swap the
                     // Connect button for the Disconnect + Resume
@@ -500,21 +502,25 @@ fn form_header(
                     // race for its own port or re-open a session
                     // the user already has, neither of which is
                     // what they're after.
-                    row.child(pill_button(s, "Disconnect", false).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.disconnect_current(window, cx);
-                        }),
-                    ))
-                    .child(primary_button(s, "Resume").on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.resume_session(window, cx);
-                        }),
-                    ))
+                    row.child(
+                        pill_button(s, t!("editor.disconnect_button"), false).on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.disconnect_current(window, cx);
+                            }),
+                        ),
+                    )
+                    .child(
+                        primary_button(s, t!("editor.resume_button")).on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                                this.resume_session(window, cx);
+                            }),
+                        ),
+                    )
                 })
                 .when(!connected_session, |row| {
-                    row.child(primary_button(s, "Connect").on_mouse_up(
+                    row.child(primary_button(s, t!("editor.connect_button")).on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|this, _: &MouseUpEvent, window, cx| {
                             this.save_and_connect(window, cx);
@@ -650,7 +656,7 @@ fn form_body(
 /// selected state reads instantly.
 fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
-    let item = move |label: &'static str, tab: EditorTab| {
+    let item = move |id: &'static str, label: SharedString, tab: EditorTab| {
         let is_active = tab == active;
         let bg = if is_active {
             rgba(s.bg_active)
@@ -671,7 +677,7 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
             // without it the `.hover()` style only paints when some
             // unrelated event happens to dirty AppView. Same fix as
             // `profile_row`. Labels here are unique within the rail.
-            .id(label)
+            .id(id)
             .w_full()
             .px_3()
             .py(px(6.0))
@@ -704,9 +710,21 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
         .flex_col()
         .gap_1()
         .text_size(px(13.0))
-        .child(item("Connection", EditorTab::Connection))
-        .child(item("Highlighting", EditorTab::Highlighting))
-        .child(item("Advanced", EditorTab::Advanced))
+        .child(item(
+            "Connection",
+            t!("editor.tab.connection").into(),
+            EditorTab::Connection,
+        ))
+        .child(item(
+            "Highlighting",
+            t!("editor.tab.highlighting").into(),
+            EditorTab::Highlighting,
+        ))
+        .child(item(
+            "Advanced",
+            t!("editor.tab.advanced").into(),
+            EditorTab::Advanced,
+        ))
 }
 
 /// One section of the form — a translucent panel with a heading,
@@ -714,16 +732,21 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
 /// `--font-size-section` (15px); description is the muted
 /// `--fg-secondary`. Panel uses `--radius-lg` (10px) and
 /// `--bg-panel` / `--border-subtle`.
-fn section_card(s: SkinTokens, title: &'static str, body: impl IntoElement) -> gpui::Div {
+fn section_card(
+    s: SkinTokens,
+    title: impl Into<SharedString>,
+    body: impl IntoElement,
+) -> gpui::Div {
     section_card_with_desc(s, title, None, body)
 }
 
 fn section_card_with_desc(
     s: SkinTokens,
-    title: &'static str,
-    description: Option<&'static str>,
+    title: impl Into<SharedString>,
+    description: Option<SharedString>,
     body: impl IntoElement,
 ) -> gpui::Div {
+    let title: SharedString = title.into();
     let mut header = div().flex().flex_col().gap_1().child(
         div()
             .text_size(px(s.font_size_section_px))
@@ -784,7 +807,8 @@ fn section_card_with_desc(
 /// Label is `whitespace_nowrap` because gpui defaults to wrap, and
 /// short fixed strings like "SLOW-PASTE DELAY (MS)" wrapping mid-
 /// label inside a narrow container looks broken.
-fn labeled(s: SkinTokens, label: &'static str, widget: impl IntoElement) -> gpui::Div {
+fn labeled(s: SkinTokens, label: impl Into<SharedString>, widget: impl IntoElement) -> gpui::Div {
+    let label: SharedString = label.into();
     div()
         .flex()
         .flex_col()
@@ -840,13 +864,16 @@ fn driver_banner_row(
     } else if !candidate.manufacturer.is_empty() {
         candidate.manufacturer.clone()
     } else {
-        "USB device".to_string()
+        t!("editor.driver.usb_device").to_string()
     };
     if !candidate.serial_number.is_empty() {
-        meta.push_str(" \u{00B7} serial ");
+        meta.push_str(&t!("editor.driver.serial_prefix"));
         meta.push_str(&candidate.serial_number);
     }
-    let title = format!("{} detected \u{2014} driver not loaded", candidate.chipset);
+    let title = t!(
+        "editor.driver.not_loaded_title",
+        chipset = candidate.chipset
+    );
 
     let mut text_col = div().flex_1().min_w_0().flex().flex_col().gap_1().child(
         div()
@@ -899,12 +926,14 @@ fn driver_banner_row(
         .child(text_col);
     if !candidate.driver_url.is_empty() {
         let url = candidate.driver_url.clone();
-        row = row.child(pill_button(s, "Install driver\u{2026}", false).on_mouse_up(
-            MouseButton::Left,
-            cx.listener(move |_, _: &MouseUpEvent, _, cx| {
-                cx.open_url(&url);
-            }),
-        ));
+        row = row.child(
+            pill_button(s, t!("editor.driver.install_button"), false).on_mouse_up(
+                MouseButton::Left,
+                cx.listener(move |_, _: &MouseUpEvent, _, cx| {
+                    cx.open_url(&url);
+                }),
+            ),
+        );
     }
     row
 }
@@ -934,12 +963,11 @@ fn connection_card(
         .flex_row()
         .items_end()
         .gap_2()
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .child(labeled(s, "SERIAL PORT", Select::new(&port))),
-        )
+        .child(div().flex_1().min_w_0().child(labeled(
+            s,
+            t!("editor.field.serial_port"),
+            Select::new(&port),
+        )))
         .child(
             div()
                 // Stable id so gpui notifies on hover transitions —
@@ -973,7 +1001,11 @@ fn connection_card(
         .flex()
         .flex_col()
         .gap_3()
-        .child(labeled(s, "NAME", Input::new(&name).appearance(true)))
+        .child(labeled(
+            s,
+            t!("editor.field.name"),
+            Input::new(&name).appearance(true),
+        ))
         .when(!driver_banners.is_empty(), |this| {
             this.child(div().flex().flex_col().gap_2().children(driver_banners))
         })
@@ -984,35 +1016,39 @@ fn connection_card(
                 .flex()
                 .flex_row()
                 .gap_3()
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "BAUD RATE", Select::new(&baud))),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "DATA BITS", Select::new(&data_bits))),
-                ),
+                .child(div().flex_1().child(labeled(
+                    s,
+                    t!("editor.field.baud_rate"),
+                    Select::new(&baud),
+                )))
+                .child(div().flex_1().child(labeled(
+                    s,
+                    t!("editor.field.data_bits"),
+                    Select::new(&data_bits),
+                ))),
         )
         .child(
             div()
                 .flex()
                 .flex_row()
                 .gap_3()
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "PARITY", Select::new(&parity))),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(labeled(s, "STOP BITS", Select::new(&stop_bits))),
-                ),
+                .child(div().flex_1().child(labeled(
+                    s,
+                    t!("editor.field.parity"),
+                    Select::new(&parity),
+                )))
+                .child(div().flex_1().child(labeled(
+                    s,
+                    t!("editor.field.stop_bits"),
+                    Select::new(&stop_bits),
+                ))),
         )
-        .child(labeled(s, "FLOW CONTROL", Select::new(&flow_control)));
-    section_card(s, "Connection", body)
+        .child(labeled(
+            s,
+            t!("editor.field.flow_control"),
+            Select::new(&flow_control),
+        ));
+    section_card(s, t!("editor.tab.connection"), body)
 }
 
 fn terminal_card(
@@ -1033,23 +1069,23 @@ fn terminal_card(
                 .gap_3()
                 .child(div().flex_1().child(labeled(
                     s,
-                    "SEND LINE ENDING",
+                    t!("editor.field.send_line_ending"),
                     Select::new(&line_ending),
                 )))
                 .child(div().flex_1().child(labeled(
                     s,
-                    "BACKSPACE SENDS",
+                    t!("editor.field.backspace_sends"),
                     Select::new(&backspace_key),
                 ))),
         )
         .child(bool_field(
             "local-echo",
-            "Local echo",
+            t!("editor.field.local_echo"),
             local_echo,
             cx,
             |ed, v| ed.local_echo = v,
         ));
-    section_card(s, "Terminal", body)
+    section_card(s, t!("editor.section.terminal"), body)
 }
 
 /// Generic checkbox row that writes back to the open editor when
@@ -1058,7 +1094,7 @@ fn terminal_card(
 /// name as a string would force runtime dispatch for no benefit.
 fn bool_field<F>(
     id: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
     checked: bool,
     cx: &mut Context<AppView>,
     set: F,
@@ -1074,8 +1110,8 @@ where
 /// view ┄ show incoming bytes as hex dump" pattern.
 fn bool_field_hinted<F>(
     id: &'static str,
-    label: &'static str,
-    hint: Option<&'static str>,
+    label: impl Into<SharedString>,
+    hint: Option<SharedString>,
     checked: bool,
     cx: &mut Context<AppView>,
     set: F,
@@ -1086,7 +1122,7 @@ where
     let s = *cx.global::<SkinTokens>();
     let cb = Checkbox::new(id)
         .checked(checked)
-        .label(label)
+        .label(label.into())
         .on_click(cx.listener(move |this, checked: &bool, _window, cx| {
             if let Some(ed) = this.editor.as_mut() {
                 set(ed, *checked);
@@ -1137,7 +1173,7 @@ fn highlighting_pane(
             let cb_id = SharedString::from(format!("profile-highlight-{}", p.id));
             let is_on = effective.iter().any(|e| e == &p.id);
             let label = if p.source == "user" || p.source == "import" {
-                format!("{} (custom)", p.name)
+                t!("editor.custom_suffix", name = p.name).into_owned()
             } else {
                 p.name.clone()
             };
@@ -1166,15 +1202,11 @@ fn highlighting_pane(
 
     let master_card = section_card_with_desc(
         s,
-        "Highlighting",
-        Some(
-            "Master switch for this profile. When off, incoming \
-             output is rendered without any rule-based colouring \
-             regardless of which packs are enabled below.",
-        ),
+        t!("editor.tab.highlighting"),
+        Some(t!("editor.highlight.master_desc").into()),
         bool_field(
             "profile-highlight-master",
-            "Highlight terminal output for this profile",
+            t!("editor.highlight.master_toggle"),
             highlight,
             cx,
             |ed, on| ed.highlight = on,
@@ -1189,7 +1221,7 @@ fn highlighting_pane(
         Checkbox::new("profile-highlight-override")
             .checked(override_packs)
             .disabled(!highlight)
-            .label("Override global pack selection")
+            .label(SharedString::from(t!("editor.highlight.override_toggle")))
             .on_click(cx.listener(|this, checked: &bool, _, cx| {
                 this.set_editor_override_highlight(*checked, cx);
             })),
@@ -1197,12 +1229,8 @@ fn highlighting_pane(
 
     let packs_card = section_card_with_desc(
         s,
-        "Highlight Packs",
-        Some(
-            "Inherit the global selection from Settings, or override \
-             it for this profile. With override off, the rows show \
-             what the global is currently broadcasting (read-only).",
-        ),
+        t!("editor.highlight.packs_title"),
+        Some(t!("editor.highlight.packs_desc").into()),
         div()
             .flex()
             .flex_col()
@@ -1252,14 +1280,14 @@ fn advanced_pane(
                     div()
                         .text_size(px(18.0))
                         .text_color(rgba(s.fg_primary))
-                        .child("Advanced"),
+                        .child(t!("editor.tab.advanced")),
                 )
                 .child(
                     div()
                         .text_size(px(12.0))
                         .text_color(rgba(s.fg_secondary))
                         .whitespace_normal()
-                        .child("Control lines, hex view, timestamps, session logging."),
+                        .child(t!("editor.advanced_desc")),
                 ),
         )
         .child(control_lines_card(
@@ -1294,14 +1322,8 @@ fn advanced_pane(
 fn theme_card(s: SkinTokens, theme: Entity<SelectState<Vec<Opt>>>) -> gpui::Div {
     section_card_with_desc(
         s,
-        "Terminal Theme",
-        Some(
-            "Override the global default theme just for this profile. \
-             Useful for keeping different palettes on different \
-             devices (e.g. red-tinged for production routers, calm \
-             green for the lab switch). Leave on \"Use global \
-             default\" to inherit from Settings \u{2192} Themes.",
-        ),
+        t!("editor.theme.title"),
+        Some(t!("editor.theme.desc").into()),
         Select::new(&theme),
     )
 }
@@ -1326,24 +1348,21 @@ fn control_lines_card(
         .flex_col()
         .gap_3()
         .child(row(
-            "DTR ON CONNECT",
+            t!("editor.field.dtr_on_connect"),
             Select::new(&dtr_on_connect),
-            "RTS ON CONNECT",
+            t!("editor.field.rts_on_connect"),
             Select::new(&rts_on_connect),
         ))
         .child(row(
-            "DTR ON DISCONNECT",
+            t!("editor.field.dtr_on_disconnect"),
             Select::new(&dtr_on_disconnect),
-            "RTS ON DISCONNECT",
+            t!("editor.field.rts_on_disconnect"),
             Select::new(&rts_on_disconnect),
         ));
     section_card_with_desc(
         s,
-        "Control Lines",
-        Some(
-            "Only needed for specific adapters or devices (RS-485 direction, \
-             Arduino DTR-reset, firmwares that key off DTR for session lifecycle).",
-        ),
+        t!("editor.section.control_lines"),
+        Some(t!("editor.control_lines_desc").into()),
         body,
     )
 }
@@ -1368,45 +1387,45 @@ fn output_card(
         .gap_2()
         .child(bool_field_hinted(
             "timestamps",
-            "Line timestamps",
-            Some("prefix each line with wall-clock time"),
+            t!("editor.output.timestamps"),
+            Some(t!("editor.output.timestamps_hint").into()),
             timestamps,
             cx,
             |ed, v| ed.timestamps = v,
         ))
         .child(bool_field_hinted(
             "line-numbers",
-            "Line numbers",
-            Some("prefix each line with a session-local counter (resets on reconnect)"),
+            t!("editor.output.line_numbers"),
+            Some(t!("editor.output.line_numbers_hint").into()),
             line_numbers,
             cx,
             |ed, v| ed.line_numbers = v,
         ))
         .child(bool_field_hinted(
             "hex-view",
-            "Hex view",
-            Some("show incoming bytes as hex dump"),
+            t!("editor.output.hex_view"),
+            Some(t!("editor.output.hex_view_hint").into()),
             hex_view,
             cx,
             |ed, v| ed.hex_view = v,
         ))
         .child(bool_field_hinted(
             "log-enabled",
-            "Record session to file",
-            Some("raw bytes; destination set in Settings → Advanced"),
+            t!("editor.output.log_enabled"),
+            Some(t!("editor.output.log_enabled_hint").into()),
             log_enabled,
             cx,
             |ed, v| ed.log_enabled = v,
         ))
         .child(bool_field_hinted(
             "auto-reconnect",
-            "Auto-reconnect on drop",
-            Some("poll for the port to reappear (up to 30s) and reopen transparently"),
+            t!("editor.output.auto_reconnect"),
+            Some(t!("editor.output.auto_reconnect_hint").into()),
             auto_reconnect,
             cx,
             |ed, v| ed.auto_reconnect = v,
         ));
-    section_card(s, "Output", body)
+    section_card(s, t!("editor.section.output"), body)
 }
 
 fn paste_safety_card(
@@ -1428,32 +1447,29 @@ fn paste_safety_card(
         .gap_2()
         .child(bool_field_hinted(
             "paste-warn",
-            "Confirm multi-line pastes",
-            Some("prompt before sending pasted text that contains line breaks"),
+            t!("editor.paste.warn_multiline"),
+            Some(t!("editor.paste.warn_multiline_hint").into()),
             paste_warn_multiline,
             cx,
             |ed, v| ed.paste_warn_multiline = v,
         ))
         .child(bool_field_hinted(
             "paste-slow",
-            "Slow paste",
-            Some("send one char at a time with a delay"),
+            t!("editor.paste.slow"),
+            Some(t!("editor.paste.slow_hint").into()),
             paste_slow,
             cx,
             |ed, v| ed.paste_slow = v,
         ))
         .child(div().pl_6().w(px(160.0)).child(labeled(
             s,
-            "SLOW-PASTE DELAY (MS)",
+            t!("editor.field.slow_paste_delay"),
             Input::new(&paste_char_delay_ms).small().appearance(true),
         )));
     section_card_with_desc(
         s,
-        "Paste safety",
-        Some(
-            "Catch the \"I pasted into the wrong window\" mistake, and pace pastes so \
-             UARTs on slower devices don't drop bytes.",
-        ),
+        t!("editor.section.paste_safety"),
+        Some(t!("editor.paste.safety_desc").into()),
         body,
     )
 }

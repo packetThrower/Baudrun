@@ -89,19 +89,13 @@ pub(super) fn read_select(state: &Entity<SelectState<Vec<Opt>>>, cx: &Context<Ap
 // takes the `Vec<Opt>` by value into the SelectState.
 
 pub(super) fn baud_opts() -> Vec<Opt> {
-    [
-        ("9600", "9600 (default)"),
-        ("19200", "19200"),
-        ("38400", "38400"),
-        ("57600", "57600"),
-        ("115200", "115200"),
-        ("230400", "230400"),
-        ("460800", "460800"),
-        ("921600", "921600"),
-    ]
-    .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
-    .collect()
+    let mut opts = vec![Opt::new("9600", &t!("opts.baud.9600"))];
+    for rate in [
+        "19200", "38400", "57600", "115200", "230400", "460800", "921600",
+    ] {
+        opts.push(Opt::new(rate, rate));
+    }
+    opts
 }
 
 pub(super) fn data_bits_opts() -> Vec<Opt> {
@@ -113,14 +107,14 @@ pub(super) fn data_bits_opts() -> Vec<Opt> {
 
 pub(super) fn parity_opts() -> Vec<Opt> {
     [
-        ("none", "None"),
-        ("odd", "Odd"),
-        ("even", "Even"),
-        ("mark", "Mark"),
-        ("space", "Space"),
+        ("none", t!("opts.parity.none")),
+        ("odd", t!("opts.parity.odd")),
+        ("even", t!("opts.parity.even")),
+        ("mark", t!("opts.parity.mark")),
+        ("space", t!("opts.parity.space")),
     ]
     .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
+    .map(|(id, title)| Opt::new(id, &title))
     .collect()
 }
 
@@ -133,23 +127,23 @@ pub(super) fn stop_bits_opts() -> Vec<Opt> {
 
 pub(super) fn flow_control_opts() -> Vec<Opt> {
     [
-        ("none", "None"),
-        ("rtscts", "RTS/CTS"),
-        ("xonxoff", "XON/XOFF"),
+        ("none", t!("opts.flow_control.none")),
+        ("rtscts", t!("opts.flow_control.rtscts")),
+        ("xonxoff", t!("opts.flow_control.xonxoff")),
     ]
     .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
+    .map(|(id, title)| Opt::new(id, &title))
     .collect()
 }
 
 pub(super) fn line_ending_opts() -> Vec<Opt> {
     [
-        ("cr", "CR (\\r) — switches, routers"),
-        ("lf", "LF (\\n) — Linux consoles"),
-        ("crlf", "CRLF (\\r\\n) — legacy / Windows"),
+        ("cr", t!("opts.line_ending.cr")),
+        ("lf", t!("opts.line_ending.lf")),
+        ("crlf", t!("opts.line_ending.crlf")),
     ]
     .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
+    .map(|(id, title)| Opt::new(id, &title))
     .collect()
 }
 
@@ -159,22 +153,22 @@ pub(super) fn line_ending_opts() -> Vec<Opt> {
 /// "default" carries the same semantics ("leave as-is").
 pub(super) fn line_policy_opts() -> Vec<Opt> {
     [
-        ("default", "Default (leave as-is)"),
-        ("assert", "Assert (high)"),
-        ("deassert", "Deassert (low)"),
+        ("default", t!("opts.line_policy.default")),
+        ("assert", t!("opts.line_policy.assert")),
+        ("deassert", t!("opts.line_policy.deassert")),
     ]
     .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
+    .map(|(id, title)| Opt::new(id, &title))
     .collect()
 }
 
 pub(super) fn backspace_opts() -> Vec<Opt> {
     [
-        ("del", "DEL (0x7F) — VT100, xterm, modern"),
-        ("bs", "BS (0x08) — older Cisco, Foundry"),
+        ("del", t!("opts.backspace.del")),
+        ("bs", t!("opts.backspace.bs")),
     ]
     .into_iter()
-    .map(|(id, title)| Opt::new(id, title))
+    .map(|(id, title)| Opt::new(id, &title))
     .collect()
 }
 
@@ -211,7 +205,7 @@ pub(super) fn port_opts(keep_selected: &str) -> Vec<Opt> {
     if !keep_selected.is_empty() && !detected.iter().any(|p| p.name == keep_selected) {
         // Prepend so the user's saved port shows up first when
         // it isn't currently detected (cable unplugged, etc.).
-        let title = format!("{keep_selected} (not connected)");
+        let title = t!("opts.port_not_connected", port = keep_selected);
         opts.insert(0, Opt::new(keep_selected, &title));
     }
     opts

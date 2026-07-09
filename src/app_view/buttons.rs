@@ -49,7 +49,7 @@ pub(super) fn line_pill(s: SkinTokens, label: &'static str, active: bool) -> gpu
 /// red for destructive actions like Delete. Returns a bare `Div`
 /// so the call site can attach `.on_mouse_up` etc. — the helper
 /// just owns the visual styling.
-pub(super) fn pill_button(s: SkinTokens, label: &'static str, danger: bool) -> gpui::Div {
+pub(super) fn pill_button(s: SkinTokens, label: impl IntoElement, danger: bool) -> gpui::Div {
     let fg = if danger {
         rgba(s.danger)
     } else {
@@ -79,7 +79,7 @@ pub(super) fn pill_button(s: SkinTokens, label: &'static str, danger: bool) -> g
 /// Primary action button — solid `--accent` blue, white text. Used
 /// for the form's Connect button (the call-to-action). Same shape
 /// as `pill_button` so they line up flush in a button row.
-pub(super) fn primary_button(s: SkinTokens, label: &'static str) -> gpui::Div {
+pub(super) fn primary_button(s: SkinTokens, label: impl IntoElement) -> gpui::Div {
     div()
         .px_3()
         .py_1()

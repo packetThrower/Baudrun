@@ -23,6 +23,7 @@
 //! (multiple grids per window, settings panes that don't need a
 //! parser, etc.).
 
+use std::borrow::Cow;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -1274,10 +1275,14 @@ impl TerminalView {
         // `gpui::div().child(...)` expects, so each row is a
         // standalone Div.
         type ClickHandler = Box<dyn Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static>;
-        let row = move |label: &'static str, enabled: bool, on_click: ClickHandler| -> AnyElement {
+        let row = move |id: &'static str,
+                        label: Cow<'static, str>,
+                        enabled: bool,
+                        on_click: ClickHandler|
+              -> AnyElement {
             let hover_bg = s.bg_hover;
             let d = div()
-                .id(SharedString::from(label))
+                .id(SharedString::from(id))
                 .px_3()
                 .py(px(6.0))
                 .text_color(rgba(s.fg_primary))
@@ -1301,6 +1306,7 @@ impl TerminalView {
             let entity = cx.entity();
             row(
                 "Copy",
+                t!("terminal.menu.copy"),
                 has_selection,
                 Box::new(move |_, _window, app| {
                     entity.update(app, |this, cx| {
@@ -1315,6 +1321,7 @@ impl TerminalView {
             let entity = cx.entity();
             row(
                 "Paste",
+                t!("terminal.menu.paste"),
                 true,
                 Box::new(move |_, window, app| {
                     entity.update(app, |this, cx| {
@@ -1329,6 +1336,7 @@ impl TerminalView {
             let entity = cx.entity();
             row(
                 "Select All",
+                t!("terminal.menu.select_all"),
                 true,
                 Box::new(move |_, _window, app| {
                     entity.update(app, |this, cx| {
@@ -1343,6 +1351,7 @@ impl TerminalView {
             let entity = cx.entity();
             row(
                 "Clear",
+                t!("terminal.menu.clear"),
                 true,
                 Box::new(move |_, _window, app| {
                     entity.update(app, |this, cx| {
@@ -1538,10 +1547,8 @@ impl TerminalView {
                 let bytes = bytes.clone();
                 alert
                     .confirm()
-                    .title("Paste multiple lines?")
-                    .description(format!(
-                        "About to paste {line_count} lines into the terminal."
-                    ))
+                    .title(t!("terminal.paste_confirm.title"))
+                    .description(t!("terminal.paste_confirm.body", count = line_count))
                     .on_ok(move |_, window, cx| {
                         let bytes = bytes.clone();
                         if let Some(this) = weak.upgrade() {

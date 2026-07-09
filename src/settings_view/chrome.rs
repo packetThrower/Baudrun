@@ -70,7 +70,7 @@ pub(super) fn window_header(
                             div()
                                 .text_size(px(s.font_size_h1_px))
                                 .text_color(rgba(s.fg_primary))
-                                .child("Settings"),
+                                .child(t!("settings_chrome.title")),
                         )
                         .child(
                             div()
@@ -96,9 +96,9 @@ pub(super) fn window_header(
                                 // (currently "0.0.1").
                                 .child(format!("v{}", env!("CARGO_PKG_VERSION")))
                                 .tooltip(|window, cx| {
-                                    Tooltip::new(SharedString::from(
-                                        "Baudrun version (from Cargo.toml at build time)",
-                                    ))
+                                    Tooltip::new(SharedString::from(t!(
+                                        "settings_chrome.version_tooltip"
+                                    )))
                                     .build(window, cx)
                                 }),
                         ),
@@ -111,7 +111,10 @@ pub(super) fn window_header(
                         .text_size(px(s.font_size_label_px))
                         .text_color(rgba(s.fg_tertiary))
                         .font_weight(gpui::FontWeight(s.label_weight as f32))
-                        .child(s.label_transform.apply("GLOBAL DEFAULTS")),
+                        .child(
+                            s.label_transform
+                                .apply(&t!("settings_chrome.global_defaults")),
+                        ),
                 ),
         )
         .child(
@@ -141,7 +144,10 @@ pub(super) fn window_header(
                             .cursor_pointer()
                             .hover(|st| st.text_color(rgba(s.fg_primary)))
                             .tooltip(|window, cx| {
-                                Tooltip::new(SharedString::from("Clear filter")).build(window, cx)
+                                Tooltip::new(SharedString::from(t!(
+                                    "settings_chrome.filter_clear_tooltip"
+                                )))
+                                .build(window, cx)
                             })
                             .child("\u{00D7}")
                             .on_mouse_up(
@@ -193,7 +199,7 @@ pub(super) fn rail(
             .map(|(_, m)| *m)
             .unwrap_or(true)
     };
-    let item = move |label: &'static str, tab: SettingsTab, dimmed: bool| {
+    let item = move |label: SharedString, tab: SettingsTab, dimmed: bool| {
         let is_active = tab == active;
         let bg = if is_active {
             rgba(s.bg_active)
@@ -218,7 +224,7 @@ pub(super) fn rail(
             // style only paints when some unrelated event happens to
             // dirty SettingsView. Same fix as `profile_row`. The label
             // is unique within the rail so it works as a stable key.
-            .id(label)
+            .id(label.clone())
             .w_full()
             .px_3()
             .py(px(6.0))
@@ -299,8 +305,8 @@ pub(super) fn scrollable_pane(content: impl IntoElement) -> impl IntoElement {
 /// `--radius-lg` tokens as the profile editor's `section_card`.
 pub(super) fn section_card_with_desc(
     s: SkinTokens,
-    title: &'static str,
-    description: Option<&'static str>,
+    title: SharedString,
+    description: Option<SharedString>,
     body: impl IntoElement,
 ) -> gpui::Div {
     let mut header = div().flex().flex_col().gap_1().child(
@@ -350,7 +356,7 @@ pub(super) fn section_card_with_desc(
 /// inside the widget so click-on-text toggles too.
 pub(super) fn bool_field<F>(
     id: &'static str,
-    label: &'static str,
+    label: impl Into<SharedString>,
     checked: bool,
     cx: &mut Context<SettingsView>,
     setter: F,
@@ -361,7 +367,7 @@ where
     div().child(
         Checkbox::new(id)
             .checked(checked)
-            .label(label)
+            .label(label.into())
             .on_click(cx.listener(move |this, checked: &bool, _, cx| {
                 setter(this, *checked, cx);
             })),
@@ -424,7 +430,7 @@ pub(super) fn encode_file_path(p: &std::path::Path) -> String {
 pub(super) fn resolve_config_dir_display() -> SharedString {
     match appdata::support_dir() {
         Ok(path) => SharedString::from(path.display().to_string()),
-        Err(err) => SharedString::from(format!("(unavailable: {err})")),
+        Err(err) => SharedString::from(t!("settings_chrome.config_dir_unavailable", err = err)),
     }
 }
 
@@ -445,7 +451,7 @@ pub(super) fn resolve_config_dir_display() -> SharedString {
 pub(super) fn import_button<F>(
     s: SkinTokens,
     id: impl Into<ElementId>,
-    label: &'static str,
+    label: impl Into<SharedString>,
     cx: &mut Context<SettingsView>,
     on_click: F,
 ) -> gpui::Div
@@ -466,7 +472,7 @@ where
             .text_size(px(12.0))
             .cursor_pointer()
             .hover(move |st| st.border_color(rgba(accent)))
-            .child(label)
+            .child(label.into())
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(move |this, _: &MouseUpEvent, window, cx| {
@@ -483,7 +489,7 @@ where
 pub(super) fn trash_button<F>(
     s: SkinTokens,
     id: impl Into<ElementId>,
-    tip: &'static str,
+    tip: impl Into<SharedString>,
     cx: &mut Context<SettingsView>,
     on_click: F,
 ) -> gpui::Div
@@ -491,7 +497,7 @@ where
     F: Fn(&mut SettingsView, &mut Window, &mut Context<SettingsView>) + 'static,
 {
     let danger = s.danger;
-    let tip_text = SharedString::from(tip);
+    let tip_text = tip.into();
     div().child(
         div()
             .id(id)

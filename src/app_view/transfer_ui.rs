@@ -48,11 +48,11 @@ pub(super) fn transfer_protocol_opts() -> Vec<Opt> {
 }
 
 /// Small uppercase-ish field label above an input row.
-pub(super) fn send_file_field_label(label: &'static str) -> gpui::Div {
+pub(super) fn send_file_field_label(label: impl Into<SharedString>) -> gpui::Div {
     div()
         .text_size(px(11.0))
         .text_color(rgba(0x808080CCu32))
-        .child(label)
+        .child(label.into())
 }
 
 /// Read-only path display — input-styled pill that shows the chosen
@@ -103,7 +103,10 @@ where
 /// Cancel-style button at the bottom of the dialog. Quiet styling
 /// (matches Tauri's secondary button) so it doesn't compete with
 /// the primary Send button.
-pub(super) fn send_file_secondary_button<F>(label: &'static str, on_click: F) -> gpui::Div
+pub(super) fn send_file_secondary_button<F>(
+    label: impl Into<SharedString>,
+    on_click: F,
+) -> gpui::Div
 where
     F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
 {
@@ -116,7 +119,7 @@ where
         .text_size(px(13.0))
         .cursor_pointer()
         .hover(|st| st.bg(rgba(0x80808033u32)))
-        .child(label)
+        .child(label.into())
         .on_mouse_up(MouseButton::Left, on_click)
 }
 
@@ -124,7 +127,7 @@ where
 /// false) still renders but ignores clicks and dims out, matching
 /// Tauri's "you must pick a file first" affordance.
 pub(super) fn send_file_primary_button<F>(
-    label: &'static str,
+    label: impl Into<SharedString>,
     enabled: bool,
     on_click: F,
 ) -> gpui::Div
@@ -148,7 +151,7 @@ where
         .bg(rgba(bg))
         .text_size(px(13.0))
         .text_color(rgba(text_color))
-        .child(label);
+        .child(label.into());
     if enabled {
         btn = btn
             .cursor_pointer()

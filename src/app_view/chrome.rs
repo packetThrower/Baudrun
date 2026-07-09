@@ -20,7 +20,7 @@
 //! works without visibility widening — Rust's privacy rule lets
 //! descendant modules see the parent's private items.
 
-use std::time::Duration;
+use std::{borrow::Cow, time::Duration};
 
 use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
@@ -55,7 +55,7 @@ pub(super) fn profile_context_menu_overlay(
     let item: gpui::Div = if is_connected_row {
         profile_menu_item(
             s,
-            "Move Session to New Window",
+            t!("chrome.move_session_to_new_window"),
             cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
                 this.profile_context_menu = None;
                 this.move_session_to_new_window(None, cx);
@@ -64,7 +64,7 @@ pub(super) fn profile_context_menu_overlay(
     } else {
         profile_menu_item(
             s,
-            "Connect in New Window",
+            t!("chrome.connect_in_new_window"),
             cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
                 let id = profile_id.clone();
                 this.profile_context_menu = None;
@@ -113,7 +113,7 @@ pub(super) fn profile_context_menu_overlay(
 /// gpui-component's PopupMenu (which routes through the Action
 /// system) since we have a single click handler that already needs
 /// the per-row profile id baked in.
-pub(super) fn profile_menu_item<F>(s: SkinTokens, label: &'static str, on_click: F) -> gpui::Div
+pub(super) fn profile_menu_item<F>(s: SkinTokens, label: impl IntoElement, on_click: F) -> gpui::Div
 where
     F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
 {
@@ -175,13 +175,13 @@ pub(super) fn suspended_banner(s: SkinTokens, _cx: &mut Context<AppView>) -> imp
             div()
                 .text_size(px(12.0))
                 .text_color(rgba(s.fg_primary))
-                .child("Session suspended"),
+                .child(t!("chrome.session_suspended_title")),
         )
         .child(
             div()
                 .text_size(px(11.0))
                 .text_color(rgba(s.fg_secondary))
-                .child("Port still open. Bytes keep flowing into scrollback."),
+                .child(t!("chrome.suspended_banner_detail")),
         )
 }
 
@@ -195,7 +195,7 @@ pub(super) fn suspended_pane(
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let port_line = if profile.port_name.is_empty() {
-        "(no port)".to_string()
+        t!("chrome.no_port").to_string()
     } else {
         format!("{} @ {}", profile.port_name, profile.baud_rate)
     };
@@ -216,7 +216,7 @@ pub(super) fn suspended_pane(
             div()
                 .text_size(px(11.0))
                 .text_color(rgba(s.fg_tertiary))
-                .child("SESSION SUSPENDED"),
+                .child(t!("chrome.session_suspended_heading")),
         )
         .child(
             div()
@@ -234,9 +234,9 @@ pub(super) fn suspended_pane(
             div()
                 .text_size(px(12.0))
                 .text_color(rgba(s.fg_tertiary))
-                .child("Port stays open; bytes keep flowing into scrollback."),
+                .child(t!("chrome.suspended_pane_detail")),
         )
-        .child(primary_button(s, "Resume").on_mouse_up(
+        .child(primary_button(s, t!("chrome.resume_button")).on_mouse_up(
             MouseButton::Left,
             cx.listener(|this, _: &MouseUpEvent, window, cx| {
                 this.resume_session(window, cx);
@@ -266,7 +266,7 @@ pub(super) fn about_dialog_body() -> impl IntoElement {
             div()
                 .text_sm()
                 .opacity(0.75)
-                .child(format!("Version {version} (prototype)")),
+                .child(t!("chrome.about_version", version = version)),
         )
         .child(
             // Tagline pulls from the same source-of-truth as
@@ -280,7 +280,7 @@ pub(super) fn about_dialog_body() -> impl IntoElement {
             div()
                 .text_sm()
                 .opacity(0.65)
-                .child("© 2025–2026 packetThrower / Baudrun contributors"),
+                .child(t!("chrome.about_copyright")),
         )
         .child(
             div()
@@ -290,7 +290,7 @@ pub(super) fn about_dialog_body() -> impl IntoElement {
                 .cursor_pointer()
                 .hover(|s| s.text_color(gpui::rgba(0x60a5faffu32)))
                 .on_click(|_evt, _window, cx| cx.open_url(GITHUB_URL))
-                .child("View on GitHub"),
+                .child(t!("chrome.view_on_github")),
         )
 }
 
@@ -310,26 +310,22 @@ pub(super) fn friendly_open_error(port: &str, err: &serialport::Error) -> String
             serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied)
         ) || base.to_ascii_lowercase().contains("permission denied");
         if is_perm {
-            return format!(
-                "open {port}: {base} — your user can't access this serial port. \
-                 Fix: install Baudrun's udev rule (already done if you used the \
-                 .deb / .rpm / .pkg.tar.zst installer; rerun the installer if it \
-                 didn't take), then unplug + replug the USB adapter. \
-                 As a one-off workaround: `sudo chmod 666 {port}` opens it for \
-                 the current plug-in. The legacy dialout-group flow \
-                 (`sudo usermod -aG dialout $USER` + log out + log in) also \
-                 works."
-            );
+            return t!(
+                "chrome.open_error_permission_linux",
+                port = port,
+                base = base
+            )
+            .to_string();
         }
     }
-    format!("open {port}: {base}")
+    t!("chrome.open_error", port = port, base = base).to_string()
 }
 
 pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
     let prompt = if has_profiles {
-        "Pick a profile from the sidebar to start a session."
+        t!("welcome.pick_profile")
     } else {
-        "Click the + above the profile list to create one."
+        t!("welcome.create_first")
     };
     // Paint `bg_main` here only when the AppView right-pane
     // wrapper isn't already doing so. Floating-card skins
@@ -353,7 +349,7 @@ pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElemen
             div()
                 .text_size(px(s.font_size_h1_px))
                 .text_color(rgba(s.fg_primary))
-                .child("Baudrun"),
+                .child(t!("welcome.heading")),
         )
         .child(
             div()
@@ -392,7 +388,7 @@ pub(super) fn session_header(
         profile.port_name, profile.baud_rate, profile.data_bits, parity_letter, profile.stop_bits,
     );
     if reconnecting {
-        meta.push_str(" · reconnecting…");
+        meta.push_str(&t!("chrome.reconnecting_suffix"));
     }
     let s = *cx.global::<SkinTokens>();
     let dot_color = if reconnecting { s.warn } else { s.success };
@@ -482,9 +478,9 @@ pub(super) fn session_header(
                         .child(line_pill(s, "DTR", dtr_asserted))
                         .tooltip(move |window, cx| {
                             Tooltip::new(SharedString::from(if dtr_asserted {
-                                "DTR is asserted — click to deassert"
+                                t!("chrome.dtr_asserted_tooltip")
                             } else {
-                                "DTR is deasserted — click to assert"
+                                t!("chrome.dtr_deasserted_tooltip")
                             }))
                             .build(window, cx)
                         })
@@ -501,9 +497,9 @@ pub(super) fn session_header(
                         .child(line_pill(s, "RTS", rts_asserted))
                         .tooltip(move |window, cx| {
                             Tooltip::new(SharedString::from(if rts_asserted {
-                                "RTS is asserted — click to deassert"
+                                t!("chrome.rts_asserted_tooltip")
                             } else {
-                                "RTS is deasserted — click to assert"
+                                t!("chrome.rts_deasserted_tooltip")
                             }))
                             .build(window, cx)
                         })
@@ -514,21 +510,21 @@ pub(super) fn session_header(
                             }),
                         ),
                 )
-                .child(pill_button(s, "Clear", false).on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                        this.terminal.update(cx, |t, cx| t.clear_screen(cx));
-                    }),
-                ))
+                .child(
+                    pill_button(s, t!("chrome.clear_button"), false).on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                            this.terminal.update(cx, |t, cx| t.clear_screen(cx));
+                        }),
+                    ),
+                )
                 .child(
                     div()
                         .id("session-suspend")
-                        .child(pill_button(s, "Suspend", false))
+                        .child(pill_button(s, t!("chrome.suspend_button"), false))
                         .tooltip(|window, cx| {
-                            Tooltip::new(SharedString::from(
-                                "Keep session alive; return to profile",
-                            ))
-                            .build(window, cx)
+                            Tooltip::new(SharedString::from(t!("chrome.suspend_tooltip")))
+                                .build(window, cx)
                         })
                         .on_mouse_up(
                             MouseButton::Left,
@@ -537,12 +533,14 @@ pub(super) fn session_header(
                             }),
                         ),
                 )
-                .child(primary_button(s, "Disconnect").on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.disconnect_current(window, cx);
-                    }),
-                )),
+                .child(
+                    primary_button(s, t!("chrome.disconnect_button")).on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                            this.disconnect_current(window, cx);
+                        }),
+                    ),
+                ),
         )
 }
 
@@ -576,13 +574,20 @@ pub(super) fn status_bar(
         }
         None => {
             let text = match (connected, editing_profile_name) {
-                (Some(p), _) if reconnecting => {
-                    format!("Reconnecting to {} @ {}…", p.port_name, p.baud_rate)
+                (Some(p), _) if reconnecting => t!(
+                    "chrome.reconnecting",
+                    port = p.port_name,
+                    baud = p.baud_rate
+                )
+                .to_string(),
+                (Some(p), _) => {
+                    t!("chrome.connected", port = p.port_name, baud = p.baud_rate).to_string()
                 }
-                (Some(p), _) => format!("Connected to {} @ {}", p.port_name, p.baud_rate),
-                (None, Some(name)) if !name.is_empty() => format!("Editing {name}"),
-                (None, Some(_)) => "Editing new profile".to_string(),
-                (None, None) => "Not connected".to_string(),
+                (None, Some(name)) if !name.is_empty() => {
+                    t!("chrome.editing", name = name).to_string()
+                }
+                (None, Some(_)) => t!("chrome.editing_new").to_string(),
+                (None, None) => t!("chrome.not_connected").to_string(),
             };
             (text, rgba(s.fg_secondary))
         }
@@ -597,20 +602,20 @@ pub(super) fn status_bar(
     // user gets a quick at-a-glance read of which formatters
     // the live byte stream is going through without having to
     // open the profile editor.
-    let (indicators, scrollback_text): (Vec<&'static str>, Option<String>) = match connected {
+    let (indicators, scrollback_text): (Vec<Cow<'static, str>>, Option<String>) = match connected {
         Some(p) => {
-            let mut tags: Vec<&'static str> = Vec::new();
+            let mut tags: Vec<Cow<'static, str>> = Vec::new();
             if p.hex_view {
-                tags.push("HEX");
+                tags.push(t!("chrome.chip_hex"));
             }
             if p.timestamps {
-                tags.push("TIME");
+                tags.push(t!("chrome.chip_time"));
             }
             if p.line_numbers {
-                tags.push("LINE#");
+                tags.push(t!("chrome.chip_line"));
             }
             if p.log_enabled {
-                tags.push("TO FILE");
+                tags.push(t!("chrome.chip_to_file"));
             }
             (
                 tags,
@@ -621,7 +626,7 @@ pub(super) fn status_bar(
     };
     let bg_input = s.bg_input;
     let fg_secondary = s.fg_secondary;
-    let chip = move |label: &'static str| {
+    let chip = move |label: Cow<'static, str>| {
         // Flat pill — no border + no vertical padding so the
         // status bar's overall height stays the same as the
         // text-only baseline. A taller bar steals a row from
@@ -654,7 +659,7 @@ pub(super) fn status_bar(
                 .id("status-scrollback")
                 .child(t)
                 .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from("Scrollback lines: filled / max"))
+                    Tooltip::new(SharedString::from(t!("chrome.scrollback_tooltip")))
                         .build(window, cx)
                 })
         }))
@@ -677,7 +682,7 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
     // Shared chrome for the inline icon-buttons. Each button needs
     // its own stable id so the tooltip layer can disambiguate hover
     // targets, and a label string for the tooltip itself.
-    let icon_btn = move |id: &'static str, tip: &'static str| {
+    let icon_btn = move |id: &'static str, tip: Cow<'static, str>| {
         let tip_text = SharedString::from(tip);
         div()
             .id(SharedString::from(id))
@@ -709,15 +714,18 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                     // quotation mark — same chrome-glyph aesthetic
                     // as the other inline buttons (+ / ⧉ / ⚙), so
                     // the four read as one cluster.
-                    icon_btn("nav-collapse-sidebar", "Collapse sidebar")
-                        .text_size(px(15.0))
-                        .child("\u{2039}")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_sidebar(cx);
-                            }),
-                        ),
+                    icon_btn(
+                        "nav-collapse-sidebar",
+                        t!("chrome.collapse_sidebar_tooltip"),
+                    )
+                    .text_size(px(15.0))
+                    .child("\u{2039}")
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                            this.toggle_sidebar(cx);
+                        }),
+                    ),
                 )
                 .child(
                     // PROFILES header. Font size + weight + text
@@ -731,7 +739,7 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                         .text_size(px(s.font_size_label_px))
                         .text_color(rgba(s.fg_tertiary))
                         .font_weight(gpui::FontWeight(s.label_weight as f32))
-                        .child(s.label_transform.apply("PROFILES")),
+                        .child(s.label_transform.apply(&t!("chrome.profiles_label"))),
                 ),
         )
         .child(
@@ -741,7 +749,7 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                 .items_center()
                 .gap_1()
                 .child(
-                    icon_btn("nav-add-profile", "New profile")
+                    icon_btn("nav-add-profile", t!("chrome.new_profile_tooltip"))
                         .text_size(px(16.0))
                         .child("+")
                         .on_mouse_up(
@@ -757,7 +765,7 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                 // expect Cmd+N can still use it once Phase 8 wires
                 // the application menu.
                 .child(
-                    icon_btn("nav-new-window", "New window")
+                    icon_btn("nav-new-window", t!("chrome.new_window_tooltip"))
                         .text_size(px(15.0))
                         .child("\u{29C9}")
                         .on_mouse_up(
@@ -788,7 +796,7 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                     div()
                         .relative()
                         .child(
-                            icon_btn("nav-settings", "Settings")
+                            icon_btn("nav-settings", t!("chrome.settings_tooltip"))
                                 .text_size(px(15.0))
                                 .child("\u{2699}")
                                 .on_mouse_up(
@@ -831,7 +839,7 @@ pub(super) fn sidebar_icon_strip(
     // Same `icon_btn` recipe as `sidebar_header`, but stretched to
     // fill the strip's width so the hover-bg rect reads as a
     // proper button target rather than a small glyph-only chip.
-    let icon_btn = move |id: &'static str, tip: &'static str| {
+    let icon_btn = move |id: &'static str, tip: Cow<'static, str>| {
         let tip_text = SharedString::from(tip);
         div()
             .id(SharedString::from(id))
@@ -855,7 +863,7 @@ pub(super) fn sidebar_icon_strip(
         .child(
             // Expand chevron — `›` (U+203A), mirror of the
             // collapse glyph in `sidebar_header`.
-            icon_btn("nav-expand-sidebar", "Expand sidebar")
+            icon_btn("nav-expand-sidebar", t!("chrome.expand_sidebar_tooltip"))
                 .text_size(px(16.0))
                 .child("\u{203A}")
                 .on_mouse_up(
@@ -866,18 +874,21 @@ pub(super) fn sidebar_icon_strip(
                 ),
         )
         .child(
-            icon_btn("nav-add-profile-collapsed", "New profile")
-                .text_size(px(16.0))
-                .child("+")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.open_editor(window, cx);
-                    }),
-                ),
+            icon_btn(
+                "nav-add-profile-collapsed",
+                t!("chrome.new_profile_tooltip"),
+            )
+            .text_size(px(16.0))
+            .child("+")
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                    this.open_editor(window, cx);
+                }),
+            ),
         )
         .child(
-            icon_btn("nav-new-window-collapsed", "New window")
+            icon_btn("nav-new-window-collapsed", t!("chrome.new_window_tooltip"))
                 .text_size(px(15.0))
                 .child("\u{29C9}")
                 .on_mouse_up(
@@ -897,7 +908,7 @@ pub(super) fn sidebar_icon_strip(
                 .relative()
                 .w_full()
                 .child(
-                    icon_btn("nav-settings-collapsed", "Settings")
+                    icon_btn("nav-settings-collapsed", t!("chrome.settings_tooltip"))
                         .text_size(px(15.0))
                         .child("\u{2699}")
                         .on_mouse_up(
@@ -975,28 +986,28 @@ pub(super) fn session_overflow_button(
                             .py_1()
                             .child(profile_menu_item(
                                 s,
-                                "Send Break",
+                                t!("chrome.send_break"),
                                 cx.listener(|this, _: &MouseUpEvent, window, cx| {
                                     this.send_break_now(window, cx);
                                 }),
                             ))
                             .child(profile_menu_item(
                                 s,
-                                "Send Hex\u{2026}",
+                                t!("chrome.send_hex"),
                                 cx.listener(|this, _: &MouseUpEvent, window, cx| {
                                     this.open_send_hex(window, cx);
                                 }),
                             ))
                             .child(profile_menu_item(
                                 s,
-                                "Send File\u{2026}",
+                                t!("chrome.send_file"),
                                 cx.listener(|this, _: &MouseUpEvent, window, cx| {
                                     this.start_send_file(window, cx);
                                 }),
                             ))
                             .child(profile_menu_item(
                                 s,
-                                "Move to New Window",
+                                t!("chrome.move_to_new_window"),
                                 cx.listener(|this, _: &MouseUpEvent, _window, cx| {
                                     this.move_session_to_new_window(None, cx);
                                 }),
@@ -1024,7 +1035,7 @@ pub(super) fn session_overflow_button(
                 .cursor_pointer()
                 .hover(move |st| st.bg(rgba(s.bg_hover)))
                 .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from("More actions")).build(window, cx)
+                    Tooltip::new(SharedString::from(t!("chrome.more_actions"))).build(window, cx)
                 })
                 .child("\u{22EF}")
                 .on_mouse_up(
