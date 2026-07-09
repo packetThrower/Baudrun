@@ -121,6 +121,16 @@ CI (`.github/workflows/ci.yml`) runs `cargo check / clippy / test`
 on macOS, Windows, and Linux. Treat clippy warnings as build errors
 — the project keeps a clean lint baseline.
 
+## Translations
+
+Adding a language is one of the easiest ways to contribute and
+needs no Rust — copy `locales/en.yml` to `locales/<code>.yml`,
+translate the values, and add one line to `SUPPORTED` in
+`src/i18n.rs`. Native fluency (ideally from someone who consoles
+into gear in that language) matters far more than tooling; partial
+translations are fine — untranslated strings fall back to English.
+Full step-by-step in [`locales/README.md`](locales/README.md).
+
 ## AI-assisted contributions
 
 Baudrun is co-developed with Claude (see [AI-USAGE.md](AI-USAGE.md)

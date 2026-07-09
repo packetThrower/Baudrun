@@ -955,11 +955,17 @@ libintl dep that's overkill for ~180 strings). Both lose to
       - Built-in theme / skin / highlight-pack IDs
         (`"baudrun-default"`, `"cisco-ios"`, `"baudrun"`, …)
 
-- [ ] **Phase B (translator-only PRs).** Once a translator
-      volunteers a language, they add `locales/<lang>.yml` and a
-      one-line `SUPPORTED` entry in `src/i18n.rs` (the Settings →
-      Language picker reads that list, so the dropdown updates
-      automatically).
+- [~] **Phase B (translator-only PRs) — on-ramp ready.** The
+      contribution path is documented: `locales/README.md` (canonical
+      step-by-step) + the docs "Authoring → Translations" page +
+      a CONTRIBUTING.md pointer. A translator adds `locales/<lang>.yml`
+      and a one-line `SUPPORTED` entry in `src/i18n.rs` (the Settings
+      → Language picker + OS auto-detection read that list, so both
+      update automatically); untranslated keys fall back to English.
+      Deliberately NOT bulk-machine-translating more languages —
+      quality in a technical UI depends on a native reviewer, so
+      each language waits for a speaker. Open item: wait for / invite
+      contributions.
       No core code changes.
 
 - [ ] **Phase C (deferred indefinitely).** RTL layout flip for
