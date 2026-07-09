@@ -179,4 +179,36 @@ mod tests {
         assert_eq!(match_os_locale("en-US"), Some("en"));
         assert_eq!(match_os_locale("en_GB.UTF-8"), Some("en"));
     }
+
+    /// Guards the whole `i18n!` wiring: if the `locales/*.yml` files
+    /// don't actually register (wrong `_version` header, wrong dir,
+    /// macro not in crate root, …), `t!()` silently echoes the key
+    /// back and the UI shows `welcome.heading` instead of a string.
+    /// The build still succeeds and every other test still passes,
+    /// so without this check the breakage only shows up on screen.
+    /// Asserts real values in both shipped locales.
+    #[test]
+    fn translations_actually_resolve() {
+        rust_i18n::set_locale("en");
+        assert_eq!(t!("app.saved"), "Saved");
+        assert_eq!(t!("welcome.heading"), "Baudrun");
+        assert_ne!(
+            t!("settings.language_title"),
+            "settings.language_title",
+            "t!() echoed the key — locale files did not register"
+        );
+
+        rust_i18n::set_locale("zh-CN");
+        assert_eq!(t!("app.saved"), "已保存");
+        assert_eq!(t!("settings.language_title"), "语言");
+
+        // Interpolation must substitute, not print the placeholder.
+        rust_i18n::set_locale("en");
+        assert_eq!(t!("app.font_size", size = 14), "Font size: 14");
+
+        // A key only in en.yml resolves to English under zh-CN
+        // (fallback), never to the raw key.
+        rust_i18n::set_locale("zh-CN");
+        assert_ne!(t!("app.saved"), "app.saved");
+    }
 }

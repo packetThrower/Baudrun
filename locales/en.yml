@@ -1,4 +1,4 @@
-_version: 2
+_version: 1
 
 # English source strings for Baudrun's UI chrome — the `t!()` keys.
 # This is the fallback locale (`i18n!(fallback = "en")`): every key
