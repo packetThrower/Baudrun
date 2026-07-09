@@ -157,6 +157,13 @@ pub struct SettingsView {
     _appearance_sub: Subscription,
     locale_select: Entity<SelectState<Vec<Opt>>>,
     _locale_sub: Subscription,
+    /// Locale the `Select` option labels were last built in. A
+    /// `Select`'s option titles are baked into its `SelectState` at
+    /// construction (from `t!()`), so a plain re-render after a live
+    /// language switch keeps the old-language labels. `render`
+    /// compares this against the active locale and re-feeds
+    /// translated options via `set_items` when they differ.
+    built_locale: String,
     font_size: Entity<InputState>,
     _font_size_sub: Subscription,
     scrollback: Entity<InputState>,
@@ -470,6 +477,10 @@ impl SettingsView {
             _appearance_sub: appearance_sub,
             locale_select,
             _locale_sub: locale_sub,
+            // Seed with the locale the selects above were just built
+            // in, so render doesn't fire a spurious relabel on the
+            // first frame.
+            built_locale: gpui_component::locale().to_string(),
             font_size,
             scrollback,
             _scrollback_sub: scrollback_sub,
@@ -502,6 +513,44 @@ impl SettingsView {
     /// full, perm denied) the cache stays put and the error logs.
     /// Failure is silent in the UI today — a future slice can hang
     /// a toast off this same path.
+    /// Re-feed translated option labels to the locale-dependent
+    /// selects after a live language switch. Only the Appearance and
+    /// Language pickers need it — their option titles come from
+    /// `t!()`. The skin / theme pickers list data-driven names
+    /// (skin.name / theme.name) which are never translated, so
+    /// they're left alone. Selection is preserved across the swap.
+    /// Called from `render` (which has the `Window` `set_items`
+    /// wants) when the active locale has changed since
+    /// `built_locale`.
+    fn relabel_locale_selects(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let appearance_opts = vec![
+            Opt::new("auto", &t!("settings.appearance_auto")),
+            Opt::new("light", &t!("settings.appearance_light")),
+            Opt::new("dark", &t!("settings.appearance_dark")),
+        ];
+        let active_appearance = if self.settings.appearance.is_empty() {
+            "auto".to_string()
+        } else {
+            self.settings.appearance.clone()
+        };
+        self.appearance_select.update(cx, |state, cx| {
+            state.set_items(appearance_opts, window, cx);
+            state.set_selected_value(&active_appearance, window, cx);
+        });
+
+        let mut locale_opts = vec![Opt::new("", &t!("settings.language_auto"))];
+        locale_opts.extend(
+            crate::i18n::SUPPORTED
+                .iter()
+                .map(|(code, name)| Opt::new(code, name)),
+        );
+        let active_locale = self.settings.locale.clone();
+        self.locale_select.update(cx, |state, cx| {
+            state.set_items(locale_opts, window, cx);
+            state.set_selected_value(&active_locale, window, cx);
+        });
+    }
+
     fn commit(&mut self, next: Settings, cx: &mut Context<Self>) {
         let result = self
             .settings_bus
@@ -1570,6 +1619,16 @@ fn build_theme_opts(store: &themes::Store) -> Vec<Opt> {
 impl Render for SettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let s = *cx.global::<SkinTokens>();
+        // Live language switch: if the active locale changed since the
+        // selects were labelled, re-feed translated options before
+        // building the tree. Guarded so it fires once per change, not
+        // every frame. Keyed on the actual global locale (what t!()
+        // reads) so it's correct no matter which window flipped it.
+        let active_locale = gpui_component::locale().to_string();
+        if self.built_locale != active_locale {
+            self.built_locale = active_locale;
+            self.relabel_locale_selects(window, cx);
+        }
         let dialog_layer = Root::render_dialog_layer(window, cx);
         let notification_layer = Root::render_notification_layer(window, cx);
 

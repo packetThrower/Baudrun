@@ -74,7 +74,10 @@ use chrome::{
     sidebar_header, sidebar_icon_strip, status_bar, suspended_banner, suspended_pane, welcome_pane,
 };
 use editor::{apply_editor_to_profile, build_editor, form_pane, EditorRender};
-use opts::{make_select, port_opts, read_select, Opt};
+use opts::{
+    backspace_opts, baud_opts, flow_control_opts, line_ending_opts, line_policy_opts, make_select,
+    parity_opts, port_opts, read_select, Opt,
+};
 use session::{bounds_to_geometry, geometry_to_bounds};
 pub use session::{SessionBundle, WindowInit};
 use transfer_ui::{
@@ -279,6 +282,13 @@ pub struct AppView {
     /// per field so the Input widgets persist their text + cursor
     /// across re-renders without us mirroring it into AppView.
     editor: Option<Editor>,
+    /// Locale the open editor's `Select` option labels were built in.
+    /// Editor dropdowns (baud / parity / line ending / …) bake their
+    /// `t!()` titles into the `SelectState` at construction, so a live
+    /// language switch needs `render` to re-feed translated options
+    /// via `set_items`. Same mechanism SettingsView uses for its
+    /// Appearance / Language pickers. See `relabel_editor_selects`.
+    built_locale: String,
     /// `true` while the connected session is suspended — the port +
     /// OS threads stay alive (bytes still flow into TerminalView's
     /// scrollback), but the terminal viewport is hidden so the
@@ -607,6 +617,7 @@ impl AppView {
             auto_reconnect_for: None,
             last_highlight_sig: None,
             editor: None,
+            built_locale: gpui_component::locale().to_string(),
             suspended: false,
             // Default to "both asserted" — matches the OS / serialport-rs
             // defaults on Unix and Windows. The connect_to path overrides
@@ -651,6 +662,91 @@ impl AppView {
     /// src/i18n.rs + issue #72.
     fn apply_locale(&self, settings: &settings::Settings) {
         gpui_component::set_locale(crate::i18n::resolve(&settings.locale));
+    }
+
+    /// Re-feed translated option labels to the open editor's selects
+    /// after a live language switch. Their `Opt` titles come from
+    /// `t!()` (via the `*_opts()` builders + the theme list) and are
+    /// captured in each `SelectState` at build time, so a plain
+    /// re-render keeps the old-language labels. Current selection is
+    /// preserved. No-op when the editor is closed. `data_bits` /
+    /// `stop_bits` are skipped — their options are bare numbers with
+    /// no translatable text. Called from `render` (which has the
+    /// `Window` `set_items` needs) when the locale changed.
+    fn relabel_editor_selects(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // One relabel job: (select handle, freshly-translated options,
+        // value to reselect).
+        type Relabel = (Entity<SelectState<Vec<Opt>>>, Vec<Opt>, String);
+        // Snapshot handles + freshly-translated options + current
+        // selections in one immutable-borrow scope, then apply. This
+        // drops the `&self.editor` / `&self.themes_store` borrows
+        // before the `set_items` updates take `&mut` through cx.
+        let items: Vec<Relabel> = {
+            let Some(ed) = self.editor.as_ref() else {
+                return;
+            };
+            let mut theme_opts = vec![Opt::new("", &t!("editor.theme.use_global_default"))];
+            for t in self.themes_store.list() {
+                let title = if t.source == "user" {
+                    t!("editor.custom_suffix", name = t.name).into_owned()
+                } else {
+                    t.name
+                };
+                theme_opts.push(Opt::new(&t.id, &title));
+            }
+            let port_cur = read_select(&ed.port, cx);
+            vec![
+                (ed.baud.clone(), baud_opts(), read_select(&ed.baud, cx)),
+                (
+                    ed.parity.clone(),
+                    parity_opts(),
+                    read_select(&ed.parity, cx),
+                ),
+                (
+                    ed.flow_control.clone(),
+                    flow_control_opts(),
+                    read_select(&ed.flow_control, cx),
+                ),
+                (
+                    ed.line_ending.clone(),
+                    line_ending_opts(),
+                    read_select(&ed.line_ending, cx),
+                ),
+                (
+                    ed.backspace_key.clone(),
+                    backspace_opts(),
+                    read_select(&ed.backspace_key, cx),
+                ),
+                (
+                    ed.dtr_on_connect.clone(),
+                    line_policy_opts(),
+                    read_select(&ed.dtr_on_connect, cx),
+                ),
+                (
+                    ed.rts_on_connect.clone(),
+                    line_policy_opts(),
+                    read_select(&ed.rts_on_connect, cx),
+                ),
+                (
+                    ed.dtr_on_disconnect.clone(),
+                    line_policy_opts(),
+                    read_select(&ed.dtr_on_disconnect, cx),
+                ),
+                (
+                    ed.rts_on_disconnect.clone(),
+                    line_policy_opts(),
+                    read_select(&ed.rts_on_disconnect, cx),
+                ),
+                (ed.port.clone(), port_opts(&port_cur), port_cur),
+                (ed.theme.clone(), theme_opts, read_select(&ed.theme, cx)),
+            ]
+        };
+        for (select, opts, current) in items {
+            select.update(cx, |state, cx| {
+                state.set_items(opts, window, cx);
+                state.set_selected_value(&current, window, cx);
+            });
+        }
     }
 
     /// Mirror the global `copy_on_select` flag into the live
@@ -3227,6 +3323,17 @@ impl AppView {
 
 impl Render for AppView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Live language switch: re-feed translated options to the open
+        // editor's dropdowns before building the tree. Guarded on the
+        // active global locale so it fires once per change, not every
+        // frame (and no-ops when no editor is open). The rest of the
+        // main window's strings are read fresh from `t!()` each render,
+        // so they follow automatically.
+        let active_locale = gpui_component::locale().to_string();
+        if self.built_locale != active_locale {
+            self.built_locale = active_locale;
+            self.relabel_editor_selects(window, cx);
+        }
         let s = *cx.global::<SkinTokens>();
         // `--shadow-panel` from the active skin. Cloned out of
         // the global once per render so both the sidebar + the
