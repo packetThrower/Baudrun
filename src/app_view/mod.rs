@@ -630,12 +630,27 @@ impl AppView {
     ///    session — toggling packs in Settings → Highlighting
     ///    re-coloures incoming bytes without a reconnect.
     fn apply_settings(&mut self, settings: &settings::Settings, cx: &mut Context<Self>) {
+        self.apply_locale(settings);
         self.apply_skin(settings, cx);
         self.apply_palette(cx);
         self.apply_highlight(cx);
         self.apply_font_size(settings, cx);
         self.apply_scrollback(settings, cx);
         self.apply_copy_on_select(settings, cx);
+    }
+
+    /// Re-install the UI locale from settings. `gpui_component::set_locale`
+    /// sets a process-global that both gpui-component's widget chrome and
+    /// (from Phase A.2 on) Baudrun's own `t!()` strings read, so this one
+    /// call re-languages everything the next time `render` runs. Because
+    /// `apply_settings` fires from the SettingsBus subscription in EVERY
+    /// window, a language change made in one window re-installs the locale
+    /// and re-renders all of them — the same cross-window path skin and
+    /// font changes already use. Idempotent + cheap (just a global string
+    /// write) so running it on every settings change is fine. See
+    /// src/i18n.rs + issue #72.
+    fn apply_locale(&self, settings: &settings::Settings) {
+        gpui_component::set_locale(crate::i18n::resolve(&settings.locale));
     }
 
     /// Mirror the global `copy_on_select` flag into the live

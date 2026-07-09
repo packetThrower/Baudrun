@@ -830,12 +830,50 @@ line-level streaming. Our regex engine is the right shape.
 
 ## Localization (i18n)
 
-**Status: deferred** until a non-English-speaking user actually
-files an issue asking for it. The network-engineer audience reads
-English manpages and CLI output all day, and the gear they're
-console-ing into doesn't speak French either — there's no clear
-demand signal yet. Notes below capture the survey from 2026-05-16
-so picking it up later doesn't require re-investigating.
+**Status: in progress** — issue #72 (@taotieren) requested it, so the
+demand signal arrived. Phase A.1 (locale plumbing + language picker)
+is on `feat/i18n`; `zh-CN` (Simplified Chinese) is the first target
+since the reporter writes it. Original 2026-05-16 survey preserved
+below; refinements from the 2026-07-09 PortFinder comparison are
+folded into the phase notes.
+
+**Refinements from building it (2026-07-09):**
+
+- **YAML, not TOML.** The survey said `.toml`; the sibling app
+  PortFinder shipped `.yml` and it's the better call — multiline
+  long tooltips + `#` comments for translators. rust-i18n v4 reads
+  both; A.2 uses `locales/*.yml`.
+- **Locale codes carry region/script.** `zh-CN`, not `zh` — must
+  match gpui-component's own code (`zh-CN`) so one `set_locale`
+  drives both layers, and because bare `zh` can't disambiguate
+  Simplified vs Traditional.
+- **Chinese-aware OS resolution.** PortFinder strips every OS locale
+  to its bare language subtag (`zh-Hans-CN` → `zh`), which never
+  matches a region-qualified `zh-CN` — a mainland user falls
+  through to English. `i18n::match_os_locale` keeps the script/
+  region subtags and routes Simplified (`Hans`/`CN`/`SG`/bare `zh`)
+  → `zh-CN`, Traditional (`Hant`/`TW`/`HK`/`MO`) → English until a
+  Traditional catalog ships. Unit-tested in `src/i18n.rs`.
+- **Multi-window propagation is NOT PortFinder's `cx.notify()`.**
+  PortFinder is single-window: its picker calls `set_locale` +
+  notifies its own view. Baudrun is multi-window — copying that
+  leaves other windows stale (the ProfilesBus bug class). Language
+  is a `Settings` field, so the change rides SettingsBus:
+  `AppView::apply_settings` gained `apply_locale`, which re-installs
+  the locale in EVERY window's subscription callback → all windows
+  re-render. Done in A.1.
+- **A.2 captured-label caveat.** `cx.notify()` re-languages anything
+  read fresh from `t!()` in `render`, and gpui-component's chrome
+  (which reads its own `t!()` per frame). But strings built once in
+  `::new` and stored — e.g. the Settings `SelectState` option
+  titles, `SettingsTab` tab labels — keep their construction-time
+  language until rebuilt. A.2 must either move those `Opt::new` /
+  tab-title lists into `render` or rebuild the `Select` entities on
+  a locale change (precedent: `set_system_dark` re-applies chrome on
+  OS appearance flips). The language picker's OWN options are
+  endonyms (each language in its own script), so they never need
+  re-translation — the caveat only bites once Baudrun's own labels
+  are extracted.
 
 ### Scope
 
@@ -850,7 +888,7 @@ so picking it up later doesn't require re-investigating.
 - Small enough that one translator volunteer can extract a new
   language in a 2–4 hour session.
 
-### Library choice: `rust-i18n` (TOML-backed)
+### Library choice: `rust-i18n` (YAML-backed — see refinement note above)
 
 [**`rust-i18n`**](https://crates.io/crates/rust-i18n) wins on
 consistency: it's already what `gpui-component` uses internally for
@@ -871,17 +909,23 @@ libintl dep that's overkill for ~180 strings). Both lose to
 
 ### Phased path
 
-- [ ] **Phase A.1 (30 min, free win).** Just call
-      `gpui_component::set_locale(&...)` from `main()` reading from
-      a new `Settings::locale: String` field (`""` → use the OS
-      locale via `sys-locale`). Doesn't translate any Baudrun
-      strings; does pick up gpui-component's existing en / zh-CN /
-      zh-HK / it widget translations for users whose OS is set to
-      one of those. Reversible if we change our mind later.
+- [x] **Phase A.1 (done — `feat/i18n`, issue #72).** `Settings::locale`
+      field (`""` → OS via `sys-locale`); `src/i18n.rs` resolver
+      (Chinese-aware, unit-tested); `i18n::init` calls
+      `gpui_component::set_locale` at boot; `AppView::apply_locale`
+      re-installs on every settings change so the picker propagates
+      to all windows. **Went beyond the original A.1** to also add
+      the Settings → Appearance → Language picker (endonym-labelled,
+      `""` = Auto) so the feature is user-controllable and testable
+      now, not only when the OS is already set to a shipped locale.
+      Still translates zero Baudrun strings — only gpui-component's
+      own chrome (dropdown/calendar/dialog) flips; the full Chinese
+      UI is A.2.
 
-- [ ] **Phase A.2 (~6–8 hr, on demand).** Full infrastructure: add
+- [ ] **Phase A.2 (~6–8 hr, the real cost).** Full infrastructure: add
       `rust-i18n = "4"` to Cargo.toml; extract every Baudrun string
-      into `locales/en.toml` with hierarchical keys
+      into `locales/en.yml` (YAML, see refinement note above) with
+      hierarchical keys
       (`notifications.connected_to`, `errors.port_in_use`,
       `buttons.undo`, `editor.fields.port_name_label`); replace
       string literals at call sites with `t!()` macro calls.
@@ -897,8 +941,10 @@ libintl dep that's overkill for ~180 strings). Both lose to
         (`"baudrun-default"`, `"cisco-ios"`, `"baudrun"`, …)
 
 - [ ] **Phase B (translator-only PRs).** Once a translator
-      volunteers a language, they add `locales/<lang>.toml` and a
-      one-line dropdown entry in the Settings → Language picker.
+      volunteers a language, they add `locales/<lang>.yml` and a
+      one-line `SUPPORTED` entry in `src/i18n.rs` (the Settings →
+      Language picker reads that list, so the dropdown updates
+      automatically).
       No core code changes.
 
 - [ ] **Phase C (deferred indefinitely).** RTL layout flip for

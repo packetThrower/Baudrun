@@ -28,6 +28,7 @@
 mod app_view;
 mod data;
 mod highlight_runtime;
+mod i18n;
 mod profiles_bus;
 mod serial_io;
 mod settings_bus;
@@ -326,7 +327,15 @@ fn main() {
         // live-applies to all of them. Built before the TerminalView
         // so the boot scrollback can come from the persisted value.
         let settings_bus = cx.new(|_| SettingsBus::new(settings_store.clone()));
-        let boot_scrollback = settings_bus.read(cx).current().effective_scrollback();
+        let boot_settings = settings_bus.read(cx).current();
+        let boot_scrollback = boot_settings.effective_scrollback();
+
+        // Install the UI locale before any window builds. Drives
+        // gpui-component's own `rust-i18n` global (translated widget
+        // chrome for zh-CN et al.); Phase A.2 will extend the same
+        // global to Baudrun's own strings. `""` locale = follow the
+        // OS. See src/i18n.rs + issue #72.
+        i18n::init(&boot_settings.locale);
 
         // Build the TerminalView entity. Boot palette = the
         // hardcoded Baudrun default. AppView re-applies the user's

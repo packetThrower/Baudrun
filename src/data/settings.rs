@@ -36,6 +36,14 @@ pub struct Settings {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub appearance: String,
 
+    /// UI language as a BCP-47-ish locale code (`"en"`, `"zh-CN"`).
+    /// Empty / missing means "follow the OS locale" — `i18n::resolve`
+    /// reads `sys-locale` in that case. Codes must match an entry in
+    /// `i18n::SUPPORTED`; an unrecognised value falls back to OS →
+    /// English. See `src/i18n.rs`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub locale: String,
+
     /// PuTTY-style auto-copy on mouse selection release.
     #[serde(default, skip_serializing_if = "is_false")]
     pub copy_on_select: bool,
@@ -178,6 +186,7 @@ impl Default for Settings {
             disable_driver_detection: false,
             skin_id: "baudrun".into(),
             appearance: "auto".into(),
+            locale: String::new(),
             copy_on_select: false,
             screen_reader_mode: false,
             scrollback_lines: 10_000,

@@ -154,6 +154,8 @@ pub struct SettingsView {
     _skin_sub: Subscription,
     appearance_select: Entity<SelectState<Vec<Opt>>>,
     _appearance_sub: Subscription,
+    locale_select: Entity<SelectState<Vec<Opt>>>,
+    _locale_sub: Subscription,
     font_size: Entity<InputState>,
     _font_size_sub: Subscription,
     scrollback: Entity<InputState>,
@@ -273,6 +275,33 @@ impl SettingsView {
                     if &this.settings.appearance != value {
                         let mut next = this.settings.clone();
                         next.appearance = value.clone();
+                        this.commit(next, cx);
+                    }
+                }
+            },
+        );
+
+        // Language picker. First option "" = follow the OS locale;
+        // the rest come from `i18n::SUPPORTED` labelled by endonym
+        // (each language in its own script) so a user in the "wrong"
+        // language can still find theirs. Committing routes through
+        // SettingsBus, so `AppView::apply_settings` re-installs the
+        // locale (`gpui_component::set_locale`) and every open window
+        // re-renders — no restart. See issue #72.
+        let mut locale_opts = vec![Opt::new("", "Auto (follow system)")];
+        locale_opts.extend(
+            crate::i18n::SUPPORTED
+                .iter()
+                .map(|(code, name)| Opt::new(code, name)),
+        );
+        let locale_select = make_select(locale_opts, &current.locale, window, cx);
+        let locale_sub = cx.subscribe(
+            &locale_select,
+            |this, _, event: &SelectEvent<Vec<Opt>>, cx| {
+                if let SelectEvent::Confirm(Some(value)) = event {
+                    if &this.settings.locale != value {
+                        let mut next = this.settings.clone();
+                        next.locale = value.clone();
                         this.commit(next, cx);
                     }
                 }
@@ -438,6 +467,8 @@ impl SettingsView {
             _skin_sub: skin_sub,
             appearance_select,
             _appearance_sub: appearance_sub,
+            locale_select,
+            _locale_sub: locale_sub,
             font_size,
             scrollback,
             _scrollback_sub: scrollback_sub,
@@ -2053,6 +2084,16 @@ impl SettingsView {
                      ignore this and pin dark.",
                 ),
                 Select::new(&self.appearance_select),
+            ))
+            .child(self.filtered_card(
+                s,
+                "Language",
+                Some(
+                    "UI language. \"Auto\" follows the operating system. \
+                     Takes effect immediately — no restart. Terminal \
+                     output is never translated.",
+                ),
+                Select::new(&self.locale_select),
             ))
             .child(installed_card)
             .child(self.filtered_card(

@@ -15,6 +15,18 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Added
+
+- **UI language setting (Settings → Appearance → Language).** First
+  step toward full localization ([#72](https://github.com/packetThrower/Baudrun/issues/72)).
+  Pick a language or leave it on "Auto" to follow the operating
+  system; the choice applies immediately across all open windows,
+  no restart. Simplified Chinese (简体中文) is the first non-English
+  option. At this stage only shared widget chrome (dropdowns,
+  dialogs, calendar) is translated — Baudrun's own labels and
+  messages are translated in a follow-up. Terminal output is never
+  translated.
+
 ## [0.14.0] — 2026-07-03
 
 ### Added
