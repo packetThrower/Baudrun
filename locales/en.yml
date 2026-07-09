@@ -1,0 +1,18 @@
+_version: 2
+
+# English source strings for Baudrun's UI chrome. This is the
+# fallback locale (`i18n!(fallback = "en")`), so every key the app
+# calls via `t!()` MUST exist here; other locales may omit keys and
+# fall back to these values. Keys are hierarchical by UI area.
+# Interpolation uses rust-i18n's `%{name}` syntax.
+#
+# NOT translated (stay hardcoded, never `t!()`): profile JSON field
+# names, serial enum values ("none"/"cr"/"del"/…), and built-in
+# theme/skin/pack IDs — those are wire-format identifiers, not
+# display text. See TODO.md "Localization (i18n)".
+
+welcome:
+  # Idle right-pane splash when no session is active.
+  heading: Baudrun
+  pick_profile: Pick a profile from the sidebar to start a session.
+  create_first: Click the + above the profile list to create one.

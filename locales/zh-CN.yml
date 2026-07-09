@@ -1,0 +1,12 @@
+_version: 2
+
+# Simplified Chinese (简体中文). Keys mirror en.yml; any key omitted
+# here falls back to the English value. First non-English locale —
+# requested in issue #72. Terminology note for translators:
+# serial/networking terms follow mainland conventions (串口 = serial
+# port, 波特率 = baud rate, 校验 = parity, 会话 = session).
+
+welcome:
+  heading: Baudrun
+  pick_profile: 从侧边栏选择一个配置以开始会话。
+  create_first: 点击配置列表上方的 + 号来创建一个。

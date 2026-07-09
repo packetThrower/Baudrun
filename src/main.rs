@@ -25,6 +25,19 @@
     windows_subsystem = "windows"
 )]
 
+// `#[macro_use]` brings `t!` into scope crate-wide so call sites in
+// every module can write `t!("key")` without an import. `i18n!`
+// compiles every `locales/*.yml` into the binary at build time with
+// English as the fallback for any key a locale is missing. The active
+// locale is the process-global set by `i18n::init` /
+// `AppView::apply_locale` via `gpui_component::set_locale` — the same
+// global gpui-component's own widget strings read, so one locale
+// switch re-languages both layers. See src/i18n.rs + issue #72.
+#[macro_use]
+extern crate rust_i18n;
+
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod app_view;
 mod data;
 mod highlight_runtime;

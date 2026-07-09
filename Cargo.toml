@@ -66,6 +66,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 dirs = "6"
 plist = "1"             # `.itermcolors` parsing in data::themes::parse
+rust-i18n = "4"         # UI string translation; locales/*.yml (issue #72)
 sys-locale = "0.3"      # OS locale detection for i18n::resolve (issue #72)
 thiserror = "2"
 regex = "1"

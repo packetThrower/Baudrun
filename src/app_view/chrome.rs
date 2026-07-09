@@ -327,9 +327,9 @@ pub(super) fn friendly_open_error(port: &str, err: &serialport::Error) -> String
 
 pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElement {
     let prompt = if has_profiles {
-        "Pick a profile from the sidebar to start a session."
+        t!("welcome.pick_profile")
     } else {
-        "Click the + above the profile list to create one."
+        t!("welcome.create_first")
     };
     // Paint `bg_main` here only when the AppView right-pane
     // wrapper isn't already doing so. Floating-card skins
@@ -353,7 +353,7 @@ pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElemen
             div()
                 .text_size(px(s.font_size_h1_px))
                 .text_color(rgba(s.fg_primary))
-                .child("Baudrun"),
+                .child(t!("welcome.heading")),
         )
         .child(
             div()

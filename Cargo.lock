@@ -655,6 +655,7 @@ dependencies = [
  "plist",
  "regex",
  "rusb",
+ "rust-i18n",
  "semver",
  "serde",
  "serde_json",
