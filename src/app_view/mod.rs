@@ -1108,8 +1108,8 @@ impl AppView {
 
         let port = profile.port_name.clone();
         if port.is_empty() {
-            let msg = "profile has no port set";
-            self.connect_error = Some(msg.into());
+            let msg = t!("app.no_port_set");
+            self.connect_error = Some(msg.to_string());
             self.log_event(msg, LogSeverity::Error, cx);
             return;
         }
@@ -1154,7 +1154,7 @@ impl AppView {
                 None => {
                     let msg = last_err
                         .map(|e| friendly_open_error(&port, &e))
-                        .unwrap_or_else(|| format!("open {port}: unknown"));
+                        .unwrap_or_else(|| t!("app.open_unknown", port = port).to_string());
                     self.connect_error = Some(msg.clone());
                     self.log_event(msg, LogSeverity::Error, cx);
                     return;
@@ -1222,7 +1222,7 @@ impl AppView {
             match open_session_log(&profile) {
                 Ok((file, path)) => {
                     self.log_event(
-                        format!("Session log: {}", path.display()),
+                        t!("app.session_log", path = path.display()),
                         LogSeverity::Info,
                         cx,
                     );
@@ -1230,7 +1230,7 @@ impl AppView {
                 }
                 Err(e) => {
                     self.log_event(
-                        format!("Session log open failed: {e}"),
+                        t!("app.session_log_open_failed", error = e),
                         LogSeverity::Error,
                         cx,
                     );
@@ -1304,9 +1304,9 @@ impl AppView {
         // wants confirmation the session came back.
         let was_reconnecting = self.auto_reconnect_for.is_some();
         let connect_message = if was_reconnecting {
-            "Reconnected".to_string()
+            t!("app.reconnected")
         } else {
-            format!("Connected to {port} @ {baud}")
+            t!("app.connected", port = port, baud = baud)
         };
         self.connected_profile_id = Some(profile.id);
         // A successful (re)connect ends any auto-reconnect window —
@@ -1399,7 +1399,7 @@ impl AppView {
 
         let Some(profile) = self.profile_store.get(&id) else {
             self.log_event(
-                format!("session dropped (profile {id} no longer exists)"),
+                t!("app.session_dropped_profile_gone", id = id),
                 LogSeverity::Warn,
                 cx,
             );
@@ -1408,7 +1408,7 @@ impl AppView {
         };
         if !profile.auto_reconnect {
             self.log_event(
-                "Session dropped (auto-reconnect off)",
+                t!("app.session_dropped_no_reconnect"),
                 LogSeverity::Warn,
                 cx,
             );
@@ -1416,7 +1416,7 @@ impl AppView {
             return;
         }
         self.log_event(
-            "Session dropped — auto-reconnecting…",
+            t!("app.session_dropped_reconnecting"),
             LogSeverity::Warn,
             cx,
         );
@@ -1466,7 +1466,7 @@ impl AppView {
                 // trying.
                 app.auto_reconnect_for = None;
                 app.log_event(
-                    format!("Auto-reconnect to {port_name} gave up after 15 attempts"),
+                    t!("app.auto_reconnect_gave_up", port = port_name),
                     LogSeverity::Warn,
                     cx,
                 );
@@ -1518,7 +1518,7 @@ impl AppView {
             d.shutdown();
         }
         self.open_editor_for(id, window, cx);
-        self.log_event("Disconnected", LogSeverity::Info, cx);
+        self.log_event(t!("app.disconnected"), LogSeverity::Info, cx);
     }
 
     /// Switch the active sub-tab on the open editor. No-op if the
@@ -1620,7 +1620,7 @@ impl AppView {
                 Some(p) => p,
                 None => {
                     if let Some(ed) = self.editor.as_mut() {
-                        ed.error = Some("profile no longer exists".into());
+                        ed.error = Some(t!("app.profile_gone").to_string());
                     }
                     cx.notify();
                     return None;
@@ -1692,7 +1692,7 @@ impl AppView {
                 }
                 cx.notify();
                 self.signal_profiles_changed(cx);
-                self.log_event("Saved", LogSeverity::Info, cx);
+                self.log_event(t!("app.saved"), LogSeverity::Info, cx);
                 Some(id)
             }
             Err(e) => {
@@ -1701,7 +1701,7 @@ impl AppView {
                     ed.error = Some(msg.clone());
                 }
                 cx.notify();
-                self.log_event(format!("Save failed: {msg}"), LogSeverity::Error, cx);
+                self.log_event(t!("app.save_failed", error = msg), LogSeverity::Error, cx);
                 None
             }
         }
@@ -1720,8 +1720,8 @@ impl AppView {
             return;
         };
         let Some(profile) = self.profile_store.get(&id) else {
-            let msg = "profile not found";
-            self.connect_error = Some(msg.into());
+            let msg = t!("app.profile_not_found");
+            self.connect_error = Some(msg.to_string());
             self.log_event(msg, LogSeverity::Error, cx);
             cx.notify();
             return;
@@ -1796,15 +1796,17 @@ impl AppView {
                     let app = cx.entity();
                     let name = snapshot.name.clone();
                     window.push_notification(
-                        Notification::success(SharedString::from(format!(
-                            "Removed profile \u{201C}{name}\u{201D}"
+                        Notification::success(SharedString::from(t!(
+                            "app.removed_profile",
+                            name = name
                         )))
                         .action(move |_, _, ctx| {
                             let app = app.clone();
                             let snapshot = snapshot.clone();
                             let notif = ctx.entity();
-                            Button::new("undo-profile-delete").label("Undo").on_click(
-                                move |_, _window, cx| {
+                            Button::new("undo-profile-delete")
+                                .label(t!("app.undo"))
+                                .on_click(move |_, _window, cx| {
                                     let app = app.clone();
                                     let snapshot = snapshot.clone();
                                     let notif = notif.clone();
@@ -1812,8 +1814,7 @@ impl AppView {
                                         this.restore_profile(snapshot, was_selected, view_cx);
                                     });
                                     dismiss_notification_after(notif, cx);
-                                },
-                            )
+                                })
                         })
                         // See settings_view's matching comment: the
                         // .action() builder defaults autohide to false;
@@ -1851,7 +1852,7 @@ impl AppView {
     fn reorder_profile(&mut self, id: String, before: Option<String>, cx: &mut Context<Self>) {
         if let Err(err) = self.profile_store.reorder(&id, before.as_deref()) {
             self.log_event(
-                format!("Couldn't reorder profile: {err}"),
+                t!("app.reorder_failed", error = err),
                 LogSeverity::Error,
                 cx,
             );
@@ -1875,7 +1876,7 @@ impl AppView {
         let id = snapshot.id.clone();
         if let Err(err) = self.profile_store.restore(snapshot) {
             self.log_event(
-                format!("Couldn't restore profile: {err}"),
+                t!("app.restore_failed", error = err),
                 LogSeverity::Error,
                 cx,
             );
@@ -1888,7 +1889,7 @@ impl AppView {
         cx.notify();
         self.signal_profiles_changed(cx);
         self.log_event(
-            format!("Restored profile \u{201C}{name}\u{201D}"),
+            t!("app.restored_profile", name = name),
             LogSeverity::Info,
             cx,
         );
@@ -1998,7 +1999,7 @@ impl AppView {
                 // xdg-decoration) renders no title bar at all,
                 // leaving the window unmovable.
                 titlebar: Some(TitlebarOptions {
-                    title: Some("Settings · Baudrun".into()),
+                    title: Some(t!("app.settings_window_title").into()),
                     traffic_light_position: Some(gpui::point(
                         px(TRAFFIC_LIGHT_POSITION_PX),
                         px(TRAFFIC_LIGHT_POSITION_PX),
@@ -2144,15 +2145,16 @@ impl AppView {
             let _ = this.update_in(cx, |_, window, cx| match result {
                 Ok(()) => {
                     window.push_notification(
-                        Notification::success(SharedString::from("Break sent")),
+                        Notification::success(SharedString::from(t!("app.break_sent"))),
                         cx,
                     );
                 }
                 Err(err) => {
                     log::error!("send break: {err}");
                     window.push_notification(
-                        Notification::error(SharedString::from(format!(
-                            "Couldn't send break: {err}"
+                        Notification::error(SharedString::from(t!(
+                            "app.break_failed",
+                            error = err
                         ))),
                         cx,
                     );
@@ -2171,7 +2173,7 @@ impl AppView {
         self.session_overflow_open = false;
         if self.transfer_io.is_none() {
             window.push_notification(
-                Notification::error(SharedString::from("Connect to a port before sending hex.")),
+                Notification::error(SharedString::from(t!("app.connect_before_hex"))),
                 cx,
             );
             return;
@@ -2194,7 +2196,7 @@ impl AppView {
             let app_cancel = app.clone();
             let error_for_render = error.clone();
             let live_err = error_for_render.lock().unwrap().clone();
-            dlg.title(SharedString::from("Send hex bytes"))
+            dlg.title(SharedString::from(t!("app.send_hex_title")))
                 .w(px(560.0))
                 .close_button(true)
                 .on_close(move |_, _, cx| {
@@ -2206,17 +2208,17 @@ impl AppView {
                         .flex_col()
                         .gap_3()
                         .text_size(px(13.0))
-                        .child(div().text_color(rgba(0x808080AAu32)).child(
-                            "Space-separated, compact, or 0x-prefixed — all \
-                                 equivalent: 02 FF AA 55, 02FFAA55, \
-                                 0x02 0xFF 0xAA 0x55.",
-                        ))
+                        .child(
+                            div()
+                                .text_color(rgba(0x808080AAu32))
+                                .child(t!("app.send_hex_help")),
+                        )
                         .child(Input::new(&input).appearance(true))
                         .children(live_err.map(|err| {
                             div()
                                 .text_size(px(12.0))
                                 .text_color(rgba(0xCC4444FFu32))
-                                .child(SharedString::from(format!("Invalid: {err}")))
+                                .child(SharedString::from(t!("app.invalid", error = err)))
                         }))
                         .child(
                             div()
@@ -2225,14 +2227,14 @@ impl AppView {
                                 .justify_end()
                                 .gap_2()
                                 .child(send_file_secondary_button(
-                                    "Cancel",
+                                    t!("app.cancel"),
                                     move |_, window, cx| {
                                         let _ = &app_cancel;
                                         window.close_dialog(cx);
                                     },
                                 ))
                                 .child(send_file_primary_button(
-                                    "Send",
+                                    t!("app.send"),
                                     true,
                                     move |_, window, cx| {
                                         let app = app_send.clone();
@@ -2264,12 +2266,12 @@ impl AppView {
         let raw = state.input.read(cx).value().to_string();
         match parse_hex_string(&raw) {
             Ok(bytes) if bytes.is_empty() => {
-                *state.error.lock().unwrap() = Some("empty".into());
+                *state.error.lock().unwrap() = Some(t!("app.hex_empty").into());
                 cx.notify();
             }
             Ok(bytes) => {
                 let Some(io) = self.transfer_io.as_ref() else {
-                    *state.error.lock().unwrap() = Some("not connected".into());
+                    *state.error.lock().unwrap() = Some(t!("app.not_connected").into());
                     cx.notify();
                     return;
                 };
@@ -2282,10 +2284,11 @@ impl AppView {
                 self.send_hex = None;
                 window.close_dialog(cx);
                 window.push_notification(
-                    Notification::success(SharedString::from(format!(
-                        "Sent {count} byte{}",
-                        if count == 1 { "" } else { "s" }
-                    ))),
+                    Notification::success(SharedString::from(if count == 1 {
+                        t!("app.sent_byte_one", count = count)
+                    } else {
+                        t!("app.sent_bytes_many", count = count)
+                    })),
                     cx,
                 );
             }
@@ -2307,9 +2310,7 @@ impl AppView {
         }
         if self.transfer_io.is_none() {
             window.push_notification(
-                Notification::error(SharedString::from(
-                    "Connect to a port before sending a file.",
-                )),
+                Notification::error(SharedString::from(t!("app.connect_before_file"))),
                 cx,
             );
             return;
@@ -2347,7 +2348,7 @@ impl AppView {
             let app_choose = app.clone();
             let app_send = app.clone();
 
-            dlg.title(SharedString::from("Send file"))
+            dlg.title(SharedString::from(t!("app.send_file_title")))
                 .w(px(560.0))
                 .close_button(true)
                 .on_close(move |_, _, cx| {
@@ -2359,9 +2360,9 @@ impl AppView {
                         .flex_col()
                         .gap_3()
                         .text_size(px(13.0))
-                        .child(send_file_field_label("Protocol"))
+                        .child(send_file_field_label(t!("app.protocol")))
                         .child(Select::new(&protocol))
-                        .child(send_file_field_label("File"))
+                        .child(send_file_field_label(t!("app.file")))
                         .child(
                             div()
                                 .flex()
@@ -2381,13 +2382,7 @@ impl AppView {
                                 .text_size(px(12.0))
                                 .text_color(rgba(0x808080AAu32))
                                 .whitespace_normal()
-                                .child(
-                                    "Start the receiver on the target device first \
-                                     (rx, loady, bootloader \u{201C}Receive File\u{201D} \
-                                     menu, etc.) before clicking Send. The transfer \
-                                     waits up to 60 s for the receiver's handshake \
-                                     before giving up.",
-                                ),
+                                .child(t!("app.send_file_help")),
                         )
                         .child(
                             div()
@@ -2396,7 +2391,7 @@ impl AppView {
                                 .justify_end()
                                 .gap_2()
                                 .child(send_file_secondary_button(
-                                    "Cancel",
+                                    t!("app.cancel"),
                                     move |_, window, cx| {
                                         // Dismissing the overlay triggers
                                         // `on_close` which clears state.
@@ -2405,7 +2400,7 @@ impl AppView {
                                     },
                                 ))
                                 .child(send_file_primary_button(
-                                    "Send",
+                                    t!("app.send"),
                                     send_enabled,
                                     move |_, window, cx| {
                                         let app = app_send.clone();
@@ -2441,7 +2436,10 @@ impl AppView {
             Ok(d) => d,
             Err(err) => {
                 window.push_notification(
-                    Notification::error(SharedString::from(format!("Couldn't read file: {err}"))),
+                    Notification::error(SharedString::from(t!(
+                        "app.read_file_failed",
+                        error = err
+                    ))),
                     cx,
                 );
                 return;
@@ -2451,7 +2449,7 @@ impl AppView {
         let filename: SharedString = path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "(unknown)".into())
+            .unwrap_or_else(|| t!("app.unknown_file").into_owned())
             .into();
 
         // Inbound bytes during the transfer flow through this
@@ -2549,8 +2547,9 @@ impl AppView {
                 0
             };
             let app = app.clone();
-            dlg.title(SharedString::from(format!(
-                "Sending \u{201C}{filename_for_dialog}\u{201D}"
+            dlg.title(SharedString::from(t!(
+                "app.sending_file",
+                name = filename_for_dialog
             )))
             .w(px(420.0))
             .child(
@@ -2593,7 +2592,7 @@ impl AppView {
                                 .border_color(rgba(0x80808055u32))
                                 .text_size(px(12.0))
                                 .cursor_pointer()
-                                .child("Cancel")
+                                .child(t!("app.cancel"))
                                 .on_mouse_up(
                                     MouseButton::Left,
                                     move |_evt: &MouseUpEvent, _window, cx| {
@@ -2638,7 +2637,7 @@ impl AppView {
             .transfer
             .as_ref()
             .map(|t| t.filename.clone())
-            .unwrap_or_else(|| SharedString::from("file"));
+            .unwrap_or_else(|| SharedString::from(t!("app.file_fallback")));
         self.transfer = None;
         // Belt-and-braces: the transfer thread already cleared the
         // sink, but if it died on a panic before reaching that line
@@ -2650,15 +2649,13 @@ impl AppView {
         match result {
             TransferResult::Ok => {
                 window.push_notification(
-                    Notification::success(SharedString::from(format!(
-                        "Sent \u{201C}{filename}\u{201D}"
-                    ))),
+                    Notification::success(SharedString::from(t!("app.sent_file", name = filename))),
                     cx,
                 );
             }
             TransferResult::Err(msg) => {
                 window.push_notification(
-                    Notification::error(SharedString::from(format!("Transfer failed: {msg}"))),
+                    Notification::error(SharedString::from(t!("app.transfer_failed", error = msg))),
                     cx,
                 );
             }
@@ -2675,7 +2672,7 @@ impl AppView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Choose a file to send".into()),
+            prompt: Some(t!("app.choose_file_prompt").into()),
         });
         cx.spawn(async move |this, cx| {
             let Ok(Ok(Some(paths))) = receiver.await else {
@@ -2885,7 +2882,7 @@ impl AppView {
             }
         }
         cx.notify();
-        self.log_event("Session kept alive in background", LogSeverity::Info, cx);
+        self.log_event(t!("app.session_suspended"), LogSeverity::Info, cx);
     }
 
     /// Resume a suspended session. Closes any open editor (matching
@@ -2917,15 +2914,15 @@ impl AppView {
             .send(serial_io::ControlSignal::Dtr(next))
             .is_err()
         {
-            self.log_event("DTR toggle failed: session closed", LogSeverity::Error, cx);
+            self.log_event(t!("app.dtr_toggle_failed"), LogSeverity::Error, cx);
             return;
         }
         self.dtr_asserted = next;
         self.log_event(
             if next {
-                "DTR asserted"
+                t!("app.dtr_asserted")
             } else {
-                "DTR deasserted"
+                t!("app.dtr_deasserted")
             },
             LogSeverity::Info,
             cx,
@@ -2944,15 +2941,15 @@ impl AppView {
             .send(serial_io::ControlSignal::Rts(next))
             .is_err()
         {
-            self.log_event("RTS toggle failed: session closed", LogSeverity::Error, cx);
+            self.log_event(t!("app.rts_toggle_failed"), LogSeverity::Error, cx);
             return;
         }
         self.rts_asserted = next;
         self.log_event(
             if next {
-                "RTS asserted"
+                t!("app.rts_asserted")
             } else {
-                "RTS deasserted"
+                t!("app.rts_deasserted")
             },
             LogSeverity::Info,
             cx,
@@ -3061,7 +3058,7 @@ impl AppView {
             // dismiss; no OK / Cancel footer needed for a sheet
             // that's purely informational.
             dialog
-                .title("About Baudrun")
+                .title(t!("app.about_title"))
                 .close_button(true)
                 .width(px(360.0))
                 .child(about_dialog_body())
@@ -3123,13 +3120,13 @@ impl AppView {
             .update(cx, |bus, cx| bus.replace(next, cx))
         {
             self.log_event(
-                format!("Font size update failed: {err}"),
+                t!("app.font_size_update_failed", error = err),
                 LogSeverity::Error,
                 cx,
             );
             return;
         }
-        self.log_event(format!("Font size: {target}"), LogSeverity::Info, cx);
+        self.log_event(t!("app.font_size", size = target), LogSeverity::Info, cx);
     }
 
     /// Move the live serial session out of this window into a freshly
@@ -3163,13 +3160,13 @@ impl AppView {
             self.themes_store.clone(),
         ) {
             self.log_event(
-                format!("Move session failed: {err}"),
+                t!("app.move_session_failed", error = err),
                 LogSeverity::Error,
                 cx,
             );
             return;
         }
-        self.log_event("Session moved to new window", LogSeverity::Info, cx);
+        self.log_event(t!("app.session_moved"), LogSeverity::Info, cx);
     }
 
     /// Complete (or cancel) a profile-drag tear-off. Fired by the
@@ -4113,12 +4110,12 @@ fn profile_row(
     let tokens = *cx.global::<SkinTokens>();
     let id = profile.id.clone();
     let name = if profile.name.is_empty() {
-        "(unnamed)".to_string()
+        t!("app.unnamed").to_string()
     } else {
         profile.name.clone()
     };
     let port = if profile.port_name.is_empty() {
-        "no port set".to_string()
+        t!("app.no_port").to_string()
     } else {
         profile.port_name.clone()
     };
@@ -4317,7 +4314,7 @@ fn profile_icon(
     let tokens = *cx.global::<SkinTokens>();
     let id = profile.id.clone();
     let name = if profile.name.is_empty() {
-        "(unnamed)".to_string()
+        t!("app.unnamed").to_string()
     } else {
         profile.name.clone()
     };

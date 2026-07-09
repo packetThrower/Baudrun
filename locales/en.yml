@@ -1,18 +1,365 @@
 _version: 2
 
-# English source strings for Baudrun's UI chrome. This is the
-# fallback locale (`i18n!(fallback = "en")`), so every key the app
-# calls via `t!()` MUST exist here; other locales may omit keys and
-# fall back to these values. Keys are hierarchical by UI area.
-# Interpolation uses rust-i18n's `%{name}` syntax.
+# English source strings for Baudrun's UI chrome — the `t!()` keys.
+# This is the fallback locale (`i18n!(fallback = "en")`): every key
+# the app calls MUST exist here; other locales may omit keys and fall
+# back to these. Keys are hierarchical by UI area. Interpolation uses
+# rust-i18n's `%{name}` syntax.
 #
-# NOT translated (stay hardcoded, never `t!()`): profile JSON field
-# names, serial enum values ("none"/"cr"/"del"/…), and built-in
-# theme/skin/pack IDs — those are wire-format identifiers, not
-# display text. See TODO.md "Localization (i18n)".
+# NOT translated (stay hardcoded, never t!()): profile JSON field
+# names, serial enum VALUES ("none"/"cr"/"del"/…), and built-in
+# theme/skin/pack IDs — wire-format identifiers, not display text.
+# Also left English on purpose: the settings filter-match keyword
+# tables (so search works regardless of UI language). See TODO.md.
 
 welcome:
-  # Idle right-pane splash when no session is active.
   heading: Baudrun
-  pick_profile: Pick a profile from the sidebar to start a session.
-  create_first: Click the + above the profile list to create one.
+  pick_profile: "Pick a profile from the sidebar to start a session."
+  create_first: "Click the + above the profile list to create one."
+
+terminal:
+  menu:
+    copy: Copy
+    paste: Paste
+    select_all: Select All
+    clear: Clear
+  paste_confirm:
+    title: "Paste multiple lines?"
+    body: "About to paste %{count} lines into the terminal."
+
+settings_chrome:
+  title: Settings
+  version_tooltip: "Baudrun version (from Cargo.toml at build time)"
+  global_defaults: GLOBAL DEFAULTS
+  filter_clear_tooltip: Clear filter
+  config_dir_unavailable: "(unavailable: %{err})"
+
+chrome:
+  move_session_to_new_window: Move Session to New Window
+  connect_in_new_window: Connect in New Window
+  send_break: Send Break
+  send_hex: "Send Hex…"
+  send_file: "Send File…"
+  move_to_new_window: Move to New Window
+  more_actions: More actions
+  session_suspended_title: Session suspended
+  suspended_banner_detail: "Port still open. Bytes keep flowing into scrollback."
+  session_suspended_heading: SESSION SUSPENDED
+  no_port: "(no port)"
+  suspended_pane_detail: "Port stays open; bytes keep flowing into scrollback."
+  resume_button: Resume
+  about_version: "Version %{version} (prototype)"
+  about_copyright: "© 2025–2026 packetThrower / Baudrun contributors"
+  view_on_github: View on GitHub
+  open_error: "open %{port}: %{base}"
+  open_error_permission_linux: "open %{port}: %{base} — your user can't access this serial port. Fix: install Baudrun's udev rule (already done if you used the .deb / .rpm / .pkg.tar.zst installer; rerun the installer if it didn't take), then unplug + replug the USB adapter. As a one-off workaround: `sudo chmod 666 %{port}` opens it for the current plug-in. The legacy dialout-group flow (`sudo usermod -aG dialout $USER` + log out + log in) also works."
+  reconnecting_suffix: " · reconnecting…"
+  dtr_asserted_tooltip: "DTR is asserted — click to deassert"
+  dtr_deasserted_tooltip: "DTR is deasserted — click to assert"
+  rts_asserted_tooltip: "RTS is asserted — click to deassert"
+  rts_deasserted_tooltip: "RTS is deasserted — click to assert"
+  clear_button: Clear
+  suspend_button: Suspend
+  suspend_tooltip: "Keep session alive; return to profile"
+  disconnect_button: Disconnect
+  reconnecting: "Reconnecting to %{port} @ %{baud}…"
+  connected: "Connected to %{port} @ %{baud}"
+  editing: "Editing %{name}"
+  editing_new: Editing new profile
+  not_connected: Not connected
+  chip_hex: HEX
+  chip_time: TIME
+  chip_line: "LINE#"
+  chip_to_file: TO FILE
+  scrollback_tooltip: "Scrollback lines: filled / max"
+  collapse_sidebar_tooltip: Collapse sidebar
+  expand_sidebar_tooltip: Expand sidebar
+  profiles_label: PROFILES
+  new_profile_tooltip: New profile
+  new_window_tooltip: New window
+  settings_tooltip: Settings
+
+app:
+  about_title: About Baudrun
+  auto_reconnect_gave_up: "Auto-reconnect to %{port} gave up after 15 attempts"
+  break_failed: "Couldn't send break: %{error}"
+  break_sent: Break sent
+  cancel: Cancel
+  choose_file_prompt: Choose a file to send
+  connect_before_file: Connect to a port before sending a file.
+  connect_before_hex: Connect to a port before sending hex.
+  connected: "Connected to %{port} @ %{baud}"
+  disconnected: Disconnected
+  dtr_asserted: DTR asserted
+  dtr_deasserted: DTR deasserted
+  dtr_toggle_failed: "DTR toggle failed: session closed"
+  file: File
+  file_fallback: file
+  font_size: "Font size: %{size}"
+  font_size_update_failed: "Font size update failed: %{error}"
+  hex_empty: empty
+  invalid: "Invalid: %{error}"
+  move_session_failed: "Move session failed: %{error}"
+  no_port: no port set
+  no_port_set: profile has no port set
+  not_connected: not connected
+  open_unknown: "open %{port}: unknown"
+  profile_gone: profile no longer exists
+  profile_not_found: profile not found
+  protocol: Protocol
+  read_file_failed: "Couldn't read file: %{error}"
+  reconnected: Reconnected
+  removed_profile: "Removed profile “%{name}”"
+  reorder_failed: "Couldn't reorder profile: %{error}"
+  restore_failed: "Couldn't restore profile: %{error}"
+  restored_profile: "Restored profile “%{name}”"
+  rts_asserted: RTS asserted
+  rts_deasserted: RTS deasserted
+  rts_toggle_failed: "RTS toggle failed: session closed"
+  save_failed: "Save failed: %{error}"
+  saved: Saved
+  send: Send
+  send_file_help: "Start the receiver on the target device first (rx, loady, bootloader “Receive File” menu, etc.) before clicking Send. The transfer waits up to 60 s for the receiver's handshake before giving up."
+  send_file_title: Send file
+  send_hex_help: "Space-separated, compact, or 0x-prefixed — all equivalent: 02 FF AA 55, 02FFAA55, 0x02 0xFF 0xAA 0x55."
+  send_hex_title: Send hex bytes
+  sending_file: "Sending “%{name}”"
+  sent_byte_one: "Sent %{count} byte"
+  sent_bytes_many: "Sent %{count} bytes"
+  sent_file: "Sent “%{name}”"
+  session_dropped_no_reconnect: Session dropped (auto-reconnect off)
+  session_dropped_profile_gone: "session dropped (profile %{id} no longer exists)"
+  session_dropped_reconnecting: "Session dropped — auto-reconnecting…"
+  session_log: "Session log: %{path}"
+  session_log_open_failed: "Session log open failed: %{error}"
+  session_moved: Session moved to new window
+  session_suspended: Session kept alive in background
+  settings_window_title: "Settings · Baudrun"
+  transfer_failed: "Transfer failed: %{error}"
+  undo: Undo
+  unknown_file: "(unknown)"
+  unnamed: "(unnamed)"
+
+editor:
+  name_placeholder: My switch
+  custom_suffix: "%{name} (custom)"
+  subtitle_edit: EDIT PROFILE
+  subtitle_new: NEW PROFILE
+  unnamed_title: "(unnamed)"
+  delete_button: Delete
+  save_button: Save
+  cancel_button: Cancel
+  disconnect_button: Disconnect
+  resume_button: Resume
+  connect_button: Connect
+  advanced_desc: Control lines, hex view, timestamps, session logging.
+  control_lines_desc: "Only needed for specific adapters or devices (RS-485 direction, Arduino DTR-reset, firmwares that key off DTR for session lifecycle)."
+  tab:
+    connection: Connection
+    highlighting: Highlighting
+    advanced: Advanced
+  section:
+    terminal: Terminal
+    control_lines: Control Lines
+    output: Output
+    paste_safety: Paste safety
+  field:
+    name: NAME
+    serial_port: SERIAL PORT
+    baud_rate: BAUD RATE
+    data_bits: DATA BITS
+    parity: PARITY
+    stop_bits: STOP BITS
+    flow_control: FLOW CONTROL
+    send_line_ending: SEND LINE ENDING
+    backspace_sends: BACKSPACE SENDS
+    local_echo: Local echo
+    dtr_on_connect: DTR ON CONNECT
+    rts_on_connect: RTS ON CONNECT
+    dtr_on_disconnect: DTR ON DISCONNECT
+    rts_on_disconnect: RTS ON DISCONNECT
+    slow_paste_delay: SLOW-PASTE DELAY (MS)
+  theme:
+    use_global_default: Use global default
+    title: Terminal Theme
+    desc: "Override the global default theme just for this profile. Useful for keeping different palettes on different devices (e.g. red-tinged for production routers, calm green for the lab switch). Leave on “Use global default” to inherit from Settings → Themes."
+  driver:
+    usb_device: USB device
+    serial_prefix: " · serial "
+    not_loaded_title: "%{chipset} detected — driver not loaded"
+    install_button: "Install driver…"
+  highlight:
+    master_desc: Master switch for this profile. When off, incoming output is rendered without any rule-based colouring regardless of which packs are enabled below.
+    master_toggle: Highlight terminal output for this profile
+    override_toggle: Override global pack selection
+    packs_title: Highlight Packs
+    packs_desc: "Inherit the global selection from Settings, or override it for this profile. With override off, the rows show what the global is currently broadcasting (read-only)."
+  output:
+    timestamps: Line timestamps
+    timestamps_hint: prefix each line with wall-clock time
+    line_numbers: Line numbers
+    line_numbers_hint: prefix each line with a session-local counter (resets on reconnect)
+    hex_view: Hex view
+    hex_view_hint: show incoming bytes as hex dump
+    log_enabled: Record session to file
+    log_enabled_hint: "raw bytes; destination set in Settings → Advanced"
+    auto_reconnect: Auto-reconnect on drop
+    auto_reconnect_hint: poll for the port to reappear (up to 30s) and reopen transparently
+  paste:
+    warn_multiline: Confirm multi-line pastes
+    warn_multiline_hint: prompt before sending pasted text that contains line breaks
+    slow: Slow paste
+    slow_hint: send one char at a time with a delay
+    safety_desc: "Catch the “I pasted into the wrong window” mistake, and pace pastes so UARTs on slower devices don't drop bytes."
+
+opts:
+  baud:
+    "9600": "9600 (default)"
+  parity:
+    none: None
+    odd: Odd
+    even: Even
+    mark: Mark
+    space: Space
+  flow_control:
+    none: None
+    rtscts: RTS/CTS
+    xonxoff: XON/XOFF
+  line_ending:
+    cr: "CR (\\r) — switches, routers"
+    lf: "LF (\\n) — Linux consoles"
+    crlf: "CRLF (\\r\\n) — legacy / Windows"
+  line_policy:
+    default: Default (leave as-is)
+    assert: Assert (high)
+    deassert: Deassert (low)
+  backspace:
+    del: "DEL (0x7F) — VT100, xterm, modern"
+    bs: "BS (0x08) — older Cisco, Foundry"
+  port_not_connected: "%{port} (not connected)"
+
+settings:
+  tab:
+    appearance: Appearance
+    themes: Themes
+    shortcuts: Shortcuts
+    highlighting: Highlighting
+    accessibility: Accessibility
+    updates: Updates
+    advanced: Advanced
+  appearance_auto: Auto (follow system)
+  appearance_light: Light
+  appearance_dark: Dark
+  language_auto: Auto (follow system)
+  log_dir_placeholder: Default
+  filter_placeholder: "Filter settings…"
+  app_skin_title: App Skin
+  app_skin_desc: "How the app chrome (sidebar, panes, buttons) looks. Doesn't affect the terminal palette — that's the Themes tab."
+  appearance_title: Appearance
+  appearance_desc: "Light or dark variant of the active skin. \"Auto\" follows the system setting. Skins flagged dark-only ignore this and pin dark."
+  language_title: Language
+  language_desc: "UI language. \"Auto\" follows the operating system. Takes effect immediately — no restart. Terminal output is never translated."
+  font_size_title: Terminal Font Size
+  font_size_desc: "Pixel size of the terminal pane's monospace font. Leave blank to use the default (13). Changes the terminal grid only — chrome text size is fixed."
+  scrollback_title: Scrollback
+  scrollback_desc: "Lines of terminal output retained for mouse-wheel scrollback. Higher values use more memory but let you scroll further back through chatty sessions. Leave blank to use the default (10000)."
+  installed_skins_title: Installed Skins
+  no_custom_skins: No custom skins installed. Use Import to add a skin JSON file.
+  default_theme_title: Default Theme
+  default_theme_desc: Used by any profile that doesn't set its own theme.
+  theme_label: Theme
+  installed_themes_title: Installed Themes
+  import_itermcolors: "Import .itermcolors…"
+  tag_custom: Custom
+  tag_builtin: Built-in
+  tag_custom_dark_only: "Custom · dark-only"
+  preview: Preview
+  import_skin: "Import skin…"
+  import_pack: "Import pack…"
+  highlight_packs_title: Highlight Packs
+  highlight_packs_desc: "Choose which built-in or imported rule packs colorize terminal output. Stack as many as you want — matches from each pack are merged in order. With every box unchecked highlighting is off, even if a profile has it enabled."
+  tip:
+    delete_theme: Delete imported theme
+    delete_pack: Delete imported pack
+    remove_skin: Remove imported skin
+  capture_prompt: "Press a key… (Esc to cancel)"
+  keyboard_shortcuts_title: Keyboard Shortcuts
+  keyboard_shortcuts_desc: "Click a binding to record a new key combo; Escape cancels. Use ↺ to reset that row to the platform default. macOS uses Cmd-based combos (Cmd is never a terminal control character so plain ⌘K is safe); Linux/Windows use Ctrl+Shift so plain Ctrl+letter still passes through to the device."
+  reduce_motion_title: Reduce Motion
+  reduce_motion_desc: Honours the OS preference for reduced motion. Read from the system at launch; no per-app override.
+  reduce_motion:
+    status_on: "On — Baudrun is skipping the reconnect-dot pulse and holding the terminal cursor steady."
+    status_off: "Off — Baudrun's optional animations (reconnect-dot pulse, terminal cursor blink) are on."
+    path_macos: "Change at System Settings → Accessibility → Display → “Reduce motion”."
+    path_windows: "Change at Settings → Accessibility → Visual effects → “Animation effects”."
+    path_other: Change via your desktop environment's accessibility / animation settings.
+    stale_note: Detected once at app launch. Relaunch Baudrun after flipping the system setting if a value here looks stale.
+  updates_title: Updates
+  updates_desc: "Baudrun queries GitHub Releases once at app launch for a newer version. No automatic download — when an update is available the sidebar's gear icon gets an amber dot and this pane shows the new version with a button to open the Releases page."
+  update_prefs_title: Update Preferences
+  update_prefs_desc: "Disable the check entirely, or opt into seeing pre-release tags (`-alpha.*` / `-beta.*` / `-rc.*`)."
+  updates:
+    checks_disabled: Update checks are disabled.
+    available_dismissed: "v%{version} is available — you've dismissed this version."
+    available: "v%{version} is available."
+    up_to_date: Baudrun is up to date.
+    current_version: "Currently running v%{version}."
+    view_release: View release
+    dismiss: Dismiss this version
+    check_on_launch: Check for updates on launch
+    include_prerelease: Include pre-releases (alpha / beta / rc)
+  log_dir_title: Session Log Directory
+  log_dir_desc: "Where profiles with \"Record session to file\" enabled write their logs. Leave blank to use the default."
+  choose: "Choose…"
+  reset: Reset
+  reveal: Reveal
+  usb_driver_title: USB Driver Detection
+  usb_driver_desc: Show a banner in the profile form when a USB-serial adapter is plugged in without its vendor driver installed.
+  usb_driver_toggle: Detect un-drivered USB adapters
+  copy_on_select_title: Copy on Select
+  copy_on_select_desc: "PuTTY-style — copy the terminal selection to the clipboard automatically when the mouse is released. Avoids having to press ⌘/Ctrl+C for every snippet."
+  copy_on_select_toggle: Copy terminal selection to clipboard automatically
+  window_state_title: Window State
+  window_state_desc: "Reopen Baudrun and Settings windows where you left them. Turn off to land at the centered default size each launch instead. The Reset buttons clear the saved geometry and resize the matching live windows immediately."
+  window_state_toggle: Restore window size and position on launch
+  reset_settings_window: Reset Settings window
+  reset_main_window: Reset main window
+  config_dir_title: Config Directory
+  config_dir_desc: "Where Baudrun stores profiles, themes, skins, highlight packs, and settings.json. Choose a different location to share configs across machines (Dropbox, iCloud Drive, dotfile repo) or to test from a clean directory. Takes effect on the next launch."
+  theme_preview:
+    subtitle_imported: "Imported theme · sample output · last line shows text selection"
+    subtitle_builtin: "Built-in theme · sample output · last line shows text selection"
+  undo: Undo
+  prompt:
+    choose_config_dir: Choose Baudrun config directory
+    choose_log_dir: Choose session log directory
+    import_skin: Import skin JSON
+    import_theme: "Import theme (.itermcolors or JSON)"
+    import_pack: Import highlight pack JSON
+  toast:
+    save_failed: "Couldn't save settings: %{err}"
+    config_open_failed: "Couldn't open config directory: %{err}"
+    config_set: Config directory set. Restart Baudrun to use it.
+    config_set_failed: "Couldn't set config directory: %{err}"
+    config_reset: Config directory reset. Restart Baudrun to use the default.
+    config_reset_failed: "Couldn't reset config directory: %{err}"
+    log_dir_updated: Log directory updated
+    log_dir_reset: Log directory reset to default
+    skin_imported: "Imported skin “%{name}”"
+    skin_import_failed: "Couldn't import skin: %{err}"
+    skin_removed: "Removed skin “%{name}”"
+    skin_delete_failed: "Couldn't delete skin: %{err}"
+    skin_restored: "Restored skin “%{name}”"
+    skin_restore_failed: "Couldn't restore skin: %{err}"
+    theme_imported: "Imported theme “%{name}”"
+    theme_import_failed: "Couldn't import theme: %{err}"
+    theme_removed: "Removed theme “%{name}”"
+    theme_delete_failed: "Couldn't delete theme: %{err}"
+    theme_restored: "Restored theme “%{name}”"
+    theme_restore_failed: "Couldn't restore theme: %{err}"
+    pack_imported: "Imported pack “%{name}”"
+    pack_import_failed: "Couldn't import pack: %{err}"
+    pack_removed: "Removed pack “%{name}”"
+    pack_delete_failed: "Couldn't delete pack: %{err}"
+    pack_restored: "Restored pack “%{name}”"
+    pack_restore_failed: "Couldn't restore pack: %{err}"

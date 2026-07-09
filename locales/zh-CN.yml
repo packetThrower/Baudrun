@@ -1,12 +1,354 @@
 _version: 2
-
-# Simplified Chinese (简体中文). Keys mirror en.yml; any key omitted
-# here falls back to the English value. First non-English locale —
-# requested in issue #72. Terminology note for translators:
-# serial/networking terms follow mainland conventions (串口 = serial
-# port, 波特率 = baud rate, 校验 = parity, 会话 = session).
+# Simplified Chinese (简体中文, zh-CN) for Baudrun's UI chrome — issue #72.
 
 welcome:
   heading: Baudrun
-  pick_profile: 从侧边栏选择一个配置以开始会话。
-  create_first: 点击配置列表上方的 + 号来创建一个。
+  pick_profile: "从侧边栏选择一个配置以开始会话。"
+  create_first: "点击配置列表上方的 + 来创建一个。"
+
+terminal:
+  menu:
+    copy: 复制
+    paste: 粘贴
+    select_all: 全选
+    clear: 清除
+  paste_confirm:
+    title: "粘贴多行？"
+    body: "即将向终端粘贴 %{count} 行。"
+
+settings_chrome:
+  title: 设置
+  version_tooltip: "Baudrun 版本（构建时取自 Cargo.toml）"
+  global_defaults: 全局默认
+  filter_clear_tooltip: 清除筛选
+  config_dir_unavailable: "（不可用：%{err}）"
+
+chrome:
+  move_session_to_new_window: 移动会话到新窗口
+  connect_in_new_window: 在新窗口中连接
+  send_break: "发送 Break"
+  send_hex: "发送十六进制…"
+  send_file: "发送文件…"
+  move_to_new_window: 移动到新窗口
+  more_actions: 更多操作
+  session_suspended_title: 会话已挂起
+  suspended_banner_detail: "串口仍打开。字节持续写入回滚缓冲。"
+  session_suspended_heading: 会话已挂起
+  no_port: "（无串口）"
+  suspended_pane_detail: "串口保持打开；字节持续写入回滚缓冲。"
+  resume_button: 恢复
+  about_version: "版本 %{version}（原型）"
+  about_copyright: "© 2025–2026 packetThrower / Baudrun 贡献者"
+  view_on_github: "在 GitHub 上查看"
+  open_error: "打开 %{port}：%{base}"
+  open_error_permission_linux: "打开 %{port}：%{base} — 当前用户无法访问此串口。解决方法：安装 Baudrun 的 udev 规则（如果你使用了 .deb / .rpm / .pkg.tar.zst 安装程序则已完成；若未生效，请重新运行安装程序），然后拔下并重新插上 USB 适配器。作为一次性的临时办法：`sudo chmod 666 %{port}` 可为当前插入的设备打开访问权限。传统的 dialout 组方式（`sudo usermod -aG dialout $USER` + 注销 + 重新登录）同样有效。"
+  reconnecting_suffix: " · 重连中…"
+  dtr_asserted_tooltip: "DTR 已置位 — 点击取消置位"
+  dtr_deasserted_tooltip: "DTR 已取消置位 — 点击置位"
+  rts_asserted_tooltip: "RTS 已置位 — 点击取消置位"
+  rts_deasserted_tooltip: "RTS 已取消置位 — 点击置位"
+  clear_button: 清除
+  suspend_button: 挂起
+  suspend_tooltip: "保持会话存活；返回配置"
+  disconnect_button: 断开连接
+  reconnecting: "正在重连到 %{port} @ %{baud}…"
+  connected: "已连接到 %{port} @ %{baud}"
+  editing: "正在编辑 %{name}"
+  editing_new: 正在编辑新配置
+  not_connected: 未连接
+  chip_hex: HEX
+  chip_time: 时间
+  chip_line: "行号"
+  chip_to_file: 写入文件
+  scrollback_tooltip: "回滚缓冲行数：已用 / 上限"
+  collapse_sidebar_tooltip: 折叠侧边栏
+  expand_sidebar_tooltip: 展开侧边栏
+  profiles_label: 配置
+  new_profile_tooltip: 新建配置
+  new_window_tooltip: 新建窗口
+  settings_tooltip: 设置
+
+app:
+  about_title: "关于 Baudrun"
+  auto_reconnect_gave_up: "自动重连到 %{port} 在尝试 15 次后放弃"
+  break_failed: "无法发送 Break：%{error}"
+  break_sent: "Break 已发送"
+  cancel: 取消
+  choose_file_prompt: 选择要发送的文件
+  connect_before_file: 发送文件前请先连接到串口。
+  connect_before_hex: 发送十六进制前请先连接到串口。
+  connected: "已连接到 %{port} @ %{baud}"
+  disconnected: 已断开连接
+  dtr_asserted: "DTR 已置位"
+  dtr_deasserted: "DTR 已取消置位"
+  dtr_toggle_failed: "DTR 切换失败：会话已关闭"
+  file: 文件
+  file_fallback: 文件
+  font_size: "字号：%{size}"
+  font_size_update_failed: "字号更新失败：%{error}"
+  hex_empty: 空
+  invalid: "无效：%{error}"
+  move_session_failed: "移动会话失败：%{error}"
+  no_port: 未设置串口
+  no_port_set: 配置未设置串口
+  not_connected: 未连接
+  open_unknown: "打开 %{port}：未知"
+  profile_gone: 配置已不存在
+  profile_not_found: 未找到配置
+  protocol: 协议
+  read_file_failed: "无法读取文件：%{error}"
+  reconnected: 已重连
+  removed_profile: "已删除配置“%{name}”"
+  reorder_failed: "无法重新排序配置：%{error}"
+  restore_failed: "无法恢复配置：%{error}"
+  restored_profile: "已恢复配置“%{name}”"
+  rts_asserted: "RTS 已置位"
+  rts_deasserted: "RTS 已取消置位"
+  rts_toggle_failed: "RTS 切换失败：会话已关闭"
+  save_failed: "保存失败：%{error}"
+  saved: 已保存
+  send: 发送
+  send_file_help: "点击发送前，请先在目标设备上启动接收方（rx、loady、引导加载程序的“Receive File”菜单等）。传输会等待接收方握手最多 60 秒后放弃。"
+  send_file_title: 发送文件
+  send_hex_help: "空格分隔、紧凑或 0x 前缀 — 三者等价：02 FF AA 55、02FFAA55、0x02 0xFF 0xAA 0x55。"
+  send_hex_title: 发送十六进制字节
+  sending_file: "正在发送“%{name}”"
+  sent_byte_one: "已发送 %{count} 字节"
+  sent_bytes_many: "已发送 %{count} 字节"
+  sent_file: "已发送“%{name}”"
+  session_dropped_no_reconnect: "会话已掉线（自动重连关闭）"
+  session_dropped_profile_gone: "会话已掉线（配置 %{id} 已不存在）"
+  session_dropped_reconnecting: "会话已掉线 — 正在自动重连…"
+  session_log: "会话日志：%{path}"
+  session_log_open_failed: "会话日志打开失败：%{error}"
+  session_moved: 会话已移动到新窗口
+  session_suspended: 会话已在后台保持存活
+  settings_window_title: "设置 · Baudrun"
+  transfer_failed: "传输失败：%{error}"
+  undo: 撤销
+  unknown_file: "（未知）"
+  unnamed: "（未命名）"
+
+editor:
+  name_placeholder: 我的交换机
+  custom_suffix: "%{name}（自定义）"
+  subtitle_edit: 编辑配置
+  subtitle_new: 新建配置
+  unnamed_title: "（未命名）"
+  delete_button: 删除
+  save_button: 保存
+  cancel_button: 取消
+  disconnect_button: 断开连接
+  resume_button: 恢复
+  connect_button: 连接
+  advanced_desc: "控制线、十六进制视图、时间戳、会话日志。"
+  control_lines_desc: "仅特定适配器或设备需要（RS-485 方向控制、Arduino DTR 复位、以 DTR 控制会话生命周期的固件）。"
+  tab:
+    connection: 连接
+    highlighting: 高亮
+    advanced: 高级
+  section:
+    terminal: 终端
+    control_lines: 控制线
+    output: 输出
+    paste_safety: 粘贴安全
+  field:
+    name: 名称
+    serial_port: 串口
+    baud_rate: 波特率
+    data_bits: 数据位
+    parity: 校验
+    stop_bits: 停止位
+    flow_control: 流控
+    send_line_ending: 发送行结束符
+    backspace_sends: 退格键发送
+    local_echo: 本地回显
+    dtr_on_connect: "连接时 DTR"
+    rts_on_connect: "连接时 RTS"
+    dtr_on_disconnect: "断开时 DTR"
+    rts_on_disconnect: "断开时 RTS"
+    slow_paste_delay: "慢速粘贴延迟（毫秒）"
+  theme:
+    use_global_default: 使用全局默认
+    title: 终端主题
+    desc: "仅为此配置覆盖全局默认主题。适合在不同设备上使用不同的配色（例如生产路由器用偏红色调，实验室交换机用柔和的绿色）。保持“使用全局默认”即可从 设置 → 主题 继承。"
+  driver:
+    usb_device: "USB 设备"
+    serial_prefix: " · 序列号 "
+    not_loaded_title: "检测到 %{chipset} — 驱动未加载"
+    install_button: "安装驱动…"
+  highlight:
+    master_desc: "此配置的总开关。关闭时，无论下方启用了哪些规则包，接收到的输出都不会应用任何基于规则的着色。"
+    master_toggle: 为此配置高亮终端输出
+    override_toggle: 覆盖全局规则包选择
+    packs_title: 高亮规则包
+    packs_desc: "从设置继承全局选择，或为此配置覆盖它。关闭覆盖时，这些行显示全局当前生效的内容（只读）。"
+  output:
+    timestamps: 行时间戳
+    timestamps_hint: 在每行前加上挂钟时间
+    line_numbers: 行号
+    line_numbers_hint: "在每行前加上会话内计数器（重连时重置）"
+    hex_view: 十六进制视图
+    hex_view_hint: 以十六进制转储显示接收到的字节
+    log_enabled: 将会话记录到文件
+    log_enabled_hint: "原始字节；目标位置在 设置 → 高级 中设置"
+    auto_reconnect: 掉线时自动重连
+    auto_reconnect_hint: "轮询等待串口重新出现（最多 30 秒）并透明地重新打开"
+  paste:
+    warn_multiline: 确认多行粘贴
+    warn_multiline_hint: 在发送包含换行的粘贴文本前提示
+    slow: 慢速粘贴
+    slow_hint: 每次发送一个字符并带延迟
+    safety_desc: "捕捉“粘贴到了错误窗口”这类失误，并控制粘贴节奏，以免较慢设备上的 UART 丢失字节。"
+
+opts:
+  baud:
+    "9600": "9600（默认）"
+  parity:
+    none: 无
+    odd: 奇
+    even: 偶
+    mark: 标记
+    space: 空格
+  flow_control:
+    none: 无
+    rtscts: RTS/CTS
+    xonxoff: XON/XOFF
+  line_ending:
+    cr: "CR (\\r) — 交换机、路由器"
+    lf: "LF (\\n) — Linux 控制台"
+    crlf: "CRLF (\\r\\n) — 旧式 / Windows"
+  line_policy:
+    default: "默认（保持不变）"
+    assert: "置位（高）"
+    deassert: "取消置位（低）"
+  backspace:
+    del: "DEL (0x7F) — VT100、xterm、现代终端"
+    bs: "BS (0x08) — 较旧的 Cisco、Foundry"
+  port_not_connected: "%{port}（未连接）"
+
+settings:
+  tab:
+    appearance: 外观
+    themes: 主题
+    shortcuts: 快捷键
+    highlighting: 高亮
+    accessibility: 辅助功能
+    updates: 更新
+    advanced: 高级
+  appearance_auto: "自动（跟随系统）"
+  appearance_light: 浅色
+  appearance_dark: 深色
+  language_auto: "自动（跟随系统）"
+  log_dir_placeholder: 默认
+  filter_placeholder: "筛选设置…"
+  app_skin_title: 应用皮肤
+  app_skin_desc: "应用界面（侧边栏、窗格、按钮）的外观。不影响终端配色 — 那由主题标签页控制。"
+  appearance_title: 外观
+  appearance_desc: "当前皮肤的浅色或深色变体。“自动”跟随系统设置。标记为仅深色的皮肤会忽略此项并固定为深色。"
+  language_title: 语言
+  language_desc: "界面语言。“自动”跟随操作系统。立即生效 — 无需重启。终端输出永不翻译。"
+  font_size_title: 终端字号
+  font_size_desc: "终端窗格等宽字体的像素大小。留空则使用默认值（13）。仅改变终端网格 — 界面文字大小固定。"
+  scrollback_title: 回滚缓冲
+  scrollback_desc: "为鼠标滚轮回滚保留的终端输出行数。数值越大占用内存越多，但可以在输出频繁的会话中回滚得更远。留空则使用默认值（10000）。"
+  installed_skins_title: 已安装皮肤
+  no_custom_skins: "未安装自定义皮肤。使用导入来添加皮肤 JSON 文件。"
+  default_theme_title: 默认主题
+  default_theme_desc: 供任何未设置自己主题的配置使用。
+  theme_label: 主题
+  installed_themes_title: 已安装主题
+  import_itermcolors: "导入 .itermcolors…"
+  tag_custom: 自定义
+  tag_builtin: 内置
+  tag_custom_dark_only: "自定义 · 仅深色"
+  preview: 预览
+  import_skin: "导入皮肤…"
+  import_pack: "导入规则包…"
+  highlight_packs_title: 高亮规则包
+  highlight_packs_desc: "选择哪些内置或导入的规则包为终端输出着色。可叠加任意多个 — 各规则包的匹配会按顺序合并。当所有复选框都未勾选时，即使某个配置已启用高亮，高亮也会关闭。"
+  tip:
+    delete_theme: 删除导入的主题
+    delete_pack: 删除导入的规则包
+    remove_skin: 移除导入的皮肤
+  capture_prompt: "按下一个键…（Esc 取消）"
+  keyboard_shortcuts_title: 键盘快捷键
+  keyboard_shortcuts_desc: "点击某个绑定以录制新的组合键；按 Escape 取消。使用 ↺ 将该行重置为平台默认值。macOS 使用基于 Cmd 的组合键（Cmd 从不是终端控制字符，因此单独的 ⌘K 是安全的）；Linux/Windows 使用 Ctrl+Shift，这样单独的 Ctrl+字母 仍能传递到设备。"
+  reduce_motion_title: 减弱动态效果
+  reduce_motion_desc: "遵循操作系统的减弱动态效果偏好。在启动时从系统读取；无应用级覆盖。"
+  reduce_motion:
+    status_on: "开 — Baudrun 正在跳过重连圆点的脉动，并让终端光标保持静止。"
+    status_off: "关 — Baudrun 的可选动画（重连圆点脉动、终端光标闪烁）已开启。"
+    path_macos: "在 系统设置 → 辅助功能 → 显示 → “减弱动态效果” 中更改。"
+    path_windows: "在 设置 → 辅助功能 → 视觉效果 → “动画效果” 中更改。"
+    path_other: 通过你的桌面环境的辅助功能 / 动画设置进行更改。
+    stale_note: "仅在应用启动时检测一次。如果此处的值看起来过时，请在更改系统设置后重新启动 Baudrun。"
+  updates_title: 更新
+  updates_desc: "Baudrun 在应用启动时向 GitHub Releases 查询一次是否有更新版本。不会自动下载 — 当有可用更新时，侧边栏的齿轮图标会出现一个琥珀色圆点，此窗格会显示新版本并附带一个打开 Releases 页面的按钮。"
+  update_prefs_title: 更新偏好
+  update_prefs_desc: "完全禁用检查，或选择查看预发布标签（`-alpha.*` / `-beta.*` / `-rc.*`）。"
+  updates:
+    checks_disabled: 更新检查已禁用。
+    available_dismissed: "v%{version} 可用 — 你已忽略此版本。"
+    available: "v%{version} 可用。"
+    up_to_date: "Baudrun 已是最新版本。"
+    current_version: "当前运行 v%{version}。"
+    view_release: 查看发布
+    dismiss: 忽略此版本
+    check_on_launch: 启动时检查更新
+    include_prerelease: "包含预发布版本（alpha / beta / rc）"
+  log_dir_title: 会话日志目录
+  log_dir_desc: "启用了“将会话记录到文件”的配置写入日志的位置。留空则使用默认值。"
+  choose: "选择…"
+  reset: 重置
+  reveal: 在文件夹中显示
+  usb_driver_title: "USB 驱动检测"
+  usb_driver_desc: "当插入 USB 串口适配器但未安装其厂商驱动时，在配置表单中显示横幅。"
+  usb_driver_toggle: "检测缺少驱动的 USB 适配器"
+  copy_on_select_title: 选中即复制
+  copy_on_select_desc: "PuTTY 风格 — 释放鼠标时自动将终端选区复制到剪贴板。免去每次都要按 ⌘/Ctrl+C。"
+  copy_on_select_toggle: 自动将终端选区复制到剪贴板
+  window_state_title: 窗口状态
+  window_state_desc: "在你上次关闭的位置重新打开 Baudrun 和设置窗口。关闭后，每次启动都会以居中的默认尺寸打开。重置按钮会清除已保存的几何信息，并立即调整对应的活动窗口大小。"
+  window_state_toggle: 启动时恢复窗口大小和位置
+  reset_settings_window: 重置设置窗口
+  reset_main_window: 重置主窗口
+  config_dir_title: 配置目录
+  config_dir_desc: "Baudrun 存储配置、主题、皮肤、高亮规则包和 settings.json 的位置。选择其他位置可在多台机器间共享配置（Dropbox、iCloud Drive、dotfile 仓库），或从干净的目录进行测试。将在下次启动时生效。"
+  theme_preview:
+    subtitle_imported: "导入的主题 · 示例输出 · 最后一行显示文本选中效果"
+    subtitle_builtin: "内置主题 · 示例输出 · 最后一行显示文本选中效果"
+  undo: 撤销
+  prompt:
+    choose_config_dir: "选择 Baudrun 配置目录"
+    choose_log_dir: 选择会话日志目录
+    import_skin: "导入皮肤 JSON"
+    import_theme: "导入主题（.itermcolors 或 JSON）"
+    import_pack: "导入高亮规则包 JSON"
+  toast:
+    save_failed: "无法保存设置：%{err}"
+    config_open_failed: "无法打开配置目录：%{err}"
+    config_set: "配置目录已设置。重启 Baudrun 以使用它。"
+    config_set_failed: "无法设置配置目录：%{err}"
+    config_reset: "配置目录已重置。重启 Baudrun 以使用默认值。"
+    config_reset_failed: "无法重置配置目录：%{err}"
+    log_dir_updated: 日志目录已更新
+    log_dir_reset: 日志目录已重置为默认值
+    skin_imported: "已导入皮肤“%{name}”"
+    skin_import_failed: "无法导入皮肤：%{err}"
+    skin_removed: "已移除皮肤“%{name}”"
+    skin_delete_failed: "无法删除皮肤：%{err}"
+    skin_restored: "已恢复皮肤“%{name}”"
+    skin_restore_failed: "无法恢复皮肤：%{err}"
+    theme_imported: "已导入主题“%{name}”"
+    theme_import_failed: "无法导入主题：%{err}"
+    theme_removed: "已移除主题“%{name}”"
+    theme_delete_failed: "无法删除主题：%{err}"
+    theme_restored: "已恢复主题“%{name}”"
+    theme_restore_failed: "无法恢复主题：%{err}"
+    pack_imported: "已导入规则包“%{name}”"
+    pack_import_failed: "无法导入规则包：%{err}"
+    pack_removed: "已移除规则包“%{name}”"
+    pack_delete_failed: "无法删除规则包：%{err}"
+    pack_restored: "已恢复规则包“%{name}”"
+    pack_restore_failed: "无法恢复规则包：%{err}"

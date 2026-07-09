@@ -72,16 +72,17 @@ impl SettingsTab {
         SettingsTab::Advanced,
     ];
 
-    fn label(self) -> &'static str {
-        match self {
-            SettingsTab::Appearance => "Appearance",
-            SettingsTab::Themes => "Themes",
-            SettingsTab::Shortcuts => "Shortcuts",
-            SettingsTab::Highlighting => "Highlighting",
-            SettingsTab::Accessibility => "Accessibility",
-            SettingsTab::Updates => "Updates",
-            SettingsTab::Advanced => "Advanced",
-        }
+    fn label(self) -> SharedString {
+        let label = match self {
+            SettingsTab::Appearance => t!("settings.tab.appearance"),
+            SettingsTab::Themes => t!("settings.tab.themes"),
+            SettingsTab::Shortcuts => t!("settings.tab.shortcuts"),
+            SettingsTab::Highlighting => t!("settings.tab.highlighting"),
+            SettingsTab::Accessibility => t!("settings.tab.accessibility"),
+            SettingsTab::Updates => t!("settings.tab.updates"),
+            SettingsTab::Advanced => t!("settings.tab.advanced"),
+        };
+        label.into()
     }
 }
 
@@ -258,9 +259,9 @@ impl SettingsView {
         );
 
         let appearance_opts = vec![
-            Opt::new("auto", "Auto (follow system)"),
-            Opt::new("light", "Light"),
-            Opt::new("dark", "Dark"),
+            Opt::new("auto", &t!("settings.appearance_auto")),
+            Opt::new("light", &t!("settings.appearance_light")),
+            Opt::new("dark", &t!("settings.appearance_dark")),
         ];
         let active_appearance = if current.appearance.is_empty() {
             "auto"
@@ -288,7 +289,7 @@ impl SettingsView {
         // SettingsBus, so `AppView::apply_settings` re-installs the
         // locale (`gpui_component::set_locale`) and every open window
         // re-renders — no restart. See issue #72.
-        let mut locale_opts = vec![Opt::new("", "Auto (follow system)")];
+        let mut locale_opts = vec![Opt::new("", &t!("settings.language_auto"))];
         locale_opts.extend(
             crate::i18n::SUPPORTED
                 .iter()
@@ -420,7 +421,7 @@ impl SettingsView {
 
         let log_dir = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("Default")
+                .placeholder(t!("settings.log_dir_placeholder"))
                 .default_value(current.log_dir.as_str())
         });
 
@@ -443,7 +444,7 @@ impl SettingsView {
         // `Change` (every keystroke) so the dim animates live; no
         // need to wait for Blur the way the saved-setting inputs do.
         let filter_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Filter settings\u{2026}"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(t!("settings.filter_placeholder")));
         let filter_sub = cx.subscribe(&filter_input, |this, input, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let value = input.read(cx).value().to_string();
@@ -519,7 +520,7 @@ impl SettingsView {
                 // up `window` (the `&mut Context<Self>` we're handed
                 // here doesn't carry one).
                 log::error!("save settings: {err}");
-                let msg = format!("Couldn't save settings: {err}");
+                let msg = t!("settings.toast.save_failed", err = err);
                 cx.spawn(async move |weak, cx_async| {
                     let _ = weak.update_in(cx_async, |_, window, view_cx| {
                         window.push_notification(
@@ -579,11 +580,13 @@ impl SettingsView {
     fn filtered_card(
         &self,
         s: SkinTokens,
-        title: &'static str,
-        description: Option<&'static str>,
+        title: impl Into<SharedString>,
+        description: Option<impl Into<SharedString>>,
         body: impl IntoElement,
     ) -> gpui::Div {
-        section_card_with_desc(s, title, description, body).opacity(self.filter_opacity(title))
+        let title: SharedString = title.into();
+        let opacity = self.filter_opacity(&title);
+        section_card_with_desc(s, title, description.map(Into::into), body).opacity(opacity)
     }
 
     fn section_matches_filter(&self, title: &str) -> bool {
@@ -654,8 +657,9 @@ impl SettingsView {
                 cx.spawn(async move |this, cx| {
                     let _ = this.update_in(cx, |_, window, view_cx| {
                         window.push_notification(
-                            Notification::error(SharedString::from(format!(
-                                "Couldn't open config directory: {err}"
+                            Notification::error(SharedString::from(t!(
+                                "settings.toast.config_open_failed",
+                                err = err
                             ))),
                             view_cx,
                         );
@@ -677,7 +681,7 @@ impl SettingsView {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("Choose Baudrun config directory".into()),
+            prompt: Some(t!("settings.prompt.choose_config_dir").into()),
         });
         cx.spawn(async move |this, cx| {
             let Ok(Ok(Some(paths))) = receiver.await else {
@@ -690,8 +694,9 @@ impl SettingsView {
                 if let Err(err) = appdata::write_override(Some(&path)) {
                     log::error!("write config dir override: {err}");
                     window.push_notification(
-                        Notification::error(SharedString::from(format!(
-                            "Couldn't set config directory: {err}"
+                        Notification::error(SharedString::from(t!(
+                            "settings.toast.config_set_failed",
+                            err = err
                         ))),
                         view_cx,
                     );
@@ -700,9 +705,7 @@ impl SettingsView {
                 this.config_dir_display = resolve_config_dir_display();
                 view_cx.notify();
                 window.push_notification(
-                    Notification::success(SharedString::from(
-                        "Config directory set. Restart Baudrun to use it.",
-                    )),
+                    Notification::success(SharedString::from(t!("settings.toast.config_set"))),
                     view_cx,
                 );
             });
@@ -716,8 +719,9 @@ impl SettingsView {
         if let Err(err) = appdata::write_override(None) {
             log::error!("clear config dir override: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!(
-                    "Couldn't reset config directory: {err}"
+                Notification::error(SharedString::from(t!(
+                    "settings.toast.config_reset_failed",
+                    err = err
                 ))),
                 cx,
             );
@@ -726,9 +730,7 @@ impl SettingsView {
         self.config_dir_display = resolve_config_dir_display();
         cx.notify();
         window.push_notification(
-            Notification::success(SharedString::from(
-                "Config directory reset. Restart Baudrun to use the default.",
-            )),
+            Notification::success(SharedString::from(t!("settings.toast.config_reset"))),
             cx,
         );
     }
@@ -741,7 +743,7 @@ impl SettingsView {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("Choose session log directory".into()),
+            prompt: Some(t!("settings.prompt.choose_log_dir").into()),
         });
         cx.spawn(async move |this, cx| {
             let Ok(Ok(Some(paths))) = receiver.await else {
@@ -760,7 +762,9 @@ impl SettingsView {
                     next.log_dir = path_str;
                     this.commit(next, view_cx);
                     window.push_notification(
-                        Notification::success(SharedString::from("Log directory updated")),
+                        Notification::success(SharedString::from(t!(
+                            "settings.toast.log_dir_updated"
+                        ))),
                         view_cx,
                     );
                 }
@@ -781,7 +785,7 @@ impl SettingsView {
             next.log_dir = String::new();
             self.commit(next, cx);
             window.push_notification(
-                Notification::success(SharedString::from("Log directory reset to default")),
+                Notification::success(SharedString::from(t!("settings.toast.log_dir_reset"))),
                 cx,
             );
         }
@@ -976,7 +980,7 @@ impl SettingsView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Import skin JSON".into()),
+            prompt: Some(t!("settings.prompt.import_skin").into()),
         });
         let store = self.skins_store.clone();
         cx.spawn(async move |this, cx| {
@@ -993,8 +997,9 @@ impl SettingsView {
                     let _ = this.update_in(cx, |this, window, view_cx| {
                         this.rebuild_skin_select(window, view_cx);
                         window.push_notification(
-                            Notification::success(SharedString::from(format!(
-                                "Imported skin \u{201C}{name}\u{201D}"
+                            Notification::success(SharedString::from(t!(
+                                "settings.toast.skin_imported",
+                                name = name
                             ))),
                             view_cx,
                         );
@@ -1002,7 +1007,7 @@ impl SettingsView {
                 }
                 Err(err) => {
                     log::error!("import skin: {err}");
-                    let msg = format!("Couldn't import skin: {err}");
+                    let msg = t!("settings.toast.skin_import_failed", err = err);
                     let _ = this.update_in(cx, |_, window, view_cx| {
                         window.push_notification(
                             Notification::error(SharedString::from(msg)),
@@ -1020,7 +1025,7 @@ impl SettingsView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Import theme (.itermcolors or JSON)".into()),
+            prompt: Some(t!("settings.prompt.import_theme").into()),
         });
         let store = self.themes_store.clone();
         cx.spawn(async move |this, cx| {
@@ -1037,8 +1042,9 @@ impl SettingsView {
                     let _ = this.update_in(cx, |this, window, view_cx| {
                         this.rebuild_theme_select(window, view_cx);
                         window.push_notification(
-                            Notification::success(SharedString::from(format!(
-                                "Imported theme \u{201C}{name}\u{201D}"
+                            Notification::success(SharedString::from(t!(
+                                "settings.toast.theme_imported",
+                                name = name
                             ))),
                             view_cx,
                         );
@@ -1046,7 +1052,7 @@ impl SettingsView {
                 }
                 Err(err) => {
                     log::error!("import theme: {err}");
-                    let msg = format!("Couldn't import theme: {err}");
+                    let msg = t!("settings.toast.theme_import_failed", err = err);
                     let _ = this.update_in(cx, |_, window, view_cx| {
                         window.push_notification(
                             Notification::error(SharedString::from(msg)),
@@ -1075,7 +1081,10 @@ impl SettingsView {
         if let Err(err) = self.skins_store.delete(&id) {
             log::error!("delete skin {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!("Couldn't delete skin: {err}"))),
+                Notification::error(SharedString::from(t!(
+                    "settings.toast.skin_delete_failed",
+                    err = err
+                ))),
                 cx,
             );
             return;
@@ -1098,8 +1107,9 @@ impl SettingsView {
             None
         };
         window.push_notification(
-            Notification::success(SharedString::from(format!(
-                "Removed skin \u{201C}{name}\u{201D}"
+            Notification::success(SharedString::from(t!(
+                "settings.toast.skin_removed",
+                name = name
             )))
             .action(move |_, _, ctx| {
                 let app = app.clone();
@@ -1107,7 +1117,7 @@ impl SettingsView {
                 let prev_active_id = prev_active_id.clone();
                 let notif = ctx.entity();
                 Button::new("undo-skin-delete")
-                    .label("Undo")
+                    .label(t!("settings.undo"))
                     .on_click(move |_, window, cx| {
                         let app = app.clone();
                         let snapshot = snapshot.clone();
@@ -1145,7 +1155,10 @@ impl SettingsView {
         if let Err(err) = self.skins_store.restore(skin) {
             log::error!("restore skin {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!("Couldn't restore skin: {err}"))),
+                Notification::error(SharedString::from(t!(
+                    "settings.toast.skin_restore_failed",
+                    err = err
+                ))),
                 cx,
             );
             return;
@@ -1157,8 +1170,9 @@ impl SettingsView {
         }
         self.rebuild_skin_select(window, cx);
         window.push_notification(
-            Notification::success(SharedString::from(format!(
-                "Restored skin \u{201C}{name}\u{201D}"
+            Notification::success(SharedString::from(t!(
+                "settings.toast.skin_restored",
+                name = name
             ))),
             cx,
         );
@@ -1180,7 +1194,10 @@ impl SettingsView {
         if let Err(err) = self.themes_store.delete(&id) {
             log::error!("delete theme {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!("Couldn't delete theme: {err}"))),
+                Notification::error(SharedString::from(t!(
+                    "settings.toast.theme_delete_failed",
+                    err = err
+                ))),
                 cx,
             );
             return;
@@ -1199,8 +1216,9 @@ impl SettingsView {
             None
         };
         window.push_notification(
-            Notification::success(SharedString::from(format!(
-                "Removed theme \u{201C}{name}\u{201D}"
+            Notification::success(SharedString::from(t!(
+                "settings.toast.theme_removed",
+                name = name
             )))
             .action(move |_, _, ctx| {
                 let app = app.clone();
@@ -1208,7 +1226,7 @@ impl SettingsView {
                 let prev_active_id = prev_active_id.clone();
                 let notif = ctx.entity();
                 Button::new("undo-theme-delete")
-                    .label("Undo")
+                    .label(t!("settings.undo"))
                     .on_click(move |_, window, cx| {
                         let app = app.clone();
                         let snapshot = snapshot.clone();
@@ -1238,7 +1256,10 @@ impl SettingsView {
         if let Err(err) = self.themes_store.restore(theme) {
             log::error!("restore theme {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!("Couldn't restore theme: {err}"))),
+                Notification::error(SharedString::from(t!(
+                    "settings.toast.theme_restore_failed",
+                    err = err
+                ))),
                 cx,
             );
             return;
@@ -1250,8 +1271,9 @@ impl SettingsView {
         }
         self.rebuild_theme_select(window, cx);
         window.push_notification(
-            Notification::success(SharedString::from(format!(
-                "Restored theme \u{201C}{name}\u{201D}"
+            Notification::success(SharedString::from(t!(
+                "settings.toast.theme_restored",
+                name = name
             ))),
             cx,
         );
@@ -1271,9 +1293,9 @@ impl SettingsView {
         };
         let title = SharedString::from(theme.name.clone());
         let subtitle = SharedString::from(if theme.source == "user" {
-            "Imported theme \u{00B7} sample output \u{00B7} last line shows text selection"
+            t!("settings.theme_preview.subtitle_imported")
         } else {
-            "Built-in theme \u{00B7} sample output \u{00B7} last line shows text selection"
+            t!("settings.theme_preview.subtitle_builtin")
         });
         window.open_dialog(cx, move |dlg, _, _| {
             // `close_button(true)` adds the `×` glyph in the title
@@ -1321,7 +1343,10 @@ impl SettingsView {
         if let Err(err) = self.highlight_store.delete_user_pack(&id) {
             log::error!("delete highlight pack {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!("Couldn't delete pack: {err}"))),
+                Notification::error(SharedString::from(t!(
+                    "settings.toast.pack_delete_failed",
+                    err = err
+                ))),
                 cx,
             );
             return;
@@ -1338,15 +1363,16 @@ impl SettingsView {
         }
         let app = cx.entity();
         window.push_notification(
-            Notification::success(SharedString::from(format!(
-                "Removed pack \u{201C}{name}\u{201D}"
+            Notification::success(SharedString::from(t!(
+                "settings.toast.pack_removed",
+                name = name
             )))
             .action(move |_, _, ctx| {
                 let app = app.clone();
                 let snapshot = snapshot.clone();
                 let notif = ctx.entity();
                 Button::new("undo-pack-delete")
-                    .label("Undo")
+                    .label(t!("settings.undo"))
                     .on_click(move |_, window, cx| {
                         let app = app.clone();
                         let snapshot = snapshot.clone();
@@ -1375,7 +1401,10 @@ impl SettingsView {
         if let Err(err) = self.highlight_store.restore_user_pack(&pack) {
             log::error!("restore highlight pack {id}: {err}");
             window.push_notification(
-                Notification::error(SharedString::from(format!("Couldn't restore pack: {err}"))),
+                Notification::error(SharedString::from(t!(
+                    "settings.toast.pack_restore_failed",
+                    err = err
+                ))),
                 cx,
             );
             return;
@@ -1392,8 +1421,9 @@ impl SettingsView {
             cx.notify();
         }
         window.push_notification(
-            Notification::success(SharedString::from(format!(
-                "Restored pack \u{201C}{name}\u{201D}"
+            Notification::success(SharedString::from(t!(
+                "settings.toast.pack_restored",
+                name = name
             ))),
             cx,
         );
@@ -1404,7 +1434,7 @@ impl SettingsView {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Import highlight pack JSON".into()),
+            prompt: Some(t!("settings.prompt.import_pack").into()),
         });
         let store = self.highlight_store.clone();
         cx.spawn(async move |this, cx| {
@@ -1424,8 +1454,9 @@ impl SettingsView {
                     let _ = this.update_in(cx, |_, window, view_cx| {
                         view_cx.notify();
                         window.push_notification(
-                            Notification::success(SharedString::from(format!(
-                                "Imported pack \u{201C}{name}\u{201D}"
+                            Notification::success(SharedString::from(t!(
+                                "settings.toast.pack_imported",
+                                name = name
                             ))),
                             view_cx,
                         );
@@ -1433,7 +1464,7 @@ impl SettingsView {
                 }
                 Err(err) => {
                     log::error!("import highlight: {err}");
-                    let msg = format!("Couldn't import pack: {err}");
+                    let msg = t!("settings.toast.pack_import_failed", err = err);
                     let _ = this.update_in(cx, |_, window, view_cx| {
                         window.push_notification(
                             Notification::error(SharedString::from(msg)),
@@ -1661,7 +1692,7 @@ impl SettingsView {
                     .text_size(px(12.0))
                     .track_focus(&self.capture_focus)
                     .on_key_down(cx.listener(Self::handle_capture_key))
-                    .child("Press a key… (Esc to cancel)")
+                    .child(t!("settings.capture_prompt"))
                     .into_any_element()
             } else {
                 let display: gpui::AnyElement = match parse_spec(&effective) {
@@ -1744,15 +1775,8 @@ impl SettingsView {
 
         div().flex().flex_col().gap_3().child(self.filtered_card(
             s,
-            "Keyboard Shortcuts",
-            Some(
-                "Click a binding to record a new key combo; Escape \
-                     cancels. Use \u{21BA} to reset that row to the \
-                     platform default. macOS uses Cmd-based combos \
-                     (Cmd is never a terminal control character so plain \
-                     \u{2318}K is safe); Linux/Windows use Ctrl+Shift so \
-                     plain Ctrl+letter still passes through to the device.",
-            ),
+            t!("settings.keyboard_shortcuts_title"),
+            Some(t!("settings.keyboard_shortcuts_desc")),
             div().flex().flex_col().gap_2().children(rows),
         ))
     }
@@ -1761,8 +1785,8 @@ impl SettingsView {
         // -- Card 1: Default Theme picker --
         let default_card = self.filtered_card(
             s,
-            "Default Theme",
-            Some("Used by any profile that doesn't set its own theme."),
+            t!("settings.default_theme_title"),
+            Some(t!("settings.default_theme_desc")),
             div()
                 .flex()
                 .flex_col()
@@ -1771,7 +1795,7 @@ impl SettingsView {
                     div()
                         .text_size(px(11.0))
                         .text_color(rgba(s.fg_secondary))
-                        .child("Theme"),
+                        .child(t!("settings.theme_label")),
                 )
                 .child(Select::new(&self.theme_select)),
         );
@@ -1810,12 +1834,12 @@ impl SettingsView {
                             .flex_1()
                             .text_size(px(15.0))
                             .text_color(rgba(s.fg_primary))
-                            .child("Installed Themes"),
+                            .child(t!("settings.installed_themes_title")),
                     )
                     .child(import_button(
                         s,
                         "import-theme",
-                        "Import .itermcolors\u{2026}",
+                        t!("settings.import_itermcolors"),
                         cx,
                         |this, window, cx| this.start_theme_import(window, cx),
                     )),
@@ -1840,7 +1864,11 @@ impl SettingsView {
         let theme_id = theme.id.clone();
         let theme_id_for_delete = theme.id.clone();
         let is_custom = theme.source == "user";
-        let tag = if is_custom { "Custom" } else { "Built-in" };
+        let tag = if is_custom {
+            t!("settings.tag_custom")
+        } else {
+            t!("settings.tag_builtin")
+        };
 
         let mut right = div().flex().flex_row().items_center().gap_2();
         if is_custom {
@@ -1848,7 +1876,7 @@ impl SettingsView {
             right = right.child(trash_button(
                 s,
                 trash_id,
-                "Delete imported theme",
+                t!("settings.tip.delete_theme"),
                 cx,
                 move |this, window, cx| {
                     this.delete_named_theme(theme_id_for_delete.clone(), window, cx);
@@ -1862,7 +1890,7 @@ impl SettingsView {
             // The shape of import_button (pill, accent hover) is also
             // what we want for Preview — reuse rather than duplicate
             // a near-identical helper.
-            "Preview",
+            t!("settings.preview"),
             cx,
             move |this, window, cx| this.open_theme_preview(theme_id.clone(), window, cx),
         ));
@@ -1952,7 +1980,7 @@ impl SettingsView {
                     top = top.child(trash_button(
                         s,
                         trash_id,
-                        "Delete imported pack",
+                        t!("settings.tip.delete_pack"),
                         cx,
                         move |this, window, cx| {
                             this.delete_highlight_pack(id_for_delete.clone(), window, cx);
@@ -1978,21 +2006,15 @@ impl SettingsView {
             .child(import_button(
                 s,
                 "import-highlight",
-                "Import pack\u{2026}",
+                t!("settings.import_pack"),
                 cx,
                 |this, window, cx| this.start_highlight_import(window, cx),
             ))
             .child(div().flex().flex_col().gap_3().children(rows));
         div().flex().flex_col().gap_3().child(self.filtered_card(
             s,
-            "Highlight Packs",
-            Some(
-                "Choose which built-in or imported rule packs colorize \
-                     terminal output. Stack as many as you want — matches \
-                     from each pack are merged in order. With every box \
-                     unchecked highlighting is off, even if a profile has \
-                     it enabled.",
-            ),
+            t!("settings.highlight_packs_title"),
+            Some(t!("settings.highlight_packs_desc")),
             body,
         ))
     }
@@ -2003,12 +2025,8 @@ impl SettingsView {
         // match the Tauri layout.
         let app_skin_card = self.filtered_card(
             s,
-            "App Skin",
-            Some(
-                "How the app chrome (sidebar, panes, buttons) looks. \
-                 Doesn't affect the terminal palette — that's the \
-                 Themes tab.",
-            ),
+            t!("settings.app_skin_title"),
+            Some(t!("settings.app_skin_desc")),
             Select::new(&self.skin_select),
         );
 
@@ -2024,10 +2042,7 @@ impl SettingsView {
             div()
                 .text_size(px(12.0))
                 .text_color(rgba(s.fg_secondary))
-                .child(
-                    "No custom skins installed. Use Import to add a skin \
-                 JSON file.",
-                )
+                .child(t!("settings.no_custom_skins"))
         } else {
             div()
                 .flex()
@@ -2057,12 +2072,12 @@ impl SettingsView {
                             .flex_1()
                             .text_size(px(15.0))
                             .text_color(rgba(s.fg_primary))
-                            .child("Installed Skins"),
+                            .child(t!("settings.installed_skins_title")),
                     )
                     .child(import_button(
                         s,
                         "import-skin",
-                        "Import skin\u{2026}",
+                        t!("settings.import_skin"),
                         cx,
                         |this, window, cx| this.start_skin_import(window, cx),
                     )),
@@ -2077,44 +2092,27 @@ impl SettingsView {
             .child(app_skin_card)
             .child(self.filtered_card(
                 s,
-                "Appearance",
-                Some(
-                    "Light or dark variant of the active skin. \"Auto\" \
-                     follows the system setting. Skins flagged dark-only \
-                     ignore this and pin dark.",
-                ),
+                t!("settings.appearance_title"),
+                Some(t!("settings.appearance_desc")),
                 Select::new(&self.appearance_select),
             ))
             .child(self.filtered_card(
                 s,
-                "Language",
-                Some(
-                    "UI language. \"Auto\" follows the operating system. \
-                     Takes effect immediately — no restart. Terminal \
-                     output is never translated.",
-                ),
+                t!("settings.language_title"),
+                Some(t!("settings.language_desc")),
                 Select::new(&self.locale_select),
             ))
             .child(installed_card)
             .child(self.filtered_card(
                 s,
-                "Terminal Font Size",
-                Some(
-                    "Pixel size of the terminal pane's monospace font. \
-                     Leave blank to use the default (13). Changes the \
-                     terminal grid only — chrome text size is fixed.",
-                ),
+                t!("settings.font_size_title"),
+                Some(t!("settings.font_size_desc")),
                 Input::new(&self.font_size).small().appearance(true),
             ))
             .child(self.filtered_card(
                 s,
-                "Scrollback",
-                Some(
-                    "Lines of terminal output retained for mouse-wheel \
-                     scrollback. Higher values use more memory but let \
-                     you scroll further back through chatty sessions. \
-                     Leave blank to use the default (10000).",
-                ),
+                t!("settings.scrollback_title"),
+                Some(t!("settings.scrollback_desc")),
                 Input::new(&self.scrollback).small().appearance(true),
             ))
     }
@@ -2128,9 +2126,9 @@ impl SettingsView {
         let skin_id = skin.id.clone();
         let trash_id = ElementId::Name(SharedString::from(format!("trash-skin-{}", skin.id)));
         let tag = if !skin.supports_light {
-            "Custom \u{00B7} dark-only".to_string()
+            t!("settings.tag_custom_dark_only")
         } else {
-            "Custom".to_string()
+            t!("settings.tag_custom")
         };
         div()
             .w_full()
@@ -2165,7 +2163,7 @@ impl SettingsView {
             .child(trash_button(
                 s,
                 trash_id,
-                "Remove imported skin",
+                t!("settings.tip.remove_skin"),
                 cx,
                 move |this, window, cx| {
                     this.delete_named_skin(skin_id.clone(), window, cx);
@@ -2184,23 +2182,16 @@ impl SettingsView {
     fn accessibility_pane(&self, s: SkinTokens, cx: &mut Context<Self>) -> impl IntoElement {
         let reduce_motion = cx.global::<crate::ReduceMotion>().0;
         let status_label: SharedString = if reduce_motion {
-            "On — Baudrun is skipping the reconnect-dot pulse and \
-             holding the terminal cursor steady."
-                .into()
+            t!("settings.reduce_motion.status_on").into()
         } else {
-            "Off — Baudrun's optional animations (reconnect-dot pulse, \
-             terminal cursor blink) are on."
-                .into()
+            t!("settings.reduce_motion.status_off").into()
         };
-        let os_path: &'static str = if cfg!(target_os = "macos") {
-            "Change at System Settings → Accessibility → Display → \
-             \u{201C}Reduce motion\u{201D}."
+        let os_path = if cfg!(target_os = "macos") {
+            t!("settings.reduce_motion.path_macos")
         } else if cfg!(target_os = "windows") {
-            "Change at Settings → Accessibility → Visual effects → \
-             \u{201C}Animation effects\u{201D}."
+            t!("settings.reduce_motion.path_windows")
         } else {
-            "Change via your desktop environment's accessibility / \
-             animation settings."
+            t!("settings.reduce_motion.path_other")
         };
         let dot_color = if reduce_motion {
             s.success
@@ -2250,18 +2241,16 @@ impl SettingsView {
                     .text_color(rgba(s.fg_secondary))
                     .child(os_path),
             )
-            .child(div().text_xs().text_color(rgba(s.fg_tertiary)).child(
-                "Detected once at app launch. Relaunch Baudrun \
-                         after flipping the system setting if a value here \
-                         looks stale.",
-            ));
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgba(s.fg_tertiary))
+                    .child(t!("settings.reduce_motion.stale_note")),
+            );
         div().flex().flex_col().gap_3().child(self.filtered_card(
             s,
-            "Reduce Motion",
-            Some(
-                "Honours the OS preference for reduced motion. Read from \
-                 the system at launch; no per-app override.",
-            ),
+            t!("settings.reduce_motion_title"),
+            Some(t!("settings.reduce_motion_desc")),
             body,
         ))
     }
@@ -2296,25 +2285,28 @@ impl SettingsView {
         //      View Release / Dismiss buttons (or "Dismissed"
         //      label when the user has already clicked Dismiss).
         let (dot_color, status_label): (u32, SharedString) = if cur.disable_update_check {
-            (s.fg_tertiary, "Update checks are disabled.".into())
+            (s.fg_tertiary, t!("settings.updates.checks_disabled").into())
         } else if let Some(a) = available.as_ref() {
             if dismissed_match {
                 (
                     s.fg_tertiary,
-                    format!(
-                        "v{} is available — you've dismissed this version.",
-                        a.version
-                    )
-                    .into(),
+                    t!("settings.updates.available_dismissed", version = a.version).into(),
                 )
             } else {
-                (s.warn, format!("v{} is available.", a.version).into())
+                (
+                    s.warn,
+                    t!("settings.updates.available", version = a.version).into(),
+                )
             }
         } else {
-            (s.success, "Baudrun is up to date.".into())
+            (s.success, t!("settings.updates.up_to_date").into())
         };
 
-        let current_line: SharedString = format!("Currently running v{current_version}.").into();
+        let current_line: SharedString = t!(
+            "settings.updates.current_version",
+            version = current_version
+        )
+        .into();
 
         let action_row = available.clone().and_then(|a| {
             if dismissed_match || cur.disable_update_check {
@@ -2329,7 +2321,7 @@ impl SettingsView {
                         .child(import_button(
                             s,
                             "updates-view-release",
-                            "View release",
+                            t!("settings.updates.view_release"),
                             cx,
                             {
                                 let url = a.html_url.clone();
@@ -2339,7 +2331,7 @@ impl SettingsView {
                         .child(import_button(
                             s,
                             "updates-dismiss",
-                            "Dismiss this version",
+                            t!("settings.updates.dismiss"),
                             cx,
                             {
                                 let version = a.version.clone();
@@ -2404,14 +2396,14 @@ impl SettingsView {
             .gap_2()
             .child(bool_field(
                 "settings-check-updates",
-                "Check for updates on launch",
+                t!("settings.updates.check_on_launch"),
                 !cur.disable_update_check,
                 cx,
                 SettingsView::set_check_updates,
             ))
             .child(bool_field(
                 "settings-prerelease-updates",
-                "Include pre-releases (alpha / beta / rc)",
+                t!("settings.updates.include_prerelease"),
                 cur.include_prerelease_updates,
                 cx,
                 SettingsView::set_include_prerelease,
@@ -2423,23 +2415,14 @@ impl SettingsView {
             .gap_3()
             .child(self.filtered_card(
                 s,
-                "Updates",
-                Some(
-                    "Baudrun queries GitHub Releases once at app launch \
-                     for a newer version. No automatic download — when \
-                     an update is available the sidebar's gear icon \
-                     gets an amber dot and this pane shows the new \
-                     version with a button to open the Releases page.",
-                ),
+                t!("settings.updates_title"),
+                Some(t!("settings.updates_desc")),
                 status_body,
             ))
             .child(self.filtered_card(
                 s,
-                "Update Preferences",
-                Some(
-                    "Disable the check entirely, or opt into seeing \
-                     pre-release tags (`-alpha.*` / `-beta.*` / `-rc.*`).",
-                ),
+                t!("settings.update_prefs_title"),
+                Some(t!("settings.update_prefs_desc")),
                 prefs_body,
             ))
     }
@@ -2453,11 +2436,8 @@ impl SettingsView {
             .child(
                 self.filtered_card(
                     s,
-                    "Session Log Directory",
-                    Some(
-                        "Where profiles with \"Record session to file\" enabled \
-                     write their logs. Leave blank to use the default.",
-                    ),
+                    t!("settings.log_dir_title"),
+                    Some(t!("settings.log_dir_desc")),
                     div()
                         .flex()
                         .flex_row()
@@ -2471,14 +2451,14 @@ impl SettingsView {
                         .child(import_button(
                             s,
                             "log-dir-choose",
-                            "Choose\u{2026}",
+                            t!("settings.choose"),
                             cx,
                             |this, window, cx| this.choose_log_dir(window, cx),
                         ))
                         .child(import_button(
                             s,
                             "log-dir-reset",
-                            "Reset",
+                            t!("settings.reset"),
                             cx,
                             |this, window, cx| this.reset_log_dir(window, cx),
                         )),
@@ -2486,15 +2466,11 @@ impl SettingsView {
             )
             .child(self.filtered_card(
                 s,
-                "USB Driver Detection",
-                Some(
-                    "Show a banner in the profile form when a USB-serial \
-                     adapter is plugged in without its vendor driver \
-                     installed.",
-                ),
+                t!("settings.usb_driver_title"),
+                Some(t!("settings.usb_driver_desc")),
                 bool_field(
                     "settings-detect-drivers",
-                    "Detect un-drivered USB adapters",
+                    t!("settings.usb_driver_toggle"),
                     !cur.disable_driver_detection,
                     cx,
                     SettingsView::set_detect_drivers,
@@ -2502,15 +2478,11 @@ impl SettingsView {
             ))
             .child(self.filtered_card(
                 s,
-                "Copy on Select",
-                Some(
-                    "PuTTY-style — copy the terminal selection to the \
-                     clipboard automatically when the mouse is released. \
-                     Avoids having to press \u{2318}/Ctrl+C for every snippet.",
-                ),
+                t!("settings.copy_on_select_title"),
+                Some(t!("settings.copy_on_select_desc")),
                 bool_field(
                     "settings-copy-on-select",
-                    "Copy terminal selection to clipboard automatically",
+                    t!("settings.copy_on_select_toggle"),
                     cur.copy_on_select,
                     cx,
                     SettingsView::set_copy_on_select,
@@ -2519,14 +2491,8 @@ impl SettingsView {
             .child(
                 self.filtered_card(
                     s,
-                    "Window State",
-                    Some(
-                        "Reopen Baudrun and Settings windows where you left \
-                     them. Turn off to land at the centered default \
-                     size each launch instead. The Reset buttons clear \
-                     the saved geometry and resize the matching live \
-                     windows immediately.",
-                    ),
+                    t!("settings.window_state_title"),
+                    Some(t!("settings.window_state_desc")),
                     // Two rows: the on/off toggle on top, then a pair of
                     // Reset buttons (Settings window vs main window) below.
                     // The two-button split lets the user fix just the
@@ -2537,7 +2503,7 @@ impl SettingsView {
                         .gap_2()
                         .child(bool_field(
                             "settings-restore-window-state",
-                            "Restore window size and position on launch",
+                            t!("settings.window_state_toggle"),
                             !cur.disable_window_state_restore,
                             cx,
                             SettingsView::set_restore_window_state,
@@ -2550,14 +2516,14 @@ impl SettingsView {
                                 .child(import_button(
                                     s,
                                     "reset-settings-window",
-                                    "Reset Settings window",
+                                    t!("settings.reset_settings_window"),
                                     cx,
                                     |this, window, cx| this.reset_settings_window(window, cx),
                                 ))
                                 .child(import_button(
                                     s,
                                     "reset-main-window",
-                                    "Reset main window",
+                                    t!("settings.reset_main_window"),
                                     cx,
                                     |this, window, cx| this.reset_main_window(window, cx),
                                 )),
@@ -2609,29 +2575,20 @@ impl SettingsView {
                                         div()
                                             .text_size(px(15.0))
                                             .text_color(rgba(s.fg_primary))
-                                            .child("Config Directory"),
+                                            .child(t!("settings.config_dir_title")),
                                     )
                                     .child(
                                         div()
                                             .text_size(px(12.0))
                                             .text_color(rgba(s.fg_secondary))
                                             .whitespace_normal()
-                                            .child(
-                                                "Where Baudrun stores profiles, themes, \
-                                                 skins, highlight packs, and \
-                                                 settings.json. Choose a different \
-                                                 location to share configs across \
-                                                 machines (Dropbox, iCloud Drive, \
-                                                 dotfile repo) or to test from a clean \
-                                                 directory. Takes effect on the next \
-                                                 launch.",
-                                            ),
+                                            .child(t!("settings.config_dir_desc")),
                                     ),
                             )
                             .child(import_button(
                                 s,
                                 "config-dir-reveal",
-                                "Reveal",
+                                t!("settings.reveal"),
                                 cx,
                                 |this, window, cx| this.reveal_config_dir(window, cx),
                             )),
@@ -2678,14 +2635,14 @@ impl SettingsView {
                             .child(div().flex_shrink_0().child(import_button(
                                 s,
                                 "config-dir-choose",
-                                "Choose\u{2026}",
+                                t!("settings.choose"),
                                 cx,
                                 |this, window, cx| this.choose_config_dir(window, cx),
                             )))
                             .child(div().flex_shrink_0().child(import_button(
                                 s,
                                 "config-dir-reset",
-                                "Reset",
+                                t!("settings.reset"),
                                 cx,
                                 |this, window, cx| this.reset_config_dir(window, cx),
                             ))),
