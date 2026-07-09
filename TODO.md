@@ -922,7 +922,22 @@ libintl dep that's overkill for ~180 strings). Both lose to
       own chrome (dropdown/calendar/dialog) flips; the full Chinese
       UI is A.2.
 
-- [ ] **Phase A.2 (~6–8 hr, the real cost).** Full infrastructure: add
+- [x] **Phase A.2 (done — `feat/i18n`, #72).** `rust-i18n = "4"` +
+      `i18n!("locales", fallback = "en")`; all ~313 UI strings
+      extracted to `locales/en.yml` and wrapped in `t!()` across 7
+      files; full `locales/zh-CN.yml` Simplified Chinese translation.
+      Verified: every t!() key resolves, zh-CN structurally identical
+      (0 missing / 0 extra / 0 placeholder mismatch). **Remaining
+      polish (follow-up, not blocking):** dropdown `Select` OPTION
+      labels are built at form-open and only re-translate on reopen
+      during a LIVE language switch (everything rendered per-frame
+      updates instantly; a fresh launch in a locale is fully
+      translated). To make options live too: rebuild the editor +
+      Settings `Select` entities when the locale changes (precedent:
+      `set_system_dark` re-applies chrome on OS appearance flips).
+      Original A.2 detail retained below for reference.
+
+- [ ] **Phase A.2 — original plan (reference).** Full infrastructure: add
       `rust-i18n = "4"` to Cargo.toml; extract every Baudrun string
       into `locales/en.yml` (YAML, see refinement note above) with
       hierarchical keys
