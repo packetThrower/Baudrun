@@ -664,8 +664,11 @@ jobs:
     runs-on: ubuntu-latest
     # The one job that needs write: it creates the GitHub Release and
     # uploads the artifacts. Everything upstream is read-only.
+    # `actions: write` is the minimum extra scope for the final step
+    # to dispatch after_release.yml via GITHUB_TOKEN (see there).
     permissions:
       contents: write
+      actions: write
     steps:
       # Full history + tags so the release-notes step below can
       # resolve the previous tag and list commits between it and
@@ -766,3 +769,25 @@ jobs:
           # as pre-release so GitHub shows the "Pre-release" badge
           # and leaves "Latest release" on the most recent stable.
           prerelease: ${{ contains(env.EFFECTIVE_VERSION, '-') }}
+
+      # Kick off the winget submission automatically. The release
+      # above is published with GITHUB_TOKEN, and GitHub's loop-
+      # prevention rule blocks a GITHUB_TOKEN-published release from
+      # cascading its `release: published` event to after_release.yml
+      # — which is why that submission needed a manual `gh workflow
+      # run` for v0.13.0–v0.15.0. The `workflow_dispatch` trigger is
+      # the documented exception to that rule (it fires even from
+      # GITHUB_TOKEN), so dispatching after_release.yml here makes the
+      # release fully hands-off with no new credential — WINGET_TOKEN
+      # still does the actual winget-pkgs PR inside that workflow, and
+      # after_release.yml keeps its own workflow_dispatch entry for
+      # manual re-runs if a submission ever flakes.
+      #
+      # Stable tags only: pre-releases have no winget channel, and
+      # after_release.yml's publish job skips them internally anyway —
+      # gating here just avoids a spurious skipped run per pre-release.
+      - name: Trigger winget submission
+        if: ${{ !contains(env.EFFECTIVE_VERSION, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run after_release.yml -f tag_name="${{ github.ref_name }}"
