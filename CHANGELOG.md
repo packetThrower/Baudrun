@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-07-10
+
 ### Added
 
 - **Simplified Chinese (简体中文) UI, and a language setting**
@@ -24,12 +26,23 @@ final stable entry at tag time.
   translatable, with a full Simplified Chinese translation as the
   first non-English language. Pick it under Settings → Appearance →
   Language, or leave the setting on "Auto" to follow the operating
-  system's locale. Terminal output is never translated — only the
-  chrome around it. A language change applies across open windows
-  without a restart (dropdown option lists refresh when their form
-  is reopened). Additional languages are welcome as translation
-  contributions — one `locales/<lang>.yml` file plus a one-line
-  entry, no code changes.
+  system's locale, which is detected with Simplified/Traditional
+  awareness. Terminal output is never translated — only the chrome
+  around it. Switching language takes effect immediately across every
+  open window, dropdown options included, with no restart.
+  Additional languages are welcome as translation contributions —
+  one `locales/<lang>.yml` file plus a one-line entry, no code
+  changes. See
+  [`locales/README.md`](https://github.com/packetThrower/Baudrun/blob/main/locales/README.md).
+
+### Security
+
+- **quick-xml raised to 0.41** (via `plist` 1.10), which patches two
+  denial-of-service advisories (RUSTSEC-2026-0194 / -0195) on the
+  only path that parsed untrusted input at runtime — the
+  `.itermcolors` theme importer.
+- **crossbeam-epoch raised to 0.9.20** (RUSTSEC-2026-0204), an
+  invalid-pointer dereference in a `Display` impl.
 
 ## [0.14.0] — 2026-07-03
 
