@@ -680,10 +680,67 @@ implemented in the new stack post-migration.
       backend (probe loop with cancel) + a small modal in the
       profile form showing per-rate progress so the user can bail
       mid-probe.
+- [ ] **Vintage terminal emulation modes.** **[for fun / on interest]**
+      A per-profile "Emulate" picker that makes Baudrun behave like a
+      specific classic terminal instead of today's modern-xterm
+      default — both what it renders from the device and what it sends
+      back for keys. Retro-cool aside, it's genuinely useful for
+      talking to old minis, retro machines, and gear that expects a
+      particular terminal's dialect. Three layers, increasing in cost:
+
+      1. **Outbound key dialect (easy — do this first).** Today the
+         key map in `terminal_view.rs` is a fixed ANSI table (arrows →
+         `ESC[A/B/C/D`, xterm `ESC[…~` for Home/End/PgUp/Fn). A
+         selected emulation swaps that table: VT100 application-cursor
+         mode (DECCKM) sends `ESC O A/B/C/D`, VT52 sends bare
+         `ESC A/B/C/D`, and each terminal has its own PF / function-key
+         / keypad sequences. Pure lookup-table work plus a DECCKM
+         state bit — low effort, and it immediately makes hosts that
+         key off VT52 arrows or specific PF keys behave.
+      2. **Answerback + Device Attributes identity (small).** Reply to
+         `ENQ` with a configurable answerback string and to DA
+         (`ESC[c`) / DECID with the selected terminal's identity, so a
+         host probing the line believes it's talking to a real
+         VT100 / VT220 / etc. (This is the "answerback" feature the
+         Non-goals below used to reject — pointless for a modern
+         console, but exactly the point here.)
+      3. **Inbound rendering fidelity (hard — the ambitious end).**
+         `alacritty_terminal` parses incoming bytes as modern
+         xterm/VT100+, which already renders the VT100/VT102/VT220
+         family correctly (they're a subset — so those "just work"
+         today for display). True support for non-ANSI terminals means
+         a different parser: VT52 mode (non-CSI `ESC`-letter escapes —
+         check whether alacritty honours the DECANM VT52 toggle
+         `ESC[?2l` before hand-rolling), and further out the genuinely
+         alien ones (ADM-3A, Wyse, Televideo, Hazeltine) whose
+         cursor-addressing and escapes share nothing with ANSI and
+         need a per-emulation state machine feeding the grid. Big lift;
+         only worth it for the retro-authenticity payoff.
+
+      Candidate lineup, roughly by expectation + tractability:
+      - **DEC VT family** (best documented, most commonly expected):
+        VT52, VT100, VT102, VT220, VT320. VT100 / VT220 are the anchors.
+      - **Non-DEC classics** (custom-parser territory): ADM-3A (the
+        `hjkl` terminal vi's arrows came from), Wyse WY-50 / WY-60,
+        Televideo TVI-925 / TVI-950, Heath/Zenith H19 / Z19, Hazeltine
+        1500.
+      - **Dumb TTY** (no emulation — print bytes as-is) as the honest
+        baseline at the other extreme.
+      - Out of scope: vector-graphics terminals (Tektronix 4010/4014)
+        and block-mode / 3270-style terminals — a different rendering
+        model entirely.
+
+      Suggested first slice: a per-profile emulation picker wired to
+      layer 1 (key dialects) for the DEC VT set plus a dumb-TTY mode,
+      leaving layers 2–3 as follow-ups. That alone delivers most of
+      the "it feels like a real VT100" payoff for a lookup table's
+      worth of code.
 
 Non-goals: character-set translation (UTF-8 is universal on modern
-network gear), answerback strings (legacy VT-terminal feature, no
-real use for serial consoles).
+network gear). Answerback strings were previously a non-goal here;
+they move in-scope under "Vintage terminal emulation modes" above —
+useless for a modern serial console, but part of authentic
+old-terminal emulation.
 
 ## Footer / notification parity with Tauri
 
