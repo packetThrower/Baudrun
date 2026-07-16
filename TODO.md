@@ -766,6 +766,19 @@ landed in commit TODO; the items below are the remaining feature work.
       scope including signature verification and partial-write
       recovery. Defer until there's time for a focused arc.
 
+## Docs site
+
+- [ ] **Astro 7 migration (docs-next).** Starlight 0.41+ peer-requires
+      astro ^7.0.2 (a major), so both must bump together — dependabot's
+      docs-minor group proposed starlight alone twice (#64, #75) and
+      broke the build both times; `.github/dependabot.yml` now ignores
+      starlight >=0.41 and astro majors until this lands. The work:
+      bump astro 6.4.x -> 7.x + starlight 0.40 -> 0.41.x in one change,
+      walk astro 7's breaking-changes list, re-verify the custom
+      component overrides (`Hero.astro`, `SocialIcons.astro`), the
+      sitemap config, and a local `pnpm build` + visual pass. Remove
+      both dependabot ignore entries when done.
+
 ## Distribution
 
 - [ ] **Code sign + notarize macOS binary.** Requires enrollment in the
