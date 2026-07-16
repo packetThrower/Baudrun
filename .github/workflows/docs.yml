@@ -47,7 +47,14 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
         with:
-          version: 11
+          # Exact pin, not a floating major. `version: 11` resolved to
+          # whatever 11.x was latest, and pnpm 11.12/11.13's standalone
+          # self-installer broke ("Cannot use 'in' operator to search
+          # for 'integrity' in undefined"), failing every docs build
+          # from 2026-07-14 regardless of what the PR touched. 11.11.0
+          # is the last version this repo built green with (2026-07-10)
+          # and matches local dev. Bump deliberately, not by float.
+          version: 11.11.0
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
