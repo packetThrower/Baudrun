@@ -33,6 +33,21 @@ updates:
     groups:
       docs-minor:
         update-types: ["minor", "patch"]
+    ignore:
+      # Starlight 0.41+ peer-requires astro 7 (`"astro": "^7.0.2"`),
+      # a new MAJOR — but 0.40 -> 0.41 looks like a minor, so the
+      # docs-minor group kept proposing it and the build kept failing
+      # (`import { AstroError } from "astro/errors"` doesn't resolve
+      # against astro 6). PRs #64 and #75 were both this. Ignore it
+      # until the astro-7 migration is done deliberately (astro +
+      # starlight bumped together, custom component overrides — Hero,
+      # SocialIcons — re-verified). Remove both entries when that
+      # lands. Astro majors were already individually-reviewed; the
+      # explicit ignore just keeps the pair in lockstep.
+      - dependency-name: "@astrojs/starlight"
+        versions: [">=0.41.0"]
+      - dependency-name: "astro"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions in .github/workflows/. The workflows pin every
   # action to a full commit SHA; Dependabot understands SHA pins
