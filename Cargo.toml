@@ -51,14 +51,14 @@ flume = "0.12"
 # targets gpui 0.2 from crates.io and would conflict with our
 # Zed-git gpui pin. Their git tip pins gpui to the Zed monorepo
 # with no rev, so Cargo unifies it against ours.
-gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "b2472cd798422b05e2448d07aaab1550c21155f7" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "3c270ed244d06fb211b47f156761c1d833eac535" }
 
 # Lucide icon SVGs. Without `.with_assets(Assets)` at startup, every
 # `IconName::*` referenced by a gpui-component widget renders an
 # empty rect (worst on Windows / Linux where `TitleBar` draws its
 # own min / max / close from these). Same git rev as gpui-component
 # so the icon set tracks the `IconName` enum.
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "b2472cd798422b05e2448d07aaab1550c21155f7" }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "3c270ed244d06fb211b47f156761c1d833eac535" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
