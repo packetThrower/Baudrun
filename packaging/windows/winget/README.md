@@ -25,7 +25,11 @@ which submits the winget-pkgs PR for us:
 
   1. release.yml publishes the GitHub Release (stable tag only —
      pre-release tags skip the MSI build and the winget submission).
-  2. The Release-published event fires `after_release.yml`.
+  2. release.yml completing fires `after_release.yml` (a `workflow_run`
+     trigger — a `release: published` trigger never fires here, because
+     the Release is created with the default GITHUB_TOKEN whose events
+     GitHub suppresses; the job guard requires a successful run and a
+     stable `v*` tag).
   3. The `publish_winget` job syncs the maintainer's
      `packetThrower/winget-pkgs` fork against upstream master, then
      runs `vedantmgoyal9/winget-releaser` to render the templates,
@@ -34,10 +38,9 @@ which submits the winget-pkgs PR for us:
   4. The winget-pkgs validator runs on the PR; on success a
      moderator merges it.
 
-The flow is hands-off after the tag push. If the release-event
-trigger doesn't fire (rare GitHub Actions slow-publish race), use
-the `workflow_dispatch` trigger from the Actions UI with the tag
-name to re-run just the winget submission.
+The flow is hands-off after the tag push. If the auto-triggered run
+flakes, use the `workflow_dispatch` trigger from the Actions UI with
+the tag name to re-run just the winget submission.
 
 **One-time setup** (already done as of v0.13.0):
 
