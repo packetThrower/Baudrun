@@ -768,16 +768,16 @@ landed in commit TODO; the items below are the remaining feature work.
 
 ## Docs site
 
-- [ ] **Astro 7 migration (docs-next).** Starlight 0.41+ peer-requires
-      astro ^7.0.2 (a major), so both must bump together — dependabot's
-      docs-minor group proposed starlight alone twice (#64, #75) and
-      broke the build both times; `.github/dependabot.yml` now ignores
-      starlight >=0.41 and astro majors until this lands. The work:
-      bump astro 6.4.x -> 7.x + starlight 0.40 -> 0.41.x in one change,
-      walk astro 7's breaking-changes list, re-verify the custom
-      component overrides (`Hero.astro`, `SocialIcons.astro`), the
-      sitemap config, and a local `pnpm build` + visual pass. Remove
-      both dependabot ignore entries when done.
+- [x] **Astro 7 migration (docs-next) — done 2026-07-21.** Became
+      security-driven rather than optional: six astro XSS advisories
+      (alerts #13–#18) plus the svgo `removeScripts` bypass (#19) were
+      patched only in astro 7.x's dependency line. Landed astro
+      6.4.8 -> 7.1.3 + starlight 0.40 -> 0.41.4 together; custom
+      overrides (Hero, SocialIcons), sitemap, pagefind, and the
+      playground all built clean with no code changes needed. The
+      bump also carried esbuild to exactly its patched 0.28.1
+      (clearing long-deferred alert #6) and svgo to 4.0.2. Both
+      dependabot lockstep ignores lifted.
 
 ## Distribution
 
