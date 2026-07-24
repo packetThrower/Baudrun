@@ -15,6 +15,28 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.15.1] — 2026-07-21
+
+Maintenance release — dependency and security refresh, no feature
+changes.
+
+### Security
+
+- **Documentation site moved to Astro 7** (7.1.3, with Starlight
+  0.41.4), clearing seven advisories that were only patched in the
+  Astro 7 line: six cross-site-scripting issues in Astro itself,
+  the svgo `removeScripts` bypass, and the long-standing esbuild
+  dev-server file-read (its patched 0.28.1 ships in Astro 7's
+  dependency tree). None of these affected the Baudrun app — the
+  docs are a static site — but the published site now builds on a
+  fully patched toolchain.
+
+### Changed
+
+- **gpui refreshed** (Zed `d753a31` → `2fd6e23`) along with
+  gpui-component, plus routine minor updates across serde,
+  serde_json, thiserror, uuid, regex, and rust-i18n.
+
 ## [0.15.0] — 2026-07-10
 
 ### Added
