@@ -15,6 +15,31 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.15.2] — 2026-08-25
+
+Maintenance release — dependency and security refresh, no feature
+changes.
+
+### Security
+
+- **quinn-proto patched** (0.11.14 → 0.11.16): remote memory
+  exhaustion via unbounded out-of-order QUIC stream reassembly.
+  Target-gated transitive dep not compiled on macOS, but the
+  v0.15.1 Windows and Linux binaries carried the vulnerable
+  version.
+- **h2 patched** (0.4.14 → 0.4.19): unbounded memory growth from
+  empty HTTP/2 DATA frames when streams aren't actively drained.
+  Client-side transitive dep via gpui.
+- **Docs toolchain refreshed** (astro 7.2.6, starlight 0.41.8,
+  plus nanoid, postcss, and js-yaml patches), clearing three
+  advisories against the static docs site's build tooling — none
+  affected the Baudrun app.
+
+### Changed
+
+- **gpui refreshed** (Zed `2fd6e23` → `d71f146`), plus routine
+  minor updates across log, uuid, thiserror, and aho-corasick.
+
 ## [0.15.1] — 2026-07-21
 
 Maintenance release — dependency and security refresh, no feature
