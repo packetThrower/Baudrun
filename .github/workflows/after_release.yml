@@ -93,8 +93,14 @@ jobs:
             Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -ContentType "application/json"
             Write-Host "Synced winget-pkgs fork against upstream master"
           } catch {
-            Write-Host "Fork sync skipped (already up to date or fork missing): $_"
-            Write-Host "Continuing — the winget-releaser action will surface a real error if the fork is genuinely unreachable"
+            # Not benign after all — v0.15.2's submission failed here when
+            # upstream added workflow files and the PAT lacked `workflow`
+            # scope, and this catch mislabeled it "already up to date".
+            # Surface the real API error as a warning annotation; still
+            # continue, since the fork may already be current enough for
+            # komac to succeed anyway.
+            Write-Host "::warning title=winget-pkgs fork sync failed::$_"
+            Write-Host "If the error mentions workflow scope, regrant WINGET_TOKEN with the workflow scope, then re-sync the fork manually: gh repo sync $env:GITHUB_REPOSITORY_OWNER/winget-pkgs --branch master"
           }
         env:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
