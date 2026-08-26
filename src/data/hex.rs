@@ -39,7 +39,7 @@ pub fn parse_hex_string(raw: &str) -> Result<Vec<u8>, &'static str> {
     }
     let mut out = Vec::with_capacity(cleaned.len() / 2);
     let bytes = cleaned.as_bytes();
-    for chunk in bytes.chunks_exact(2) {
+    for chunk in bytes.as_chunks::<2>().0 {
         let s = std::str::from_utf8(chunk).unwrap();
         out.push(u8::from_str_radix(s, 16).map_err(|_| "non-hex characters")?);
     }
