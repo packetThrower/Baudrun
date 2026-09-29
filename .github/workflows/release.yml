@@ -505,6 +505,41 @@ jobs:
       - name: Build .deb + .AppImage
         run: cargo packager --release -f deb -f appimage
 
+      # cargo-packager ships AppRun as 0744, and the AppImage stores every
+      # file as root-owned, so for anyone but root AppRun is read-only. The
+      # AppImage runtime's FUSE mount tolerates that; a kernel squashfs mount
+      # doesn't — firejail (the AppImage catalog's test harness) refuses to
+      # start it ("AppRun: Permission denied"). Re-pack with AppRun 0755, and
+      # fail the build if any executable is left owner-only. appimagetool
+      # only publishes a `continuous` tag, so there's no version to pin; with
+      # neither -u nor -g it embeds no update information.
+      - name: Make AppRun executable for every user
+        run: |
+          set -e
+          APPIMAGE=$(find "target/release" -maxdepth 1 -name '*.AppImage' | head -1)
+          if [ -z "$APPIMAGE" ]; then
+            echo "::error::no .AppImage produced by cargo-packager"
+            exit 1
+          fi
+          ARCH="${{ matrix.rpm_arch }}"
+
+          curl -fsSL -o appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
+          chmod +x appimagetool
+          TOOL="$PWD/appimagetool"
+
+          cd "$(dirname "$APPIMAGE")"
+          NAME=$(basename "$APPIMAGE")
+          rm -rf squashfs-root
+          "./$NAME" --appimage-extract >/dev/null
+          chmod 0755 squashfs-root/AppRun
+          if find squashfs-root -type f -perm -u=x ! -perm -o=x | grep .; then
+            echo "::error::executables above aren't runnable by other users"
+            exit 1
+          fi
+          ARCH="$ARCH" "$TOOL" squashfs-root "$NAME"
+          rm -rf squashfs-root
+
       # cargo-packager 0.11 doesn't expose .deb postinst hooks, so
       # we patch the freshly-built .deb to inject one that reloads
       # udev rules + retriggers attached tty/usb devices. Matches
