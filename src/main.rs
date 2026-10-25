@@ -1,7 +1,7 @@
 //! Baudrun binary entry point.
 //!
 //! Wires the data stores (profiles / settings / skins / themes /
-//! highlight packs) under `gpui_platform::application().run(...)`,
+//! highlight packs) under `gpui_kit::application().run(...)`,
 //! installs the macOS menubar + dock menu + reduce-motion global,
 //! and opens the first window. The window root is `app_view::AppView`;
 //! everything past boot is window-driven.
@@ -30,11 +30,14 @@
 // compiles every `locales/*.yml` into the binary at build time with
 // English as the fallback for any key a locale is missing. The active
 // locale is the process-global set by `i18n::init` /
-// `AppView::apply_locale` via `gpui_component::set_locale` — the same
+// `AppView::apply_locale` via `gpui_kit::component::set_locale` — the same
 // global gpui-component's own widget strings read, so one locale
 // switch re-languages both layers. See src/i18n.rs + issue #72.
 #[macro_use]
 extern crate rust_i18n;
+// gpui is reached through GPUI Kit (see Cargo.toml); the alias keeps
+// `gpui::` paths and gpui's derive-macro output resolving.
+extern crate gpui_kit as gpui;
 
 rust_i18n::i18n!("locales", fallback = "en");
 
@@ -55,7 +58,7 @@ mod updater;
 use std::rc::Rc;
 
 use gpui::{App, AppContext, Context, KeyBinding, Menu, MenuItem, Window};
-use gpui_component::{scroll::ScrollbarShow, Root, Theme, WindowExt};
+use gpui_kit::component::{scroll::ScrollbarMode, Root, Theme, WindowExt};
 
 use app_view::{open_app_window, AppView, WindowInit};
 use settings_bus::{SettingsBus, SettingsEvent};
@@ -191,10 +194,10 @@ fn main() {
     // `.with_assets(...)` registers gpui-component's bundled icon
     // SVGs as the app's asset source so every `IconName::*` the
     // widget tree references (most visibly the min/max/close
-    // controls drawn by `gpui_component::TitleBar` on Windows and
+    // controls drawn by `gpui_kit::component::TitleBar` on Windows and
     // Linux) resolves to a real glyph. Without it the title bar
     // hover targets render blank — see the Cargo.toml dep comment.
-    let app = gpui_platform::application().with_assets(gpui_component_assets::Assets);
+    let app = gpui_kit::application().with_assets(gpui_kit::assets::Assets);
 
     // macOS single-instance handler. With LSMultipleInstancesProhibited
     // set in Info.plist, Launch Services routes second-launch attempts
@@ -232,7 +235,7 @@ fn main() {
         // for the Theme global. The widgets we mounted before
         // Phase 2.4 (plain divs only) didn't need this; the moment
         // an Input appears, this is mandatory.
-        gpui_component::init(cx);
+        gpui_kit::component::init(cx);
 
         // Linux: register a bundled monospace font so the terminal
         // grid doesn't depend on what the user's distro happens to
@@ -289,7 +292,7 @@ fn main() {
         // there's more content below the fold. AppView::apply_skin
         // re-establishes the rest of the Theme on every settings
         // change but doesn't touch this preference.
-        Theme::global_mut(cx).scrollbar_show = ScrollbarShow::Always;
+        Theme::set_scrollbar_mode(ScrollbarMode::Always, cx);
 
         // Build the profile + settings stores once at startup. Both
         // read from the user's real config dir (same paths the
@@ -757,7 +760,7 @@ fn install_app_menu(
 /// keystrokes that arrive while focus has drifted off the AppView
 /// subtree) still reach the right method.
 ///
-/// Window root is a `gpui_component::Root`; its inner `view`
+/// Window root is a `gpui_kit::component::Root`; its inner `view`
 /// `AnyView` is the `Entity<AppView>` we built in `open_app_window`.
 /// The downcast can fail in principle (someone else's window
 /// type), but in practice every window we open is rooted in
@@ -839,7 +842,7 @@ where
 /// discovered after the Windows build smoke-test: clearing nukes
 /// gpui-component's Input-context keybindings (`backspace`,
 /// `delete`, arrow keys, undo/redo, paste, …) that
-/// `gpui_component::init` installs at boot, leaving every Input
+/// `gpui_kit::component::init` installs at boot, leaving every Input
 /// widget unable to handle plain text editing. Re-installing them
 /// ourselves means hand-rolling 30+ bindings across half a dozen
 /// gpui-component modules and keeping that list in sync with
@@ -1034,7 +1037,7 @@ fn install_macos_dock_icon() {
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let icon_path = format!("{manifest_dir}/resources/icons/icon.icns");
-    // SAFETY: We're on the main thread (gpui_platform::application
+    // SAFETY: We're on the main thread (gpui_kit::application
     // runs its main callback on the main thread on macOS). The
     // ObjC objects we touch (NSApplication.sharedApplication,
     // NSImage, NSGraphicsContext via lockFocus) are all main-
@@ -1513,7 +1516,7 @@ fn confirm_quit_then_quit_inner(cx: &mut App) {
                      disconnect it and cancel any in-flight transfers.",
                 )
                 .button_props(
-                    gpui_component::dialog::DialogButtonProps::default()
+                    gpui_kit::component::dialog::DialogButtonProps::default()
                         .show_cancel(true)
                         .ok_text("Quit")
                         .cancel_text("Cancel"),

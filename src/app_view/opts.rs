@@ -12,7 +12,7 @@
 //! table.
 
 use gpui::{AppContext, Context, Entity, SharedString, Window};
-use gpui_component::{
+use gpui_kit::component::{
     select::{SelectItem, SelectState},
     IndexPath,
 };

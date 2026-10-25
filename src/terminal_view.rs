@@ -41,7 +41,7 @@ use gpui::{
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point as PixelPoint, Render,
     ScrollDelta, ScrollWheelEvent, SharedString, Task, TextRun, Window,
 };
-use gpui_component::WindowExt;
+use gpui_kit::component::WindowExt;
 
 use crate::term_bridge::{
     make_term, mirror_to_grid, Dims, ListenerState, Palette, TerminalListener,

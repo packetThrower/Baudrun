@@ -19,19 +19,15 @@ name = "Baudrun"
 path = "src/main.rs"
 
 [dependencies]
-# Zed's UI framework. No `rev` here on purpose — gpui-component's
-# git tip pins gpui as `git = "..."` with no rev, and Cargo only
-# unifies two git deps when their specs match. With a rev pin we
-# get a duplicated Zed crate graph. Reproducibility comes from
-# Cargo.lock; bump with `cargo update -p gpui` deliberately.
-gpui = { git = "https://github.com/zed-industries/zed" }
-
-# Per-platform backend. The Linux wayland + x11 features are NOT
-# default — without them, `gpui::guess_compositor()` returns
-# "Wayland" inside any Wayland session but the matching arm in
-# `gpui_linux/src/linux.rs` is cfg'd out, hitting `unreachable!()`
-# before the first window paints.
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
+# GPUI Kit: gpui (crates.io `gpui-pre` snapshot), its platform
+# backends, gpui-component and the default icon assets behind one
+# dependency. `extern crate gpui_kit as gpui;` in main.rs keeps the
+# `gpui::` paths (and gpui's derive-macro output) resolving through it.
+# Exact pin: gpui-kit pins one gpui-pre snapshot, and all four
+# packetThrower apps move to the same Kit version in one pass.
+# The Linux wayland + x11 backends and macOS `runtime_shaders` come
+# enabled through gpui-kit's own gpui-pre-platform dependency.
+gpui-kit = "=0.8.0"
 
 # VT parser + grid state only (NOT the renderer — gpui owns rendering).
 alacritty_terminal = "0.26"
@@ -46,19 +42,6 @@ serialport = "4"
 # Sync+async channel. Sync `send`/`recv` from the OS-thread side,
 # `recv_async` awaited inside gpui foreground tasks.
 flume = "0.12"
-
-# UI widget library. Pinned to a git rev because crates.io 0.5.1
-# targets gpui 0.2 from crates.io and would conflict with our
-# Zed-git gpui pin. Their git tip pins gpui to the Zed monorepo
-# with no rev, so Cargo unifies it against ours.
-gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "3c270ed244d06fb211b47f156761c1d833eac535" }
-
-# Lucide icon SVGs. Without `.with_assets(Assets)` at startup, every
-# `IconName::*` referenced by a gpui-component widget renders an
-# empty rect (worst on Windows / Linux where `TitleBar` draws its
-# own min / max / close from these). Same git rev as gpui-component
-# so the icon set tracks the `IconName` enum.
-gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "3c270ed244d06fb211b47f156761c1d833eac535" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

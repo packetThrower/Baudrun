@@ -17,7 +17,7 @@ use gpui::{
     div, prelude::*, px, rgba, AppContext, Context, DismissEvent, ElementId, Entity, IntoElement,
     MouseButton, MouseUpEvent, SharedString, Window,
 };
-use gpui_component::{
+use gpui_kit::component::{
     checkbox::Checkbox,
     input::{Input, InputState},
     notification::Notification,

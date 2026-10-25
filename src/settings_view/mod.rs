@@ -27,14 +27,14 @@ use gpui::{
     KeyDownEvent, MouseButton, MouseUpEvent, PathPromptOptions, Render, SharedString, Subscription,
     Window,
 };
-use gpui_component::{
+use gpui_kit::component::{
     button::Button,
     checkbox::Checkbox,
     input::{Input, InputEvent, InputState},
     kbd::Kbd,
     notification::Notification,
     select::{Select, SelectEvent, SelectItem, SelectState},
-    Root, Sizable, TitleBar, WindowExt,
+    Sizable, TitleBar, WindowExt,
 };
 
 use crate::data::appdata;
@@ -294,7 +294,7 @@ impl SettingsView {
         // (each language in its own script) so a user in the "wrong"
         // language can still find theirs. Committing routes through
         // SettingsBus, so `AppView::apply_settings` re-installs the
-        // locale (`gpui_component::set_locale`) and every open window
+        // locale (`gpui_kit::component::set_locale`) and every open window
         // re-renders — no restart. See issue #72.
         let mut locale_opts = vec![Opt::new("", &t!("settings.language_auto"))];
         locale_opts.extend(
@@ -480,7 +480,7 @@ impl SettingsView {
             // Seed with the locale the selects above were just built
             // in, so render doesn't fire a spurious relabel on the
             // first frame.
-            built_locale: gpui_component::locale().to_string(),
+            built_locale: gpui_kit::component::locale().to_string(),
             font_size,
             scrollback,
             _scrollback_sub: scrollback_sub,
@@ -879,7 +879,7 @@ impl SettingsView {
         // Settings-window button above.
         for handle in cx.windows() {
             let _ = handle.update(cx, |_root, window, cx| {
-                let Some(Some(root)) = window.root::<gpui_component::Root>() else {
+                let Some(Some(root)) = window.root::<gpui_kit::component::Root>() else {
                     return;
                 };
                 // Resize only AppView-rooted windows; the Settings
@@ -1624,13 +1624,11 @@ impl Render for SettingsView {
         // building the tree. Guarded so it fires once per change, not
         // every frame. Keyed on the actual global locale (what t!()
         // reads) so it's correct no matter which window flipped it.
-        let active_locale = gpui_component::locale().to_string();
+        let active_locale = gpui_kit::component::locale().to_string();
         if self.built_locale != active_locale {
             self.built_locale = active_locale;
             self.relabel_locale_selects(window, cx);
         }
-        let dialog_layer = Root::render_dialog_layer(window, cx);
-        let notification_layer = Root::render_notification_layer(window, cx);
 
         div()
             .size_full()
@@ -1708,8 +1706,6 @@ impl Render for SettingsView {
                             .child(scrollable_pane(self.pane_content(s, cx))),
                     ),
             )
-            .children(dialog_layer)
-            .children(notification_layer)
     }
 }
 

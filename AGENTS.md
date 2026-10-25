@@ -7,7 +7,7 @@ already here — match the surrounding code, and prefer deleting over adding.
 ## What this is
 
 Baudrun — a serial terminal for network engineers, on macOS / Windows / Linux.
-Rust + [GPUI](https://www.gpui.rs) + gpui-component, with `alacritty_terminal` as the
+Rust + [GPUI](https://www.gpui.rs) via [GPUI Kit](https://gpui-kit.com), with `alacritty_terminal` as the
 VT parser and grid (gpui does the rendering). One binary crate at the repo root
 (package `baudrun`, binary `Baudrun`), GPL-3.0-or-later. macOS is the primary
 dev/test platform; Windows and Linux are verified less often, so keep every change
@@ -58,9 +58,12 @@ Say "optimized build" for `cargo build --release`; "release" means a product rel
 
 ## Dependencies
 
-- gpui, gpui_platform, gpui-component and gpui-component-assets move together, in
-  one commit. The assets rev must match gpui-component's or icons break.
-  Dependabot's standalone gpui PRs are always wrong — close them.
+- GPUI comes through one dependency, `gpui-kit` (exact `=x.y.z` pin): gpui (the
+  crates.io `gpui-pre` snapshot it pins), platform backends, gpui-component and the
+  icon assets. `extern crate gpui_kit as gpui;` in `main.rs` keeps `gpui::` paths
+  working; components are `gpui_kit::component::*`. Upgrade it in step with the
+  other packetThrower apps, never alone — Dependabot ignores the whole family.
+- The build is crates.io-only (`deny.toml` denies git sources).
 - `deny.toml` ignores carry a reason and a "revisit at each gpui pull" horizon;
   drop an ignore once `cargo deny` reports it as not encountered.
 - Don't add a dependency for what a few lines do.
