@@ -15,6 +15,15 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Security
+
+- **rustls patched** (0.23.45 → 0.23.46, rustls-webpki 0.103.16):
+  clears five TLS advisories, including a ServerHello downgrade to
+  classical key exchange and certificate verification accepting
+  distrusted intermediates. Used by the update checker.
+- **webpki-roots refreshed** (1.0.7 → 1.0.11): drops trust in the
+  distrusted emSign intermediates.
+
 ## [0.15.2] — 2026-08-25
 
 Maintenance release — dependency and security refresh, no feature
