@@ -17,6 +17,13 @@ final stable entry at tag time.
 
 ### Changed
 
+- **Settings window rebuilt on GPUI Kit's Settings layout**: a page
+  sidebar with each page's sections listed beneath it, a search box
+  that jumps straight to matching settings, and GPUI Kit switches.
+  The Shortcuts page adds a reset-all button
+  beside the per-row resets. All settings, imports and the shortcut
+  recorder work as before.
+
 - **Moved to GPUI Kit 0.8.0** (gpui-pre 0.3.9), the crates.io home
   of gpui-component, replacing the Zed-git gpui and gpui-component
   git pins. The build now uses crates.io only. No intended visual

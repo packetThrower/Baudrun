@@ -99,7 +99,8 @@ clipboard action independently.
    immediately.
 3. Press `Escape` during recording to cancel.
 4. Click the **↺** button next to a binding to reset it to the
-   platform default.
+   platform default, or the **↺** in the page header to reset every
+   binding at once.
 
 Overrides are stored in `settings.json` under `shortcuts`, keyed by
 action id:

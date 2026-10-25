@@ -151,6 +151,36 @@ use actions::{
 /// parameterize this; for the spike a constant is fine.
 const DEFAULT_BAUD: u32 = 9600;
 
+// Lucide icons beyond GPUI Kit's default bundle, embedded at build
+// time — the Settings page icons (`gpui_kit::assets::IconName::*`).
+gpui_kit::assets::icon_assets!(
+    ExtraIcons,
+    [
+        Keyboard,
+        Highlighter,
+        Accessibility,
+        SwatchBook,
+        SlidersHorizontal
+    ]
+);
+
+struct AppAssets;
+
+impl gpui::AssetSource for AppAssets {
+    fn load(&self, path: &str) -> gpui::Result<Option<std::borrow::Cow<'static, [u8]>>> {
+        match ExtraIcons.load(path)? {
+            Some(bytes) => Ok(Some(bytes)),
+            None => gpui_kit::assets::Assets.load(path),
+        }
+    }
+
+    fn list(&self, path: &str) -> gpui::Result<Vec<gpui::SharedString>> {
+        let mut paths = gpui_kit::assets::Assets.list(path)?;
+        paths.extend(ExtraIcons.list(path)?);
+        Ok(paths)
+    }
+}
+
 fn main() {
     env_logger::init();
 
@@ -196,8 +226,9 @@ fn main() {
     // widget tree references (most visibly the min/max/close
     // controls drawn by `gpui_kit::component::TitleBar` on Windows and
     // Linux) resolves to a real glyph. Without it the title bar
-    // hover targets render blank — see the Cargo.toml dep comment.
-    let app = gpui_kit::application().with_assets(gpui_kit::assets::Assets);
+    // hover targets render blank. `AppAssets` layers the few extra
+    // Lucide icons the Settings pages use on top of that bundle.
+    let app = gpui_kit::application().with_assets(AppAssets);
 
     // macOS single-instance handler. With LSMultipleInstancesProhibited
     // set in Info.plist, Launch Services routes second-launch attempts

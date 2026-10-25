@@ -4219,8 +4219,7 @@ fn profile_row(
         name: SharedString::from(name.clone()),
     };
 
-    // Profile-row bg follows the same pattern as the Settings
-    // rail items (`settings_view::rail`): `bg_active` — the
+    // Profile-row bg: `bg_active` — the
     // accent-tinted blue — when selected, fully transparent
     // otherwise. The transparent unselected state lets the
     // sidebar's own `bg_sidebar` show through; on macOS-26's

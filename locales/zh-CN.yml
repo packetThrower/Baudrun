@@ -17,10 +17,6 @@ terminal:
     body: "即将向终端粘贴 %{count} 行。"
 
 settings_chrome:
-  title: 设置
-  version_tooltip: "Baudrun 版本（构建时取自 Cargo.toml）"
-  global_defaults: 全局默认
-  filter_clear_tooltip: 清除筛选
   config_dir_unavailable: "（不可用：%{err}）"
 
 chrome:
@@ -241,7 +237,6 @@ settings:
   appearance_dark: 深色
   language_auto: "自动（跟随系统）"
   log_dir_placeholder: 默认
-  filter_placeholder: "筛选设置…"
   app_skin_title: 应用皮肤
   app_skin_desc: "应用界面（侧边栏、窗格、按钮）的外观。不影响终端配色 — 那由主题标签页控制。"
   appearance_title: 外观
@@ -256,7 +251,6 @@ settings:
   no_custom_skins: "未安装自定义皮肤。使用导入来添加皮肤 JSON 文件。"
   default_theme_title: 默认主题
   default_theme_desc: 供任何未设置自己主题的配置使用。
-  theme_label: 主题
   installed_themes_title: 已安装主题
   import_itermcolors: "导入 .itermcolors…"
   tag_custom: 自定义
@@ -304,10 +298,8 @@ settings:
   reveal: 在文件夹中显示
   usb_driver_title: "USB 驱动检测"
   usb_driver_desc: "当插入 USB 串口适配器但未安装其厂商驱动时，在配置表单中显示横幅。"
-  usb_driver_toggle: "检测缺少驱动的 USB 适配器"
   copy_on_select_title: 选中即复制
   copy_on_select_desc: "PuTTY 风格 — 释放鼠标时自动将终端选区复制到剪贴板。免去每次都要按 ⌘/Ctrl+C。"
-  copy_on_select_toggle: 自动将终端选区复制到剪贴板
   window_state_title: 窗口状态
   window_state_desc: "在你上次关闭的位置重新打开 Baudrun 和设置窗口。关闭后，每次启动都会以居中的默认尺寸打开。重置按钮会清除已保存的几何信息，并立即调整对应的活动窗口大小。"
   window_state_toggle: 启动时恢复窗口大小和位置

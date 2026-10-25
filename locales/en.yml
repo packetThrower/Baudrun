@@ -28,10 +28,6 @@ terminal:
     body: "About to paste %{count} lines into the terminal."
 
 settings_chrome:
-  title: Settings
-  version_tooltip: "Baudrun version (from Cargo.toml at build time)"
-  global_defaults: GLOBAL DEFAULTS
-  filter_clear_tooltip: Clear filter
   config_dir_unavailable: "(unavailable: %{err})"
 
 chrome:
@@ -252,7 +248,6 @@ settings:
   appearance_dark: Dark
   language_auto: Auto (follow system)
   log_dir_placeholder: Default
-  filter_placeholder: "Filter settings…"
   app_skin_title: App Skin
   app_skin_desc: "How the app chrome (sidebar, panes, buttons) looks. Doesn't affect the terminal palette — that's the Themes tab."
   appearance_title: Appearance
@@ -267,7 +262,6 @@ settings:
   no_custom_skins: No custom skins installed. Use Import to add a skin JSON file.
   default_theme_title: Default Theme
   default_theme_desc: Used by any profile that doesn't set its own theme.
-  theme_label: Theme
   installed_themes_title: Installed Themes
   import_itermcolors: "Import .itermcolors…"
   tag_custom: Custom
@@ -315,10 +309,8 @@ settings:
   reveal: Reveal
   usb_driver_title: USB Driver Detection
   usb_driver_desc: Show a banner in the profile form when a USB-serial adapter is plugged in without its vendor driver installed.
-  usb_driver_toggle: Detect un-drivered USB adapters
   copy_on_select_title: Copy on Select
   copy_on_select_desc: "PuTTY-style — copy the terminal selection to the clipboard automatically when the mouse is released. Avoids having to press ⌘/Ctrl+C for every snippet."
-  copy_on_select_toggle: Copy terminal selection to clipboard automatically
   window_state_title: Window State
   window_state_desc: "Reopen Baudrun and Settings windows where you left them. Turn off to land at the centered default size each launch instead. The Reset buttons clear the saved geometry and resize the matching live windows immediately."
   window_state_toggle: Restore window size and position on launch
