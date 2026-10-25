@@ -15,50 +15,61 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+The move to [GPUI Kit](https://gpui-kit.com). The interface is rebuilt
+on GPUI Kit's components, the Settings window is redesigned, and the
+build now pulls every dependency from crates.io.
+
+### Added
+
+- **Settings search**: the rebuilt Settings window has a search box
+  that jumps straight to matching settings, and each page lists its
+  sections in the sidebar.
+- **Welcome screen** has a **New profile** button.
+- **Reset all shortcuts** button on the Shortcuts page, beside the
+  per-row resets.
+
 ### Changed
 
+- **Moved to GPUI Kit 0.8.0** (gpui-pre 0.3.9), the crates.io home of
+  gpui-component, replacing the Zed-git gpui and gpui-component git
+  pins. The build is crates.io-only.
+- **Settings window rebuilt on GPUI Kit's Settings layout**: a page
+  sidebar, each setting in its own box, and GPUI Kit switches and
+  dropdowns. All settings, imports and the shortcut recorder work as
+  before.
 - **Main window on GPUI Kit components**: buttons and icon buttons,
   the profile editor's tab rail and fields, the status bar, the Send
-  File dialog's buttons and progress bar, and every right-click and ⋯
-  menu (including the terminal's) now use GPUI Kit, following the
-  active skin. The Settings window's page list now uses the skin's
-  sidebar colours too.
+  File dialog's buttons and progress bar, the welcome and suspended
+  screens, and every right-click and ⋯ menu (including the
+  terminal's) now use GPUI Kit, following the active skin.
 - **`--shadow-floating` is no longer applied**: menus and dialogs draw
   GPUI Kit's own shadow.
-- **Welcome screen** has a **New profile** button.
+- **Dependencies refreshed**: serialport 4.10.1, serde_json, uuid,
+  plist, rust-i18n and others.
 
-- **Settings window rebuilt on GPUI Kit's Settings layout**: a page
-  sidebar with each page's sections listed beneath it, a search box
-  that jumps straight to matching settings, and GPUI Kit switches.
-  The Shortcuts page adds a reset-all button
-  beside the per-row resets. All settings, imports and the shortcut
-  recorder work as before.
-- **Skin colours reach every GPUI Kit control again**: switches,
-  buttons and the Settings boxes now use the active skin's accent and
-  palette instead of GPUI Kit's stock colours.
-- **Skin fonts follow CSS fallback**: a skin's font stack now uses
-  the first family that's actually installed. Blueprint asked for
-  "Space Mono" first; without it the app fell back to a system font
-  that sat off-centre in buttons — it now uses the next monospace
-  font in its stack (Menlo on a stock Mac), as the skin intends.
+### Fixed
 
-- **Moved to GPUI Kit 0.8.0** (gpui-pre 0.3.9), the crates.io home
-  of gpui-component, replacing the Zed-git gpui and gpui-component
-  git pins. The build now uses crates.io only. No intended visual
-  or behaviour changes.
+- **Skin colours reach every GPUI Kit control**: switches, buttons and
+  the Settings boxes use the active skin's accent and palette instead
+  of GPUI Kit's stock colours.
+- **Skin fonts follow CSS fallback**: a skin's font stack now uses the
+  first family that's actually installed. Blueprint asked for "Space
+  Mono" first; without it the app fell back to a system font that sat
+  off-centre in buttons. It now uses the next monospace font in its
+  stack (Menlo on a stock Mac), as the skin intends.
 
 ### Security
 
-- **Docs toolchain refreshed** (astro 7.4.2, starlight 0.42.7, sharp
-  0.35.5 and their transitive dependencies), clearing all 39 open
-  advisories against the static docs site's build tooling, including
-  a critical astro XSS. None affected the Baudrun app.
 - **rustls patched** (0.23.45 → 0.23.46, rustls-webpki 0.103.16):
   clears five TLS advisories, including a ServerHello downgrade to
   classical key exchange and certificate verification accepting
   distrusted intermediates. Used by the update checker.
 - **webpki-roots refreshed** (1.0.7 → 1.0.11): drops trust in the
   distrusted emSign intermediates.
+- **Docs toolchain refreshed** (astro 7.4.2, starlight 0.42.7, sharp
+  0.35.5 and their transitive dependencies), clearing all 39 open
+  advisories against the static docs site's build tooling, including
+  a critical astro XSS. None affected the Baudrun app.
 
 ## [0.15.2] — 2026-08-25
 
