@@ -29,7 +29,7 @@
 //! bridging logic" rather than "Editor type and friends".
 
 use gpui::{
-    div, prelude::*, px, rgba, Context, Entity, IntoElement, MouseButton, MouseUpEvent,
+    div, prelude::*, px, rgba, ClickEvent, Context, Entity, IntoElement, MouseButton, MouseUpEvent,
     ScrollHandle, SharedString, Window,
 };
 use gpui_kit::component::{
@@ -421,12 +421,11 @@ fn form_header(
         rgba(s.fg_tertiary)
     };
     let delete_btn = is_edit.then(|| {
-        pill_button(s, t!("editor.delete_button"), true).on_mouse_up(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+        pill_button(s, "editor-delete", t!("editor.delete_button"), true).on_click(cx.listener(
+            |this, _: &ClickEvent, window, cx| {
                 this.delete_from_editor(window, cx);
-            }),
-        )
+            },
+        ))
     });
     // Render the heading as a plain div instead of an Input —
     // gpui-component's Input fixes its own height to a small
@@ -477,19 +476,15 @@ fn form_header(
                 .gap_2()
                 .children(delete_btn)
                 .child(
-                    pill_button(s, t!("editor.save_button"), false)
+                    pill_button(s, "editor-save", t!("editor.save_button"), false)
                         .text_color(save_fg)
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.save_editor(cx);
-                            }),
-                        ),
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                            this.save_editor(cx);
+                        })),
                 )
                 .child(
-                    pill_button(s, t!("editor.cancel_button"), false).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                    pill_button(s, "editor-cancel", t!("editor.cancel_button"), false).on_click(
+                        cx.listener(|this, _: &ClickEvent, _window, cx| {
                             this.cancel_editor(cx);
                         }),
                     ),
@@ -503,29 +498,34 @@ fn form_header(
                     // the user already has, neither of which is
                     // what they're after.
                     row.child(
-                        pill_button(s, t!("editor.disconnect_button"), false).on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        pill_button(
+                            s,
+                            "editor-disconnect",
+                            t!("editor.disconnect_button"),
+                            false,
+                        )
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, window, cx| {
                                 this.disconnect_current(window, cx);
-                            }),
-                        ),
+                            },
+                        )),
                     )
                     .child(
-                        primary_button(s, t!("editor.resume_button")).on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                        primary_button("editor-resume", t!("editor.resume_button")).on_click(
+                            cx.listener(|this, _: &ClickEvent, window, cx| {
                                 this.resume_session(window, cx);
                             }),
                         ),
                     )
                 })
                 .when(!connected_session, |row| {
-                    row.child(primary_button(s, t!("editor.connect_button")).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                            this.save_and_connect(window, cx);
-                        }),
-                    ))
+                    row.child(
+                        primary_button("editor-connect", t!("editor.connect_button")).on_click(
+                            cx.listener(|this, _: &ClickEvent, window, cx| {
+                                this.save_and_connect(window, cx);
+                            }),
+                        ),
+                    )
                 }),
         )
 }
@@ -924,12 +924,15 @@ fn driver_banner_row(
     if !candidate.driver_url.is_empty() {
         let url = candidate.driver_url.clone();
         row = row.child(
-            pill_button(s, t!("editor.driver.install_button"), false).on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |_, _: &MouseUpEvent, _, cx| {
-                    cx.open_url(&url);
-                }),
-            ),
+            pill_button(
+                s,
+                "driver-install",
+                t!("editor.driver.install_button"),
+                false,
+            )
+            .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                cx.open_url(&url);
+            })),
         );
     }
     row

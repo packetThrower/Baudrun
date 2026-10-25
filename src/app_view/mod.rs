@@ -46,10 +46,11 @@ use gpui_kit::component::{
     button::Button,
     input::{Input, InputState},
     notification::Notification,
+    progress::Progress,
     scroll::ScrollableElement,
     select::{Select, SelectState},
     tooltip::Tooltip,
-    Icon, IconName, Root, Theme, ThemeMode, TitleBar, WindowExt,
+    ActiveTheme, Icon, IconName, Root, Sizable, Theme, ThemeMode, TitleBar, WindowExt,
 };
 
 use crate::data::appdata;
@@ -981,6 +982,22 @@ impl AppView {
             // button + any other widget that reads `primary_hover`.
             theme.primary_hover = rgba(tokens.accent_hover).into();
             theme.primary_active = rgba(tokens.accent).into();
+            // Kit `Button`s read their own slots: primary = the accent
+            // (Connect / Disconnect / Resume), secondary = the neutral
+            // `--bg-input` pill (`buttons::pill_button`). The plain
+            // `secondary*` slots drive outline / ghost hovers.
+            theme.button_primary = rgba(tokens.accent).into();
+            theme.button_primary_hover = rgba(tokens.accent_hover).into();
+            theme.button_primary_active = rgba(tokens.accent).into();
+            theme.button_primary_foreground = rgba(tokens.accent_fg).into();
+            theme.button_secondary = rgba(tokens.bg_input).into();
+            theme.button_secondary_hover = rgba(tokens.bg_input_hover).into();
+            theme.button_secondary_active = rgba(tokens.bg_input_hover).into();
+            theme.button_secondary_foreground = rgba(tokens.fg_primary).into();
+            theme.secondary = rgba(tokens.bg_input).into();
+            theme.secondary_hover = rgba(tokens.bg_input_hover).into();
+            theme.secondary_active = rgba(tokens.bg_input_hover).into();
+            theme.secondary_foreground = rgba(tokens.fg_primary).into();
             theme.danger = rgba(tokens.danger).into();
             theme.border = rgba(tokens.border_subtle).into();
             // `--input-border-idle` — unfocused input border. Skins
@@ -2639,7 +2656,7 @@ impl AppView {
         let sent_for_dialog = sent.clone();
         let app = cx.entity();
         let filename_for_dialog = filename.clone();
-        window.open_dialog(cx, move |dlg, _, _| {
+        window.open_dialog(cx, move |dlg, _, cx| {
             let s_now = sent_for_dialog.load(std::sync::atomic::Ordering::Relaxed);
             let pct = if total > 0 {
                 ((s_now as f64 / total as f64) * 100.0).min(100.0) as u32
@@ -2663,43 +2680,20 @@ impl AppView {
                             .flex_row()
                             .justify_between()
                             .text_size(px(12.0))
-                            .text_color(rgba(0x808080CCu32))
+                            .text_color(cx.theme().muted_foreground)
                             .child(div().child(format!("{} / {} bytes", s_now, total)))
                             .child(div().child(format!("{}%", pct))),
                     )
-                    // Bar — outer track + inner fill scaled to %.
-                    .child(
-                        div()
-                            .w_full()
-                            .h(px(6.0))
-                            .rounded(px(3.0))
-                            .bg(rgba(0x80808033u32))
-                            .child(
-                                div()
-                                    .h(px(6.0))
-                                    .w(gpui::relative(pct as f32 / 100.0))
-                                    .rounded(px(3.0))
-                                    .bg(rgba(0x4DA6FFFFu32)),
-                            ),
-                    )
+                    .child(Progress::new("transfer-progress").value(pct as f32))
                     .child(
                         div().flex().flex_row().justify_end().child(
-                            div()
-                                .px_3()
-                                .py_1()
-                                .rounded_md()
-                                .border_1()
-                                .border_color(rgba(0x80808055u32))
-                                .text_size(px(12.0))
-                                .cursor_pointer()
-                                .child(t!("app.cancel"))
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    move |_evt: &MouseUpEvent, _window, cx| {
-                                        let app = app.clone();
-                                        app.update(cx, |this, cx| this.cancel_transfer(cx));
-                                    },
-                                ),
+                            Button::new("transfer-cancel")
+                                .outline()
+                                .small()
+                                .label(t!("app.cancel"))
+                                .on_click(move |_, _, cx| {
+                                    app.update(cx, |this, cx| this.cancel_transfer(cx));
+                                }),
                         ),
                     ),
             )

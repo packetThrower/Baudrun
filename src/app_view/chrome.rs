@@ -24,7 +24,7 @@ use std::{borrow::Cow, time::Duration};
 
 use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
-    Context, IntoElement, MouseButton, MouseUpEvent, SharedString, Window,
+    ClickEvent, Context, IntoElement, MouseButton, MouseUpEvent, SharedString, Window,
 };
 use gpui_kit::component::tooltip::Tooltip;
 
@@ -236,12 +236,13 @@ pub(super) fn suspended_pane(
                 .text_color(rgba(s.fg_tertiary))
                 .child(t!("chrome.suspended_pane_detail")),
         )
-        .child(primary_button(s, t!("chrome.resume_button")).on_mouse_up(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                this.resume_session(window, cx);
-            }),
-        ))
+        .child(
+            primary_button("suspended-resume", t!("chrome.resume_button")).on_click(cx.listener(
+                |this, _: &ClickEvent, window, cx| {
+                    this.resume_session(window, cx);
+                },
+            )),
+        )
 }
 
 /// Body content for the About dialog: app name, version, one-line
@@ -473,70 +474,44 @@ pub(super) fn session_header(
                 .gap_2()
                 .child(session_overflow_button(s, overflow_open, cx))
                 .child(
-                    div()
-                        .id("session-dtr")
-                        .child(line_pill(s, "DTR", dtr_asserted))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(SharedString::from(if dtr_asserted {
-                                t!("chrome.dtr_asserted_tooltip")
-                            } else {
-                                t!("chrome.dtr_deasserted_tooltip")
-                            }))
-                            .build(window, cx)
+                    line_pill(s, "session-dtr", "DTR", dtr_asserted)
+                        .tooltip(if dtr_asserted {
+                            t!("chrome.dtr_asserted_tooltip")
+                        } else {
+                            t!("chrome.dtr_deasserted_tooltip")
                         })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_dtr(cx);
-                            }),
-                        ),
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                            this.toggle_dtr(cx);
+                        })),
                 )
                 .child(
-                    div()
-                        .id("session-rts")
-                        .child(line_pill(s, "RTS", rts_asserted))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(SharedString::from(if rts_asserted {
-                                t!("chrome.rts_asserted_tooltip")
-                            } else {
-                                t!("chrome.rts_deasserted_tooltip")
-                            }))
-                            .build(window, cx)
+                    line_pill(s, "session-rts", "RTS", rts_asserted)
+                        .tooltip(if rts_asserted {
+                            t!("chrome.rts_asserted_tooltip")
+                        } else {
+                            t!("chrome.rts_deasserted_tooltip")
                         })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_rts(cx);
-                            }),
-                        ),
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                            this.toggle_rts(cx);
+                        })),
                 )
                 .child(
-                    pill_button(s, t!("chrome.clear_button"), false).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                    pill_button(s, "session-clear", t!("chrome.clear_button"), false).on_click(
+                        cx.listener(|this, _: &ClickEvent, _window, cx| {
                             this.terminal.update(cx, |t, cx| t.clear_screen(cx));
                         }),
                     ),
                 )
                 .child(
-                    div()
-                        .id("session-suspend")
-                        .child(pill_button(s, t!("chrome.suspend_button"), false))
-                        .tooltip(|window, cx| {
-                            Tooltip::new(SharedString::from(t!("chrome.suspend_tooltip")))
-                                .build(window, cx)
-                        })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.suspend_session(window, cx);
-                            }),
-                        ),
+                    pill_button(s, "session-suspend", t!("chrome.suspend_button"), false)
+                        .tooltip(t!("chrome.suspend_tooltip"))
+                        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                            this.suspend_session(window, cx);
+                        })),
                 )
                 .child(
-                    primary_button(s, t!("chrome.disconnect_button")).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                    primary_button("session-disconnect", t!("chrome.disconnect_button")).on_click(
+                        cx.listener(|this, _: &ClickEvent, window, cx| {
                             this.disconnect_current(window, cx);
                         }),
                     ),
