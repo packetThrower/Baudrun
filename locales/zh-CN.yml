@@ -5,6 +5,7 @@ welcome:
   heading: Baudrun
   pick_profile: "从侧边栏选择一个配置以开始会话。"
   create_first: "点击配置列表上方的 + 来创建一个。"
+  new_profile: 新建配置
 
 terminal:
   menu:

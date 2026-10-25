@@ -26,7 +26,10 @@ use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
     ClickEvent, Context, IntoElement, MouseButton, MouseUpEvent, SharedString, Window,
 };
-use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{
+    empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle},
+    tooltip::Tooltip,
+};
 
 use super::buttons::{line_pill, pill_button, primary_button};
 use super::{AppView, FooterEvent, LogSeverity, STATUS_DOT_PX};
@@ -340,23 +343,31 @@ pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElemen
         .h_full()
         .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
         .flex()
-        .flex_col()
         .items_center()
         .justify_center()
-        .gap_3()
         .child(
-            // `--font-size-h1` from the active skin (default
-            // 24, macOS-26 ships 26).
-            div()
-                .text_size(px(s.font_size_h1_px))
-                .text_color(rgba(s.fg_primary))
-                .child(t!("welcome.heading")),
-        )
-        .child(
-            div()
-                .text_size(px(13.0))
-                .text_color(rgba(s.fg_secondary))
-                .child(prompt),
+            Empty::new()
+                .header(
+                    EmptyHeader::new()
+                        // `--font-size-h1` from the active skin
+                        // (default 24, macOS-26 ships 26).
+                        .title(
+                            EmptyTitle::new()
+                                .text_size(px(s.font_size_h1_px))
+                                .text_color(rgba(s.fg_primary))
+                                .child(t!("welcome.heading")),
+                        )
+                        .description(
+                            EmptyDescription::new()
+                                .text_color(rgba(s.fg_secondary))
+                                .child(prompt),
+                        ),
+                )
+                .content(EmptyContent::new().child(
+                    primary_button("welcome-new-profile", t!("welcome.new_profile")).on_click(
+                        |_, window, cx| window.dispatch_action(Box::new(crate::NewProfile), cx),
+                    ),
+                )),
         )
 }
 
