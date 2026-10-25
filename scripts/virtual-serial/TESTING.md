@@ -70,6 +70,14 @@ the bridge will create (`/tmp/baudrun-a`). Two options:
    will read `/tmp/baudrun-a (not connected)` until the bridge is
    up, then becomes selectable for Connect.
 
+   **macOS: set `"baudRate": 0`.** The `serialport` crate sets the
+   speed with the `IOSSIOSPEED` ioctl, which ptys reject with
+   `ENOTTY` — Baudrun shows *"Not a typewriter"* — and it skips that
+   call only for baud 0. The bridge paces bytes itself (`-baud`), so
+   nothing is lost. The profile editor refuses 0 on save, so connect
+   from the sidebar's right-click **Connect in New Window** instead of
+   the editor's Connect button. Linux ptys accept a normal rate.
+
 **Option B — reuse an existing profile.** If you have a profile for a
 physical adapter that's currently unplugged, set its `portName` to
 `/tmp/baudrun-a` via the same JSON edit. Change it back later for
