@@ -135,7 +135,7 @@ jobs:
       #     manifest; anchoring on `_amd64_` makes it deterministic
       #     instead of accidental.
       - name: Open winget-pkgs PR
-        uses: vedantmgoyal9/winget-releaser@b3a5dae0047c6180023acba3f548c55fdf6b7193 # v2
+        uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
         with:
           identifier: packetThrower.Baudrun
           release-tag: ${{ github.event.workflow_run.head_branch || inputs.tag_name }}
