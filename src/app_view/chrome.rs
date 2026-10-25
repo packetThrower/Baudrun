@@ -16,120 +16,60 @@
 //!
 //! All functions are `pub(super)` so mod.rs imports them by name.
 //! Field/method access into the parent `AppView` (e.g.
-//! `app.profile_context_menu`, `this.connect_profile_in_new_window`)
+//! `app.connected_profile_id`, `this.connect_profile_in_new_window`)
 //! works without visibility widening — Rust's privacy rule lets
 //! descendant modules see the parent's private items.
 
 use std::{borrow::Cow, time::Duration};
 
 use gpui::{
-    anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
-    ClickEvent, Context, IntoElement, MouseButton, MouseUpEvent, SharedString, Window,
+    div, prelude::*, pulsating_between, px, rgba, Anchor, Animation, AnimationExt, ClickEvent,
+    Context, Entity, IntoElement, MouseButton, MouseUpEvent, SharedString, Window,
 };
 use gpui_kit::component::{
+    button::{Button, ButtonVariants},
     empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle},
+    menu::{DropdownMenu, PopupMenu, PopupMenuItem},
     tooltip::Tooltip,
+    IconName,
 };
 
 use super::buttons::{line_pill, pill_button, primary_button};
 use super::{AppView, FooterEvent, LogSeverity, STATUS_DOT_PX};
 use crate::data::profiles::Profile;
-use crate::skin_tokens::{self, SkinTokens};
+use crate::skin_tokens::SkinTokens;
 
-/// Build the deferred + anchored overlay that renders the profile-
-/// row right-click context menu. Returns `None` when no menu is
-/// open. Lives outside `Render::render` to keep the body readable.
-pub(super) fn profile_context_menu_overlay(
-    app: &AppView,
-    cx: &mut Context<AppView>,
-) -> Option<gpui::AnyElement> {
-    let menu = app.profile_context_menu.as_ref()?;
-    let s = *cx.global::<SkinTokens>();
-    let profile_id = menu.profile_id.clone();
-    let pos = menu.pos;
-    // When the right-clicked profile is the one this window is
-    // already connected to, "Connect in New Window" would either
-    // race the existing session for the same port or quietly steal
-    // it. Surface "Move to New Window" instead, reusing the same
-    // detach/install_session machinery the toolbar Detach button
-    // already drives.
-    let is_connected_row = app.connected_profile_id.as_deref() == Some(profile_id.as_str());
-
-    let item: gpui::Div = if is_connected_row {
-        profile_menu_item(
-            s,
-            t!("chrome.move_session_to_new_window"),
-            cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
-                this.profile_context_menu = None;
-                this.move_session_to_new_window(None, cx);
-            }),
+/// Right-click menu for a sidebar profile row (GPUI Kit `PopupMenu`
+/// via `.context_menu`). When this window is already connected to
+/// the profile, "Connect in New Window" would race the session for
+/// the same port, so offer "Move Session to New Window" instead —
+/// the same detach machinery the overflow menu drives.
+pub(super) fn profile_row_menu(
+    menu: PopupMenu,
+    app: &Entity<AppView>,
+    profile_id: &str,
+    cx: &gpui::App,
+) -> PopupMenu {
+    let connected = app.read(cx).connected_profile_id.as_deref() == Some(profile_id);
+    let app = app.clone();
+    if connected {
+        menu.item(
+            PopupMenuItem::new(t!("chrome.move_session_to_new_window")).on_click(
+                move |_, _, cx| {
+                    app.update(cx, |this, cx| this.move_session_to_new_window(None, cx))
+                },
+            ),
         )
     } else {
-        profile_menu_item(
-            s,
-            t!("chrome.connect_in_new_window"),
-            cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
-                let id = profile_id.clone();
-                this.profile_context_menu = None;
-                this.connect_profile_in_new_window(id, None, cx);
+        let id = profile_id.to_string();
+        menu.item(
+            PopupMenuItem::new(t!("chrome.connect_in_new_window")).on_click(move |_, _, cx| {
+                app.update(cx, |this, cx| {
+                    this.connect_profile_in_new_window(id.clone(), None, cx)
+                })
             }),
         )
-    };
-
-    // Two-layer paint: opaque `bg_window` base, then the
-    // translucent `bg_panel` skin overlay on top — same frosted
-    // look the sidebar / main pane use, except this popup floats
-    // in `deferred(anchored(...))` so there's no opaque chrome
-    // beneath it. Without the base layer the menu sees right
-    // through to whatever's anchored under (terminal grid, editor
-    // pane, sidebar) and the text bleeds into the content
-    // behind. Border + shadow stay on the outer wrapper so they
-    // hug the popup outline. `--shadow-floating` from the active
-    // skin overrides `shadow_md()` when present.
-    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
-    let panel = div()
-        .min_w(px(220.0))
-        .bg(rgba(s.bg_window))
-        .border_1()
-        .border_color(rgba(s.border_subtle))
-        .rounded(px(s.radius_md))
-        .map(|this| {
-            if shadow_floating.is_empty() {
-                this.shadow_md()
-            } else {
-                this.shadow(shadow_floating.clone())
-            }
-        })
-        .child(
-            div()
-                .w_full()
-                .bg(rgba(s.bg_panel))
-                .rounded(px(s.radius_md))
-                .py_1()
-                .child(item),
-        );
-    Some(deferred(anchored().position(pos).child(panel)).into_any_element())
-}
-
-/// One row inside the profile right-click menu. Plain hover-styled
-/// div — keeping it hand-rolled rather than reaching for
-/// gpui-component's PopupMenu (which routes through the Action
-/// system) since we have a single click handler that already needs
-/// the per-row profile id baked in.
-pub(super) fn profile_menu_item<F>(s: SkinTokens, label: impl IntoElement, on_click: F) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    let hover_bg = s.bg_hover;
-    div()
-        .px_3()
-        .py(px(6.0))
-        .text_size(px(13.0))
-        .text_color(rgba(s.fg_primary))
-        .cursor_pointer()
-        .hover(move |st| st.bg(rgba(hover_bg)))
-        .child(label)
-        .on_mouse_up(MouseButton::Left, on_click)
+    }
 }
 
 /// Idle splash screen — shown when the app is launched with no
@@ -379,7 +319,6 @@ pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElemen
 pub(super) fn session_header(
     profile: Profile,
     reconnecting: bool,
-    overflow_open: bool,
     dtr_asserted: bool,
     rts_asserted: bool,
     cx: &mut Context<AppView>,
@@ -483,7 +422,7 @@ pub(super) fn session_header(
                 .flex()
                 .flex_row()
                 .gap_2()
-                .child(session_overflow_button(s, overflow_open, cx))
+                .child(session_overflow_button(cx))
                 .child(
                     line_pill(s, "session-dtr", "DTR", dtr_asserted)
                         .tooltip(if dtr_asserted {
@@ -924,117 +863,28 @@ pub(super) fn sidebar_icon_strip(
 // Render code reads `cx.global::<SkinTokens>()`; helpers without a
 // Context take the `SkinTokens` value as a parameter (Copy, 64
 // bytes, cheap to pass).
-/// `⋯` button + drop-down menu rendered inline in the session
-/// header. The container is `relative` so the menu (positioned
-/// `absolute` below) anchors to it; `deferred` puts the panel above
-/// other toolbar siblings in paint order.
-pub(super) fn session_overflow_button(
-    s: SkinTokens,
-    open: bool,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    // `--shadow-floating` from the active skin for the popup
-    // panel below. Empty (skin sets `"none"` or doesn't declare)
-    // falls through to the hardcoded `shadow_md()` so flush-
-    // edged skins keep their existing soft drop shadow.
-    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
-    let panel: Option<gpui::AnyElement> = if open {
-        Some(
-            deferred(
-                // Two-layer paint: opaque `bg_window` base + the
-                // translucent skin overlay on top. See the matching
-                // comment in `profile_context_menu_overlay` — same
-                // see-through issue when a popup floats over the
-                // terminal viewport instead of sitting inside the
-                // layered chrome.
-                div()
-                    .absolute()
-                    .top_full()
-                    .right_0()
-                    .mt_1()
-                    .min_w(px(180.0))
-                    .bg(rgba(s.bg_window))
-                    .border_1()
-                    .border_color(rgba(s.border_subtle))
-                    .rounded(px(s.radius_md))
-                    .map(|this| {
-                        if shadow_floating.is_empty() {
-                            this.shadow_md()
-                        } else {
-                            this.shadow(shadow_floating.clone())
-                        }
+/// `⋯` button + drop-down menu in the session header (GPUI Kit
+/// `DropdownMenu`, which owns its own open state and dismissal).
+pub(super) fn session_overflow_button(cx: &mut Context<AppView>) -> impl IntoElement {
+    let app = cx.entity();
+    Button::new("session-overflow-btn")
+        .secondary()
+        .icon(IconName::Ellipsis)
+        .tooltip(t!("chrome.more_actions"))
+        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
+            let item =
+                |label: Cow<'static, str>,
+                 run: fn(&mut AppView, &mut Window, &mut Context<AppView>)| {
+                    let app = app.clone();
+                    PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                        app.update(cx, |this, cx| run(this, window, cx))
                     })
-                    .child(
-                        div()
-                            .w_full()
-                            .bg(rgba(s.bg_panel))
-                            .rounded(px(s.radius_md))
-                            .py_1()
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.send_break"),
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.send_break_now(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.send_hex"),
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.open_send_hex(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.send_file"),
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.start_send_file(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.move_to_new_window"),
-                                cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                    this.move_session_to_new_window(None, cx);
-                                }),
-                            )),
-                    ),
-            )
-            .into_any_element(),
-        )
-    } else {
-        None
-    };
-    div()
-        .relative()
-        .child(
-            div()
-                .id("session-overflow-btn")
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(rgba(s.border_subtle))
-                .bg(rgba(s.bg_input))
-                .text_color(rgba(s.fg_primary))
-                .text_size(px(13.0))
-                .cursor_pointer()
-                .hover(move |st| st.bg(rgba(s.bg_hover)))
-                .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from(t!("chrome.more_actions"))).build(window, cx)
-                })
-                .child("\u{22EF}")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _, cx| {
-                        // Without `stop_propagation`, the AppView
-                        // root's mouse-up listener (which dismisses
-                        // any open popup) fires immediately after
-                        // and closes the menu we just opened.
-                        cx.stop_propagation();
-                        this.toggle_session_overflow(cx);
-                    }),
-                ),
-        )
-        .children(panel)
+                };
+            menu.item(item(t!("chrome.send_break"), AppView::send_break_now))
+                .item(item(t!("chrome.send_hex"), AppView::open_send_hex))
+                .item(item(t!("chrome.send_file"), AppView::start_send_file))
+                .item(item(t!("chrome.move_to_new_window"), |this, _, cx| {
+                    this.move_session_to_new_window(None, cx)
+                }))
+        })
 }

@@ -17,6 +17,11 @@ final stable entry at tag time.
 
 ### Changed
 
+- **Main window on GPUI Kit components**: buttons, the Send File
+  dialog's buttons and progress bar, the profile right-click menu and
+  the session ⋯ menu now use GPUI Kit, following the active skin.
+- **Welcome screen** has a **New profile** button.
+
 - **Settings window rebuilt on GPUI Kit's Settings layout**: a page
   sidebar with each page's sections listed beneath it, a search box
   that jumps straight to matching settings, and GPUI Kit switches.

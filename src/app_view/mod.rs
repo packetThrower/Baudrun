@@ -38,13 +38,13 @@ use std::time::Duration;
 use gpui::SharedString;
 use gpui::{
     div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt, AppContext, Bounds,
-    Context, DismissEvent, Entity, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent,
-    PathPromptOptions, Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds,
-    WindowHandle, WindowOptions,
+    Context, DismissEvent, Entity, IntoElement, MouseButton, MouseUpEvent, PathPromptOptions,
+    Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds, WindowHandle, WindowOptions,
 };
 use gpui_kit::component::{
     button::Button,
     input::{Input, InputState},
+    menu::ContextMenuExt,
     notification::Notification,
     progress::Progress,
     scroll::ScrollableElement,
@@ -71,8 +71,8 @@ use crate::term_bridge::Palette;
 use crate::terminal_view::{ProfileSettings, TerminalView};
 
 use chrome::{
-    about_dialog_body, friendly_open_error, profile_context_menu_overlay, session_header,
-    sidebar_header, sidebar_icon_strip, status_bar, suspended_banner, suspended_pane, welcome_pane,
+    about_dialog_body, friendly_open_error, profile_row_menu, session_header, sidebar_header,
+    sidebar_icon_strip, status_bar, suspended_banner, suspended_pane, welcome_pane,
 };
 use editor::{apply_editor_to_profile, build_editor, form_pane, EditorRender};
 use opts::{
@@ -229,11 +229,6 @@ pub struct AppView {
     /// hex input plus a shared error mutex the dialog reads on
     /// every render to surface parse / send failures inline.
     send_hex: Option<SendHexState>,
-    /// `true` while the session-header `⋯` overflow menu is open.
-    /// Cleared by clicking an item, clicking outside (root mouse-
-    /// up listener), or any other path that calls
-    /// `dismiss_session_overflow`.
-    session_overflow_open: bool,
     /// Scroll position of the sidebar profile list. Held on the
     /// AppView so the position persists across re-renders (every
     /// settings/profile change triggers a full sidebar rebuild;
@@ -250,12 +245,6 @@ pub struct AppView {
     /// `Settings::sidebar_collapsed` on window creation; toggled
     /// live by `Self::toggle_sidebar` (chevron click or Cmd+B).
     sidebar_collapsed: bool,
-    /// `Some(_)` while a profile-row right-click menu is showing.
-    /// Carries the right-clicked profile id + the click position so
-    /// the popup can render anchored at the cursor. Cleared by any
-    /// click — menu items handle their action first; the root
-    /// AppView listener clears state on the same mouse-up.
-    profile_context_menu: Option<ProfileContextMenu>,
     /// Polling task that retries `connect_to` after an unexpected
     /// session drop. Held so a user disconnect / profile switch
     /// can cancel pending retries by dropping the field. `None`
@@ -519,14 +508,6 @@ struct FooterEvent {
     generation: u64,
 }
 
-/// Right-click menu state for sidebar profile rows. Stores the
-/// profile id that was right-clicked plus the cursor position to
-/// anchor the popup to.
-struct ProfileContextMenu {
-    profile_id: String,
-    pos: gpui::Point<gpui::Pixels>,
-}
-
 /// Open-Send-Hex-dialog widget state. The Input is a gpui entity the
 /// dialog can render directly; the error is a shared mutex the
 /// dialog reads on every render so parse failures surface inline
@@ -608,12 +589,10 @@ impl AppView {
             transfer: None,
             send_file: None,
             send_hex: None,
-            session_overflow_open: false,
             sidebar_scroll: ScrollHandle::new(),
             sidebar_collapsed: initial.sidebar_collapsed,
             footer_event: None,
             footer_event_seq: 0,
-            profile_context_menu: None,
             auto_reconnect_task: None,
             auto_reconnect_for: None,
             last_highlight_sig: None,
@@ -2184,21 +2163,6 @@ impl AppView {
         }
     }
 
-    /// Toggle the session-header `⋯` overflow menu. Single source
-    /// of truth so both the button click and the dismiss-on-outside
-    /// listener can drive the state.
-    fn toggle_session_overflow(&mut self, cx: &mut Context<Self>) {
-        self.session_overflow_open = !self.session_overflow_open;
-        cx.notify();
-    }
-
-    fn dismiss_session_overflow(&mut self, cx: &mut Context<Self>) {
-        if self.session_overflow_open {
-            self.session_overflow_open = false;
-            cx.notify();
-        }
-    }
-
     /// Set the transient status-bar log line for the user.
     /// Replaces whatever's currently shown (last-write-wins) and
     /// schedules an auto-clear after a few seconds so the bar
@@ -2253,7 +2217,6 @@ impl AppView {
     /// down the live write channel. Surfaces success / failure via
     /// toast since there's no inline UI affordance for it.
     pub(crate) fn send_break_now(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.session_overflow_open = false;
         let Some(io) = self.transfer_io.as_ref() else {
             return;
         };
@@ -2287,7 +2250,6 @@ impl AppView {
     /// `close_send_hex` (drops state) and `submit_send_hex`
     /// (parses + sends bytes + closes on success).
     fn open_send_hex(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.session_overflow_open = false;
         if self.transfer_io.is_none() {
             window.push_notification(
                 Notification::error(SharedString::from(t!("app.connect_before_hex"))),
@@ -2874,28 +2836,6 @@ impl AppView {
         }
     }
 
-    /// Open the right-click context menu anchored at the click
-    /// position. Called by the sidebar profile rows on right-mouse-
-    /// down. `pos` is in window-relative coordinates so the popup
-    /// lands under the cursor regardless of where the row sat.
-    fn open_profile_context_menu(
-        &mut self,
-        profile_id: String,
-        pos: gpui::Point<gpui::Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        self.profile_context_menu = Some(ProfileContextMenu { profile_id, pos });
-        cx.notify();
-    }
-
-    /// Dismiss the right-click context menu. Idempotent — safe to
-    /// fire from the global mouse-up listener every time.
-    fn dismiss_profile_context_menu(&mut self, cx: &mut Context<Self>) {
-        if self.profile_context_menu.take().is_some() {
-            cx.notify();
-        }
-    }
-
     /// Take ownership of every piece of live-session state from this
     /// AppView and return it as a [`SessionBundle`]. Returns `None`
     /// when the window isn't connected to a profile (nothing to
@@ -3463,7 +3403,6 @@ impl Render for AppView {
                         .child(session_header(
                             profile,
                             reconnecting,
-                            self.session_overflow_open,
                             self.dtr_asserted,
                             self.rts_asserted,
                             cx,
@@ -4036,8 +3975,6 @@ impl Render for AppView {
                 )
             })
             // -- gpui-component overlay layers (dialogs, toasts) --
-            // -- profile-row right-click context menu --
-            .children(profile_context_menu_overlay(self, cx))
             // Any mouse-up anywhere dismisses open popup menus.
             // Menu items run their own `on_mouse_up` first (because
             // gpui dispatches inside-out); this is the catch-all
@@ -4051,8 +3988,6 @@ impl Render for AppView {
                 MouseButton::Left,
                 cx.listener(|this, evt: &MouseUpEvent, window, cx| {
                     this.finish_profile_tear_off(evt.position, window, cx);
-                    this.dismiss_profile_context_menu(cx);
-                    this.dismiss_session_overflow(cx);
                     // Also dismiss the terminal's right-click
                     // context menu so clicking outside the popup
                     // closes it. The terminal owns the menu state
@@ -4349,6 +4284,7 @@ fn profile_row(
     }
     let id_for_left = id.clone();
     let id_for_right = id.clone();
+    let app = cx.entity();
     let id_for_drop = id;
     let accent = tokens.accent;
     // Selection is `on_click` (not raw `on_mouse_up`) on purpose:
@@ -4361,12 +4297,6 @@ fn profile_row(
     row.on_click(cx.listener(move |this, _: &gpui::ClickEvent, window, cx| {
         this.select_profile(id_for_left.clone(), window, cx);
     }))
-    .on_mouse_down(
-        MouseButton::Right,
-        cx.listener(move |this, evt: &MouseDownEvent, _, cx| {
-            this.open_profile_context_menu(id_for_right.clone(), evt.position, cx);
-        }),
-    )
     // Drag-to-reorder (zorite's tab recipe): the payload becomes
     // the ghost pill under the cursor; a matching drag hovering
     // this row paints a 2px accent rule at its top edge ("will
@@ -4386,6 +4316,7 @@ fn profile_row(
         cx.default_global::<GlobalProfileDrag>().0 = None;
         this.reorder_profile(drag.id.clone(), Some(id_for_drop.clone()), cx);
     }))
+    .context_menu(move |menu, _, cx| profile_row_menu(menu, &app, &id_for_right, cx))
 }
 
 /// Collapsed-mode counterpart to `profile_row`: a single Lucide
@@ -4443,6 +4374,7 @@ fn profile_icon(
 
     let id_for_left = id.clone();
     let id_for_right = id.clone();
+    let app = cx.entity();
     div()
         .id(SharedString::from(format!("collapsed-profile-{id}")))
         .w_full()
@@ -4468,12 +4400,7 @@ fn profile_icon(
                 this.select_profile(id_for_left.clone(), window, cx);
             }),
         )
-        .on_mouse_down(
-            MouseButton::Right,
-            cx.listener(move |this, evt: &MouseDownEvent, _, cx| {
-                this.open_profile_context_menu(id_for_right.clone(), evt.position, cx);
-            }),
-        )
+        .context_menu(move |menu, _, cx| profile_row_menu(menu, &app, &id_for_right, cx))
 }
 
 /// Dismiss the (already-clicked) Undo toast after a 1.5 s linger so
