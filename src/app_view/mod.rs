@@ -42,7 +42,7 @@ use gpui::{
     PathPromptOptions, Render, ScrollHandle, Task, TitlebarOptions, Window, WindowBounds,
     WindowHandle, WindowOptions,
 };
-use gpui_component::{
+use gpui_kit::component::{
     button::Button,
     input::{Input, InputState},
     notification::Notification,
@@ -617,7 +617,7 @@ impl AppView {
             auto_reconnect_for: None,
             last_highlight_sig: None,
             editor: None,
-            built_locale: gpui_component::locale().to_string(),
+            built_locale: gpui_kit::component::locale().to_string(),
             suspended: false,
             // Default to "both asserted" — matches the OS / serialport-rs
             // defaults on Unix and Windows. The connect_to path overrides
@@ -650,7 +650,7 @@ impl AppView {
         self.apply_copy_on_select(settings, cx);
     }
 
-    /// Re-install the UI locale from settings. `gpui_component::set_locale`
+    /// Re-install the UI locale from settings. `gpui_kit::component::set_locale`
     /// sets a process-global that both gpui-component's widget chrome and
     /// (from Phase A.2 on) Baudrun's own `t!()` strings read, so this one
     /// call re-languages everything the next time `render` runs. Because
@@ -661,7 +661,7 @@ impl AppView {
     /// write) so running it on every settings change is fine. See
     /// src/i18n.rs + issue #72.
     fn apply_locale(&self, settings: &settings::Settings) {
-        gpui_component::set_locale(crate::i18n::resolve(&settings.locale));
+        gpui_kit::component::set_locale(crate::i18n::resolve(&settings.locale));
     }
 
     /// Re-feed translated option labels to the open editor's selects
@@ -3329,7 +3329,7 @@ impl Render for AppView {
         // frame (and no-ops when no editor is open). The rest of the
         // main window's strings are read fresh from `t!()` each render,
         // so they follow automatically.
-        let active_locale = gpui_component::locale().to_string();
+        let active_locale = gpui_kit::component::locale().to_string();
         if self.built_locale != active_locale {
             self.built_locale = active_locale;
             self.relabel_editor_selects(window, cx);
@@ -3368,17 +3368,6 @@ impl Render for AppView {
         let profiles = self.profile_store.list();
         let selected = self.selected_profile_id.clone();
         let connected = self.connected_profile_id.clone();
-        // gpui-component's dialog / notification / sheet overlays
-        // don't render unless we explicitly ask for them here. The
-        // gpui_component::Root wrap in main.rs only paints `view`
-        // and the tooltip layer; everything else has to be added
-        // by the user (story/lib.rs follows the same pattern).
-        // Without this, `window.open_alert_dialog` queues the
-        // dialog into Root's `active_dialogs` Vec but nothing
-        // ever paints it — the build closure only fires from
-        // `render_dialog_layer`.
-        let dialog_layer = Root::render_dialog_layer(window, cx);
-        let notification_layer = Root::render_notification_layer(window, cx);
 
         // Right pane: three branches.
         //   * editor is open  → form
@@ -4049,8 +4038,6 @@ impl Render for AppView {
                 )
             })
             // -- gpui-component overlay layers (dialogs, toasts) --
-            .children(dialog_layer)
-            .children(notification_layer)
             // -- profile-row right-click context menu --
             .children(profile_context_menu_overlay(self, cx))
             // Any mouse-up anywhere dismisses open popup menus.

@@ -5,16 +5,16 @@
 #   * advisories — RUSTSEC vulnerabilities + unmaintained warnings
 #   * licenses   — allow-list of GPL-3-compatible permissive licenses
 #   * bans       — wildcards warned; duplicate versions warned
-#   * sources    — crates.io only, plus the github orgs we depend on
+#   * sources    — crates.io only
 
 [advisories]
 # Severity for vulnerability advisories is "deny" by default. Below
 # are explicit upstream-unmaintained advisories we cannot fix
 # without bumping a parent dep that doesn't have a fix yet.
 ignore = [
-    { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 unmaintained. Transitive via gpui-component, gpui (Zed-git), and image/rav1e. Can't fix without upstream bumps; revisit at each gpui pull." },
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile 2.2.0 unmaintained. Transitive via gpui-component-assets -> zed-reqwest. Upstream Zed tracks rustls; clears when their pemfile usage migrates to rustls-pki-types." },
-    { id = "RUSTSEC-2024-0384", reason = "instant 0.1.13 unmaintained. Transitive via gpui-component and notify -> notify-types. Both upstream; revisit at each gpui-component rev bump." },
+    { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 unmaintained. Transitive via gpui-component, gpui-pre-platform (metal), and image/rav1e. Can't fix without upstream bumps; revisit at each gpui pull." },
+    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile 2.2.0 unmaintained. Transitive via gpui-kit-assets -> gpui-pre-reqwest. Upstream Zed tracks rustls; clears when their pemfile usage migrates to rustls-pki-types." },
+    { id = "RUSTSEC-2024-0384", reason = "instant 0.1.13 unmaintained. Transitive via gpui-base / gpui-component. Upstream; revisit at each GPUI Kit bump." },
     { id = "RUSTSEC-2026-0370", reason = "zvariant 5.x unmaintained (merged into zbus 6 as its `wire` module). Transitive, Linux only: zbus 5 -> accesskit_unix / ashpd / oo7 -> gpui_linux. Clears when gpui moves to zbus 6; revisit at each gpui pull." },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6). Same path and fix horizon as RUSTSEC-2026-0370." },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6). Same path and fix horizon as RUSTSEC-2026-0370." },
@@ -71,28 +71,18 @@ expression = "MIT"
 license-files = []
 
 [bans]
-# Duplicate versions are noisy on a Zed-git-based stack (windows-
-# sys major-version churn, etc.). "warn" so CI surfaces the count
+# Duplicate versions are noisy on the gpui stack (windows-sys
+# major-version churn, etc.). "warn" so CI surfaces the count
 # without failing.
 multiple-versions = "warn"
-# `git = "..."` deps without a version constraint read as wildcards
-# to cargo-deny. The four wildcard hits are exactly the four git
-# deps documented in Cargo.toml (gpui, gpui_platform, gpui-component,
-# gpui-component-assets) — the no-rev-on-gpui choice is load-bearing
-# per the Cargo.toml dep comment. "warn" surfaces drift without
-# blocking the build.
+# Wildcard version specs (incl. rev-less git deps) are warned, not
+# denied. There are none today; this catches one creeping in.
 wildcards = "warn"
 
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# No per-URL allow-list — Zed pulls in transitive git deps from
-# multiple sibling repos under `zed-industries` (font-kit, reqwest,
-# scap, wgpu, xim-rs, zed itself), and pinning the list per-URL
-# would break on every Zed bump. Org-level allow is the right
-# granularity.
+# crates.io only. GPUI Kit + gpui-pre made the build git-free; any
+# git dependency now fails `unknown-git`.
 allow-git = []
-
-[sources.allow-org]
-github = ["zed-industries", "longbridge"]

@@ -8,8 +8,8 @@ version: 2
 
 updates:
   # The app itself — one Rust crate at the repo root. Cargo.toml +
-  # Cargo.lock are the source of truth for every native dep (gpui,
-  # gpui-component, alacritty_terminal, serialport, rusb, ureq, …).
+  # Cargo.lock are the source of truth for every native dep (gpui-kit,
+  # alacritty_terminal, serialport, rusb, ureq, …).
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
@@ -21,6 +21,16 @@ updates:
       # a proper look.
       cargo-minor:
         update-types: ["minor", "patch"]
+    # GPUI Kit moves deliberately, in one pass across all four
+    # packetThrower apps (Baudrun, PortFinder, etch341, Zorite): gpui-kit pins
+    # one gpui-pre snapshot, so a lone bump of any of these splits the
+    # graph or lands an untested combo.
+    ignore:
+      - dependency-name: "gpui-kit"
+      - dependency-name: "gpui-base"
+      - dependency-name: "gpui-component"
+      - dependency-name: "gpui-kit-assets"
+      - dependency-name: "gpui-pre*"
 
   # Docs site — Astro + Starlight, a self-contained pnpm project
   # under docs-next/. Dependabot's `npm` ecosystem reads

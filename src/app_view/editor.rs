@@ -32,7 +32,7 @@ use gpui::{
     div, prelude::*, px, rgba, Context, Entity, IntoElement, MouseButton, MouseUpEvent,
     ScrollHandle, SharedString, Window,
 };
-use gpui_component::{
+use gpui_kit::component::{
     checkbox::Checkbox,
     input::{Input, InputState},
     scroll::ScrollableElement,

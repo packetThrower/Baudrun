@@ -26,7 +26,7 @@ use gpui::{
     anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
     Context, IntoElement, MouseButton, MouseUpEvent, SharedString, Window,
 };
-use gpui_component::tooltip::Tooltip;
+use gpui_kit::component::tooltip::Tooltip;
 
 use super::buttons::{line_pill, pill_button, primary_button};
 use super::{AppView, FooterEvent, LogSeverity, STATUS_DOT_PX};
@@ -669,7 +669,7 @@ pub(super) fn status_bar(
 /// affordance on the right that opens the new-profile form. The
 /// "+" is a div-with-click rather than a real button widget — same
 /// reasoning as the rest of the sidebar (less surface area than
-/// adopting `gpui_component::button` for one element).
+/// adopting `gpui_kit::component::button` for one element).
 ///
 /// `update_pending` is `true` when the boot-time update check
 /// (`crate::updater`) found a newer release the user hasn't

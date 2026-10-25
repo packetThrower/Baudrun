@@ -2,7 +2,7 @@
 //!
 //! Phase A.1 of the localization work (see TODO.md "Localization
 //! (i18n)"): this module resolves which locale the app should run in
-//! and installs it via `gpui_component::set_locale`, which drives the
+//! and installs it via `gpui_kit::component::set_locale`, which drives the
 //! `rust-i18n` global that gpui-component's own widget chrome
 //! (dialogs, pagination, calendar, etc.) reads. gpui-component bundles
 //! `en`, `zh-CN`, `zh-HK`, and `it` translations, so this alone gives
@@ -32,12 +32,12 @@ pub const SUPPORTED: &[(&str, &str)] = &[("en", "English"), ("zh-CN", "简体中
 pub const DEFAULT: &str = "en";
 
 /// Resolve the active locale and install it via
-/// `gpui_component::set_locale`. Called once at boot from `main::run`
+/// `gpui_kit::component::set_locale`. Called once at boot from `main::run`
 /// with the persisted `Settings.locale`. Returns the installed code
 /// for logging.
 pub fn init(override_code: &str) -> &'static str {
     let resolved = resolve(override_code);
-    gpui_component::set_locale(resolved);
+    gpui_kit::component::set_locale(resolved);
     log::info!("i18n: locale set to {resolved} (settings.locale={override_code:?})");
     resolved
 }

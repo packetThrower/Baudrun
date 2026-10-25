@@ -7,7 +7,7 @@ use std::rc::Rc;
 use gpui::{
     px, AppContext, Bounds, Entity, TitlebarOptions, WindowBounds, WindowHandle, WindowOptions,
 };
-use gpui_component::{Root, TitleBar};
+use gpui_kit::component::{Root, TitleBar};
 
 use super::session::{bounds_to_geometry, geometry_to_bounds, WindowInit};
 use super::AppView;
