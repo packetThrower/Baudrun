@@ -17,7 +17,11 @@
 //! moving the types here would force ~13 `pub(super)` widenings
 //! for no functional gain.
 
-use gpui::{div, prelude::*, px, rgba, MouseButton, MouseUpEvent, SharedString, Window};
+use gpui::{div, prelude::*, px, rgba, ClickEvent, SharedString, Window};
+use gpui_kit::component::{
+    button::{Button, ButtonVariants},
+    Disableable,
+};
 
 use super::opts::Opt;
 
@@ -81,81 +85,39 @@ pub(super) fn send_file_path_pill(label: String) -> gpui::Div {
         .child(text)
 }
 
-/// "Choose…" — secondary pill button next to the path display.
-pub(super) fn send_file_choose_button<F>(on_click: F) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    div()
-        .px_3()
-        .py(px(6.0))
-        .rounded_md()
-        .border_1()
-        .border_color(rgba(0x80808055u32))
-        .bg(rgba(0x80808022u32))
-        .text_size(px(13.0))
-        .cursor_pointer()
-        .hover(|st| st.bg(rgba(0x4DA6FF22u32)))
-        .child("Choose\u{2026}")
-        .on_mouse_up(MouseButton::Left, on_click)
+/// "Choose…" — outline button next to the path display.
+pub(super) fn send_file_choose_button(
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> Button {
+    Button::new("send-file-choose")
+        .outline()
+        .label(t!("settings.choose"))
+        .on_click(on_click)
 }
 
-/// Cancel-style button at the bottom of the dialog. Quiet styling
-/// (matches Tauri's secondary button) so it doesn't compete with
-/// the primary Send button.
-pub(super) fn send_file_secondary_button<F>(
+/// Cancel-style button at the bottom of the dialog. Outline so it
+/// doesn't compete with the primary Send button.
+pub(super) fn send_file_secondary_button(
     label: impl Into<SharedString>,
-    on_click: F,
-) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    div()
-        .px_4()
-        .py(px(6.0))
-        .rounded_md()
-        .border_1()
-        .border_color(rgba(0x80808055u32))
-        .text_size(px(13.0))
-        .cursor_pointer()
-        .hover(|st| st.bg(rgba(0x80808033u32)))
-        .child(label.into())
-        .on_mouse_up(MouseButton::Left, on_click)
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> Button {
+    Button::new("send-file-secondary")
+        .outline()
+        .label(label)
+        .on_click(on_click)
 }
 
-/// Send-style primary button. Disabled state (when `enabled` is
-/// false) still renders but ignores clicks and dims out, matching
-/// Tauri's "you must pick a file first" affordance.
-pub(super) fn send_file_primary_button<F>(
+/// Send-style primary button. Disabled (dimmed, ignores clicks)
+/// until a file is picked, matching Tauri's "pick a file first"
+/// affordance.
+pub(super) fn send_file_primary_button(
     label: impl Into<SharedString>,
     enabled: bool,
-    on_click: F,
-) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    let text_color = if enabled {
-        0xFFFFFFFFu32
-    } else {
-        0xFFFFFFAAu32
-    };
-    let bg = if enabled {
-        0x4DA6FFFFu32
-    } else {
-        0x4DA6FF66u32
-    };
-    let mut btn = div()
-        .px_4()
-        .py(px(6.0))
-        .rounded_md()
-        .bg(rgba(bg))
-        .text_size(px(13.0))
-        .text_color(rgba(text_color))
-        .child(label.into());
-    if enabled {
-        btn = btn
-            .cursor_pointer()
-            .on_mouse_up(MouseButton::Left, on_click);
-    }
-    btn
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut gpui::App) + 'static,
+) -> Button {
+    Button::new("send-file-primary")
+        .primary()
+        .label(label)
+        .disabled(!enabled)
+        .on_click(on_click)
 }

@@ -36,12 +36,15 @@ use alacritty_terminal::{
     vte::ansi::Processor,
 };
 use gpui::{
-    anchored, black, deferred, div, font, prelude::*, px, relative, rgb, rgba, AnyElement, App,
-    Bounds, ClipboardItem, Context, FocusHandle, Focusable, IntoElement, KeyDownEvent, Keystroke,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point as PixelPoint, Render,
-    ScrollDelta, ScrollWheelEvent, SharedString, Task, TextRun, Window,
+    black, div, font, prelude::*, px, relative, rgb, rgba, App, Bounds, ClipboardItem, Context,
+    Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent, Keystroke, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta,
+    ScrollWheelEvent, Task, TextRun, Window,
 };
-use gpui_kit::component::WindowExt;
+use gpui_kit::component::{
+    menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
+    WindowExt,
+};
 
 use crate::term_bridge::{
     make_term, mirror_to_grid, Dims, ListenerState, Palette, TerminalListener,
@@ -233,14 +236,6 @@ pub struct TerminalView {
     /// in. Honoured by `handle_mouse_up` — on release with a
     /// non-empty selection, writes the text to the clipboard.
     copy_on_select: bool,
-    /// Window-coords anchor for the right-click context menu.
-    /// `Some(pos)` while the menu is open, `None` otherwise.
-    /// The menu offers Copy / Paste / Select All / Clear — same
-    /// rows the keybindings cover, surfaced for users who prefer
-    /// mousing. Dismissed by clicking an item, clicking outside
-    /// (AppView's root catch-all calls our `close_context_menu`),
-    /// or pressing Escape.
-    context_menu_pos: Option<PixelPoint<Pixels>>,
     /// `Some(grab_offset_within_thumb)` while the user is dragging
     /// the scrollback thumb. The grab offset (Y distance from the
     /// thumb's top to the initial click) is preserved across the
@@ -401,7 +396,6 @@ impl TerminalView {
             is_dragging: false,
             triple_click_selection: false,
             copy_on_select: false,
-            context_menu_pos: None,
             scrollbar_drag: None,
             cursor_blink_phase: true,
             bell_flash_until: None,
@@ -1221,182 +1215,38 @@ impl TerminalView {
         cx.notify();
     }
 
-    /// Right-mouse-down handler. Opens the terminal context menu
-    /// anchored at the cursor. Selection state is preserved — a
-    /// right-click that lands inside an active drag-selection keeps
-    /// the selection alive so the user can right-click → Copy. The
-    /// `stop_propagation` keeps the AppView root's mouse-up
-    /// catch-all (which dismisses any open popup) from firing on
-    /// the same gesture and immediately closing the menu we just
-    /// opened.
-    fn handle_right_mouse_down(
-        &mut self,
-        event: &MouseDownEvent,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if event.button != MouseButton::Right {
-            return;
-        }
-        cx.stop_propagation();
-        self.context_menu_pos = Some(event.position);
-        cx.notify();
-    }
-
-    /// Tear down the right-click context menu. Called by the menu
-    /// rows themselves after running their action, and by
-    /// `AppView`'s outer click-outside catch-all (via
-    /// `shortcut_dismiss_terminal_context_menu`). Safe to call
-    /// when the menu is already closed.
-    pub fn close_context_menu(&mut self, cx: &mut Context<Self>) {
-        if self.context_menu_pos.take().is_some() {
-            cx.notify();
-        }
-    }
-
-    /// Build the right-click context menu overlay. Returns `None`
-    /// when the menu isn't open. The panel renders as a
-    /// `deferred(anchored(pos))` overlay so it sits above the
-    /// terminal grid + scrollbar thumb and pins to the cursor
-    /// coordinate captured by `handle_right_mouse_down`.
-    fn render_context_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let pos = self.context_menu_pos?;
-        let s = *cx.global::<crate::skin_tokens::SkinTokens>();
-        // Disable Copy when there's nothing selected — the action
-        // would no-op but a greyed entry communicates "you'd need
-        // to drag-select first" without the user having to click.
-        let has_selection = self
+    /// Right-click menu (GPUI Kit `PopupMenu` via `.context_menu`):
+    /// Copy / Paste / Select All / Clear — the same actions the
+    /// keybindings cover. Copy is disabled with nothing selected; a
+    /// right-click inside a selection keeps it so Copy works.
+    fn context_menu(terminal: &Entity<Self>, menu: PopupMenu, cx: &gpui::App) -> PopupMenu {
+        let has_selection = terminal
+            .read(cx)
             .term
             .selection_to_string()
-            .filter(|t| !t.is_empty())
-            .is_some();
-        // Rows are uniform — single label, single click handler,
-        // optional dim state. The closure shape matches what
-        // `gpui::div().child(...)` expects, so each row is a
-        // standalone Div.
-        type ClickHandler = Box<dyn Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static>;
-        let row = move |id: &'static str,
-                        label: Cow<'static, str>,
-                        enabled: bool,
-                        on_click: ClickHandler|
-              -> AnyElement {
-            let hover_bg = s.bg_hover;
-            let d = div()
-                .id(SharedString::from(id))
-                .px_3()
-                .py(px(6.0))
-                .text_color(rgba(s.fg_primary))
-                .text_size(px(13.0))
-                .child(label);
-            if enabled {
-                d.cursor_pointer()
-                    .hover(move |st| st.bg(rgba(hover_bg)))
-                    .on_mouse_up(MouseButton::Left, on_click)
-                    .into_any_element()
-            } else {
-                d.opacity(0.45).into_any_element()
-            }
-        };
-        // Each row: stop_propagation to keep the AppView root
-        // catch-all from re-firing dismiss after we've already
-        // run the action; then dispatch through the same path
-        // the keybindings use (entity.update on the terminal)
-        // so the action + menu surfaces stay equivalent.
-        let copy_row = {
-            let entity = cx.entity();
-            row(
-                "Copy",
-                t!("terminal.menu.copy"),
-                has_selection,
-                Box::new(move |_, _window, app| {
-                    entity.update(app, |this, cx| {
-                        cx.stop_propagation();
-                        this.copy_selection(cx);
-                        this.close_context_menu(cx);
-                    });
-                }),
-            )
-        };
-        let paste_row = {
-            let entity = cx.entity();
-            row(
-                "Paste",
-                t!("terminal.menu.paste"),
-                true,
-                Box::new(move |_, window, app| {
-                    entity.update(app, |this, cx| {
-                        cx.stop_propagation();
-                        this.paste_clipboard(window, cx);
-                        this.close_context_menu(cx);
-                    });
-                }),
-            )
-        };
-        let select_all_row = {
-            let entity = cx.entity();
-            row(
-                "Select All",
-                t!("terminal.menu.select_all"),
-                true,
-                Box::new(move |_, _window, app| {
-                    entity.update(app, |this, cx| {
-                        cx.stop_propagation();
-                        this.select_all(cx);
-                        this.close_context_menu(cx);
-                    });
-                }),
-            )
-        };
-        let clear_row = {
-            let entity = cx.entity();
-            row(
-                "Clear",
-                t!("terminal.menu.clear"),
-                true,
-                Box::new(move |_, _window, app| {
-                    entity.update(app, |this, cx| {
-                        cx.stop_propagation();
-                        this.clear_screen(cx);
-                        this.close_context_menu(cx);
-                    });
-                }),
-            )
-        };
-        // Match `app_view::profile_context_menu_overlay`'s
-        // two-layer paint: opaque `bg_window` base for legibility
-        // over whatever sits behind, then the translucent
-        // `bg_panel` skin overlay on top to match the rest of the
-        // chrome's frosted look. `--shadow-floating` from the skin
-        // wins over the default `shadow_md` when authored.
-        let shadow_floating = cx
-            .global::<crate::skin_tokens::SkinShadows>()
-            .floating
-            .clone();
-        let panel = div()
-            .min_w(px(160.0))
-            .bg(rgba(s.bg_window))
-            .border_1()
-            .border_color(rgba(s.border_subtle))
-            .rounded(px(s.radius_md))
-            .map(|this| {
-                if shadow_floating.is_empty() {
-                    this.shadow_md()
-                } else {
-                    this.shadow(shadow_floating.clone())
-                }
+            .is_some_and(|t| !t.is_empty());
+        let item = |label: Cow<'static, str>,
+                    run: fn(&mut Self, &mut Window, &mut Context<Self>)| {
+            let terminal = terminal.clone();
+            PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                terminal.update(cx, |this, cx| run(this, window, cx))
             })
-            .child(
-                div()
-                    .w_full()
-                    .bg(rgba(s.bg_panel))
-                    .rounded(px(s.radius_md))
-                    .py_1()
-                    .child(copy_row)
-                    .child(paste_row)
-                    .child(select_all_row)
-                    .child(clear_row),
-            );
-        Some(deferred(anchored().position(pos).child(panel)).into_any_element())
+        };
+        menu.item(
+            item(t!("terminal.menu.copy"), |this, _, cx| {
+                this.copy_selection(cx)
+            })
+            .disabled(!has_selection),
+        )
+        .item(item(t!("terminal.menu.paste"), |this, window, cx| {
+            this.paste_clipboard(window, cx)
+        }))
+        .item(item(t!("terminal.menu.select_all"), |this, _, cx| {
+            this.select_all(cx)
+        }))
+        .item(item(t!("terminal.menu.clear"), |this, _, cx| {
+            this.clear_screen(cx)
+        }))
     }
 
     fn handle_mouse_up(
@@ -1811,27 +1661,12 @@ impl Render for TerminalView {
             .on_key_down(cx.listener(Self::handle_key_down))
             .on_scroll_wheel(cx.listener(Self::handle_scroll))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
-            // Right-click opens the Copy / Paste / Select All /
-            // Clear context menu anchored at the cursor — see
-            // `handle_right_mouse_down` for why this lives on
-            // mouse_down rather than mouse_up (matches the macOS
-            // / Windows / Linux convention of "menu appears on
-            // press, not release").
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(Self::handle_right_mouse_down),
-            )
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))
             .child(
                 self.grid
                     .element(cell_w, self.bell_flash_active(), self.grid_bounds.clone()),
             )
-            // Right-click context menu overlay. Painted only when
-            // `context_menu_pos` is `Some`; `deferred` so it draws
-            // above sibling chrome (scrollbar thumb, etc.) and
-            // `anchored` so it pins to the cursor coordinate.
-            .children(self.render_context_menu(cx))
             // Scroll-indicator overlay on the right edge. Mirrors
             // alacritty's display_offset / history_size so the
             // thumb position reflects the user's place in the
@@ -1856,6 +1691,10 @@ impl Render for TerminalView {
                         cx.listener(Self::handle_scrollbar_mouse_down),
                     )
             }))
+            .context_menu({
+                let terminal = cx.entity();
+                move |menu, _, cx| Self::context_menu(&terminal, menu, cx)
+            })
     }
 }
 

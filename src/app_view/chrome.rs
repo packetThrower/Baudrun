@@ -16,117 +16,63 @@
 //!
 //! All functions are `pub(super)` so mod.rs imports them by name.
 //! Field/method access into the parent `AppView` (e.g.
-//! `app.profile_context_menu`, `this.connect_profile_in_new_window`)
+//! `app.connected_profile_id`, `this.connect_profile_in_new_window`)
 //! works without visibility widening — Rust's privacy rule lets
 //! descendant modules see the parent's private items.
 
 use std::{borrow::Cow, time::Duration};
 
 use gpui::{
-    anchored, deferred, div, prelude::*, pulsating_between, px, rgba, Animation, AnimationExt,
-    Context, IntoElement, MouseButton, MouseUpEvent, SharedString, Window,
+    div, prelude::*, pulsating_between, px, rgba, Anchor, Animation, AnimationExt, ClickEvent,
+    Context, Entity, IntoElement, SharedString, Window,
 };
-use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{
+    button::{Button, ButtonVariants},
+    empty::{Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle},
+    link::Link,
+    menu::{DropdownMenu, PopupMenu, PopupMenuItem},
+    status_bar::StatusBar,
+    tag::Tag,
+    tooltip::Tooltip,
+    IconName, Sizable,
+};
 
 use super::buttons::{line_pill, pill_button, primary_button};
 use super::{AppView, FooterEvent, LogSeverity, STATUS_DOT_PX};
 use crate::data::profiles::Profile;
-use crate::skin_tokens::{self, SkinTokens};
+use crate::skin_tokens::SkinTokens;
 
-/// Build the deferred + anchored overlay that renders the profile-
-/// row right-click context menu. Returns `None` when no menu is
-/// open. Lives outside `Render::render` to keep the body readable.
-pub(super) fn profile_context_menu_overlay(
-    app: &AppView,
-    cx: &mut Context<AppView>,
-) -> Option<gpui::AnyElement> {
-    let menu = app.profile_context_menu.as_ref()?;
-    let s = *cx.global::<SkinTokens>();
-    let profile_id = menu.profile_id.clone();
-    let pos = menu.pos;
-    // When the right-clicked profile is the one this window is
-    // already connected to, "Connect in New Window" would either
-    // race the existing session for the same port or quietly steal
-    // it. Surface "Move to New Window" instead, reusing the same
-    // detach/install_session machinery the toolbar Detach button
-    // already drives.
-    let is_connected_row = app.connected_profile_id.as_deref() == Some(profile_id.as_str());
-
-    let item: gpui::Div = if is_connected_row {
-        profile_menu_item(
-            s,
-            t!("chrome.move_session_to_new_window"),
-            cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
-                this.profile_context_menu = None;
-                this.move_session_to_new_window(None, cx);
-            }),
+/// Right-click menu for a sidebar profile row (GPUI Kit `PopupMenu`
+/// via `.context_menu`). When this window is already connected to
+/// the profile, "Connect in New Window" would race the session for
+/// the same port, so offer "Move Session to New Window" instead —
+/// the same detach machinery the overflow menu drives.
+pub(super) fn profile_row_menu(
+    menu: PopupMenu,
+    app: &Entity<AppView>,
+    profile_id: &str,
+    cx: &gpui::App,
+) -> PopupMenu {
+    let connected = app.read(cx).connected_profile_id.as_deref() == Some(profile_id);
+    let app = app.clone();
+    if connected {
+        menu.item(
+            PopupMenuItem::new(t!("chrome.move_session_to_new_window")).on_click(
+                move |_, _, cx| {
+                    app.update(cx, |this, cx| this.move_session_to_new_window(None, cx))
+                },
+            ),
         )
     } else {
-        profile_menu_item(
-            s,
-            t!("chrome.connect_in_new_window"),
-            cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
-                let id = profile_id.clone();
-                this.profile_context_menu = None;
-                this.connect_profile_in_new_window(id, None, cx);
+        let id = profile_id.to_string();
+        menu.item(
+            PopupMenuItem::new(t!("chrome.connect_in_new_window")).on_click(move |_, _, cx| {
+                app.update(cx, |this, cx| {
+                    this.connect_profile_in_new_window(id.clone(), None, cx)
+                })
             }),
         )
-    };
-
-    // Two-layer paint: opaque `bg_window` base, then the
-    // translucent `bg_panel` skin overlay on top — same frosted
-    // look the sidebar / main pane use, except this popup floats
-    // in `deferred(anchored(...))` so there's no opaque chrome
-    // beneath it. Without the base layer the menu sees right
-    // through to whatever's anchored under (terminal grid, editor
-    // pane, sidebar) and the text bleeds into the content
-    // behind. Border + shadow stay on the outer wrapper so they
-    // hug the popup outline. `--shadow-floating` from the active
-    // skin overrides `shadow_md()` when present.
-    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
-    let panel = div()
-        .min_w(px(220.0))
-        .bg(rgba(s.bg_window))
-        .border_1()
-        .border_color(rgba(s.border_subtle))
-        .rounded(px(s.radius_md))
-        .map(|this| {
-            if shadow_floating.is_empty() {
-                this.shadow_md()
-            } else {
-                this.shadow(shadow_floating.clone())
-            }
-        })
-        .child(
-            div()
-                .w_full()
-                .bg(rgba(s.bg_panel))
-                .rounded(px(s.radius_md))
-                .py_1()
-                .child(item),
-        );
-    Some(deferred(anchored().position(pos).child(panel)).into_any_element())
-}
-
-/// One row inside the profile right-click menu. Plain hover-styled
-/// div — keeping it hand-rolled rather than reaching for
-/// gpui-component's PopupMenu (which routes through the Action
-/// system) since we have a single click handler that already needs
-/// the per-row profile id baked in.
-pub(super) fn profile_menu_item<F>(s: SkinTokens, label: impl IntoElement, on_click: F) -> gpui::Div
-where
-    F: Fn(&MouseUpEvent, &mut Window, &mut gpui::App) + 'static,
-{
-    let hover_bg = s.bg_hover;
-    div()
-        .px_3()
-        .py(px(6.0))
-        .text_size(px(13.0))
-        .text_color(rgba(s.fg_primary))
-        .cursor_pointer()
-        .hover(move |st| st.bg(rgba(hover_bg)))
-        .child(label)
-        .on_mouse_up(MouseButton::Left, on_click)
+    }
 }
 
 /// Idle splash screen — shown when the app is launched with no
@@ -208,40 +154,45 @@ pub(super) fn suspended_pane(
         .h_full()
         .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
         .flex()
-        .flex_col()
         .items_center()
         .justify_center()
-        .gap_3()
         .child(
-            div()
-                .text_size(px(11.0))
-                .text_color(rgba(s.fg_tertiary))
-                .child(t!("chrome.session_suspended_heading")),
+            Empty::new()
+                .header(
+                    EmptyHeader::new()
+                        .media(
+                            EmptyMedia::new().child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .text_color(rgba(s.fg_tertiary))
+                                    .child(t!("chrome.session_suspended_heading")),
+                            ),
+                        )
+                        .title(
+                            EmptyTitle::new()
+                                .text_size(px(20.0))
+                                .text_color(rgba(s.fg_primary))
+                                .child(profile.name.clone()),
+                        )
+                        .description(
+                            EmptyDescription::new()
+                                .text_color(rgba(s.fg_secondary))
+                                .child(port_line)
+                                .child(
+                                    div()
+                                        .text_color(rgba(s.fg_tertiary))
+                                        .child(t!("chrome.suspended_pane_detail")),
+                                ),
+                        ),
+                )
+                .content(EmptyContent::new().child(
+                    primary_button("suspended-resume", t!("chrome.resume_button")).on_click(
+                        cx.listener(|this, _: &ClickEvent, window, cx| {
+                            this.resume_session(window, cx);
+                        }),
+                    ),
+                )),
         )
-        .child(
-            div()
-                .text_size(px(20.0))
-                .text_color(rgba(s.fg_primary))
-                .child(profile.name.clone()),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(rgba(s.fg_secondary))
-                .child(port_line),
-        )
-        .child(
-            div()
-                .text_size(px(12.0))
-                .text_color(rgba(s.fg_tertiary))
-                .child(t!("chrome.suspended_pane_detail")),
-        )
-        .child(primary_button(s, t!("chrome.resume_button")).on_mouse_up(
-            MouseButton::Left,
-            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                this.resume_session(window, cx);
-            }),
-        ))
 }
 
 /// Body content for the About dialog: app name, version, one-line
@@ -283,13 +234,9 @@ pub(super) fn about_dialog_body() -> impl IntoElement {
                 .child(t!("chrome.about_copyright")),
         )
         .child(
-            div()
-                .id("about-github-link")
+            Link::new("about-github-link")
+                .href(GITHUB_URL)
                 .text_sm()
-                .text_color(gpui::rgba(0x3b82f6ffu32))
-                .cursor_pointer()
-                .hover(|s| s.text_color(gpui::rgba(0x60a5faffu32)))
-                .on_click(|_evt, _window, cx| cx.open_url(GITHUB_URL))
                 .child(t!("chrome.view_on_github")),
         )
 }
@@ -339,23 +286,31 @@ pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElemen
         .h_full()
         .when(paint_bg, |this| this.bg(rgba(s.bg_main)))
         .flex()
-        .flex_col()
         .items_center()
         .justify_center()
-        .gap_3()
         .child(
-            // `--font-size-h1` from the active skin (default
-            // 24, macOS-26 ships 26).
-            div()
-                .text_size(px(s.font_size_h1_px))
-                .text_color(rgba(s.fg_primary))
-                .child(t!("welcome.heading")),
-        )
-        .child(
-            div()
-                .text_size(px(13.0))
-                .text_color(rgba(s.fg_secondary))
-                .child(prompt),
+            Empty::new()
+                .header(
+                    EmptyHeader::new()
+                        // `--font-size-h1` from the active skin
+                        // (default 24, macOS-26 ships 26).
+                        .title(
+                            EmptyTitle::new()
+                                .text_size(px(s.font_size_h1_px))
+                                .text_color(rgba(s.fg_primary))
+                                .child(t!("welcome.heading")),
+                        )
+                        .description(
+                            EmptyDescription::new()
+                                .text_color(rgba(s.fg_secondary))
+                                .child(prompt),
+                        ),
+                )
+                .content(EmptyContent::new().child(
+                    primary_button("welcome-new-profile", t!("welcome.new_profile")).on_click(
+                        |_, window, cx| window.dispatch_action(Box::new(crate::NewProfile), cx),
+                    ),
+                )),
         )
 }
 
@@ -367,7 +322,6 @@ pub(super) fn welcome_pane(s: SkinTokens, has_profiles: bool) -> impl IntoElemen
 pub(super) fn session_header(
     profile: Profile,
     reconnecting: bool,
-    overflow_open: bool,
     dtr_asserted: bool,
     rts_asserted: bool,
     cx: &mut Context<AppView>,
@@ -471,72 +425,46 @@ pub(super) fn session_header(
                 .flex()
                 .flex_row()
                 .gap_2()
-                .child(session_overflow_button(s, overflow_open, cx))
+                .child(session_overflow_button(cx))
                 .child(
-                    div()
-                        .id("session-dtr")
-                        .child(line_pill(s, "DTR", dtr_asserted))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(SharedString::from(if dtr_asserted {
-                                t!("chrome.dtr_asserted_tooltip")
-                            } else {
-                                t!("chrome.dtr_deasserted_tooltip")
-                            }))
-                            .build(window, cx)
+                    line_pill(s, "session-dtr", "DTR", dtr_asserted)
+                        .tooltip(if dtr_asserted {
+                            t!("chrome.dtr_asserted_tooltip")
+                        } else {
+                            t!("chrome.dtr_deasserted_tooltip")
                         })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_dtr(cx);
-                            }),
-                        ),
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                            this.toggle_dtr(cx);
+                        })),
                 )
                 .child(
-                    div()
-                        .id("session-rts")
-                        .child(line_pill(s, "RTS", rts_asserted))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(SharedString::from(if rts_asserted {
-                                t!("chrome.rts_asserted_tooltip")
-                            } else {
-                                t!("chrome.rts_deasserted_tooltip")
-                            }))
-                            .build(window, cx)
+                    line_pill(s, "session-rts", "RTS", rts_asserted)
+                        .tooltip(if rts_asserted {
+                            t!("chrome.rts_asserted_tooltip")
+                        } else {
+                            t!("chrome.rts_deasserted_tooltip")
                         })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                this.toggle_rts(cx);
-                            }),
-                        ),
+                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                            this.toggle_rts(cx);
+                        })),
                 )
                 .child(
-                    pill_button(s, t!("chrome.clear_button"), false).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                    pill_button(s, "session-clear", t!("chrome.clear_button"), false).on_click(
+                        cx.listener(|this, _: &ClickEvent, _window, cx| {
                             this.terminal.update(cx, |t, cx| t.clear_screen(cx));
                         }),
                     ),
                 )
                 .child(
-                    div()
-                        .id("session-suspend")
-                        .child(pill_button(s, t!("chrome.suspend_button"), false))
-                        .tooltip(|window, cx| {
-                            Tooltip::new(SharedString::from(t!("chrome.suspend_tooltip")))
-                                .build(window, cx)
-                        })
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.suspend_session(window, cx);
-                            }),
-                        ),
+                    pill_button(s, "session-suspend", t!("chrome.suspend_button"), false)
+                        .tooltip(t!("chrome.suspend_tooltip"))
+                        .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                            this.suspend_session(window, cx);
+                        })),
                 )
                 .child(
-                    primary_button(s, t!("chrome.disconnect_button")).on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, window, cx| {
+                    primary_button("session-disconnect", t!("chrome.disconnect_button")).on_click(
+                        cx.listener(|this, _: &ClickEvent, window, cx| {
                             this.disconnect_current(window, cx);
                         }),
                     ),
@@ -624,53 +552,45 @@ pub(super) fn status_bar(
         }
         None => (Vec::new(), None),
     };
-    let bg_input = s.bg_input;
-    let fg_secondary = s.fg_secondary;
-    let chip = move |label: Cow<'static, str>| {
-        // Flat pill — no border + no vertical padding so the
-        // status bar's overall height stays the same as the
-        // text-only baseline. A taller bar steals a row from
-        // the terminal viewport and the last line gets clipped.
-        div()
-            .px(px(6.0))
-            .rounded_md()
-            .bg(rgba(bg_input))
-            .text_color(rgba(fg_secondary))
-            .text_size(px(10.0))
-            .child(label)
+    // Flat chips — no vertical padding so the bar stays at the
+    // text-only height. A taller bar steals a row from the terminal
+    // viewport and the last line gets clipped.
+    let chip = |label: Cow<'static, str>| {
+        Tag::custom(
+            rgba(s.bg_input).into(),
+            rgba(s.fg_secondary).into(),
+            gpui::transparent_black(),
+        )
+        .xsmall()
+        .py_0()
+        .child(label)
     };
-    div()
-        .w_full()
+    let mut bar = StatusBar::new()
         .px_4()
-        .py_1()
         .bg(rgba(s.bg_sidebar))
-        .border_t_1()
         .border_color(rgba(s.border_subtle))
         .text_size(px(11.0))
         .text_color(rgba(s.fg_secondary))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .child(div().flex_1().text_color(text_color).child(text))
-        .children(indicators.into_iter().map(chip))
-        .children(scrollback_text.map(|t| {
+        .child(div().flex_1().text_color(text_color).child(text));
+    for label in indicators {
+        bar = bar.right(chip(label));
+    }
+    if let Some(t) = scrollback_text {
+        bar = bar.right(
             div()
                 .id("status-scrollback")
                 .child(t)
                 .tooltip(|window, cx| {
                     Tooltip::new(SharedString::from(t!("chrome.scrollback_tooltip")))
                         .build(window, cx)
-                })
-        }))
+                }),
+        );
+    }
+    bar
 }
 
 /// Sidebar header row: muted "PROFILES" label on the left, "+"
 /// affordance on the right that opens the new-profile form. The
-/// "+" is a div-with-click rather than a real button widget — same
-/// reasoning as the rest of the sidebar (less surface area than
-/// adopting `gpui_kit::component::button` for one element).
-///
 /// `update_pending` is `true` when the boot-time update check
 /// (`crate::updater`) found a newer release the user hasn't
 /// dismissed yet. The gear icon gets a small amber dot in the
@@ -678,20 +598,10 @@ pub(super) fn status_bar(
 /// rail's "Updates" row so both surfaces feel like one signal.
 pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
-    let hover_bg = s.bg_hover;
-    // Shared chrome for the inline icon-buttons. Each button needs
-    // its own stable id so the tooltip layer can disambiguate hover
-    // targets, and a label string for the tooltip itself.
-    let icon_btn = move |id: &'static str, tip: Cow<'static, str>| {
-        let tip_text = SharedString::from(tip);
-        div()
-            .id(SharedString::from(id))
-            .px_2()
-            .rounded_sm()
-            .text_color(rgba(s.fg_primary))
-            .hover(move |st| st.bg(rgba(hover_bg)))
-            .cursor_pointer()
-            .tooltip(move |window, cx| Tooltip::new(tip_text.clone()).build(window, cx))
+    // Ghost icon buttons; each needs a stable id for the tooltip
+    // layer and its own tooltip text.
+    let icon_btn = |id: &'static str, icon: IconName, tip: Cow<'static, str>| {
+        Button::new(id).ghost().small().icon(icon).tooltip(tip)
     };
     div()
         .w_full()
@@ -710,22 +620,16 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                 .items_center()
                 .gap_1()
                 .child(
-                    // `‹` (U+2039) is the leftward single-angle
-                    // quotation mark — same chrome-glyph aesthetic
-                    // as the other inline buttons (+ / ⧉ / ⚙), so
-                    // the four read as one cluster.
                     icon_btn(
                         "nav-collapse-sidebar",
+                        IconName::PanelLeftClose,
                         t!("chrome.collapse_sidebar_tooltip"),
                     )
-                    .text_size(px(15.0))
-                    .child("\u{2039}")
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _: &MouseUpEvent, _window, cx| {
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, _window, cx| {
                             this.toggle_sidebar(cx);
-                        }),
-                    ),
+                        },
+                    )),
                 )
                 .child(
                     // PROFILES header. Font size + weight + text
@@ -749,39 +653,30 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                 .items_center()
                 .gap_1()
                 .child(
-                    icon_btn("nav-add-profile", t!("chrome.new_profile_tooltip"))
-                        .text_size(px(16.0))
-                        .child("+")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.open_editor(window, cx);
-                            }),
-                        ),
+                    icon_btn(
+                        "nav-add-profile",
+                        IconName::Plus,
+                        t!("chrome.new_profile_tooltip"),
+                    )
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, window, cx| {
+                            this.open_editor(window, cx);
+                        },
+                    )),
                 )
-                // Unicode "two joined squares" (`⧉`) — the new-window
-                // glyph. Same icon-button chrome as `+` and `⚙` so
-                // the trio reads as one cluster. macOS users who
-                // expect Cmd+N can still use it once Phase 8 wires
-                // the application menu.
+                // Two joined squares — the new-window icon.
                 .child(
-                    icon_btn("nav-new-window", t!("chrome.new_window_tooltip"))
-                        .text_size(px(15.0))
-                        .child("\u{29C9}")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.open_new_window(window, cx);
-                            }),
-                        ),
+                    icon_btn(
+                        "nav-new-window",
+                        IconName::Copy,
+                        t!("chrome.new_window_tooltip"),
+                    )
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, window, cx| {
+                            this.open_new_window(window, cx);
+                        },
+                    )),
                 )
-                // Unicode gear (`⚙`). Avoids pulling in an icon
-                // crate for a single chrome glyph; we can swap to
-                // gpui-component's `Icon` later if more accents
-                // arrive. Sized one px smaller than the `+` so the
-                // two glyphs visually balance — `+` is a thin stroke,
-                // the gear is a denser shape.
-                //
                 // When the boot-time update check has a newer
                 // release pending (`update_pending`) we paint a
                 // small amber dot in the gear's top-right corner.
@@ -796,15 +691,16 @@ pub(super) fn sidebar_header(update_pending: bool, cx: &mut Context<AppView>) ->
                     div()
                         .relative()
                         .child(
-                            icon_btn("nav-settings", t!("chrome.settings_tooltip"))
-                                .text_size(px(15.0))
-                                .child("\u{2699}")
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                        this.open_settings(window, cx);
-                                    }),
-                                ),
+                            icon_btn(
+                                "nav-settings",
+                                IconName::Settings,
+                                t!("chrome.settings_tooltip"),
+                            )
+                            .on_click(cx.listener(
+                                |this, _: &ClickEvent, window, cx| {
+                                    this.open_settings(window, cx);
+                                },
+                            )),
                         )
                         .when(update_pending, |this| {
                             this.child(
@@ -835,24 +731,10 @@ pub(super) fn sidebar_icon_strip(
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
-    let hover_bg = s.bg_hover;
-    // Same `icon_btn` recipe as `sidebar_header`, but stretched to
-    // fill the strip's width so the hover-bg rect reads as a
-    // proper button target rather than a small glyph-only chip.
-    let icon_btn = move |id: &'static str, tip: Cow<'static, str>| {
-        let tip_text = SharedString::from(tip);
-        div()
-            .id(SharedString::from(id))
-            .w_full()
-            .py(px(6.0))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_sm()
-            .text_color(rgba(s.fg_primary))
-            .hover(move |st| st.bg(rgba(hover_bg)))
-            .cursor_pointer()
-            .tooltip(move |window, cx| Tooltip::new(tip_text.clone()).build(window, cx))
+    // Same ghost icon buttons as `sidebar_header`, stretched to the
+    // strip's width so the hover rect reads as a full button target.
+    let icon_btn = |id: &'static str, icon: IconName, tip: Cow<'static, str>| {
+        Button::new(id).ghost().w_full().icon(icon).tooltip(tip)
     };
     div()
         .w_full()
@@ -861,42 +743,36 @@ pub(super) fn sidebar_icon_strip(
         .items_center()
         .gap_1()
         .child(
-            // Expand chevron — `›` (U+203A), mirror of the
-            // collapse glyph in `sidebar_header`.
-            icon_btn("nav-expand-sidebar", t!("chrome.expand_sidebar_tooltip"))
-                .text_size(px(16.0))
-                .child("\u{203A}")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                        this.toggle_sidebar(cx);
-                    }),
-                ),
+            // Expand — mirror of the collapse button in
+            // `sidebar_header`.
+            icon_btn(
+                "nav-expand-sidebar",
+                IconName::PanelLeftOpen,
+                t!("chrome.expand_sidebar_tooltip"),
+            )
+            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                this.toggle_sidebar(cx);
+            })),
         )
         .child(
             icon_btn(
                 "nav-add-profile-collapsed",
+                IconName::Plus,
                 t!("chrome.new_profile_tooltip"),
             )
-            .text_size(px(16.0))
-            .child("+")
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                    this.open_editor(window, cx);
-                }),
-            ),
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.open_editor(window, cx);
+            })),
         )
         .child(
-            icon_btn("nav-new-window-collapsed", t!("chrome.new_window_tooltip"))
-                .text_size(px(15.0))
-                .child("\u{29C9}")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.open_new_window(window, cx);
-                    }),
-                ),
+            icon_btn(
+                "nav-new-window-collapsed",
+                IconName::Copy,
+                t!("chrome.new_window_tooltip"),
+            )
+            .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                this.open_new_window(window, cx);
+            })),
         )
         .child(
             // Settings with the same amber update-pending dot as
@@ -908,15 +784,16 @@ pub(super) fn sidebar_icon_strip(
                 .relative()
                 .w_full()
                 .child(
-                    icon_btn("nav-settings-collapsed", t!("chrome.settings_tooltip"))
-                        .text_size(px(15.0))
-                        .child("\u{2699}")
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                this.open_settings(window, cx);
-                            }),
-                        ),
+                    icon_btn(
+                        "nav-settings-collapsed",
+                        IconName::Settings,
+                        t!("chrome.settings_tooltip"),
+                    )
+                    .on_click(cx.listener(
+                        |this, _: &ClickEvent, window, cx| {
+                            this.open_settings(window, cx);
+                        },
+                    )),
                 )
                 .when(update_pending, |this| {
                     this.child(
@@ -938,117 +815,28 @@ pub(super) fn sidebar_icon_strip(
 // Render code reads `cx.global::<SkinTokens>()`; helpers without a
 // Context take the `SkinTokens` value as a parameter (Copy, 64
 // bytes, cheap to pass).
-/// `⋯` button + drop-down menu rendered inline in the session
-/// header. The container is `relative` so the menu (positioned
-/// `absolute` below) anchors to it; `deferred` puts the panel above
-/// other toolbar siblings in paint order.
-pub(super) fn session_overflow_button(
-    s: SkinTokens,
-    open: bool,
-    cx: &mut Context<AppView>,
-) -> gpui::Div {
-    // `--shadow-floating` from the active skin for the popup
-    // panel below. Empty (skin sets `"none"` or doesn't declare)
-    // falls through to the hardcoded `shadow_md()` so flush-
-    // edged skins keep their existing soft drop shadow.
-    let shadow_floating = cx.global::<skin_tokens::SkinShadows>().floating.clone();
-    let panel: Option<gpui::AnyElement> = if open {
-        Some(
-            deferred(
-                // Two-layer paint: opaque `bg_window` base + the
-                // translucent skin overlay on top. See the matching
-                // comment in `profile_context_menu_overlay` — same
-                // see-through issue when a popup floats over the
-                // terminal viewport instead of sitting inside the
-                // layered chrome.
-                div()
-                    .absolute()
-                    .top_full()
-                    .right_0()
-                    .mt_1()
-                    .min_w(px(180.0))
-                    .bg(rgba(s.bg_window))
-                    .border_1()
-                    .border_color(rgba(s.border_subtle))
-                    .rounded(px(s.radius_md))
-                    .map(|this| {
-                        if shadow_floating.is_empty() {
-                            this.shadow_md()
-                        } else {
-                            this.shadow(shadow_floating.clone())
-                        }
+/// `⋯` button + drop-down menu in the session header (GPUI Kit
+/// `DropdownMenu`, which owns its own open state and dismissal).
+pub(super) fn session_overflow_button(cx: &mut Context<AppView>) -> impl IntoElement {
+    let app = cx.entity();
+    Button::new("session-overflow-btn")
+        .secondary()
+        .icon(IconName::Ellipsis)
+        .tooltip(t!("chrome.more_actions"))
+        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, _| {
+            let item =
+                |label: Cow<'static, str>,
+                 run: fn(&mut AppView, &mut Window, &mut Context<AppView>)| {
+                    let app = app.clone();
+                    PopupMenuItem::new(label).on_click(move |_, window, cx| {
+                        app.update(cx, |this, cx| run(this, window, cx))
                     })
-                    .child(
-                        div()
-                            .w_full()
-                            .bg(rgba(s.bg_panel))
-                            .rounded(px(s.radius_md))
-                            .py_1()
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.send_break"),
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.send_break_now(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.send_hex"),
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.open_send_hex(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.send_file"),
-                                cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                                    this.start_send_file(window, cx);
-                                }),
-                            ))
-                            .child(profile_menu_item(
-                                s,
-                                t!("chrome.move_to_new_window"),
-                                cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                    this.move_session_to_new_window(None, cx);
-                                }),
-                            )),
-                    ),
-            )
-            .into_any_element(),
-        )
-    } else {
-        None
-    };
-    div()
-        .relative()
-        .child(
-            div()
-                .id("session-overflow-btn")
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .border_color(rgba(s.border_subtle))
-                .bg(rgba(s.bg_input))
-                .text_color(rgba(s.fg_primary))
-                .text_size(px(13.0))
-                .cursor_pointer()
-                .hover(move |st| st.bg(rgba(s.bg_hover)))
-                .tooltip(|window, cx| {
-                    Tooltip::new(SharedString::from(t!("chrome.more_actions"))).build(window, cx)
-                })
-                .child("\u{22EF}")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, _, cx| {
-                        // Without `stop_propagation`, the AppView
-                        // root's mouse-up listener (which dismisses
-                        // any open popup) fires immediately after
-                        // and closes the menu we just opened.
-                        cx.stop_propagation();
-                        this.toggle_session_overflow(cx);
-                    }),
-                ),
-        )
-        .children(panel)
+                };
+            menu.item(item(t!("chrome.send_break"), AppView::send_break_now))
+                .item(item(t!("chrome.send_hex"), AppView::open_send_hex))
+                .item(item(t!("chrome.send_file"), AppView::start_send_file))
+                .item(item(t!("chrome.move_to_new_window"), |this, _, cx| {
+                    this.move_session_to_new_window(None, cx)
+                }))
+        })
 }

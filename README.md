@@ -154,7 +154,9 @@ Windows builds are both planned — see [TODO.md](TODO.md).
 
 ## Building from source
 
-Single-crate Rust project at the repo root.
+Single-crate Rust project at the repo root. The UI is
+[GPUI](https://www.gpui.rs) through [GPUI Kit](https://gpui-kit.com),
+with `alacritty_terminal` as the VT parser.
 
 ```bash
 git clone git@github.com:packetThrower/Baudrun.git
@@ -178,16 +180,21 @@ System libraries:
 Baudrun/
 ├── Cargo.toml                # baudrun crate (binary name: Baudrun)
 ├── src/
-│   ├── main.rs               # app entry + macOS menubar / dock setup
-│   ├── app_view.rs           # window-level UI: sidebar, editor, session header
+│   ├── main.rs               # app entry, menubar / dock, window setup
+│   ├── app_view/             # main window: sidebar, profile editor,
+│   │                         #   session header, menus, Send File / transfer UI
+│   ├── settings_view/        # Settings window (GPUI Kit Settings pages,
+│   │                         #   shortcut recorder, theme preview)
 │   ├── terminal_view.rs      # alacritty_terminal bridge + grid renderer
 │   ├── terminal_grid.rs      # the cell grid the renderer paints from
 │   ├── term_bridge.rs        # alacritty → gpui colour / attribute translation
-│   ├── settings_view.rs      # standalone Settings window (tabs, panes, filter)
 │   ├── settings_bus.rs       # App-scoped settings entity + change broadcast
+│   ├── profiles_bus.rs       # cross-window "profiles changed" broadcast
 │   ├── skin_tokens.rs        # active-skin token cache (read by every render)
 │   ├── highlight_runtime.rs  # line-buffered regex highlighter
 │   ├── serial_io.rs          # serial-port read/write threads + write channel
+│   ├── updater.rs            # launch-time GitHub Releases check
+│   ├── i18n.rs               # locale detection + supported languages
 │   └── data/                 # pure-Rust data layer (no UI deps)
 │       ├── profiles.rs       # JSON-backed profile store + validation
 │       ├── settings.rs       # global settings store
@@ -196,6 +203,7 @@ Baudrun/
 │       ├── highlight.rs      # rule-pack store
 │       ├── sanitize.rs       # session-log sanitizer
 │       ├── transfer.rs       # XMODEM / YMODEM state machines
+│       ├── hex.rs            # Send Hex input parser
 │       ├── serial/           # port enumeration + chipset detection
 │       ├── usbserial/        # libusb-direct backend (CP210x)
 │       └── appdata.rs        # OS config-directory resolution
@@ -204,7 +212,9 @@ Baudrun/
 │   ├── icons/                # .icns / .ico / .png set
 │   ├── builtin_skins.json    # 16 built-in app skins
 │   ├── builtin_themes.json   # 15 built-in terminal themes
+│   ├── fonts/                # bundled JetBrains Mono
 │   └── highlight/            # bundled vendor rule packs
+├── locales/                  # UI strings (en, zh-CN); see locales/README.md
 ├── build/                    # icon source + Windows installer assets
 ├── packaging/                # Linux udev rule + .desktop file + Arch PKGBUILD
 ├── scripts/                  # dev tools (each its own Cargo workspace)

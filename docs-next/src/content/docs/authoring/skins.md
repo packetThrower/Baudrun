@@ -130,7 +130,7 @@ default for that token. Grouped for navigation:
 | `--radius-md`       | Buttons, cards                                              |
 | `--radius-lg`       | Large panels, modals                                        |
 | `--shadow-panel`    | Card / panel shadow                                         |
-| `--shadow-floating` | Elevated surfaces (modals, dropdowns)                       |
+| `--shadow-floating` | Not applied — menus and dialogs use GPUI Kit's own shadow   |
 
 :::note
 Some skins ship a `--blur-strength` token; it carries over from the
@@ -150,7 +150,7 @@ harmless — the value is silently ignored.
 | `--titlebar-height`         | Title bar height in flush-edged mode (40px is the default; the macOS-26 / Liquid Glass skin sets 0 to suppress it entirely and lets the transparent overlay take over) |
 | `--titlebar-content-inset`  | Extra top padding inside the sidebar / main pane to clear an overlay title bar — macOS-26 sets 24px so the traffic lights don't overlap the PROFILES header |
 | `--shadow-panel`            | Per-pane shadow (sidebar + main), used by floating-card skins where the panes read as cards rather than meeting the window edge |
-| `--shadow-floating`         | Shadow on transient elevated surfaces: dialogs, the right-click context menu, dropdown popovers |
+| `--shadow-floating`         | Not applied since the move to GPUI Kit: dialogs, menus and dropdowns draw GPUI Kit's own shadow. Harmless to leave in a skin |
 
 ### Scrollbars
 

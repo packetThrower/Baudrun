@@ -16,6 +16,7 @@ welcome:
   heading: Baudrun
   pick_profile: "Pick a profile from the sidebar to start a session."
   create_first: "Click the + above the profile list to create one."
+  new_profile: New profile
 
 terminal:
   menu:
@@ -137,6 +138,7 @@ app:
   unnamed: "(unnamed)"
 
 editor:
+  rescan_ports_tooltip: Rescan ports
   name_placeholder: My switch
   custom_suffix: "%{name} (custom)"
   subtitle_edit: EDIT PROFILE
