@@ -127,6 +127,7 @@ app:
   unnamed: "（未命名）"
 
 editor:
+  rescan_ports_tooltip: 重新扫描端口
   name_placeholder: 我的交换机
   custom_suffix: "%{name}（自定义）"
   subtitle_edit: 编辑配置

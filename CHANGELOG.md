@@ -17,9 +17,14 @@ final stable entry at tag time.
 
 ### Changed
 
-- **Main window on GPUI Kit components**: buttons, the Send File
-  dialog's buttons and progress bar, the profile right-click menu and
-  the session ⋯ menu now use GPUI Kit, following the active skin.
+- **Main window on GPUI Kit components**: buttons and icon buttons,
+  the profile editor's tab rail and fields, the status bar, the Send
+  File dialog's buttons and progress bar, and every right-click and ⋯
+  menu (including the terminal's) now use GPUI Kit, following the
+  active skin. The Settings window's page list now uses the skin's
+  sidebar colours too.
+- **`--shadow-floating` is no longer applied**: menus and dialogs draw
+  GPUI Kit's own shadow.
 - **Welcome screen** has a **New profile** button.
 
 - **Settings window rebuilt on GPUI Kit's Settings layout**: a page

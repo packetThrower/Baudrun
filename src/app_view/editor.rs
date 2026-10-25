@@ -29,15 +29,18 @@
 //! bridging logic" rather than "Editor type and friends".
 
 use gpui::{
-    div, prelude::*, px, rgba, ClickEvent, Context, Entity, IntoElement, MouseButton, MouseUpEvent,
-    ScrollHandle, SharedString, Window,
+    div, prelude::*, px, rgba, ClickEvent, Context, Entity, IntoElement, RenderOnce, ScrollHandle,
+    SharedString, Window,
 };
 use gpui_kit::component::{
+    button::{Button, ButtonVariants},
     checkbox::Checkbox,
+    form::{field, Field},
     input::{Input, InputState},
     scroll::ScrollableElement,
     select::{Select, SelectState},
-    Disableable, Sizable,
+    sidebar::{SidebarItem, SidebarMenu, SidebarMenuItem},
+    Disableable, IconName, Sizable,
 };
 
 use super::buttons::{pill_button, primary_button};
@@ -656,49 +659,13 @@ fn form_body(
 /// selected state reads instantly.
 fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
-    let item = move |id: &'static str, label: SharedString, tab: EditorTab| {
-        let is_active = tab == active;
-        let bg = if is_active {
-            rgba(s.bg_active)
-        } else {
-            rgba(0x00000000)
-        };
-        let fg = if is_active {
-            rgba(s.fg_primary)
-        } else {
-            rgba(s.fg_secondary)
-        };
-        // Match the main app's sidebar hover (profile_row uses bg_hover).
-        // bg_input is too close to the panel bg on warm dark skins like
-        // Foundry, where the hover tint reads as "barely there".
-        let hover_bg = s.bg_hover;
-        div()
-            // Stable id so gpui notifies on hover-state transitions —
-            // without it the `.hover()` style only paints when some
-            // unrelated event happens to dirty AppView. Same fix as
-            // `profile_row`. Labels here are unique within the rail.
-            .id(id)
-            .w_full()
-            .px_3()
-            .py(px(6.0))
-            .rounded_md()
-            .bg(bg)
-            .text_color(fg)
-            .cursor_pointer()
-            // Hover bg only when NOT active — see the matching
-            // comment in `profile_row`.
-            .when(!is_active, |this| {
-                this.hover(move |st| st.bg(rgba(hover_bg)))
-            })
-            .child(label)
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(move |this, _: &MouseUpEvent, _window, cx| {
-                    this.set_editor_tab(tab, cx);
-                }),
-            )
+    let item = |label: SharedString, tab: EditorTab| {
+        SidebarMenuItem::new(label)
+            .active(tab == active)
+            .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
+                this.set_editor_tab(tab, cx);
+            }))
     };
-
     div()
         .w(px(160.0))
         .h_full()
@@ -706,25 +673,25 @@ fn form_tab_nav(active: EditorTab, cx: &mut Context<AppView>) -> impl IntoElemen
         .py_4()
         .border_r_1()
         .border_color(rgba(s.border_subtle))
-        .flex()
-        .flex_col()
-        .gap_1()
-        .text_size(px(13.0))
-        .child(item(
-            "Connection",
-            t!("editor.tab.connection").into(),
-            EditorTab::Connection,
-        ))
-        .child(item(
-            "Highlighting",
-            t!("editor.tab.highlighting").into(),
-            EditorTab::Highlighting,
-        ))
-        .child(item(
-            "Advanced",
-            t!("editor.tab.advanced").into(),
-            EditorTab::Advanced,
-        ))
+        .child(TabRail(SidebarMenu::new().children([
+            item(t!("editor.tab.connection").into(), EditorTab::Connection),
+            item(
+                t!("editor.tab.highlighting").into(),
+                EditorTab::Highlighting,
+            ),
+            item(t!("editor.tab.advanced").into(), EditorTab::Advanced),
+        ])))
+}
+
+/// Kit's `SidebarMenu` renders through `SidebarItem::render`, which
+/// needs the `Window`; this element defers it to paint time.
+#[derive(IntoElement)]
+struct TabRail(SidebarMenu);
+
+impl RenderOnce for TabRail {
+    fn render(self, window: &mut Window, cx: &mut gpui::App) -> impl IntoElement {
+        SidebarItem::render(self.0, "editor-tabs", window, cx)
+    }
 }
 
 /// One section of the form — a translucent panel with a heading,
@@ -798,25 +765,22 @@ fn section_card_with_desc(
         .child(body)
 }
 
-/// Per-field label + widget pair. Label uses Baudrun's
+/// Per-field label + widget pair (a Kit form `Field`). Label uses Baudrun's
 /// `--font-size-label` (11px), `--label-transform: uppercase`
 /// (passed in already shouted by the caller), and `--fg-secondary`.
 /// Label is `whitespace_nowrap` because gpui defaults to wrap, and
 /// short fixed strings like "SLOW-PASTE DELAY (MS)" wrapping mid-
 /// label inside a narrow container looks broken.
-fn labeled(s: SkinTokens, label: impl Into<SharedString>, widget: impl IntoElement) -> gpui::Div {
+fn labeled(s: SkinTokens, label: impl Into<SharedString>, widget: impl IntoElement) -> Field {
     let label: SharedString = label.into();
-    div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .child(
+    field()
+        .label_fn(move |_, _| {
             div()
                 .text_size(px(11.0))
                 .text_color(rgba(s.fg_secondary))
                 .whitespace_nowrap()
-                .child(label),
-        )
+                .child(label.clone())
+        })
         .child(widget)
 }
 
@@ -951,10 +915,6 @@ fn connection_card(
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
     let s = *cx.global::<SkinTokens>();
-    // bg_hover (matching the main sidebar) tints more reliably on warm
-    // dark skins like Foundry where bg_input_hover stays close to the
-    // panel bg.
-    let hover_bg = s.bg_hover;
     // Serial port row: select on the left (flex_1), rescan icon
     // on the right. Click rescans the OS port list and reapplies
     // the current selection.
@@ -969,24 +929,13 @@ fn connection_card(
             Select::new(&port),
         )))
         .child(
-            div()
-                // Stable id so gpui notifies on hover transitions —
-                // same fix as `profile_row`.
-                .id("editor-rescan-ports")
-                .px_2()
-                .py_1()
-                .bg(rgba(s.bg_input))
-                .text_color(rgba(s.fg_primary))
-                .rounded_md()
-                .cursor_pointer()
-                .hover(move |st| st.bg(rgba(hover_bg)))
-                .child("↻")
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|this, _: &MouseUpEvent, window, cx| {
-                        this.rescan_ports(window, cx);
-                    }),
-                ),
+            Button::new("editor-rescan-ports")
+                .secondary()
+                .icon(IconName::RefreshCw)
+                .tooltip(t!("editor.rescan_ports_tooltip"))
+                .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                    this.rescan_ports(window, cx);
+                })),
         );
     // Build a "driver not loaded" banner per detected candidate so
     // an unenrolled CP210x / FTDI / PL2303 / CH340 shows up RIGHT

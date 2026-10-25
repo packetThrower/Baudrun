@@ -83,9 +83,6 @@ impl SkinShadows {
             panel: raw_var("--panel-shadow")
                 .map(|s| parse_box_shadow_list(s))
                 .unwrap_or_default(),
-            floating: raw_var("--shadow-floating")
-                .map(|s| parse_box_shadow_list(s))
-                .unwrap_or_default(),
             panel_overlay: raw_var("--shadow-panel")
                 .map(|s| parse_box_shadow_list(s))
                 .unwrap_or_default(),
@@ -323,8 +320,9 @@ pub enum PanelBorder {
     Solid(f32, u32),
 }
 
-/// Parsed `box-shadow` lists pulled from a skin's `--panel-shadow`,
-/// `--shadow-floating`, and `--shadow-panel` vars. Lives separately
+/// Parsed `box-shadow` lists pulled from a skin's `--panel-shadow`
+/// and `--shadow-panel` vars (`--shadow-floating` is no longer read:
+/// menus and dialogs are GPUI Kit's, with its own shadow). Lives separately
 /// from `SkinTokens` because `Vec<BoxShadow>` isn't `Copy` — but the
 /// render path needs the chrome tokens on every paint, so we keep
 /// `SkinTokens` `Copy` and store shadows here as a parallel non-Copy
@@ -348,12 +346,6 @@ pub struct SkinShadows {
     /// yet. Reserved for a future pass.
     #[allow(dead_code)]
     pub panel: Vec<gpui::BoxShadow>,
-    /// `--shadow-floating` — drop shadow on floating popups
-    /// (right-click profile menu, session-overflow `⋯` menu).
-    /// gpui-component dialogs paint their own internal shadow
-    /// via `.shadow_md()`; this one only reaches our hand-rolled
-    /// popups in `app_view.rs`.
-    pub floating: Vec<gpui::BoxShadow>,
     /// `--shadow-panel` — drop shadow on the main shell panes
     /// (sidebar wrapper + right-pane wrapper on floating-card
     /// skins). On flush-edged skins these wrappers don't have a

@@ -138,6 +138,7 @@ app:
   unnamed: "(unnamed)"
 
 editor:
+  rescan_ports_tooltip: Rescan ports
   name_placeholder: My switch
   custom_suffix: "%{name} (custom)"
   subtitle_edit: EDIT PROFILE

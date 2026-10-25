@@ -977,6 +977,15 @@ impl AppView {
             theme.secondary_hover = rgba(tokens.bg_input_hover).into();
             theme.secondary_active = rgba(tokens.bg_input_hover).into();
             theme.secondary_foreground = rgba(tokens.fg_primary).into();
+            // Kit sidebar slots: the Settings window's page list and the
+            // profile editor's tab rail match the main window's sidebar.
+            theme.sidebar = rgba(tokens.bg_sidebar).into();
+            theme.sidebar_foreground = rgba(tokens.fg_primary).into();
+            theme.sidebar_accent = rgba(tokens.bg_active).into();
+            theme.sidebar_accent_foreground = rgba(tokens.fg_primary).into();
+            theme.sidebar_border = rgba(tokens.border_subtle).into();
+            theme.sidebar_primary = rgba(tokens.accent).into();
+            theme.sidebar_primary_foreground = rgba(tokens.accent_fg).into();
             theme.danger = rgba(tokens.danger).into();
             theme.border = rgba(tokens.border_subtle).into();
             // `--input-border-idle` — unfocused input border. Skins
@@ -3988,13 +3997,6 @@ impl Render for AppView {
                 MouseButton::Left,
                 cx.listener(|this, evt: &MouseUpEvent, window, cx| {
                     this.finish_profile_tear_off(evt.position, window, cx);
-                    // Also dismiss the terminal's right-click
-                    // context menu so clicking outside the popup
-                    // closes it. The terminal owns the menu state
-                    // itself (see `TerminalView::context_menu_pos`),
-                    // so we just forward through the entity.
-                    let terminal = this.terminal.clone();
-                    terminal.update(cx, |t, cx| t.close_context_menu(cx));
                 }),
             )
             // Out-of-window half of tear-off: the platform keeps
