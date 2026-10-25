@@ -49,6 +49,10 @@ final stable entry at tag time.
 
 ### Security
 
+- **Docs toolchain refreshed** (astro 7.4.2, starlight 0.42.7, sharp
+  0.35.5 and their transitive dependencies), clearing all 39 open
+  advisories against the static docs site's build tooling, including
+  a critical astro XSS. None affected the Baudrun app.
 - **rustls patched** (0.23.45 → 0.23.46, rustls-webpki 0.103.16):
   clears five TLS advisories, including a ServerHello downgrade to
   classical key exchange and certificate verification accepting
