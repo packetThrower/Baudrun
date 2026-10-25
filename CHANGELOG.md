@@ -23,6 +23,9 @@ final stable entry at tag time.
   The Shortcuts page adds a reset-all button
   beside the per-row resets. All settings, imports and the shortcut
   recorder work as before.
+- **Skin colours reach every GPUI Kit control again**: switches,
+  buttons and the Settings boxes now use the active skin's accent and
+  palette instead of GPUI Kit's stock colours.
 - **Skin fonts follow CSS fallback**: a skin's font stack now uses
   the first family that's actually installed. Blueprint asked for
   "Space Mono" first; without it the app fell back to a system font
