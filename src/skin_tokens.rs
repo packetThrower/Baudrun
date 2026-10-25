@@ -24,8 +24,8 @@ use crate::data::skins::Skin;
 /// from poisoning the Copy bound.
 #[derive(Debug, Clone)]
 pub struct SkinFonts {
-    /// First UI font family from the skin's `--font-ui` stack.
-    /// Empty string means "use the platform default" (gpui-
+    /// First *installed* UI font family from the skin's `--font-ui`
+    /// stack. Empty string means "use the platform default" (gpui-
     /// component's `.SystemUIFont`).
     pub font_ui: SharedString,
     pub font_mono: SharedString,
@@ -43,7 +43,9 @@ impl SkinFonts {
         }
     }
 
-    pub fn from_skin(skin: &Skin, dark: bool) -> Self {
+    /// `installed` is the platform's font family list
+    /// (`cx.text_system().all_font_names()`).
+    pub fn from_skin(skin: &Skin, dark: bool, installed: &[String]) -> Self {
         let raw_var = |key: &str| -> Option<&String> {
             if dark {
                 skin.dark_vars.get(key).or_else(|| skin.vars.get(key))
@@ -53,10 +55,10 @@ impl SkinFonts {
         };
         Self {
             font_ui: raw_var("--font-ui")
-                .map(|s| first_font_family(s))
+                .map(|s| first_font_family(s, installed))
                 .unwrap_or_default(),
             font_mono: raw_var("--font-mono")
-                .map(|s| first_font_family(s))
+                .map(|s| first_font_family(s, installed))
                 .unwrap_or_default(),
             font_size_base: raw_var("--font-size-base")
                 .and_then(|s| parse_px(s))
@@ -1027,13 +1029,16 @@ fn parse_sidebar_divider(raw: &str, default: SidebarDivider) -> SidebarDivider {
     default
 }
 
-/// Return the first font family from a CSS font stack, with quotes
-/// stripped. Skips `system-ui` / `-apple-system` and similar
-/// keywords because gpui doesn't resolve those — the caller will
-/// fall back to the platform default when this returns an empty
-/// string. Quoted families (`"SF Pro Text"`) keep their internal
-/// spaces.
-fn first_font_family(stack: &str) -> SharedString {
+/// Return the first font family from a CSS font stack that is
+/// installed, with quotes stripped — CSS fallback semantics. Without
+/// the installed check a missing first choice (Blueprint's "Space
+/// Mono") handed gpui an unknown family, and its fallback font sits
+/// ~2px high in every fixed-height control. Skips `system-ui` /
+/// `-apple-system` and similar keywords because gpui doesn't resolve
+/// those — the caller falls back to the platform default when this
+/// returns an empty string. Quoted families (`"SF Pro Text"`) keep
+/// their internal spaces.
+fn first_font_family(stack: &str, installed: &[String]) -> SharedString {
     for raw in stack.split(',') {
         let mut t = raw.trim();
         // Strip surrounding quotes if present (CSS allows `"..."`
@@ -1057,10 +1062,28 @@ fn first_font_family(stack: &str) -> SharedString {
                 | "monospace"
                 | "sans-serif"
                 | "serif"
-        ) {
+        ) || !installed.iter().any(|f| f.eq_ignore_ascii_case(t))
+        {
             continue;
         }
         return SharedString::from(t.to_string());
     }
     SharedString::default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::first_font_family;
+
+    #[test]
+    fn font_stack_skips_missing_families_and_keywords() {
+        let installed = ["Menlo".to_string(), "JetBrains Mono".to_string()];
+        let stack = r#""Space Mono", system-ui, "JetBrains Mono", Menlo, monospace"#;
+        assert_eq!(
+            first_font_family(stack, &installed).as_ref(),
+            "JetBrains Mono"
+        );
+        assert_eq!(first_font_family("monospace", &installed).as_ref(), "");
+        assert_eq!(first_font_family("\"Nope\"", &installed).as_ref(), "");
+    }
 }

@@ -894,7 +894,7 @@ impl AppView {
         let (tokens, fonts, shadows) = match &skin_opt {
             Some(skin) => (
                 SkinTokens::from_skin(skin, dark),
-                SkinFonts::from_skin(skin, dark),
+                SkinFonts::from_skin(skin, dark, &cx.text_system().all_font_names()),
                 skin_tokens::SkinShadows::from_skin(skin, dark),
             ),
             None => (

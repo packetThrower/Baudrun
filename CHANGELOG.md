@@ -23,6 +23,11 @@ final stable entry at tag time.
   The Shortcuts page adds a reset-all button
   beside the per-row resets. All settings, imports and the shortcut
   recorder work as before.
+- **Skin fonts follow CSS fallback**: a skin's font stack now uses
+  the first family that's actually installed. Blueprint asked for
+  "Space Mono" first; without it the app fell back to a system font
+  that sat off-centre in buttons — it now uses the next monospace
+  font in its stack (Menlo on a stock Mac), as the skin intends.
 
 - **Moved to GPUI Kit 0.8.0** (gpui-pre 0.3.9), the crates.io home
   of gpui-component, replacing the Zed-git gpui and gpui-component
