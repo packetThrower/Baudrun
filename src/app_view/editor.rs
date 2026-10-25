@@ -780,11 +780,8 @@ fn section_card_with_desc(
             }
         })
         .rounded(px(s.radius_lg))
-        // macOS 26 / Tahoe-style raised card. Matches the same
-        // shadow_sm used by `settings_view::section_card_with_desc`
-        // so the profile editor and the Settings window read at
-        // the same elevation. `--panel-shadow` from the skin is
-        // parsed into `SkinShadows.panel` but not yet threaded
+        // macOS 26 / Tahoe-style raised card. `--panel-shadow` from
+        // the skin is parsed into `SkinShadows.panel` but not yet threaded
         // through each card site — most skins ship
         // `--panel-shadow: none` anyway, and macOS-26's inset
         // entries can't render in gpui, so the visible delta

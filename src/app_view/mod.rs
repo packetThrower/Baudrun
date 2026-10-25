@@ -894,7 +894,7 @@ impl AppView {
         let (tokens, fonts, shadows) = match &skin_opt {
             Some(skin) => (
                 SkinTokens::from_skin(skin, dark),
-                SkinFonts::from_skin(skin, dark),
+                SkinFonts::from_skin(skin, dark, &cx.text_system().all_font_names()),
                 skin_tokens::SkinShadows::from_skin(skin, dark),
             ),
             None => (
@@ -928,88 +928,92 @@ impl AppView {
         // accent, radii, fonts) tracks the picked skin rather than
         // the gpui-component defaults. Done after `Theme::change`
         // so the mode swap doesn't clobber our overrides on the
-        // next change.
-        let theme = Theme::global_mut(cx);
-        theme.input = rgba(tokens.border_strong).into();
-        // gpui-component renders BOTH the closed Select box (the
-        // input chrome) AND the open Select popover with
-        // `theme.background`. The popover floats free over the
-        // window so a translucent value (Baudrun + macOS-26's
-        // `--bg-main` is alpha 0.55-0.7) lets the cards underneath
-        // bleed through. Use the same opaque `--option-bg` slot
-        // the popover items themselves use — the closed Select box
-        // ends up slightly more "raised" than before but agrees
-        // visually with the open popover.
-        theme.background = rgba(tokens.option_bg).into();
-        theme.foreground = rgba(tokens.fg_primary).into();
-        // Popover (Select dropdown menu) uses the dedicated
-        // `--option-bg` / `--option-fg` slots — these are opaque in
-        // every shipped skin, since the popover floats free over the
-        // window and would otherwise let whatever's behind the
-        // window bleed through. Using `bg_panel` (translucent in
-        // Baudrun + macOS-26) made the dropdown look glassy.
-        theme.popover = rgba(tokens.option_bg).into();
-        theme.popover_foreground = rgba(tokens.option_fg).into();
-        // gpui-component's Select hardcodes selected-option text
-        // to `theme.foreground` and the selected-option bg to
-        // `theme.accent` — meaning a saturated accent shows the
-        // foreground colour right on top of itself (green-on-green
-        // for CRT, magenta-on-magenta for Synthwave). Skins ship
-        // `--bg-active` as a translucent version of the accent
-        // tuned for exactly this "selected row" use case;
-        // composited over the popover bg it always lands at a
-        // muted shade where the foreground reads. Keep the
-        // saturated `accent` token for the primary Connect button
-        // (which has its own accent_fg contrast pair) and use
-        // `bg_active` for the Theme accent slot that drives Select
-        // highlighting.
-        theme.accent = rgba(tokens.bg_active).into();
-        theme.accent_foreground = rgba(tokens.option_fg).into();
-        // gpui-component's Checkbox paints both border + filled box
-        // from `theme.primary` when checked, and the inner check
-        // glyph from `theme.primary_foreground`. Pinning both to the
-        // skin's saturated accent (the same colour the Connect pill
-        // button uses) keeps the toggled-on checkboxes visually
-        // consistent with the rest of the primary affordances.
-        theme.primary = rgba(tokens.accent).into();
-        theme.primary_foreground = rgba(tokens.accent_fg).into();
-        // `--accent-hover` from the skin (defaults to `accent`).
-        // Drives the brighter hover state on the primary Connect
-        // button + any other widget that reads `primary_hover`.
-        theme.primary_hover = rgba(tokens.accent_hover).into();
-        theme.primary_active = rgba(tokens.accent).into();
-        theme.danger = rgba(tokens.danger).into();
-        theme.border = rgba(tokens.border_subtle).into();
-        // `--input-border-idle` — unfocused input border. Skins
-        // with `transparent` here (Baudrun, macOS-26) get a
-        // borderless idle look; gpui-component falls back to
-        // `theme.input` (= `border_strong`) when input gets
-        // focus so the focused state stays visible.
-        theme.input = rgba(tokens.input_border_idle).into();
-        // `--scrollbar-thumb` / `--scrollbar-thumb-hover` — drive
-        // the scrollbar thumb colour across every scrollable
-        // gpui-component widget (Settings cards, terminal
-        // scrollback, dropdowns).
-        theme.scrollbar_thumb = rgba(tokens.scrollbar_thumb).into();
-        theme.scrollbar_thumb_hover = rgba(tokens.scrollbar_thumb_hover).into();
-        // `--overlay` — modal scrim painted behind Dialog
-        // (gpui-component's overlay layer dims the window when
-        // a dialog is open).
-        theme.overlay = rgba(tokens.overlay).into();
-        // `--option-group-fg` — colour for dropdown group
-        // headers (e.g. "Built-in" / "Custom" sections in the
-        // theme picker). gpui-component reads this from
-        // `theme.muted_foreground`.
-        theme.muted_foreground = rgba(tokens.option_group_fg).into();
-        theme.radius = px(tokens.radius_md);
-        theme.radius_lg = px(tokens.radius_lg);
-        if !fonts.font_ui.is_empty() {
-            theme.font_family = fonts.font_ui.clone();
-        }
-        if !fonts.font_mono.is_empty() {
-            theme.mono_font_family = fonts.font_mono.clone();
-        }
-        theme.font_size = px(fonts.font_size_base);
+        // next change. `Theme::update` (not `global_mut`) so GPUI Kit
+        // re-derives the color tokens its components paint with —
+        // edits through `global_mut` left switches, buttons and
+        // group boxes on the stock palette.
+        Theme::update(cx, |theme| {
+            theme.input = rgba(tokens.border_strong).into();
+            // gpui-component renders BOTH the closed Select box (the
+            // input chrome) AND the open Select popover with
+            // `theme.background`. The popover floats free over the
+            // window so a translucent value (Baudrun + macOS-26's
+            // `--bg-main` is alpha 0.55-0.7) lets the cards underneath
+            // bleed through. Use the same opaque `--option-bg` slot
+            // the popover items themselves use — the closed Select box
+            // ends up slightly more "raised" than before but agrees
+            // visually with the open popover.
+            theme.background = rgba(tokens.option_bg).into();
+            theme.foreground = rgba(tokens.fg_primary).into();
+            // Popover (Select dropdown menu) uses the dedicated
+            // `--option-bg` / `--option-fg` slots — these are opaque in
+            // every shipped skin, since the popover floats free over the
+            // window and would otherwise let whatever's behind the
+            // window bleed through. Using `bg_panel` (translucent in
+            // Baudrun + macOS-26) made the dropdown look glassy.
+            theme.popover = rgba(tokens.option_bg).into();
+            theme.popover_foreground = rgba(tokens.option_fg).into();
+            // gpui-component's Select hardcodes selected-option text
+            // to `theme.foreground` and the selected-option bg to
+            // `theme.accent` — meaning a saturated accent shows the
+            // foreground colour right on top of itself (green-on-green
+            // for CRT, magenta-on-magenta for Synthwave). Skins ship
+            // `--bg-active` as a translucent version of the accent
+            // tuned for exactly this "selected row" use case;
+            // composited over the popover bg it always lands at a
+            // muted shade where the foreground reads. Keep the
+            // saturated `accent` token for the primary Connect button
+            // (which has its own accent_fg contrast pair) and use
+            // `bg_active` for the Theme accent slot that drives Select
+            // highlighting.
+            theme.accent = rgba(tokens.bg_active).into();
+            theme.accent_foreground = rgba(tokens.option_fg).into();
+            // gpui-component's Checkbox paints both border + filled box
+            // from `theme.primary` when checked, and the inner check
+            // glyph from `theme.primary_foreground`. Pinning both to the
+            // skin's saturated accent (the same colour the Connect pill
+            // button uses) keeps the toggled-on checkboxes visually
+            // consistent with the rest of the primary affordances.
+            theme.primary = rgba(tokens.accent).into();
+            theme.primary_foreground = rgba(tokens.accent_fg).into();
+            // `--accent-hover` from the skin (defaults to `accent`).
+            // Drives the brighter hover state on the primary Connect
+            // button + any other widget that reads `primary_hover`.
+            theme.primary_hover = rgba(tokens.accent_hover).into();
+            theme.primary_active = rgba(tokens.accent).into();
+            theme.danger = rgba(tokens.danger).into();
+            theme.border = rgba(tokens.border_subtle).into();
+            // `--input-border-idle` — unfocused input border. Skins
+            // with `transparent` here (Baudrun, macOS-26) get a
+            // borderless idle look; gpui-component falls back to
+            // `theme.input` (= `border_strong`) when input gets
+            // focus so the focused state stays visible.
+            theme.input = rgba(tokens.input_border_idle).into();
+            // `--scrollbar-thumb` / `--scrollbar-thumb-hover` — drive
+            // the scrollbar thumb colour across every scrollable
+            // gpui-component widget (Settings cards, terminal
+            // scrollback, dropdowns).
+            theme.scrollbar_thumb = rgba(tokens.scrollbar_thumb).into();
+            theme.scrollbar_thumb_hover = rgba(tokens.scrollbar_thumb_hover).into();
+            // `--overlay` — modal scrim painted behind Dialog
+            // (gpui-component's overlay layer dims the window when
+            // a dialog is open).
+            theme.overlay = rgba(tokens.overlay).into();
+            // `--option-group-fg` — colour for dropdown group
+            // headers (e.g. "Built-in" / "Custom" sections in the
+            // theme picker). gpui-component reads this from
+            // `theme.muted_foreground`.
+            theme.muted_foreground = rgba(tokens.option_group_fg).into();
+            theme.radius = px(tokens.radius_md);
+            theme.radius_lg = px(tokens.radius_lg);
+            if !fonts.font_ui.is_empty() {
+                theme.font_family = fonts.font_ui.clone();
+            }
+            if !fonts.font_mono.is_empty() {
+                theme.mono_font_family = fonts.font_mono.clone();
+            }
+            theme.font_size = px(fonts.font_size_base);
+        });
     }
 
     /// Resolve the effective palette right now and push it to the
@@ -4219,8 +4223,7 @@ fn profile_row(
         name: SharedString::from(name.clone()),
     };
 
-    // Profile-row bg follows the same pattern as the Settings
-    // rail items (`settings_view::rail`): `bg_active` — the
+    // Profile-row bg: `bg_active` — the
     // accent-tinted blue — when selected, fully transparent
     // otherwise. The transparent unselected state lets the
     // sidebar's own `bg_sidebar` show through; on macOS-26's
