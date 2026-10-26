@@ -30,6 +30,10 @@ build now pulls every dependency from crates.io.
 
 ### Changed
 
+- **Session header reads `COM4 · 9600 8N1`** (was `9600 /8 N 1`).
+- **Edit Profile… on the connected profile's right-click menu** opens
+  the editor while keeping the port open (the same as Suspend, whose
+  tooltip now says so).
 - **Moved to GPUI Kit 0.8.0** (gpui-pre 0.3.9), the crates.io home of
   gpui-component, replacing the Zed-git gpui and gpui-component git
   pins. The build is crates.io-only.
@@ -49,6 +53,20 @@ build now pulls every dependency from crates.io.
 
 ### Fixed
 
+- **Clear clears everything**: the last screen no longer survives in
+  scrollback, and the line counter resets.
+- **Timestamps, line numbers and hex view start on a fresh line** when
+  switched on right after a reconnect, instead of attaching to the
+  prompt left on screen.
+- **Highlighting false positives**: a keyword inside a hyphenated word
+  (`timeout` in `timeout-policy`, `up` in `up-time`) is no longer
+  coloured, including in a "User overrides" pack copied from the old
+  defaults; "full" in ordinary output no longer lights up as the OSPF
+  `FULL` state.
+- **More interfaces highlighted**: Cellular, Dialer, Virtual-Template,
+  Virtual-Access, BVI, Async, Multilink and similar Cisco interfaces.
+- **Readable dim text on the default theme**: bright black (used for
+  timestamps and other dim highlights) is lighter, #4a4a52 → #71717a.
 - **Skin colours reach every GPUI Kit control**: switches, buttons and
   the Settings boxes use the active skin's accent and palette instead
   of GPUI Kit's stock colours.

@@ -22,6 +22,7 @@ settings_chrome:
 
 chrome:
   move_session_to_new_window: 移动会话到新窗口
+  edit_profile_suspend: "编辑配置…（保持端口打开）"
   connect_in_new_window: 在新窗口中连接
   send_break: "发送 Break"
   send_hex: "发送十六进制…"
@@ -46,7 +47,7 @@ chrome:
   rts_deasserted_tooltip: "RTS 已取消置位 — 点击置位"
   clear_button: 清除
   suspend_button: 挂起
-  suspend_tooltip: "保持会话存活；返回配置"
+  suspend_tooltip: "保持端口打开并编辑此配置"
   disconnect_button: 断开连接
   reconnecting: "正在重连到 %{port} @ %{baud}…"
   connected: "已连接到 %{port} @ %{baud}"

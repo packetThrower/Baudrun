@@ -33,6 +33,7 @@ settings_chrome:
 
 chrome:
   move_session_to_new_window: Move Session to New Window
+  edit_profile_suspend: "Edit Profile… (keeps the port open)"
   connect_in_new_window: Connect in New Window
   send_break: Send Break
   send_hex: "Send Hex…"
@@ -57,7 +58,7 @@ chrome:
   rts_deasserted_tooltip: "RTS is deasserted — click to assert"
   clear_button: Clear
   suspend_button: Suspend
-  suspend_tooltip: "Keep session alive; return to profile"
+  suspend_tooltip: "Keep the port open and edit this profile"
   disconnect_button: Disconnect
   reconnecting: "Reconnecting to %{port} @ %{baud}…"
   connected: "Connected to %{port} @ %{baud}"
