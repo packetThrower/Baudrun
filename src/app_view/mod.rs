@@ -2938,6 +2938,15 @@ impl AppView {
         }
         self.suspended = false;
         self.editor = None;
+        // An editor message ("Saved") belongs to the form just closed;
+        // drop it so the footer goes straight back to the session line.
+        if self
+            .footer_event
+            .as_ref()
+            .is_some_and(|ev| matches!(ev.severity, LogSeverity::Info))
+        {
+            self.footer_event = None;
+        }
         let viewport_focus = self.terminal.read(cx).focus_handle().clone();
         viewport_focus.focus(window, cx);
         cx.notify();
