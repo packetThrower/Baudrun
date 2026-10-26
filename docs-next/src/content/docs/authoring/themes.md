@@ -105,7 +105,7 @@ Foundry / Molten do).
   "magenta":     "#d794ff",
   "cyan":        "#7ce0e0",
   "white":       "#d4d4d8",
-  "brightBlack":    "#4a4a52",
+  "brightBlack":    "#71717a",
   "brightRed":      "#ff8a80",
   "brightGreen":    "#a2e5b3",
   "brightYellow":   "#fce488",

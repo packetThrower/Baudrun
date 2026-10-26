@@ -34,7 +34,7 @@
       "group": "ipv6"
     },
     {
-      "pattern": "\\b(?:GigabitEthernet|FastEthernet|TenGigabitEthernet|TwentyFiveGigE|HundredGigE|FortyGigE|Ethernet|Serial|Loopback|Vlan|Port-channel|Tunnel|Management|Bundle-Ether|Null)\\s?\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b",
+      "pattern": "\\b(?:GigabitEthernet|FastEthernet|TenGigabitEthernet|TwentyFiveGigE|HundredGigE|FortyGigE|Ethernet|Serial|Loopback|Vlan|Port-channel|Tunnel|Management|Bundle-Ether|Null|Cellular|Dialer|Virtual-Template|Virtual-Access|BVI|Async|Multilink|Wlan-GigabitEthernet|AppGigabitEthernet|Embedded-Service-Engine)\\s?\\d+(?:\\/\\d+)*(?:\\.\\d+)?\\b",
       "color": "blue",
       "group": "interface-cisco-full"
     },
@@ -49,13 +49,19 @@
       "group": "interface-juniper"
     },
     {
-      "pattern": "\\b(?:up|online|active|established|connected|enabled|forwarding|FULL|passed|OK|success)\\b",
+      "pattern": "\\b(?:up|online|active|established|connected|enabled|forwarding|passed|OK|success)\\b",
       "color": "green",
       "ignoreCase": true,
       "group": "state-good"
     },
     {
-      "pattern": "\\b(?:down|offline|inactive|failed|err-?disabled|error|denied|disabled|rejected|timeout|lost|critical|fatal|alert|unreachable)\\b",
+      "pattern": "\\bFULL\\b",
+      "color": "green",
+      "ignoreCase": false,
+      "group": "ospf-full"
+    },
+    {
+      "pattern": "\\b(?:down|offline|inactive|failed|err-disabled|errdisabled|error|denied|disabled|rejected|timeout|lost|critical|fatal|alert|unreachable)\\b",
       "color": "red",
       "ignoreCase": true,
       "group": "state-bad"

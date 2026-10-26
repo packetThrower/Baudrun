@@ -161,9 +161,14 @@ impl CompiledRule {
     }
 }
 
+/// Boundary test for the keyword (literals) path. Wider than
+/// regex `\b`: a hyphen counts as part of a word, so `timeout`
+/// doesn't light up inside `timeout-policy` and `up` doesn't match
+/// in `up-time`. Hyphens inside a keyword (`err-disabled`) are
+/// unaffected; only the bytes either side of a match are checked.
 #[inline]
 fn is_word_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
 }
 
 /// Compiled set of highlight rules + the per-line applier.
@@ -351,5 +356,46 @@ impl HighlightBuffer {
             .map(std::borrow::Cow::Borrowed)
             .unwrap_or_else(|_| String::from_utf8_lossy(&line));
         self.engine.apply(&body_str).into_bytes()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_engine() -> HighlightEngine {
+        let pack = crate::data::highlight::bundled_packs()
+            .iter()
+            .find(|p| p.id == "baudrun-default")
+            .expect("baudrun-default pack");
+        HighlightEngine::from_rules(&pack.rules)
+    }
+
+    /// Whether `word` inside `line` comes out wrapped in a colour.
+    fn coloured(engine: &HighlightEngine, line: &str, word: &str) -> bool {
+        let out = engine.apply(line);
+        out.contains(&format!("m{word}{ANSI_RESET}"))
+    }
+
+    #[test]
+    fn hyphenated_words_are_not_split_into_keywords() {
+        let e = default_engine();
+        assert!(!coloured(&e, " ip http timeout-policy idle 60", "timeout"));
+        assert!(coloured(&e, "connection timeout", "timeout"));
+        assert!(coloured(&e, "Gi0/1 is err-disabled", "err-disabled"));
+    }
+
+    #[test]
+    fn full_is_case_sensitive() {
+        let e = default_engine();
+        assert!(coloured(&e, "10.0.0.2  1  FULL/DR  00:00:35", "FULL"));
+        assert!(!coloured(&e, "Err Q full", "full"));
+    }
+
+    #[test]
+    fn cellular_and_dialer_interfaces_are_coloured() {
+        let e = default_engine();
+        assert!(coloured(&e, "interface Cellular0", "Cellular0"));
+        assert!(coloured(&e, "interface Dialer1", "Dialer1"));
     }
 }

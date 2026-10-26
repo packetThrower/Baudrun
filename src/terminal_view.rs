@@ -312,6 +312,9 @@ pub struct TerminalView {
     /// replayed bytes don't append a second copy to
     /// `session_bytes`).
     replaying: bool,
+    /// Hex view was switched on with the cursor mid-line: emit a
+    /// line break before its first row.
+    pending_newline: bool,
 }
 
 impl TerminalView {
@@ -409,6 +412,7 @@ impl TerminalView {
             highlight_flush_task: None,
             session_bytes: Vec::new(),
             replaying: false,
+            pending_newline: false,
         }
     }
 
@@ -613,14 +617,30 @@ impl TerminalView {
         // toggling OFF drops the formatter so subsequent bytes feed
         // raw. Mid-session toggles via Save would land here too if
         // we ever reconnect from inside the editor.
+        // The prompt left on screen from before (a reconnect redraws
+        // the old grid) isn't followed by a newline. Starting a
+        // transform mid-line would glue its first output to it, so
+        // note whether the cursor sits past column 0.
+        let mid_line = self.term.grid().cursor.point.column.0 > 0;
         match (settings.hex_view, self.hex_formatter.is_some()) {
-            (true, false) => self.hex_formatter = Some(HexFormatter::new()),
+            (true, false) => {
+                self.hex_formatter = Some(HexFormatter::new());
+                if mid_line {
+                    self.pending_newline = true;
+                }
+            }
             (false, true) => self.hex_formatter = None,
             _ => {}
         }
         // Same toggle pattern for the timestamp injector.
         match (settings.timestamps, self.timestamps_state.is_some()) {
-            (true, false) => self.timestamps_state = Some(TimestampInjector::new()),
+            (true, false) => {
+                let mut ts = TimestampInjector::new();
+                // Mid-line: stamp from the next line, not in front of
+                // the echoed command after a leftover prompt.
+                ts.at_line_start = !mid_line;
+                self.timestamps_state = Some(ts);
+            }
             (false, true) => self.timestamps_state = None,
             _ => {}
         }
@@ -630,7 +650,11 @@ impl TerminalView {
         // from 1 — matches what the user expects from a session-
         // local counter.
         match (settings.line_numbers, self.line_numbers_state.is_some()) {
-            (true, false) => self.line_numbers_state = Some(LineNumberInjector::new()),
+            (true, false) => {
+                let mut ln = LineNumberInjector::new();
+                ln.at_line_start = !mid_line;
+                self.line_numbers_state = Some(ln);
+            }
             (false, true) => self.line_numbers_state = None,
             _ => {}
         }
@@ -790,13 +814,20 @@ impl TerminalView {
         if let Some(f) = self.hex_formatter.as_mut() {
             f.reset();
         }
-        // `\x1b[3J` — clear scrollback (xterm extension; alacritty
-        // honours it). `\x1b[2J` — clear visible grid. `\x1b[H` —
-        // cursor home. Order matters: clear scrollback first so
-        // the live grid lines aren't pushed into a freshly-emptied
-        // history. Bypass `feed_bytes` so the sequence isn't itself
-        // rendered as a hex dump when hex view is on.
-        self.feed_terminal_raw(b"\x1b[3J\x1b[2J\x1b[H", cx);
+        // `\x1b[2J` — clear visible grid. `\x1b[3J` — clear
+        // scrollback (xterm extension; alacritty honours it).
+        // `\x1b[H` — cursor home. Order matters: alacritty's 2J
+        // pushes the visible lines into history, so the 3J has to
+        // come after it or the last screen survives in scrollback.
+        // Bypass `feed_bytes` so the sequence isn't itself rendered
+        // as a hex dump when hex view is on.
+        self.feed_terminal_raw(b"\x1b[2J\x1b[3J\x1b[H", cx);
+        // Clear means the session starts over: the line counter and
+        // the highlight-replay buffer too (a later rule change would
+        // otherwise replay the cleared output back onto the screen).
+        self.lines_received = 0;
+        self.session_bytes.clear();
+        cx.notify();
     }
 
     /// Feed a chunk of bytes through the VT parser, then re-mirror
@@ -847,7 +878,11 @@ impl TerminalView {
             }
         }
         let (hex_bytes, hex_str_held) = if let Some(f) = self.hex_formatter.as_mut() {
-            let s = f.feed(bytes);
+            let mut s = f.feed(bytes);
+            if self.pending_newline && !s.is_empty() {
+                s.insert_str(0, "\r\n");
+                self.pending_newline = false;
+            }
             // Borrow-checker dance: hold the String so the slice
             // returned alongside lives long enough.
             let owned = s;
