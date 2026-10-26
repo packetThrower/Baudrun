@@ -498,7 +498,8 @@ impl SettingsView {
         // resize-without-recenter is the more familiar UX for a
         // settings sheet ("shrink it back to default size without
         // moving it") anyway.
-        window.resize(gpui::size(px(560.0), px(520.0)));
+        let (w, h) = crate::app_view::SETTINGS_WINDOW_SIZE;
+        window.resize(gpui::size(px(w), px(h)));
     }
 
     /// Reset the main window's geometry — clears saved

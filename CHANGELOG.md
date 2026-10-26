@@ -31,6 +31,9 @@ build now pulls every dependency from crates.io.
 ### Changed
 
 - **Session header reads `COM4 · 9600 8N1`** (was `9600 /8 N 1`).
+- **Settings opens larger by default** (880 × 600, was 560 × 520) so
+  the pages fit. A size you've saved is kept; Settings' window reset
+  uses the new default.
 - **Edit Profile… on the connected profile's right-click menu** opens
   the editor while keeping the port open (the same as Suspend, whose
   tooltip now says so).

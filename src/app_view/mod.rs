@@ -93,6 +93,11 @@ use window::TRAFFIC_LIGHT_POSITION_PX;
 /// (name + port_name) without truncation on typical setups, narrow
 /// enough that the terminal still gets the lion's share of the
 /// window.
+/// Default Settings window size (logical px) when none is saved.
+/// Sized so every page fits without scrolling sideways; 560 × 520 was
+/// too cramped on Windows. Also used by Settings' "Reset" button.
+pub(crate) const SETTINGS_WINDOW_SIZE: (f32, f32) = (880.0, 600.0);
+
 const SIDEBAR_WIDTH_PX: f32 = 220.0;
 
 /// Width of the sidebar in collapsed (icon-strip) mode. 48px is wide
@@ -2081,7 +2086,13 @@ impl AppView {
                     .and_then(geometry_to_bounds)
             })
             .flatten()
-            .unwrap_or_else(|| Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx));
+            .unwrap_or_else(|| {
+                Bounds::centered(
+                    None,
+                    gpui::size(px(SETTINGS_WINDOW_SIZE.0), px(SETTINGS_WINDOW_SIZE.1)),
+                    cx,
+                )
+            });
         let bus_for_close = self.settings_bus.clone();
         // Weak handle so the close callback can clear
         // `self.settings_window` on the AppView when the OS window
