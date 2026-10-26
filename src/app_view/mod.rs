@@ -1793,6 +1793,10 @@ impl AppView {
                         };
                         let terminal = self.terminal.clone();
                         terminal.update(cx, |t, _| t.set_profile_settings(live));
+                        // The highlight master switch and per-profile
+                        // pack selection apply live too (they used to
+                        // wait for a reconnect).
+                        self.apply_highlight(cx);
                     }
                 }
                 cx.notify();

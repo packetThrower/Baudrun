@@ -55,6 +55,9 @@ build now pulls every dependency from crates.io.
 
 - **Clear clears everything**: the last screen no longer survives in
   scrollback, and the line counter resets.
+- **Highlighting changes apply while connected**: turning the
+  profile's highlight switch off (or changing its packs) and saving
+  now takes effect on Resume instead of after a reconnect.
 - **Timestamps, line numbers and hex view start on a fresh line** when
   switched on right after a reconnect, instead of attaching to the
   prompt left on screen.
