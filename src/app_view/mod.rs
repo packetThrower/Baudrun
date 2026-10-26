@@ -1645,6 +1645,7 @@ impl AppView {
             return;
         }
         ed.tab = tab;
+        ed.scroll_handle.set_offset(gpui::Point::default());
         cx.notify();
     }
 

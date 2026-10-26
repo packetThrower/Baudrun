@@ -61,6 +61,8 @@ build now pulls every dependency from crates.io.
 
 ### Fixed
 
+- **Profile editor tabs open at the top**: switching tabs no longer
+  keeps the previous tab's scroll position.
 - **Clear clears everything**: the last screen no longer survives in
   scrollback, and the line counter resets.
 - **Highlighting changes apply while connected**: turning the
