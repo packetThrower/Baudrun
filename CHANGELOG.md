@@ -27,6 +27,11 @@ build now pulls every dependency from crates.io.
 - **Welcome screen** has a **New profile** button.
 - **Reset all shortcuts** button on the Shortcuts page, beside the
   per-row resets.
+- **Paste line delay**: a per-profile pause after each pasted line
+  (Advanced → Paste safety → Line delay, off by default), so a device
+  can finish replying before the next line arrives. Cisco IOS drops
+  the rest of its output when input lands mid-reply, which cut pasted
+  `show` output short in testing.
 
 ### Changed
 

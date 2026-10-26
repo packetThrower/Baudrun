@@ -167,6 +167,7 @@ editor:
     dtr_on_disconnect: "断开时 DTR"
     rts_on_disconnect: "断开时 RTS"
     slow_paste_delay: "慢速粘贴延迟（毫秒）"
+    paste_line_delay: "行间延迟（毫秒）"
   theme:
     use_global_default: 使用全局默认
     title: 终端主题
@@ -198,6 +199,7 @@ editor:
     warn_multiline_hint: 在发送包含换行的粘贴文本前提示
     slow: 慢速粘贴
     slow_hint: 每次发送一个字符并带延迟
+    line_delay_hint: "每粘贴一行后暂停，让设备输出完毕（0 = 关闭）。Cisco IOS 在输出过程中收到输入会丢弃剩余输出，500–1000 毫秒较合适。"
     safety_desc: "捕捉“粘贴到了错误窗口”这类失误，并控制粘贴节奏，以免较慢设备上的 UART 丢失字节。"
 
 opts:

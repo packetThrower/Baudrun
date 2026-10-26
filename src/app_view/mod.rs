@@ -401,6 +401,8 @@ struct Editor {
     /// (which already accepts any non-negative i32) be the single
     /// source of truth.
     paste_char_delay_ms: Entity<InputState>,
+    /// Per-line paste pause in ms; empty / 0 = off.
+    paste_line_delay_ms: Entity<InputState>,
 
     /// Most recent validation/persistence error. Cleared when the
     /// editor is reopened; populated when `Store::create` /
@@ -1295,6 +1297,7 @@ impl AppView {
             paste_warn_multiline: profile.paste_warn_multiline,
             paste_slow: profile.paste_slow,
             paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0) as u32,
+            paste_line_delay_ms: profile.paste_line_delay_ms.unwrap_or(0).max(0) as u32,
             hex_view: profile.hex_view,
             timestamps: profile.timestamps,
             line_numbers: profile.line_numbers,
@@ -1791,6 +1794,8 @@ impl AppView {
                             paste_warn_multiline: profile.paste_warn_multiline,
                             paste_slow: profile.paste_slow,
                             paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0)
+                                as u32,
+                            paste_line_delay_ms: profile.paste_line_delay_ms.unwrap_or(0).max(0)
                                 as u32,
                             hex_view: profile.hex_view,
                             timestamps: profile.timestamps,

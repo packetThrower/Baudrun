@@ -103,6 +103,16 @@ pub(super) fn build_editor(
             .placeholder("10")
             .default_value(paste_delay_val)
     });
+    let line_delay_val = profile
+        .paste_line_delay_ms
+        .filter(|v| *v > 0)
+        .map(|v| v.to_string())
+        .unwrap_or_default();
+    let paste_line_delay_ms = cx.new(|cx| {
+        InputState::new(window, cx)
+            .placeholder("0")
+            .default_value(line_delay_val)
+    });
     // Empty `dtr/rts` strings on a freshly-loaded profile fall back
     // to "default" for the select — the store accepts both, but
     // showing "default" in the dropdown is the same intent and
@@ -174,6 +184,7 @@ pub(super) fn build_editor(
         paste_warn_multiline: profile.paste_warn_multiline,
         paste_slow: profile.paste_slow,
         paste_char_delay_ms,
+        paste_line_delay_ms,
         error: None,
         scroll_handle: ScrollHandle::new(),
         baseline: profile.clone(),
@@ -225,6 +236,9 @@ pub(super) fn apply_editor_to_profile(
     // collapse to 0, which the store accepts.
     let delay_str = editor.paste_char_delay_ms.read(cx).value().to_string();
     profile.paste_char_delay_ms = delay_str.trim().parse::<i32>().ok().map(|v| v.max(0));
+    // Line delay: empty or 0 stores `None` (off).
+    let line_str = editor.paste_line_delay_ms.read(cx).value().to_string();
+    profile.paste_line_delay_ms = line_str.trim().parse::<i32>().ok().filter(|v| *v > 0);
     profile.highlight = editor.highlight;
     // The override flag → `Option` shape: false collapses to None
     // (inherit global); true persists the current vec, even if it's
@@ -264,6 +278,7 @@ fn editor_fields_match(a: &Profile, b: &Profile) -> bool {
         && a.paste_warn_multiline == b.paste_warn_multiline
         && a.paste_slow == b.paste_slow
         && a.paste_char_delay_ms == b.paste_char_delay_ms
+        && a.paste_line_delay_ms == b.paste_line_delay_ms
         && a.theme_id == b.theme_id
         && a.highlight == b.highlight
         && a.enabled_highlight_presets == b.enabled_highlight_presets
@@ -300,6 +315,7 @@ pub(super) struct EditorRender {
     paste_warn_multiline: bool,
     paste_slow: bool,
     paste_char_delay_ms: Entity<InputState>,
+    paste_line_delay_ms: Entity<InputState>,
     theme: Entity<SelectState<Vec<Opt>>>,
     highlight: bool,
     override_highlight_packs: bool,
@@ -344,6 +360,7 @@ impl EditorRender {
             paste_warn_multiline: e.paste_warn_multiline,
             paste_slow: e.paste_slow,
             paste_char_delay_ms: e.paste_char_delay_ms.clone(),
+            paste_line_delay_ms: e.paste_line_delay_ms.clone(),
             theme: e.theme.clone(),
             highlight: e.highlight,
             override_highlight_packs: e.override_highlight_packs,
@@ -591,6 +608,7 @@ fn form_body(
             er.paste_warn_multiline,
             er.paste_slow,
             er.paste_char_delay_ms,
+            er.paste_line_delay_ms,
             cx,
         )
         .into_any_element(),
@@ -1210,6 +1228,7 @@ fn advanced_pane(
     paste_warn_multiline: bool,
     paste_slow: bool,
     paste_char_delay_ms: Entity<InputState>,
+    paste_line_delay_ms: Entity<InputState>,
     cx: &mut Context<AppView>,
 ) -> impl IntoElement {
     let s = *cx.global::<SkinTokens>();
@@ -1258,6 +1277,7 @@ fn advanced_pane(
             paste_warn_multiline,
             paste_slow,
             paste_char_delay_ms,
+            paste_line_delay_ms,
             cx,
         ))
 }
@@ -1381,6 +1401,7 @@ fn paste_safety_card(
     paste_warn_multiline: bool,
     paste_slow: bool,
     paste_char_delay_ms: Entity<InputState>,
+    paste_line_delay_ms: Entity<InputState>,
     cx: &mut Context<AppView>,
 ) -> gpui::Div {
     let s = *cx.global::<SkinTokens>();
@@ -1414,7 +1435,27 @@ fn paste_safety_card(
             s,
             t!("editor.field.slow_paste_delay"),
             Input::new(&paste_char_delay_ms).small().appearance(true),
-        )));
+        )))
+        // Line delay is independent of slow paste, so it gets its own
+        // hinted row rather than sitting under the slow-paste checkbox.
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(div().w(px(160.0)).child(labeled(
+                    s,
+                    t!("editor.field.paste_line_delay"),
+                    Input::new(&paste_line_delay_ms).small().appearance(true),
+                )))
+                .child(
+                    div()
+                        .text_xs()
+                        .whitespace_normal()
+                        .text_color(rgba(s.fg_secondary))
+                        .child(t!("editor.paste.line_delay_hint")),
+                ),
+        );
     section_card_with_desc(
         s,
         t!("editor.section.paste_safety"),
