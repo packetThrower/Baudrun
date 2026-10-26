@@ -2116,7 +2116,9 @@ fn text_input(
     input: fn(&SettingsView) -> Entity<InputState>,
 ) -> SettingField<SharedString> {
     let view = view.clone();
-    SettingField::render(move |_, _, cx| Input::new(&input(view.read(cx))).small())
+    // Fixed width: an empty input (font size left at its default)
+    // otherwise shrinks to a sliver and hides its placeholder.
+    SettingField::render(move |_, _, cx| Input::new(&input(view.read(cx))).small().w(px(120.0)))
 }
 
 /// Switch bound to one of the view's existing `set_*` handlers.
