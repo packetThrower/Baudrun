@@ -82,6 +82,22 @@ fn extract_word_alternation(pattern: &str) -> Option<Vec<String>> {
     Some(words)
 }
 
+/// `\b(?:word|word|…)\b` where the words are letters, hyphens and
+/// `?` only (e.g. `err-?disabled`): a keyword list that just missed
+/// the literals path. Number / address rules don't qualify, so ranges
+/// like `10.0.0.1-10.0.0.9` keep their colour.
+fn is_keyword_list(pattern: &str) -> bool {
+    pattern
+        .strip_prefix("\\b(?:")
+        .and_then(|s| s.strip_suffix(")\\b"))
+        .is_some_and(|inner| {
+            !inner.is_empty()
+                && inner
+                    .bytes()
+                    .all(|b| b.is_ascii_alphabetic() || matches!(b, b'|' | b'-' | b'?'))
+        })
+}
+
 /// Map a rule's named colour to its SGR open sequence. Standard
 /// 8-colour ANSI plus the bright variants (SGR 90–97) for a
 /// 14-colour palette. `dim` is an alias for bright-black (the
@@ -127,8 +143,18 @@ fn ansi_open(color: &str) -> &'static str {
 ///    is RE2-based), just slower than the literal-set path.
 #[derive(Debug)]
 enum CompiledRule {
-    Literals { ac: AhoCorasick, open: &'static str },
-    Regex { re: Regex, open: &'static str },
+    Literals {
+        ac: AhoCorasick,
+        open: &'static str,
+    },
+    /// `word_edges`: a keyword-list rule (see `is_keyword_list`), so a
+    /// match touching a hyphen on either side is rejected, same as the
+    /// literals path (regex `\b` alone treats `-` as a boundary).
+    Regex {
+        re: Regex,
+        open: &'static str,
+        word_edges: (bool, bool),
+    },
 }
 
 impl CompiledRule {
@@ -139,10 +165,18 @@ impl CompiledRule {
     /// flavour it's looking at.
     fn find_into(&self, line: &str, out: &mut Vec<(usize, usize, &'static str)>) {
         match self {
-            CompiledRule::Regex { re, open } => {
+            CompiledRule::Regex {
+                re,
+                open,
+                word_edges: (lead, trail),
+            } => {
+                let bytes = line.as_bytes();
                 for m in re.find_iter(line) {
-                    if m.start() != m.end() {
-                        out.push((m.start(), m.end(), open));
+                    let (s, e) = (m.start(), m.end());
+                    let pre_ok = !lead || s == 0 || bytes[s - 1] != b'-';
+                    let post_ok = !trail || e == bytes.len() || bytes[e] != b'-';
+                    if s != e && pre_ok && post_ok {
+                        out.push((s, e, open));
                     }
                 }
             }
@@ -216,7 +250,15 @@ impl HighlightEngine {
                 .case_insensitive(rule.ignore_case)
                 .build()
             {
-                Ok(re) => compiled.push(CompiledRule::Regex { re, open }),
+                Ok(re) => compiled.push(CompiledRule::Regex {
+                    re,
+                    open,
+                    word_edges: if is_keyword_list(&rule.pattern) {
+                        (true, true)
+                    } else {
+                        (false, false)
+                    },
+                }),
                 Err(err) => {
                     log::warn!(
                         "highlight: dropping rule with invalid pattern {:?}: {err}",
@@ -383,6 +425,29 @@ mod tests {
         assert!(!coloured(&e, " ip http timeout-policy idle 60", "timeout"));
         assert!(coloured(&e, "connection timeout", "timeout"));
         assert!(coloured(&e, "Gi0/1 is err-disabled", "err-disabled"));
+    }
+
+    #[test]
+    fn regex_keyword_rules_also_respect_hyphens() {
+        // A saved "User overrides" copy of the old default pack still
+        // has `err-?disabled`, which sends the rule down the regex path.
+        let rule = crate::data::highlight::HighlightRule {
+            pattern: "\\b(?:down|err-?disabled|timeout)\\b".into(),
+            color: "red".into(),
+            ignore_case: true,
+            group: None,
+        };
+        let e = HighlightEngine::from_rules(&[rule]);
+        assert!(!coloured(&e, " ip http timeout-policy idle 60", "timeout"));
+        assert!(coloured(&e, "connection timeout", "timeout"));
+        assert!(coloured(&e, "port errdisabled", "errdisabled"));
+    }
+
+    #[test]
+    fn address_ranges_keep_their_colour() {
+        let e = default_engine();
+        assert!(coloured(&e, "range 10.0.0.1-10.0.0.9", "10.0.0.1"));
+        assert!(coloured(&e, "range 10.0.0.1-10.0.0.9", "10.0.0.9"));
     }
 
     #[test]
