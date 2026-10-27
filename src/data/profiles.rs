@@ -48,6 +48,12 @@ pub struct Profile {
     pub paste_slow: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paste_char_delay_ms: Option<i32>,
+    /// Pause after each pasted line ending, in milliseconds. `None` /
+    /// 0 = off. Lets a device finish replying before the next line
+    /// arrives; Cisco IOS discards the rest of its output when input
+    /// lands mid-reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paste_line_delay_ms: Option<i32>,
     /// Per-profile override for the global `enabled_highlight_presets`
     /// list in Settings. `None` means inherit; `Some(_)` (even an empty
     /// vec) replaces the global selection for this profile's session.
@@ -94,6 +100,7 @@ impl Profile {
             paste_warn_multiline: true,
             paste_slow: true,
             paste_char_delay_ms: Some(10),
+            paste_line_delay_ms: None,
             enabled_highlight_presets: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

@@ -130,6 +130,7 @@ baud. Two complementary defences, both on by default.
 | `pasteWarnMultiline` | boolean   | `true`  | Show a confirmation dialog before pasting anything containing a newline. Catches the "I meant to paste one line" copy-paste mistake. |
 | `pasteSlow`    | boolean        | `true`  | Pace pasted bytes one at a time with `pasteCharDelayMs` between each, instead of writing the whole buffer at once. |
 | `pasteCharDelayMs` | int \| `null` | `10`    | Per-byte delay in milliseconds when `pasteSlow` is on. 10 ms = 100 bytes/s = effectively 1000 baud — slow enough for any device's input buffer to drain between bytes. Bump higher (20–50 ms) for known-fragile UARTs, or lower (1–5 ms) when you've confirmed the target keeps up. Ignored when `pasteSlow` is `false`. |
+| `pasteLineDelayMs` | int \| `null` | `null` (off) | Pause in milliseconds after each pasted line ending, so the device finishes replying before the next line arrives. Works with or without `pasteSlow`. Cisco IOS discards the rest of a reply when input arrives mid-output; 500–1000 ms is usually enough. Editor: Advanced → Paste safety → Line delay. |
 
 The **Send Hex…** path doesn't use the slow-paste throttle — hex
 sends write the whole parsed byte vector through in one go, paced

@@ -93,6 +93,11 @@ use window::TRAFFIC_LIGHT_POSITION_PX;
 /// (name + port_name) without truncation on typical setups, narrow
 /// enough that the terminal still gets the lion's share of the
 /// window.
+/// Default Settings window size (logical px) when none is saved.
+/// Sized so every page fits without scrolling sideways; 560 × 520 was
+/// too cramped on Windows. Also used by Settings' "Reset" button.
+pub(crate) const SETTINGS_WINDOW_SIZE: (f32, f32) = (880.0, 600.0);
+
 const SIDEBAR_WIDTH_PX: f32 = 220.0;
 
 /// Width of the sidebar in collapsed (icon-strip) mode. 48px is wide
@@ -396,6 +401,8 @@ struct Editor {
     /// (which already accepts any non-negative i32) be the single
     /// source of truth.
     paste_char_delay_ms: Entity<InputState>,
+    /// Per-line paste pause in ms; empty / 0 = off.
+    paste_line_delay_ms: Entity<InputState>,
 
     /// Most recent validation/persistence error. Cleared when the
     /// editor is reopened; populated when `Store::create` /
@@ -1290,6 +1297,7 @@ impl AppView {
             paste_warn_multiline: profile.paste_warn_multiline,
             paste_slow: profile.paste_slow,
             paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0) as u32,
+            paste_line_delay_ms: profile.paste_line_delay_ms.unwrap_or(0).max(0) as u32,
             hex_view: profile.hex_view,
             timestamps: profile.timestamps,
             line_numbers: profile.line_numbers,
@@ -1637,6 +1645,7 @@ impl AppView {
             return;
         }
         ed.tab = tab;
+        ed.scroll_handle.set_offset(gpui::Point::default());
         cx.notify();
     }
 
@@ -1787,12 +1796,18 @@ impl AppView {
                             paste_slow: profile.paste_slow,
                             paste_char_delay_ms: profile.paste_char_delay_ms.unwrap_or(10).max(0)
                                 as u32,
+                            paste_line_delay_ms: profile.paste_line_delay_ms.unwrap_or(0).max(0)
+                                as u32,
                             hex_view: profile.hex_view,
                             timestamps: profile.timestamps,
                             line_numbers: profile.line_numbers,
                         };
                         let terminal = self.terminal.clone();
                         terminal.update(cx, |t, _| t.set_profile_settings(live));
+                        // The highlight master switch and per-profile
+                        // pack selection apply live too (they used to
+                        // wait for a reconnect).
+                        self.apply_highlight(cx);
                     }
                 }
                 cx.notify();
@@ -2077,7 +2092,13 @@ impl AppView {
                     .and_then(geometry_to_bounds)
             })
             .flatten()
-            .unwrap_or_else(|| Bounds::centered(None, gpui::size(px(560.0), px(520.0)), cx));
+            .unwrap_or_else(|| {
+                Bounds::centered(
+                    None,
+                    gpui::size(px(SETTINGS_WINDOW_SIZE.0), px(SETTINGS_WINDOW_SIZE.1)),
+                    cx,
+                )
+            });
         let bus_for_close = self.settings_bus.clone();
         // Weak handle so the close callback can clear
         // `self.settings_window` on the AppView when the OS window
@@ -2938,6 +2959,15 @@ impl AppView {
         }
         self.suspended = false;
         self.editor = None;
+        // An editor message ("Saved") belongs to the form just closed;
+        // drop it so the footer goes straight back to the session line.
+        if self
+            .footer_event
+            .as_ref()
+            .is_some_and(|ev| matches!(ev.severity, LogSeverity::Info))
+        {
+            self.footer_event = None;
+        }
         let viewport_focus = self.terminal.read(cx).focus_handle().clone();
         viewport_focus.focus(window, cx);
         cx.notify();

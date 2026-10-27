@@ -279,6 +279,17 @@ well below 20 characters.
   logged. The `Escape` keystroke itself is swallowed so the
   device doesn't see a stray 0x1B mid-stream.
 
+**`pasteLineDelayMs`** (profile field, default off)
+
+- A pause after each pasted line ending (`\r`, `\n` or `\r\n`),
+  before the next line is sent. Not applied after the last line.
+- Independent of `pasteSlow`: with slow paste off, each line goes
+  out in one write followed by the pause; with it on, the per-byte
+  delay applies within the line and the line delay between lines.
+- For devices that drop output when input arrives mid-reply. Cisco
+  IOS does: pasting `show clock` then `show users` quickly can cut
+  the clock reply short. 500–1000 ms between lines avoids it.
+
 ## Backspace key mapping
 
 - Profile field `backspaceKey`: `"del"` (0x7F) or `"bs"` (0x08).

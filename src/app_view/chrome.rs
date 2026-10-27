@@ -46,7 +46,8 @@ use crate::skin_tokens::SkinTokens;
 /// via `.context_menu`). When this window is already connected to
 /// the profile, "Connect in New Window" would race the session for
 /// the same port, so offer "Move Session to New Window" instead —
-/// the same detach machinery the overflow menu drives.
+/// the same detach machinery the overflow menu drives, plus "Edit
+/// Profile…" (suspends the session to reach the editor).
 pub(super) fn profile_row_menu(
     menu: PopupMenu,
     app: &Entity<AppView>,
@@ -56,7 +57,16 @@ pub(super) fn profile_row_menu(
     let connected = app.read(cx).connected_profile_id.as_deref() == Some(profile_id);
     let app = app.clone();
     if connected {
+        // Clicking the connected row returns to the terminal, so the
+        // editor needs its own way in: Suspend keeps the port open and
+        // shows the profile editor.
+        let edit_app = app.clone();
         menu.item(
+            PopupMenuItem::new(t!("chrome.edit_profile_suspend")).on_click(move |_, window, cx| {
+                edit_app.update(cx, |this, cx| this.suspend_session(window, cx))
+            }),
+        )
+        .item(
             PopupMenuItem::new(t!("chrome.move_session_to_new_window")).on_click(
                 move |_, _, cx| {
                     app.update(cx, |this, cx| this.move_session_to_new_window(None, cx))
@@ -333,12 +343,12 @@ pub(super) fn session_header(
         "space" => "S",
         _ => "N",
     };
-    // Mirror the Tauri header: full session line always, with
+    // Full session line ("COM4 · 9600 8N1") always, with
     // " · reconnecting…" appended during a retry window. The
     // appended phrase keeps the port/baud/8N1 info visible so the
     // user knows what the retry is targeting.
     let mut meta = format!(
-        "{} · {} /{} {} {}",
+        "{} · {} {}{}{}",
         profile.port_name, profile.baud_rate, profile.data_bits, parity_letter, profile.stop_bits,
     );
     if reconnecting {

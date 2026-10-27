@@ -33,6 +33,7 @@ settings_chrome:
 
 chrome:
   move_session_to_new_window: Move Session to New Window
+  edit_profile_suspend: "Edit Profile… (keeps the port open)"
   connect_in_new_window: Connect in New Window
   send_break: Send Break
   send_hex: "Send Hex…"
@@ -57,7 +58,7 @@ chrome:
   rts_deasserted_tooltip: "RTS is deasserted — click to assert"
   clear_button: Clear
   suspend_button: Suspend
-  suspend_tooltip: "Keep session alive; return to profile"
+  suspend_tooltip: "Keep the port open and edit this profile"
   disconnect_button: Disconnect
   reconnecting: "Reconnecting to %{port} @ %{baud}…"
   connected: "Connected to %{port} @ %{baud}"
@@ -177,6 +178,7 @@ editor:
     dtr_on_disconnect: DTR ON DISCONNECT
     rts_on_disconnect: RTS ON DISCONNECT
     slow_paste_delay: SLOW-PASTE DELAY (MS)
+    paste_line_delay: LINE DELAY (MS)
   theme:
     use_global_default: Use global default
     title: Terminal Theme
@@ -208,6 +210,7 @@ editor:
     warn_multiline_hint: prompt before sending pasted text that contains line breaks
     slow: Slow paste
     slow_hint: send one char at a time with a delay
+    line_delay_hint: "Pause after each pasted line so the device can finish replying (0 = off). 500–1000 ms suits Cisco IOS, which drops output when input arrives mid-reply."
     safety_desc: "Catch the “I pasted into the wrong window” mistake, and pace pastes so UARTs on slower devices don't drop bytes."
 
 opts:

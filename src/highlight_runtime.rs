@@ -82,6 +82,22 @@ fn extract_word_alternation(pattern: &str) -> Option<Vec<String>> {
     Some(words)
 }
 
+/// `\b(?:word|word|…)\b` where the words are letters, hyphens and
+/// `?` only (e.g. `err-?disabled`): a keyword list that just missed
+/// the literals path. Number / address rules don't qualify, so ranges
+/// like `10.0.0.1-10.0.0.9` keep their colour.
+fn is_keyword_list(pattern: &str) -> bool {
+    pattern
+        .strip_prefix("\\b(?:")
+        .and_then(|s| s.strip_suffix(")\\b"))
+        .is_some_and(|inner| {
+            !inner.is_empty()
+                && inner
+                    .bytes()
+                    .all(|b| b.is_ascii_alphabetic() || matches!(b, b'|' | b'-' | b'?'))
+        })
+}
+
 /// Map a rule's named colour to its SGR open sequence. Standard
 /// 8-colour ANSI plus the bright variants (SGR 90–97) for a
 /// 14-colour palette. `dim` is an alias for bright-black (the
@@ -127,8 +143,18 @@ fn ansi_open(color: &str) -> &'static str {
 ///    is RE2-based), just slower than the literal-set path.
 #[derive(Debug)]
 enum CompiledRule {
-    Literals { ac: AhoCorasick, open: &'static str },
-    Regex { re: Regex, open: &'static str },
+    Literals {
+        ac: AhoCorasick,
+        open: &'static str,
+    },
+    /// `word_edges`: a keyword-list rule (see `is_keyword_list`), so a
+    /// match touching a hyphen on either side is rejected, same as the
+    /// literals path (regex `\b` alone treats `-` as a boundary).
+    Regex {
+        re: Regex,
+        open: &'static str,
+        word_edges: (bool, bool),
+    },
 }
 
 impl CompiledRule {
@@ -139,10 +165,18 @@ impl CompiledRule {
     /// flavour it's looking at.
     fn find_into(&self, line: &str, out: &mut Vec<(usize, usize, &'static str)>) {
         match self {
-            CompiledRule::Regex { re, open } => {
+            CompiledRule::Regex {
+                re,
+                open,
+                word_edges: (lead, trail),
+            } => {
+                let bytes = line.as_bytes();
                 for m in re.find_iter(line) {
-                    if m.start() != m.end() {
-                        out.push((m.start(), m.end(), open));
+                    let (s, e) = (m.start(), m.end());
+                    let pre_ok = !lead || s == 0 || bytes[s - 1] != b'-';
+                    let post_ok = !trail || e == bytes.len() || bytes[e] != b'-';
+                    if s != e && pre_ok && post_ok {
+                        out.push((s, e, open));
                     }
                 }
             }
@@ -161,9 +195,14 @@ impl CompiledRule {
     }
 }
 
+/// Boundary test for the keyword (literals) path. Wider than
+/// regex `\b`: a hyphen counts as part of a word, so `timeout`
+/// doesn't light up inside `timeout-policy` and `up` doesn't match
+/// in `up-time`. Hyphens inside a keyword (`err-disabled`) are
+/// unaffected; only the bytes either side of a match are checked.
 #[inline]
 fn is_word_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'-'
 }
 
 /// Compiled set of highlight rules + the per-line applier.
@@ -211,7 +250,15 @@ impl HighlightEngine {
                 .case_insensitive(rule.ignore_case)
                 .build()
             {
-                Ok(re) => compiled.push(CompiledRule::Regex { re, open }),
+                Ok(re) => compiled.push(CompiledRule::Regex {
+                    re,
+                    open,
+                    word_edges: if is_keyword_list(&rule.pattern) {
+                        (true, true)
+                    } else {
+                        (false, false)
+                    },
+                }),
                 Err(err) => {
                     log::warn!(
                         "highlight: dropping rule with invalid pattern {:?}: {err}",
@@ -351,5 +398,69 @@ impl HighlightBuffer {
             .map(std::borrow::Cow::Borrowed)
             .unwrap_or_else(|_| String::from_utf8_lossy(&line));
         self.engine.apply(&body_str).into_bytes()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn default_engine() -> HighlightEngine {
+        let pack = crate::data::highlight::bundled_packs()
+            .iter()
+            .find(|p| p.id == "baudrun-default")
+            .expect("baudrun-default pack");
+        HighlightEngine::from_rules(&pack.rules)
+    }
+
+    /// Whether `word` inside `line` comes out wrapped in a colour.
+    fn coloured(engine: &HighlightEngine, line: &str, word: &str) -> bool {
+        let out = engine.apply(line);
+        out.contains(&format!("m{word}{ANSI_RESET}"))
+    }
+
+    #[test]
+    fn hyphenated_words_are_not_split_into_keywords() {
+        let e = default_engine();
+        assert!(!coloured(&e, " ip http timeout-policy idle 60", "timeout"));
+        assert!(coloured(&e, "connection timeout", "timeout"));
+        assert!(coloured(&e, "Gi0/1 is err-disabled", "err-disabled"));
+    }
+
+    #[test]
+    fn regex_keyword_rules_also_respect_hyphens() {
+        // A saved "User overrides" copy of the old default pack still
+        // has `err-?disabled`, which sends the rule down the regex path.
+        let rule = crate::data::highlight::HighlightRule {
+            pattern: "\\b(?:down|err-?disabled|timeout)\\b".into(),
+            color: "red".into(),
+            ignore_case: true,
+            group: None,
+        };
+        let e = HighlightEngine::from_rules(&[rule]);
+        assert!(!coloured(&e, " ip http timeout-policy idle 60", "timeout"));
+        assert!(coloured(&e, "connection timeout", "timeout"));
+        assert!(coloured(&e, "port errdisabled", "errdisabled"));
+    }
+
+    #[test]
+    fn address_ranges_keep_their_colour() {
+        let e = default_engine();
+        assert!(coloured(&e, "range 10.0.0.1-10.0.0.9", "10.0.0.1"));
+        assert!(coloured(&e, "range 10.0.0.1-10.0.0.9", "10.0.0.9"));
+    }
+
+    #[test]
+    fn full_is_case_sensitive() {
+        let e = default_engine();
+        assert!(coloured(&e, "10.0.0.2  1  FULL/DR  00:00:35", "FULL"));
+        assert!(!coloured(&e, "Err Q full", "full"));
+    }
+
+    #[test]
+    fn cellular_and_dialer_interfaces_are_coloured() {
+        let e = default_engine();
+        assert!(coloured(&e, "interface Cellular0", "Cellular0"));
+        assert!(coloured(&e, "interface Dialer1", "Dialer1"));
     }
 }

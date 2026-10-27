@@ -109,6 +109,9 @@ pub struct ProfileSettings {
     /// Clamped to a non-negative value; 0 effectively disables the
     /// delay even when `paste_slow` is on.
     pub paste_char_delay_ms: u32,
+    /// Pause after each pasted line ending, in ms (0 = off). Works with
+    /// or without `paste_slow`.
+    pub paste_line_delay_ms: u32,
     /// When true, incoming bytes are formatted as a `xxd`-style
     /// hex dump before being fed to the VT parser — useful for
     /// reverse-engineering binary protocols where the raw byte
@@ -147,6 +150,7 @@ impl Default for ProfileSettings {
             paste_warn_multiline: true,
             paste_slow: true,
             paste_char_delay_ms: 10,
+            paste_line_delay_ms: 0,
             hex_view: false,
             timestamps: false,
             line_numbers: false,
@@ -312,6 +316,9 @@ pub struct TerminalView {
     /// replayed bytes don't append a second copy to
     /// `session_bytes`).
     replaying: bool,
+    /// Hex view was switched on with the cursor mid-line: emit a
+    /// line break before its first row.
+    pending_newline: bool,
 }
 
 impl TerminalView {
@@ -409,6 +416,7 @@ impl TerminalView {
             highlight_flush_task: None,
             session_bytes: Vec::new(),
             replaying: false,
+            pending_newline: false,
         }
     }
 
@@ -613,14 +621,30 @@ impl TerminalView {
         // toggling OFF drops the formatter so subsequent bytes feed
         // raw. Mid-session toggles via Save would land here too if
         // we ever reconnect from inside the editor.
+        // The prompt left on screen from before (a reconnect redraws
+        // the old grid) isn't followed by a newline. Starting a
+        // transform mid-line would glue its first output to it, so
+        // note whether the cursor sits past column 0.
+        let mid_line = self.term.grid().cursor.point.column.0 > 0;
         match (settings.hex_view, self.hex_formatter.is_some()) {
-            (true, false) => self.hex_formatter = Some(HexFormatter::new()),
+            (true, false) => {
+                self.hex_formatter = Some(HexFormatter::new());
+                if mid_line {
+                    self.pending_newline = true;
+                }
+            }
             (false, true) => self.hex_formatter = None,
             _ => {}
         }
         // Same toggle pattern for the timestamp injector.
         match (settings.timestamps, self.timestamps_state.is_some()) {
-            (true, false) => self.timestamps_state = Some(TimestampInjector::new()),
+            (true, false) => {
+                let mut ts = TimestampInjector::new();
+                // Mid-line: stamp from the next line, not in front of
+                // the echoed command after a leftover prompt.
+                ts.at_line_start = !mid_line;
+                self.timestamps_state = Some(ts);
+            }
             (false, true) => self.timestamps_state = None,
             _ => {}
         }
@@ -630,7 +654,11 @@ impl TerminalView {
         // from 1 — matches what the user expects from a session-
         // local counter.
         match (settings.line_numbers, self.line_numbers_state.is_some()) {
-            (true, false) => self.line_numbers_state = Some(LineNumberInjector::new()),
+            (true, false) => {
+                let mut ln = LineNumberInjector::new();
+                ln.at_line_start = !mid_line;
+                self.line_numbers_state = Some(ln);
+            }
             (false, true) => self.line_numbers_state = None,
             _ => {}
         }
@@ -790,13 +818,20 @@ impl TerminalView {
         if let Some(f) = self.hex_formatter.as_mut() {
             f.reset();
         }
-        // `\x1b[3J` — clear scrollback (xterm extension; alacritty
-        // honours it). `\x1b[2J` — clear visible grid. `\x1b[H` —
-        // cursor home. Order matters: clear scrollback first so
-        // the live grid lines aren't pushed into a freshly-emptied
-        // history. Bypass `feed_bytes` so the sequence isn't itself
-        // rendered as a hex dump when hex view is on.
-        self.feed_terminal_raw(b"\x1b[3J\x1b[2J\x1b[H", cx);
+        // `\x1b[2J` — clear visible grid. `\x1b[3J` — clear
+        // scrollback (xterm extension; alacritty honours it).
+        // `\x1b[H` — cursor home. Order matters: alacritty's 2J
+        // pushes the visible lines into history, so the 3J has to
+        // come after it or the last screen survives in scrollback.
+        // Bypass `feed_bytes` so the sequence isn't itself rendered
+        // as a hex dump when hex view is on.
+        self.feed_terminal_raw(b"\x1b[2J\x1b[3J\x1b[H", cx);
+        // Clear means the session starts over: the line counter and
+        // the highlight-replay buffer too (a later rule change would
+        // otherwise replay the cleared output back onto the screen).
+        self.lines_received = 0;
+        self.session_bytes.clear();
+        cx.notify();
     }
 
     /// Feed a chunk of bytes through the VT parser, then re-mirror
@@ -847,7 +882,11 @@ impl TerminalView {
             }
         }
         let (hex_bytes, hex_str_held) = if let Some(f) = self.hex_formatter.as_mut() {
-            let s = f.feed(bytes);
+            let mut s = f.feed(bytes);
+            if self.pending_newline && !s.is_empty() {
+                s.insert_str(0, "\r\n");
+                self.pending_newline = false;
+            }
             // Borrow-checker dance: hold the String so the slice
             // returned alongside lives long enough.
             let owned = s;
@@ -1416,12 +1455,14 @@ impl TerminalView {
     }
 
     /// Push paste bytes onto the wire (or into local Term in
-    /// loopback). Honors `paste_slow` by spawning a per-byte writer
-    /// task with `paste_char_delay_ms` between sends; otherwise
-    /// fires the whole buffer in one channel send.
+    /// loopback). Honors `paste_slow` (per-byte pacing with
+    /// `paste_char_delay_ms`) and `paste_line_delay_ms` (a pause
+    /// after each line); with neither, fires the whole buffer in one
+    /// channel send.
     fn send_paste(&mut self, bytes: Vec<u8>, _window: &mut Window, cx: &mut Context<Self>) {
-        if self.profile_settings.paste_slow {
-            self.spawn_slow_paste(bytes, cx);
+        let ps = &self.profile_settings;
+        if ps.paste_slow || ps.paste_line_delay_ms > 0 {
+            self.spawn_paced_paste(bytes, cx);
             return;
         }
         if let Some(tx) = &self.serial_tx {
@@ -1432,47 +1473,49 @@ impl TerminalView {
         }
     }
 
-    fn spawn_slow_paste(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
-        let delay = Duration::from_millis(self.profile_settings.paste_char_delay_ms as u64);
+    fn spawn_paced_paste(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
+        let ps = &self.profile_settings;
+        let char_delay = if ps.paste_slow {
+            Duration::from_millis(ps.paste_char_delay_ms as u64)
+        } else {
+            Duration::ZERO
+        };
+        let line_delay = Duration::from_millis(ps.paste_line_delay_ms as u64);
+        // Without slow paste a line goes out as one chunk; with it,
+        // byte by byte.
+        let per_byte = ps.paste_slow;
+        let chunks = paste_chunks(&bytes, per_byte);
         // Held in `paste_task` so disconnect can drop it; otherwise
-        // an in-flight slow paste keeps writing to the old sender
-        // after `clear_serial_tx`.
-        match self.serial_tx.clone() {
-            Some(tx) => {
-                let task = cx.spawn(async move |_, cx| {
-                    for b in bytes {
-                        if tx.send(vec![b]).is_err() {
-                            break;
-                        }
-                        if !delay.is_zero() {
-                            cx.background_executor().timer(delay).await;
-                        }
+        // an in-flight paced paste keeps writing to the old sender
+        // after `clear_serial_tx`. In loopback the chunks echo
+        // through `feed_bytes` with the same pacing.
+        let tx = self.serial_tx.clone();
+        let weak = cx.entity().downgrade();
+        let task = cx.spawn(async move |_, cx| {
+            let last = chunks.len().saturating_sub(1);
+            for (i, (chunk, ends_line)) in chunks.into_iter().enumerate() {
+                let sent = match &tx {
+                    Some(tx) => tx.send(chunk).is_ok(),
+                    None => {
+                        let echoed = loopback_translate(&chunk);
+                        weak.update(cx, |this, cx| this.feed_bytes(&echoed, cx))
+                            .is_ok()
                     }
-                });
-                self.paste_task = Some(task);
+                };
+                if !sent {
+                    break;
+                }
+                let pause = if ends_line && i != last && !line_delay.is_zero() {
+                    line_delay
+                } else {
+                    char_delay
+                };
+                if !pause.is_zero() {
+                    cx.background_executor().timer(pause).await;
+                }
             }
-            None => {
-                // Loopback slow paste: echo bytes one-by-one
-                // through `feed_bytes` with the same delay so the
-                // visual pacing matches the wire pacing.
-                let weak = cx.entity().downgrade();
-                let task = cx.spawn(async move |_, cx| {
-                    for b in bytes {
-                        let chunk = loopback_translate(&[b]);
-                        if weak
-                            .update(cx, |this, cx| this.feed_bytes(&chunk, cx))
-                            .is_err()
-                        {
-                            break;
-                        }
-                        if !delay.is_zero() {
-                            cx.background_executor().timer(delay).await;
-                        }
-                    }
-                });
-                self.paste_task = Some(task);
-            }
-        }
+        });
+        self.paste_task = Some(task);
     }
 
     /// Adjust the grid + Term to match the current window size,
@@ -1912,6 +1955,34 @@ impl HexFormatter {
     }
 }
 
+/// Split a paste into send chunks, each tagged with whether it ends a
+/// line. A line ending is `\r`, `\n` or `\r\n` (kept together). With
+/// `per_byte`, every byte is its own chunk; otherwise each line is one
+/// chunk.
+fn paste_chunks(bytes: &[u8], per_byte: bool) -> Vec<(Vec<u8>, bool)> {
+    let mut out = Vec::new();
+    let mut cur = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        let crlf = b == b'\r' && bytes.get(i + 1) == Some(&b'\n');
+        let ends_line = (b == b'\n' || b == b'\r') && !crlf;
+        if per_byte {
+            out.push((vec![b], ends_line));
+        } else {
+            cur.push(b);
+            if ends_line {
+                out.push((std::mem::take(&mut cur), true));
+            }
+        }
+        i += 1;
+    }
+    if !cur.is_empty() {
+        out.push((cur, false));
+    }
+    out
+}
+
 /// Inserts `[HH:MM:SS.mmm] ` (dim grey ANSI) at the start of every
 /// line in the byte stream. Tracks "are we at the start of a line"
 /// across `feed` calls so a chunk that arrives mid-line doesn't get
@@ -2054,5 +2125,33 @@ fn ctrl_byte(key: &str) -> Option<u8> {
         '^' => Some(0x1e),
         '_' | '?' => Some(0x1f),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paste_chunks;
+
+    #[test]
+    fn paste_chunks_split_per_line_keeping_crlf_together() {
+        let c = paste_chunks(b"show clock\r\nshow users\r\n", false);
+        assert_eq!(
+            c,
+            vec![
+                (b"show clock\r\n".to_vec(), true),
+                (b"show users\r\n".to_vec(), true),
+            ]
+        );
+        // CR-only endings and a trailing partial line.
+        let c = paste_chunks(b"a\rb", false);
+        assert_eq!(c, vec![(b"a\r".to_vec(), true), (b"b".to_vec(), false)]);
+    }
+
+    #[test]
+    fn paste_chunks_per_byte_marks_only_the_line_end() {
+        let c = paste_chunks(b"ab\r\nc", true);
+        let ends: Vec<bool> = c.iter().map(|(_, e)| *e).collect();
+        // `\r` of a CRLF isn't a line end; the `\n` is.
+        assert_eq!(ends, vec![false, false, false, true, false]);
     }
 }
