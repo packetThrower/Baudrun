@@ -15,6 +15,8 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-10-26
+
 The move to [GPUI Kit](https://gpui-kit.com). The interface is rebuilt
 on GPUI Kit's components, the Settings window is redesigned, and the
 build now pulls every dependency from crates.io.
