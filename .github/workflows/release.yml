@@ -750,9 +750,26 @@ jobs:
             PREV_TAG=$(git describe --tags --abbrev=0 --exclude='*-*' "${CURRENT_TAG}^" 2>/dev/null || true)
           fi
 
+          # Highlights: THIS tag's CHANGELOG.md section — the body under the
+          # `## [x.y.z]` header matching the tag, up to the next `## [`. Same
+          # step as Zorite's, so every app's release page reads the same; a
+          # tag with no section (betas, by convention) gets no Highlights block.
+          HIGHLIGHTS=$(awk -v ver="${CURRENT_TAG#v}" '
+            index($0, "## [" ver "]") == 1 { grab = 1; next }
+            grab && /^## \[/ { exit }
+            grab { print }
+          ' CHANGELOG.md)
+
           {
             if [ "$IS_PRERELEASE" = "1" ]; then
               echo "> ⚠️ **Pre-release.** Published for testing. Behaviour and artifacts are not final."
+              echo
+            fi
+
+            if [ -n "$HIGHLIGHTS" ]; then
+              echo "## Highlights"
+              echo
+              echo "$HIGHLIGHTS"
               echo
             fi
 
