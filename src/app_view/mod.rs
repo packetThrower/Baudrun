@@ -3547,7 +3547,13 @@ impl Render for AppView {
                             TitleBar::new()
                                 .h(px(s.titlebar_height_px))
                                 .bg(gpui::transparent_black())
-                                .border_color(rgba(s.border_subtle)),
+                                // Blurred skins draw this edge over the
+                                // content only (below), not across the glass.
+                                .border_color(if s.window_blur {
+                                    rgba(0x00000000)
+                                } else {
+                                    rgba(s.border_subtle)
+                                }),
                         )
                     })
                     .child(
@@ -3976,7 +3982,12 @@ impl Render for AppView {
                                     })
                                     // Blurred skins keep the glass to the
                                     // sidebar and bars: the content is opaque.
-                                    .when(s.window_blur, |this| this.bg(rgba(s.bg_main)))
+                                    .when(s.window_blur, |this| {
+                                        this.bg(rgba(s.bg_main))
+                                            .border_t_1()
+                                            .border_b_1()
+                                            .border_color(rgba(s.border_subtle))
+                                    })
                                     // `--shadow-panel` matches the
                                     // sidebar's; skins author one
                                     // value that applies to both
