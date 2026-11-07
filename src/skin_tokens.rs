@@ -11,7 +11,10 @@
 //! to `SkinTokens::baudrun_default()` so a partially-bad skin
 //! still renders most of the chrome instead of nothing.
 
-use gpui::{linear_color_stop, linear_gradient, rgba, Background, Global, SharedString};
+use gpui::{
+    linear_color_stop, linear_gradient, rgba, Background, Global, SharedString,
+    WindowBackgroundAppearance,
+};
 
 use crate::data::skins::Skin;
 
@@ -239,6 +242,10 @@ pub struct SkinTokens {
     /// Falls back to `bg_window` when the skin doesn't declare
     /// it.
     pub bg_terminal: u32,
+    /// `--window-blur: on` — the window shows the OS blur (vibrancy on
+    /// macOS, acrylic on Windows, the compositor's blur on Linux)
+    /// wherever the chrome is translucent. Sidebar Glass sets it.
+    pub window_blur: bool,
     /// Input border colour in the idle (non-focused) state —
     /// `--input-border-idle` in the skin vars. Default is
     /// `border_subtle`; some skins ship `"transparent"` for a
@@ -418,6 +425,14 @@ impl SkinTokens {
         }
     }
 
+    pub fn window_appearance(&self) -> WindowBackgroundAppearance {
+        if self.window_blur {
+            WindowBackgroundAppearance::Blurred
+        } else {
+            WindowBackgroundAppearance::Opaque
+        }
+    }
+
     /// Hardcoded values matching the previously-inline constants
     /// in `app_view.rs` / `settings_view.rs` — keeps the chrome
     /// looking the same when no skin is loaded (boot-time
@@ -484,6 +499,7 @@ impl SkinTokens {
             // `bg_terminal` reuses `bg_window`).
             accent_hover: 0x0A84FFFF,
             bg_terminal: 0x18181AFF,
+            window_blur: false,
             input_border_idle: 0xFFFFFF14,
             option_group_fg: 0x9AA0A6FF,
             scrollbar_thumb: 0xFFFFFF2E,
@@ -604,6 +620,7 @@ impl SkinTokens {
                         .and_then(|s| parse_color(s))
                         .unwrap_or(fb.bg_terminal)
                 }),
+            window_blur: raw_var("--window-blur").is_some_and(|s| s.trim() == "on"),
             input_border_idle: pick(
                 "--input-border-idle",
                 pick("--border-subtle", fb.input_border_idle),

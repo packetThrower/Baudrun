@@ -91,6 +91,7 @@ default for that token. Grouped for navigation:
 | `--bg-terminal`    | Terminal viewport fill (fallback for themes that don't set one)  |
 | `--option-bg`      | Dropdown popover background (Select component, opaque)           |
 | `--shell-bg`       | Backdrop behind floating panels (Liquid Glass light uses this)   |
+| `--window-blur`    | `on` = the OS blur shows through translucent `--bg-window` (Sidebar Glass). Root fill goes clear and `--bg-main` paints the content |
 
 ### Foreground (text)
 
