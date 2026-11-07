@@ -1003,7 +1003,13 @@ impl AppView {
             // Kit sidebar slots: the Settings window's page list and the
             // profile editor's tab rail match the main window's sidebar.
             theme.sidebar = rgba(tokens.bg_sidebar).into();
-            theme.sidebar_foreground = rgba(tokens.fg_primary).into();
+            // Blurred skins dim the unselected page labels, as zorite does.
+            theme.sidebar_foreground = rgba(if tokens.window_blur {
+                tokens.fg_secondary
+            } else {
+                tokens.fg_primary
+            })
+            .into();
             theme.sidebar_accent = rgba(tokens.bg_active).into();
             theme.sidebar_accent_foreground = rgba(tokens.fg_primary).into();
             theme.sidebar_border = rgba(tokens.border_subtle).into();
