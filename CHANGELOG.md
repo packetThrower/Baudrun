@@ -15,6 +15,10 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-11-07
+
+A Sidebar Glass skin, matched to zorite's, and custom baud rates are back.
+
 ### Added
 
 - **Sidebar Glass skin.** The sidebar, title bar and status bar show the
