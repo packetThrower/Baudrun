@@ -15,6 +15,13 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Added
+
+- **Sidebar Glass skin.** The sidebar, title bar and status bar show the
+  OS blur (vibrancy on macOS, acrylic on Windows, the compositor's blur on
+  Linux) while the content stays opaque, like macOS sidebars. Light and
+  dark. Custom skins opt in with `--window-blur: on`.
+
 ### Fixed
 
 - **Custom baud rates are back.** The baud dropdown has a **Custom…**

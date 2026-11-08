@@ -578,7 +578,13 @@ pub(super) fn status_bar(
     let mut bar = StatusBar::new()
         .px_4()
         .bg(rgba(s.bg_sidebar))
-        .border_color(rgba(s.border_subtle))
+        // Blurred skins draw this edge on the content only (its bottom
+        // border), not across the glass.
+        .border_color(rgba(if s.window_blur {
+            0x00000000
+        } else {
+            s.border_subtle
+        }))
         .text_size(px(11.0))
         .text_color(rgba(s.fg_secondary))
         .child(div().flex_1().text_color(text_color).child(text));

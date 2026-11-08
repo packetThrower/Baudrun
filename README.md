@@ -92,9 +92,9 @@ Sample JSON for authoring your own skins, themes, and highlight packs is on the
   Juniper Junos, Aruba AOS-CX, Arista EOS, and MikroTik RouterOS, plus a
   vendor-neutral default. Write your own and test them against real captures
   in the [rule playground](https://packetthrower.github.io/Baudrun/playground.html).
-- **15 terminal themes, 16 app skins.** Themes include Dracula, Solarized,
+- **15 terminal themes, 17 app skins.** Themes include Dracula, Solarized,
   Gruvbox, Nord, OneDark, Tokyo Night, and a Colorblind Safe palette built
-  for red-green vision deficiency. Skins include macOS 26 (Liquid Glass),
+  for red-green vision deficiency. Skins include macOS 26 (Liquid Glass), Sidebar Glass,
   Windows 11, GNOME, KDE, CRT, Cyberpunk, Blueprint, E-Ink, High Contrast,
   Foundry, and Tokyo Night. Skins and themes are chosen independently.
 - **Accessibility.** Baudrun honours the OS reduce-motion setting, supports

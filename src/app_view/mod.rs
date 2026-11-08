@@ -893,6 +893,16 @@ impl AppView {
             ),
         };
         cx.set_global(tokens);
+        // Every open window follows the skin's blur. Deferred: this runs
+        // inside a window update, and that window can't be updated again.
+        let appearance = tokens.window_appearance();
+        cx.defer(move |cx| {
+            for window in cx.windows() {
+                let _ = window.update(cx, |_, window, _| {
+                    window.set_background_appearance(appearance)
+                });
+            }
+        });
         // SkinShadows live as a parallel non-Copy global since
         // their `Vec<BoxShadow>` can't ride along on the Copy
         // `SkinTokens`. Render sites grab their slice via
@@ -933,6 +943,12 @@ impl AppView {
             // ends up slightly more "raised" than before but agrees
             // visually with the open popover.
             theme.background = rgba(tokens.option_bg).into();
+            // Kit fills each window's root with `background`; a blurred
+            // skin keeps it clear so the blur shows wherever the chrome
+            // is translucent.
+            if tokens.window_blur {
+                theme.background = gpui::transparent_black();
+            }
             theme.foreground = rgba(tokens.fg_primary).into();
             // Popover (Select dropdown menu) uses the dedicated
             // `--option-bg` / `--option-fg` slots — these are opaque in
@@ -989,7 +1005,13 @@ impl AppView {
             // Kit sidebar slots: the Settings window's page list and the
             // profile editor's tab rail match the main window's sidebar.
             theme.sidebar = rgba(tokens.bg_sidebar).into();
-            theme.sidebar_foreground = rgba(tokens.fg_primary).into();
+            // Blurred skins dim the unselected page labels, as zorite does.
+            theme.sidebar_foreground = rgba(if tokens.window_blur {
+                tokens.fg_secondary
+            } else {
+                tokens.fg_primary
+            })
+            .into();
             theme.sidebar_accent = rgba(tokens.bg_active).into();
             theme.sidebar_accent_foreground = rgba(tokens.fg_primary).into();
             theme.sidebar_border = rgba(tokens.border_subtle).into();
@@ -2110,6 +2132,7 @@ impl AppView {
         // `settings_window` field, which would otherwise hold the
         // AppView alive transitively through itself.
         let app_view_for_close = cx.entity().downgrade();
+        let window_background = cx.global::<SkinTokens>().window_appearance();
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -2140,6 +2163,7 @@ impl AppView {
                 // an unrelated app and shows a generic icon next
                 // to the real one.
                 app_id: Some("Baudrun".into()),
+                window_background,
                 ..Default::default()
             },
             move |window, cx| {
@@ -3531,7 +3555,13 @@ impl Render for AppView {
                             TitleBar::new()
                                 .h(px(s.titlebar_height_px))
                                 .bg(gpui::transparent_black())
-                                .border_color(rgba(s.border_subtle)),
+                                // Blurred skins draw this edge over the
+                                // content only (below), not across the glass.
+                                .border_color(if s.window_blur {
+                                    rgba(0x00000000)
+                                } else {
+                                    rgba(s.border_subtle)
+                                }),
                         )
                     })
                     .child(
@@ -3957,6 +3987,14 @@ impl Render for AppView {
                                         this.rounded(px(s.panel_radius_px))
                                             .overflow_hidden()
                                             .bg(rgba(s.bg_main))
+                                    })
+                                    // Blurred skins keep the glass to the
+                                    // sidebar and bars: the content is opaque.
+                                    .when(s.window_blur, |this| {
+                                        this.bg(rgba(s.bg_main))
+                                            .border_t_1()
+                                            .border_b_1()
+                                            .border_color(rgba(s.border_subtle))
                                     })
                                     // `--shadow-panel` matches the
                                     // sidebar's; skins author one

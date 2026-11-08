@@ -1229,7 +1229,12 @@ impl Render for SettingsView {
                 TitleBar::new()
                     .h(px(s.titlebar_height_px))
                     .bg(gpui::transparent_black())
-                    .border_color(rgba(s.border_subtle)),
+                    // Blurred skins put this edge on the page pane only.
+                    .border_color(rgba(if s.window_blur {
+                        0x00000000
+                    } else {
+                        s.border_subtle
+                    })),
             )
             // GPUI Kit's Settings owns the page sidebar, the search box
             // (titles, descriptions and each item's `keywords`) and the
@@ -1238,10 +1243,37 @@ impl Render for SettingsView {
                 div()
                     .flex_1()
                     .min_h_0()
-                    .child(setting::Settings::new("settings").pages(self.pages(&view, s, cx))),
+                    .relative()
+                    // Kit's page pane paints nothing, so on a blurred skin an
+                    // opaque layer sits behind it and the page list stays
+                    // glass. The list width is pinned so the layer lines up.
+                    .when(s.window_blur, |this| {
+                        this.child(
+                            div()
+                                .absolute()
+                                .top_0()
+                                .bottom_0()
+                                .right_0()
+                                .left(SETTINGS_SIDEBAR_W)
+                                .bg(rgba(s.bg_main))
+                                .border_t_1()
+                                .border_color(rgba(s.border_subtle)),
+                        )
+                    })
+                    .child(
+                        setting::Settings::new("settings")
+                            .sidebar_width(SETTINGS_SIDEBAR_W)
+                            .when(s.window_blur, |this| {
+                                this.sidebar_size_range(SETTINGS_SIDEBAR_W..SETTINGS_SIDEBAR_W)
+                            })
+                            .pages(self.pages(&view, s, cx)),
+                    ),
             )
     }
 }
+
+/// The page-list width (zorite's), pinned on blurred skins (see `render`).
+const SETTINGS_SIDEBAR_W: gpui::Pixels = px(190.0);
 
 impl SettingsView {
     fn pages(&self, view: &Entity<Self>, s: SkinTokens, cx: &App) -> Vec<SettingPage> {
