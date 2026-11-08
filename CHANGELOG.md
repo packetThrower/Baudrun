@@ -15,6 +15,15 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Custom baud rates are back.** The baud dropdown has a **Custom…**
+  entry again (lost in the move from Tauri); pick it and type any rate
+  your adapter supports.
+- **macOS ptys connect.** Ports like `/dev/ttys010` (the
+  `virtual-serial` test bridge, `socat`) failed with "Not a typewriter";
+  Baudrun now skips setting the speed on them.
+
 ## [0.16.0] — 2026-10-26
 
 The move to [GPUI Kit](https://gpui-kit.com). The interface is rebuilt
