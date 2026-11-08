@@ -130,6 +130,7 @@ app:
 editor:
   rescan_ports_tooltip: 重新扫描端口
   name_placeholder: 我的交换机
+  baud_custom_placeholder: "波特率，例如 250000"
   custom_suffix: "%{name}（自定义）"
   subtitle_edit: 编辑配置
   subtitle_new: 新建配置
@@ -205,6 +206,7 @@ editor:
 opts:
   baud:
     "9600": "9600（默认）"
+    custom: "自定义…"
   parity:
     none: 无
     odd: 奇

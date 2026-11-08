@@ -47,6 +47,7 @@ use super::buttons::{pill_button, primary_button};
 use super::opts::{
     backspace_opts, baud_opts, data_bits_opts, flow_control_opts, line_ending_opts,
     line_policy_opts, make_select, parity_opts, port_opts, read_select, stop_bits_opts, Opt,
+    BAUD_CUSTOM,
 };
 use super::{AppView, Editor, EditorTab};
 use crate::data::profiles::Profile;
@@ -74,6 +75,21 @@ pub(super) fn build_editor(
                 .default_value(val)
         })
     };
+    // A rate off the preset list opens on "Custom…" with the rate typed in.
+    let baud_val = profile.baud_rate.to_string();
+    let custom_baud = !baud_opts()
+        .iter()
+        .any(|o| o.id == baud_val && o.id != BAUD_CUSTOM);
+    let baud_choice = if custom_baud { BAUD_CUSTOM } else { &baud_val };
+    let baud_custom = cx.new(|cx| {
+        InputState::new(window, cx)
+            .placeholder(t!("editor.baud_custom_placeholder"))
+            .default_value(if custom_baud && profile.baud_rate > 0 {
+                baud_val.clone()
+            } else {
+                String::new()
+            })
+    });
     let port = make_select(
         port_opts(&profile.port_name),
         &profile.port_name,
@@ -129,7 +145,8 @@ pub(super) fn build_editor(
         tab: EditorTab::Connection,
         name,
         port,
-        baud: make_select(baud_opts(), &profile.baud_rate.to_string(), window, cx),
+        baud: make_select(baud_opts(), baud_choice, window, cx),
+        baud_custom,
         data_bits: make_select(data_bits_opts(), &profile.data_bits.to_string(), window, cx),
         parity: make_select(parity_opts(), &profile.parity, window, cx),
         stop_bits: make_select(stop_bits_opts(), &profile.stop_bits, window, cx),
@@ -206,7 +223,13 @@ pub(super) fn apply_editor_to_profile(
     // `InvalidBaud`; `Profile::data_bits` is i32 too. Let the store
     // be the single source of truth for what counts as valid rather
     // than duplicating its rules in the UI.
-    profile.baud_rate = read_select(&editor.baud, cx).trim().parse().unwrap_or(0);
+    let baud = read_select(&editor.baud, cx);
+    let baud = if baud == BAUD_CUSTOM {
+        editor.baud_custom.read(cx).value().to_string()
+    } else {
+        baud
+    };
+    profile.baud_rate = baud.trim().parse().unwrap_or(0);
     profile.data_bits = read_select(&editor.data_bits, cx)
         .trim()
         .parse()
@@ -296,6 +319,7 @@ pub(super) struct EditorRender {
     name: Entity<InputState>,
     port: Entity<SelectState<Vec<Opt>>>,
     baud: Entity<SelectState<Vec<Opt>>>,
+    baud_custom: Entity<InputState>,
     data_bits: Entity<SelectState<Vec<Opt>>>,
     parity: Entity<SelectState<Vec<Opt>>>,
     stop_bits: Entity<SelectState<Vec<Opt>>>,
@@ -341,6 +365,7 @@ impl EditorRender {
             name: e.name.clone(),
             port: e.port.clone(),
             baud: e.baud.clone(),
+            baud_custom: e.baud_custom.clone(),
             data_bits: e.data_bits.clone(),
             parity: e.parity.clone(),
             stop_bits: e.stop_bits.clone(),
@@ -571,6 +596,7 @@ fn form_body(
                 er.name.clone(),
                 er.port,
                 er.baud,
+                er.baud_custom,
                 er.data_bits,
                 er.parity,
                 er.stop_bits,
@@ -925,6 +951,7 @@ fn connection_card(
     name: Entity<InputState>,
     port: Entity<SelectState<Vec<Opt>>>,
     baud: Entity<SelectState<Vec<Opt>>>,
+    baud_custom: Entity<InputState>,
     data_bits: Entity<SelectState<Vec<Opt>>>,
     parity: Entity<SelectState<Vec<Opt>>>,
     stop_bits: Entity<SelectState<Vec<Opt>>>,
@@ -983,11 +1010,17 @@ fn connection_card(
                 .flex()
                 .flex_row()
                 .gap_3()
-                .child(div().flex_1().child(labeled(
-                    s,
-                    t!("editor.field.baud_rate"),
-                    Select::new(&baud),
-                )))
+                .child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(labeled(s, t!("editor.field.baud_rate"), Select::new(&baud)))
+                        .when(read_select(&baud, cx) == BAUD_CUSTOM, |this| {
+                            this.child(Input::new(&baud_custom).appearance(true))
+                        }),
+                )
                 .child(div().flex_1().child(labeled(
                     s,
                     t!("editor.field.data_bits"),

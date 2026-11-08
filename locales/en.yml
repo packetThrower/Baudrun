@@ -141,6 +141,7 @@ app:
 editor:
   rescan_ports_tooltip: Rescan ports
   name_placeholder: My switch
+  baud_custom_placeholder: "Baud rate, e.g. 250000"
   custom_suffix: "%{name} (custom)"
   subtitle_edit: EDIT PROFILE
   subtitle_new: NEW PROFILE
@@ -216,6 +217,7 @@ editor:
 opts:
   baud:
     "9600": "9600 (default)"
+    custom: "Custom…"
   parity:
     none: None
     odd: Odd

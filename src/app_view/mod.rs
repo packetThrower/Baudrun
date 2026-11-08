@@ -338,6 +338,8 @@ struct Editor {
     /// connected)" option so the form still shows it.
     port: Entity<SelectState<Vec<Opt>>>,
     baud: Entity<SelectState<Vec<Opt>>>,
+    /// The rate typed when `baud` is on "Custom…".
+    baud_custom: Entity<InputState>,
     data_bits: Entity<SelectState<Vec<Opt>>>,
     parity: Entity<SelectState<Vec<Opt>>>,
     stop_bits: Entity<SelectState<Vec<Opt>>>,

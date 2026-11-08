@@ -28,7 +28,7 @@ use crate::data::serial::ports;
 /// the option lists are tiny and built once per editor open.
 #[derive(Clone)]
 pub(super) struct Opt {
-    id: String,
+    pub(super) id: String,
     title: SharedString,
 }
 
@@ -88,6 +88,9 @@ pub(super) fn read_select(state: &Entity<SelectState<Vec<Opt>>>, cx: &Context<Ap
 // fn keeps the borrowed-vec ergonomics simple — gpui-component
 // takes the `Vec<Opt>` by value into the SelectState.
 
+/// The baud select's "Custom…" entry; the editor shows a field for the rate.
+pub(super) const BAUD_CUSTOM: &str = "custom";
+
 pub(super) fn baud_opts() -> Vec<Opt> {
     let mut opts = vec![Opt::new("9600", &t!("opts.baud.9600"))];
     for rate in [
@@ -95,6 +98,7 @@ pub(super) fn baud_opts() -> Vec<Opt> {
     ] {
         opts.push(Opt::new(rate, rate));
     }
+    opts.push(Opt::new(BAUD_CUSTOM, &t!("opts.baud.custom")));
     opts
 }
 

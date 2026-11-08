@@ -294,11 +294,24 @@ fn apply_rts(port: &mut dyn serialport::SerialPort, policy: LinePolicy) -> seria
 /// fall back to loopback mode. Connect-time control-line writes
 /// only log on failure — losing a DTR pulse shouldn't fail the
 /// open if the port itself works.
+#[cfg(target_os = "macos")]
+fn is_macos_pty(port_path: &str) -> bool {
+    // virtual-serial can symlink its endpoints (`/tmp/baudrun-a`).
+    let real = std::fs::canonicalize(port_path).unwrap_or_else(|_| port_path.into());
+    real.to_str()
+        .and_then(|p| p.strip_prefix("/dev/ttys"))
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 pub fn open(
     port_path: &str,
     baud: u32,
     policies: LinePolicies,
 ) -> serialport::Result<SerialChannels> {
+    // macOS ptys (`/dev/ttysNNN`, e.g. scripts/virtual-serial) reject the
+    // speed ioctl with ENOTTY; serialport skips it only for baud 0.
+    #[cfg(target_os = "macos")]
+    let baud = if is_macos_pty(port_path) { 0 } else { baud };
     let mut read_port = serialport::new(port_path, baud)
         .timeout(READ_TIMEOUT)
         .open()?;
@@ -504,3 +517,14 @@ fn write_loop(
 /// short enough that even a snappy disconnect→connect releases
 /// the port within one loop iteration.
 const SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    #[test]
+    fn macos_pty_paths() {
+        assert!(super::is_macos_pty("/dev/ttys010"));
+        assert!(!super::is_macos_pty("/dev/ttys"));
+        assert!(!super::is_macos_pty("/dev/tty.usbserial-A1"));
+        assert!(!super::is_macos_pty("/dev/cu.usbserial-A1"));
+    }
+}
