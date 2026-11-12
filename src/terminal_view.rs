@@ -46,6 +46,7 @@ use gpui_kit::component::{
     WindowExt,
 };
 
+use crate::actions::TerminalTab;
 use crate::term_bridge::{
     make_term, mirror_to_grid, Dims, ListenerState, Palette, TerminalListener,
 };
@@ -1607,6 +1608,25 @@ impl TerminalView {
         let Some(serial_bytes) = encode_for_serial(&event.keystroke, &self.profile_settings) else {
             return;
         };
+        self.write_to_device(serial_bytes, cx);
+    }
+
+    /// Tab / Shift-Tab arrive as an action rather than a raw key-down
+    /// event. GPUI Kit's `Root` key context binds both chords to focus
+    /// traversal, and a dispatched action stops key propagation, so
+    /// `handle_key_down` never sees them. The `Some("Terminal")`
+    /// binding in `apply_shortcut_bindings` outranks that Root
+    /// binding and routes the chords here instead. Both encode to a
+    /// literal HT, matching `encode_for_serial`'s `"tab"` arm.
+    fn handle_tab_action(&mut self, _: &TerminalTab, _window: &mut Window, cx: &mut Context<Self>) {
+        self.write_to_device(b"\t".to_vec(), cx);
+    }
+
+    /// Write encoded keystroke bytes to the device (serial port, or
+    /// the loopback echo when disconnected). Shared by the raw key
+    /// handler and the `TerminalTab` action, so both paths reset the
+    /// cursor blink and snap the viewport to the live screen.
+    fn write_to_device(&mut self, serial_bytes: Vec<u8>, cx: &mut Context<Self>) {
         // Reset the blink phase so the cursor is visible during
         // typing — without this the cursor can disappear mid-stroke
         // if a key arrives just as the blink-off frame paints.
@@ -1702,6 +1722,10 @@ impl Render for TerminalView {
             .key_context("Terminal")
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::handle_key_down))
+            // Tab / Shift-Tab are swallowed by GPUI Kit's Root
+            // focus-traversal binding before `on_key_down` runs; the
+            // `Terminal`-context binding sends them as actions here.
+            .on_action(cx.listener(Self::handle_tab_action))
             .on_scroll_wheel(cx.listener(Self::handle_scroll))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
