@@ -50,9 +50,9 @@ These are the floors for end users downloading from the Releases page.
   to Vulkan; there's no software fallback. Practically every
   distribution-shipped GPU stack from 2022 onward qualifies.
 - Floor for the bundled packages and their dependency declarations:
-  - **Ubuntu 22.04 Jammy+**
-  - **Debian 12 Bookworm+**
-  - **Fedora 38+**
+  - **Ubuntu 24.04 Noble+**
+  - **Debian 13 Trixie+**
+  - **Fedora 40+**
   - **Arch** (rolling)
   - **openSUSE Tumbleweed** (rolling)
 - `.deb` / `.rpm` / `.pkg.tar.zst` declare `libusb-1.0` as a package
