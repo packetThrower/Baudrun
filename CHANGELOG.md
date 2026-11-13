@@ -15,6 +15,14 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+## [0.17.1] — 2026-11-13
+
+### Fixed
+
+- **Tab reaches the device.** Tab in the terminal now goes to the serial
+  port, so tab completion works on Cisco and other consoles and in shells,
+  instead of moving focus to the next control. Thanks to @leisiji (#135).
+
 ## [0.17.0] — 2026-11-07
 
 A Sidebar Glass skin, matched to zorite's, and custom baud rates are back.
