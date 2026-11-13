@@ -124,6 +124,12 @@ pub(crate) mod actions {
             TerminalCopy,
             TerminalPaste,
             TerminalSelectAll,
+            // Tab / Shift-Tab. GPUI Kit's `Root` context binds both
+            // to focus traversal, and a dispatched action stops key
+            // propagation — so without a more specific binding the
+            // terminal's raw `on_key_down` never sees them. Bound
+            // with `Some("Terminal")` in `apply_shortcut_bindings`.
+            TerminalTab,
         ]
     );
 
@@ -142,7 +148,7 @@ pub(crate) mod actions {
 use actions::{
     About, ClearTerminal, Connect, ConnectToProfile, Disconnect, FontDecrease, FontIncrease,
     FontReset, NewProfile, NewWindow, OpenInNewWindow, OpenSettings, Quit, Resume, SendBreak,
-    SendFile, Suspend, TerminalCopy, TerminalPaste, TerminalSelectAll, ToggleSidebar,
+    SendFile, Suspend, TerminalCopy, TerminalPaste, TerminalSelectAll, TerminalTab, ToggleSidebar,
 };
 
 /// Default baud rate. 9600 8N1 is the universal serial-console speed
@@ -916,6 +922,14 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
         // every other editor with a togglable sidebar uses, so
         // muscle memory transfers in.
         KeyBinding::new("secondary-b", ToggleSidebar, None),
+        // GPUI Kit's `Root` key context binds Tab / Shift-Tab to
+        // focus traversal, and its action handler stops key
+        // propagation before `on_key_down` listeners run. Re-binding
+        // them in the deeper `Terminal` context wins over that Root
+        // binding whenever the terminal pane has focus, so the bytes
+        // reach the wire instead of moving focus.
+        KeyBinding::new("tab", TerminalTab, Some("Terminal")),
+        KeyBinding::new("shift-tab", TerminalTab, Some("Terminal")),
     ];
     // Terminal-pane clipboard actions used to live as hardcoded
     // rows here, but they now flow through Settings → Shortcuts
