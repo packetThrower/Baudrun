@@ -22,6 +22,15 @@ final stable entry at tag time.
 - **Tab reaches the device.** Tab in the terminal now goes to the serial
   port, so tab completion works on Cisco and other consoles and in shells,
   instead of moving focus to the next control. Thanks to @leisiji (#135).
+- **x86_64 Linux packages start on Ubuntu 24.04 again.** v0.17.0's `.deb`,
+  `.rpm` and AppImage were built on Ubuntu 26.04 and failed with
+  "GLIBC_2.43 not found" on older systems.
+
+### Changed
+
+- **Linux minimum is now Ubuntu 24.04, Debian 13 or Fedora 40.** The
+  packages need glibc 2.39; the old 22.04 / Debian 12 / Fedora 38 floor
+  was already out of date.
 
 ## [0.17.0] — 2026-11-07
 
