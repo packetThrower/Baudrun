@@ -1,0 +1,201 @@
+---
+// Landing page at /Baudrun/ (replaces the Starlight splash index.mdx).
+// Layout + components come from the shared @packetthrower/site-theme.
+import Layout from '@packetthrower/site-theme/components/Layout.astro';
+import InstallTabs from '@packetthrower/site-theme/components/InstallTabs.astro';
+import { latestRelease } from '@packetthrower/site-theme';
+
+const v = latestRelease()?.version ?? 'latest';
+const description =
+	'A serial terminal for network gear. Console sessions for switches, routers, and firewalls with profiles for different devices and syntax highlighting.';
+
+// JSON-LD SoftwareApplication schema for rich results on the homepage.
+const jsonLd = {
+	'@context': 'https://schema.org',
+	'@type': 'SoftwareApplication',
+	name: 'Baudrun',
+	applicationCategory: 'DeveloperApplication',
+	applicationSubCategory: 'Serial terminal',
+	operatingSystem: 'macOS, Windows, Linux',
+	description,
+	url: 'https://packetthrower.github.io/Baudrun/',
+	downloadUrl: 'https://github.com/packetThrower/Baudrun/releases/latest',
+	license: 'https://github.com/packetThrower/Baudrun/blob/main/LICENSE',
+	image: 'https://packetthrower.github.io/Baudrun/og-image.png',
+	screenshot: 'https://packetthrower.github.io/Baudrun/screenshots/macos-dark-baudrun.png',
+	author: { '@type': 'Person', name: 'Will Lehnertz', url: 'https://github.com/packetThrower' },
+	offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+	softwareHelp: { '@type': 'CreativeWork', url: 'https://packetthrower.github.io/Baudrun/install/' },
+};
+
+const skins = [
+	['macos-light-baudrun', 'baudrun · light'],
+	['macos-dark-tokyo-night', 'tokyo night · dark'],
+	['macos-dark-crt', 'crt · dark'],
+	['macos-light-e-ink', 'e-ink · light'],
+	['macos-dark-blueprint', 'blueprint · dark'],
+	['macos-light-windows-xp', 'windows xp · light'],
+	['macos-dark-cyberpunk', 'cyberpunk · dark'],
+];
+---
+
+<Layout title="Baudrun — a serial terminal for network gear" description={description} app="baudrun" ogImage="https://packetthrower.github.io/Baudrun/og-image.png">
+	<Fragment slot="head">
+		<!-- Search Console re-validates this tag on the homepage; don't remove it. -->
+		<meta name="google-site-verification" content="tCAEO_FaKHi5IgbdZ83ZbNYJ4orBbsCLDYFTO1tjqbg" />
+		<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+	</Fragment>
+
+	<section class="pt-hero">
+		<div class="pt-wrap pt-hero-grid">
+			<div>
+				<a class="pt-pill" href="/Baudrun/changelog/"><span class="pt-ver">v{v}</span> What's new in this release →</a>
+				<h1>A serial terminal <em>for network gear.</em></h1>
+				<p class="pt-lede">
+					Console into switches, routers and firewalls without the screen / minicom / PuTTY dance. Saved profiles per
+					device, vendor-aware highlighting, and an adapter check that tells you which driver is missing.
+				</p>
+				<div class="pt-actions">
+					<a class="pt-btn pt-btn-primary" href="#install"><span>Download for <span data-pt-os>your OS</span></span></a>
+					<a class="pt-btn" href="/Baudrun/usage/profiles/">Read the docs</a>
+				</div>
+				<div class="pt-chips" style="margin-top:16px">
+					<span class="pt-chip">macOS 11+</span><span class="pt-chip">Windows 10 21H2+</span><span class="pt-chip">Ubuntu 24.04+</span><span class="pt-chip">GPL-3.0</span>
+				</div>
+			</div>
+			<div class="pt-shot">
+				<img src="/Baudrun/screenshots/macos-dark-baudrun.png" alt="Baudrun main window: profile sidebar and a live switch console" width="1800" height="1278" />
+			</div>
+		</div>
+	</section>
+
+	<section class="pt-section">
+		<div class="pt-wrap">
+			<div class="pt-head"><div><div class="pt-eyebrow">What it does</div><h2>Everything a console cable session needs.</h2></div></div>
+			<div class="pt-features">
+				<div class="pt-feature">
+					<div class="pt-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 9h10M7 13h6" /></svg></div>
+					<h3>Profiles</h3>
+					<p>Port, baud, framing, line endings and theme saved per device. One click to connect; drag a row out to open it in its own window.</p>
+				</div>
+				<div class="pt-feature">
+					<div class="pt-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 8 4 4-4 4M12 16h7" /></svg></div>
+					<h3>Real terminal</h3>
+					<p>VT100 / xterm emulation with scrollback, hex view, session logs and slow-paste for fussy consoles.</p>
+				</div>
+				<div class="pt-feature">
+					<div class="pt-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h10M4 12h16M4 17h7" /><circle cx="18" cy="7" r="2" /></svg></div>
+					<h3>Vendor highlighting</h3>
+					<p>IPs, MACs, interface names and errors coloured for Cisco, Juniper, Aruba, Arista and MikroTik. Write your own packs.</p>
+				</div>
+				<div class="pt-feature">
+					<div class="pt-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v4M15 3v4M7 7h10v5a5 5 0 0 1-10 0zM12 17v4" /></svg></div>
+					<h3>Adapter detection</h3>
+					<p>Recognises CH340, CP210x, FTDI and Prolific chips, flags a missing driver and links to the vendor download.</p>
+				</div>
+			</div>
+		</div>
+	</section>
+
+	<section class="pt-section pt-band">
+		<div class="pt-wrap pt-split">
+			<div>
+				<div class="pt-eyebrow">Syntax highlighting</div>
+				<h2>Read a <code>show run</code> at a glance.</h2>
+				<p>Highlight packs are plain JSON regex rules. Test a pattern against pasted output in the browser before you share it with the team.</p>
+				<ul class="pt-checks">
+					<li>Built-in packs for five vendors, toggled per profile</li>
+					<li>Author your own and share them as files</li>
+					<li>The rule playground runs entirely in the browser</li>
+				</ul>
+				<div class="pt-actions">
+					<a class="pt-btn" href="/Baudrun/playground.html">Open the rule playground</a>
+					<a class="pt-btn" href="/Baudrun/authoring/highlighting/">Authoring guide</a>
+				</div>
+			</div>
+			<div class="pt-term" aria-label="Example of highlighted switch output">
+				<div class="pt-term-bar"><i></i><i></i><i></i><span>Core-SW-01 (Aruba) · 9600 8N1 · /dev/cu.usbserial-AU04CDLV</span></div>
+				<pre>core-sw-01# show interface brief
+Port   Status  Mode    VLAN  Speed
+<span class="t-if">1/1/1</span>  <span class="t-ok">up</span>      access  <span class="t-ok">120</span>   1000
+<span class="t-if">1/1/2</span>  <span class="t-bad">down</span>    access  <span class="t-ok">120</span>   --
+<span class="t-if">1/1/24</span> <span class="t-ok">up</span>      trunk   <span class="t-ok">1</span>     10000
+core-sw-01# show arp
+<span class="t-ip">10.20.0.1</span>    <span class="t-mac">00:1b:54:c2:9e:11</span>  vlan120  <span class="t-if">1/1/24</span>
+<span class="t-ip">10.20.0.57</span>   <span class="t-mac">3c:22:fb:08:aa:41</span>  vlan120  <span class="t-if">1/1/1</span>
+<span class="t-bad">%LINK-3-UPDOWN: Interface 1/1/2, changed state to down</span>
+core-sw-01# <span class="t-p">▌</span></pre>
+			</div>
+		</div>
+	</section>
+
+	<section class="pt-section">
+		<div class="pt-wrap">
+			<div class="pt-head">
+				<div>
+					<div class="pt-eyebrow">Skins &amp; themes</div>
+					<h2>Make it look like home.</h2>
+					<p>Sixteen built-in app skins in light and dark, any <code>.itermcolors</code> terminal theme, or author your own.</p>
+				</div>
+				<a class="pt-link" href="/Baudrun/usage/screenshots/">All screenshots →</a>
+			</div>
+			<div class="pt-gallery">
+				{skins.map(([file, caption]) => (
+					<figure><img src={`/Baudrun/screenshots/${file}.png`} alt={`Baudrun with the ${caption} skin`} loading="lazy" /><figcaption>{caption}</figcaption></figure>
+				))}
+			</div>
+		</div>
+	</section>
+
+	<section id="install" class="pt-section pt-band">
+		<div class="pt-wrap pt-split">
+			<div>
+				<div class="pt-eyebrow">Install</div>
+				<h2>Stable or alpha, side by side.</h2>
+				<p>
+					Package managers keep Baudrun updated and skip first-launch security prompts. The alpha channel installs as a
+					separate app, so you can test upcoming changes against your gear.
+				</p>
+				<div class="pt-channels">
+					<div class="pt-channel"><h3>Stable <span class="pt-ver">{v}</span></h3><span>Homebrew · Scoop · winget · Linux packages</span></div>
+					<div class="pt-channel"><h3>Alpha <span class="pt-ver">pre-release</span></h3><span><code>baudrun@alpha</code> · <code>baudrun-prerelease</code></span></div>
+				</div>
+			</div>
+			<InstallTabs
+				id="baudrun"
+				panels={[
+					{ os: 'mac', cmds: ['brew tap packetThrower/tap', 'brew trust packetThrower/tap', 'brew install --cask baudrun'], note: 'Or download the <code>.dmg</code> for Apple silicon or Intel from the release page.' },
+					{
+						os: 'win',
+						cmds: ['winget install packetThrower.Baudrun', 'scoop bucket add packetThrower https://github.com/packetThrower/scoop-bucket', 'scoop install baudrun'],
+						note: 'MSI and setup <code>.exe</code> for x64 and arm64 on the release page.',
+					},
+					{
+						os: 'linux',
+						cmds: [`sudo apt install ./Baudrun_${v}_amd64.deb`, `sudo dnf install ./Baudrun-${v}-1.x86_64.rpm`],
+						note: 'AppImage and Arch <code>.pkg.tar.zst</code> too, for x86_64 and aarch64. Needs Ubuntu 24.04, Debian 13 or Fedora 40.',
+					},
+				]}
+			>
+				<p class="pt-note" style="margin-top:14px">
+					<a href="https://github.com/packetThrower/Baudrun/releases/latest">Release downloads</a> ·
+					<a href="/Baudrun/install/">Full install guide, checksums and building from source →</a>
+				</p>
+			</InstallTabs>
+		</div>
+	</section>
+
+	<section class="pt-section">
+		<div class="pt-wrap">
+			<div class="pt-head"><div><div class="pt-eyebrow">Docs</div><h2>Start here</h2></div><a class="pt-link" href="/Baudrun/install/">All docs →</a></div>
+			<div class="pt-cards">
+				<a class="pt-lcard" href="/Baudrun/install/"><div class="pt-eyebrow">Get started</div><h3>Install</h3><p>Homebrew, Scoop, winget and Linux packages, stable and pre-release.</p></a>
+				<a class="pt-lcard" href="/Baudrun/usage/profiles/"><div class="pt-eyebrow">Guide</div><h3>Profiles</h3><p>Per-device settings, the JSON schema, and bulk provisioning from inventory.</p></a>
+				<a class="pt-lcard" href="/Baudrun/usage/adapters/"><div class="pt-eyebrow">Guide</div><h3>USB-serial adapters</h3><p>Which chipsets need drivers and where to get them.</p></a>
+				<a class="pt-lcard" href="/Baudrun/authoring/highlighting/"><div class="pt-eyebrow">Customize</div><h3>Syntax highlighting</h3><p>Write a vendor highlight pack and test it in the playground.</p></a>
+				<a class="pt-lcard" href="/Baudrun/authoring/skins/"><div class="pt-eyebrow">Customize</div><h3>Themes &amp; skins</h3><p>Terminal colours (<code>.itermcolors</code>) and app chrome skins.</p></a>
+				<a class="pt-lcard" href="/Baudrun/usage/shortcuts/"><div class="pt-eyebrow">Guide</div><h3>Keyboard shortcuts</h3><p>Every binding on macOS, Windows and Linux.</p></a>
+			</div>
+		</div>
+	</section>
+</Layout>

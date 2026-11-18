@@ -13,12 +13,8 @@ export default defineConfig({
 			title: 'Baudrun',
 			description:
 				'A serial terminal for network gear. Console sessions for switches, routers, and firewalls.',
-			logo: {
-				src: './src/assets/icon.svg',
-				replacesTitle: false,
-			},
 			favicon: '/favicon.svg',
-			customCss: ['./src/styles/theme.css'],
+			customCss: ['@packetthrower/site-theme/styles/starlight.css'],
 
 			// Site-wide head additions for discoverability:
 			//
@@ -75,37 +71,34 @@ export default defineConfig({
 				},
 			],
 			components: {
-				Hero: './src/components/Hero.astro',
-				// Wraps Starlight's default SocialIcons to add a "Docs"
-				// quick-access pill linking to /install/ — the most
-				// common entry point for visitors landing on a deep
-				// page who want to start over.
-				SocialIcons: './src/components/SocialIcons.astro',
+				// Shared packetThrower header: global bar (Apps menu, search,
+				// theme, GitHub) + Baudrun's app bar. The landing page at
+				// /Baudrun/ is src/pages/index.astro, outside Starlight.
+				Header: '@packetthrower/site-theme/components/StarlightHeader.astro',
 			},
-			social: [
-				{
-					icon: 'github',
-					label: 'GitHub',
-					href: 'https://github.com/packetThrower/Baudrun',
-				},
-			],
 			editLink: {
 				baseUrl: 'https://github.com/packetThrower/Baudrun/edit/main/docs-next/',
 			},
 			sidebar: [
-				{ label: 'Install', slug: 'install' },
+				// Same groups, in the same order, on every packetThrower docs site.
 				{
-					label: 'Usage',
+					label: 'Get started',
+					items: [
+						{ label: 'Install', slug: 'install' },
+						{ label: 'Requirements', slug: 'reference/requirements' },
+					],
+				},
+				{
+					label: 'Guides',
 					items: [
 						{ label: 'Profiles', slug: 'usage/profiles' },
 						{ label: 'Keyboard shortcuts', slug: 'usage/shortcuts' },
 						{ label: 'Advanced settings', slug: 'usage/advanced' },
 						{ label: 'USB-serial adapters', slug: 'usage/adapters' },
-						{ label: 'Screenshots', slug: 'usage/screenshots' },
 					],
 				},
 				{
-					label: 'Authoring',
+					label: 'Customize',
 					items: [
 						{ label: 'Terminal themes', slug: 'authoring/themes' },
 						{ label: 'App skins', slug: 'authoring/skins' },
@@ -138,12 +131,22 @@ export default defineConfig({
 				{
 					label: 'Reference',
 					items: [
+						{ label: 'Screenshots', slug: 'usage/screenshots' },
 						{ label: 'Accessibility', slug: 'reference/accessibility' },
-						{ label: 'Requirements', slug: 'reference/requirements' },
 						{ label: 'Testing', slug: 'reference/testing' },
 					],
 				},
-				{ label: 'Changelog', slug: 'changelog' },
+				{
+					label: 'Project',
+					items: [
+						{ label: 'Changelog', slug: 'changelog' },
+						{
+							label: 'Issues',
+							link: 'https://github.com/packetThrower/Baudrun/issues',
+							attrs: { target: '_blank', rel: 'noopener' },
+						},
+					],
+				},
 			],
 			lastUpdated: true,
 		}),
