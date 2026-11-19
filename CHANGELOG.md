@@ -15,6 +15,11 @@ final stable entry at tag time.
 
 ## [Unreleased]
 
+### Changed
+
+- **Moved to GPUI Kit 0.10.0** (gpui-pre 0.3.12), in step with the other
+  packetThrower apps.
+
 ## [0.17.1] — 2026-11-13
 
 ### Fixed

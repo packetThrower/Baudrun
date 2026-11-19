@@ -27,7 +27,7 @@ path = "src/main.rs"
 # packetThrower apps move to the same Kit version in one pass.
 # The Linux wayland + x11 backends and macOS `runtime_shaders` come
 # enabled through gpui-kit's own gpui-pre-platform dependency.
-gpui-kit = "=0.8.0"
+gpui-kit = "=0.10.0"
 
 # VT parser + grid state only (NOT the renderer — gpui owns rendering).
 alacritty_terminal = "0.26"
