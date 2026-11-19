@@ -39,7 +39,7 @@ use gpui::{
     black, div, font, prelude::*, px, relative, rgb, rgba, App, Bounds, ClipboardItem, Context,
     Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent, Keystroke, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point as PixelPoint, Render, ScrollDelta,
-    ScrollWheelEvent, Task, TextRun, Window,
+    ScrollEvent, Task, TextRun, Window,
 };
 use gpui_kit::component::{
     menu::{ContextMenuExt, PopupMenu, PopupMenuItem},
@@ -1094,12 +1094,7 @@ impl TerminalView {
         advance
     }
 
-    fn handle_scroll(
-        &mut self,
-        event: &ScrollWheelEvent,
-        _window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn handle_scroll(&mut self, event: &ScrollEvent, _window: &mut Window, cx: &mut Context<Self>) {
         // Convert the platform delta into whole lines. macOS
         // trackpads emit fine-grained Pixels deltas; mice usually
         // emit coarse Lines.
@@ -1726,7 +1721,7 @@ impl Render for TerminalView {
             // focus-traversal binding before `on_key_down` runs; the
             // `Terminal`-context binding sends them as actions here.
             .on_action(cx.listener(Self::handle_tab_action))
-            .on_scroll_wheel(cx.listener(Self::handle_scroll))
+            .on_scroll(cx.listener(Self::handle_scroll))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::handle_mouse_down))
             .on_mouse_move(cx.listener(Self::handle_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::handle_mouse_up))

@@ -57,7 +57,10 @@ mod updater;
 
 use std::rc::Rc;
 
-use gpui::{App, AppContext, Context, KeyBinding, Menu, MenuItem, Window};
+use gpui::{
+    Action, App, AppContext, Context, KeyBinding, KeyBindingContextPredicate, Menu, MenuItem,
+    Window,
+};
 use gpui_kit::component::{scroll::ScrollbarMode, Root, Theme, WindowExt};
 
 use app_view::{open_app_window, AppView, WindowInit};
@@ -914,14 +917,14 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
     // token that fires Cmd+Q on macOS and Ctrl+Q on Windows /
     // Linux.
     let mut bindings = vec![
-        KeyBinding::new("secondary-q", Quit, None),
-        KeyBinding::new("secondary-n", NewWindow, None),
-        KeyBinding::new("secondary-,", OpenSettings, None),
+        load_binding("secondary-q", Box::new(Quit), None, cx).unwrap(),
+        load_binding("secondary-n", Box::new(NewWindow), None, cx).unwrap(),
+        load_binding("secondary-,", Box::new(OpenSettings), None, cx).unwrap(),
         // Standard sidebar-toggle binding (Cmd+B on macOS, Ctrl+B
         // on Windows/Linux). Same key VS Code, Sublime, Atom, and
         // every other editor with a togglable sidebar uses, so
         // muscle memory transfers in.
-        KeyBinding::new("secondary-b", ToggleSidebar, None),
+        load_binding("secondary-b", Box::new(ToggleSidebar), None, cx).unwrap(),
         // GPUI Kit's `Root` key context binds Tab / Shift-Tab to
         // focus traversal, and its action handler stops key
         // propagation before `on_key_down` listeners run. Re-binding
@@ -952,7 +955,7 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
         let Some(gpui_spec) = settings_view::spec_to_gpui_binding(&spec) else {
             continue;
         };
-        if let Some(b) = key_binding_for_action(id, &gpui_spec) {
+        if let Some(b) = key_binding_for_action(id, &gpui_spec, cx) {
             bindings.push(b);
         }
     }
@@ -966,35 +969,50 @@ fn apply_shortcut_bindings(cx: &mut App, settings: &data::settings::Settings) {
 /// string. Returns `None` for unknown ids (logs once at warn level
 /// so the dropped ID is debuggable without spamming on every
 /// rebind).
-fn key_binding_for_action(id: &str, gpui_spec: &str) -> Option<KeyBinding> {
-    let kb = match id {
-        "connect" => KeyBinding::new(gpui_spec, Connect, None),
-        "disconnect" => KeyBinding::new(gpui_spec, Disconnect, None),
-        "suspend" => KeyBinding::new(gpui_spec, Suspend, None),
-        "resume" => KeyBinding::new(gpui_spec, Resume, None),
-        "clear" => KeyBinding::new(gpui_spec, ClearTerminal, None),
-        "break" => KeyBinding::new(gpui_spec, SendBreak, None),
-        "send-file" => KeyBinding::new(gpui_spec, SendFile, None),
-        "new-profile" => KeyBinding::new(gpui_spec, NewProfile, None),
-        "open-window" => KeyBinding::new(gpui_spec, OpenInNewWindow, None),
-        "font-increase" => KeyBinding::new(gpui_spec, FontIncrease, None),
-        "font-decrease" => KeyBinding::new(gpui_spec, FontDecrease, None),
-        "font-reset" => KeyBinding::new(gpui_spec, FontReset, None),
+fn key_binding_for_action(id: &str, gpui_spec: &str, cx: &App) -> Option<KeyBinding> {
+    let (action, context): (Box<dyn Action>, _) = match id {
+        "connect" => (Box::new(Connect), None),
+        "disconnect" => (Box::new(Disconnect), None),
+        "suspend" => (Box::new(Suspend), None),
+        "resume" => (Box::new(Resume), None),
+        "clear" => (Box::new(ClearTerminal), None),
+        "break" => (Box::new(SendBreak), None),
+        "send-file" => (Box::new(SendFile), None),
+        "new-profile" => (Box::new(NewProfile), None),
+        "open-window" => (Box::new(OpenInNewWindow), None),
+        "font-increase" => (Box::new(FontIncrease), None),
+        "font-decrease" => (Box::new(FontDecrease), None),
+        "font-reset" => (Box::new(FontReset), None),
         // Terminal-pane clipboard actions are context-scoped to
         // the `Terminal` key_context the terminal div sets on
         // itself (see `TerminalView::render`). That keeps Cmd+C
         // inside a profile-form input firing gpui-component's
         // Input::Copy binding instead of grabbing the (likely
         // empty) terminal selection.
-        "copy" => KeyBinding::new(gpui_spec, TerminalCopy, Some("Terminal")),
-        "paste" => KeyBinding::new(gpui_spec, TerminalPaste, Some("Terminal")),
-        "select-all" => KeyBinding::new(gpui_spec, TerminalSelectAll, Some("Terminal")),
+        "copy" => (Box::new(TerminalCopy), Some("Terminal")),
+        "paste" => (Box::new(TerminalPaste), Some("Terminal")),
+        "select-all" => (Box::new(TerminalSelectAll), Some("Terminal")),
         unknown => {
             log::warn!("shortcut: unknown action id {unknown}");
             return None;
         }
     };
-    Some(kb)
+    load_binding(gpui_spec, action, context, cx)
+}
+
+/// `KeyBinding::load` with a string context. gpui resolves `secondary-`
+/// against the host OS, so it needs `cx` — `KeyBinding::new` panics on it and
+/// only takes static strings. A spec gpui can't parse is logged and dropped.
+fn load_binding(
+    keys: &str,
+    action: Box<dyn Action>,
+    context: Option<&str>,
+    cx: &App,
+) -> Option<KeyBinding> {
+    let context = context.map(|c| KeyBindingContextPredicate::parse(c).unwrap().into());
+    KeyBinding::load(keys, action, context, false, None, cx)
+        .map_err(|e| log::warn!("shortcut: invalid binding {keys}: {e}"))
+        .ok()
 }
 
 /// Install the macOS NSMenuBar (and no-op on other platforms). The
